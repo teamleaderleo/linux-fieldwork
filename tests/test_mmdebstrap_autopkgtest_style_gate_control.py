@@ -13,21 +13,23 @@ class MmdebstrapAutopkgtestStyleGateControlTest(unittest.TestCase):
         cls.repo = pathlib.Path(__file__).resolve().parents[1]
         cls.patch = cls.repo / (
             "investigations/mmdebstrap-autopkgtest-1141078/"
-            "installed-command-wrapper.patch"
+            "installed-command-style-gate-control.patch"
         )
         cls.runner = cls.repo / (
             "scripts/reproduce-mmdebstrap-autopkgtest-style-gate-control.sh"
         )
 
-    def test_wrapper_patch_applies_to_exact_imported_testsuite(self) -> None:
+    def test_control_patch_applies_to_exact_imported_sources(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mmdebstrap-style-gate-") as td:
             candidate = pathlib.Path(td) / "candidate"
             testsuite = candidate / "debian/tests/testsuite"
+            coverage = candidate / "coverage.sh"
             testsuite.parent.mkdir(parents=True)
             shutil.copy2(
                 self.repo / "upstream/mmdebstrap/debian/tests/testsuite",
                 testsuite,
             )
+            shutil.copy2(self.repo / "upstream/mmdebstrap/coverage.sh", coverage)
             applied = subprocess.run(
                 ["patch", "-p1", "-d", str(candidate), "-i", str(self.patch)],
                 stdout=subprocess.PIPE,
@@ -35,10 +37,25 @@ class MmdebstrapAutopkgtestStyleGateControlTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
-            text = testsuite.read_text()
-            self.assertIn('exec /usr/bin/mmdebstrap "$@"', text)
-            self.assertIn('CMD="./mmdebstrap-under-test ', text)
-            self.assertNotIn('CMD="mmdebstrap --setup-hook=', text)
+            testsuite_text = testsuite.read_text()
+            coverage_text = coverage.read_text()
+            self.assertIn(
+                'SKIP_MMSCRIPT_CHECKS=yes CMD="mmdebstrap --setup-hook=',
+                testsuite_text,
+            )
+            self.assertIn(
+                'if [ "${SKIP_MMSCRIPT_CHECKS-}" != yes ] && [ -e "$MMSCRIPT" ]; then',
+                coverage_text,
+            )
+            self.assertNotIn("mmdebstrap-under-test", testsuite_text)
+            self.assertNotIn("exec /usr/bin/mmdebstrap", testsuite_text)
+
+    def test_control_skips_only_mmdebstrap_script_checks(self) -> None:
+        patch_text = self.patch.read_text()
+        self.assertIn("SKIP_MMSCRIPT_CHECKS", patch_text)
+        self.assertNotIn("black --check", patch_text)
+        self.assertNotIn("shellcheck", patch_text)
+        self.assertNotIn("shfmt", patch_text)
 
     def test_runner_refuses_root_output_before_execution(self) -> None:
         completed = subprocess.run(
