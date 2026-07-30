@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_proxy.py
 --- a/upstream/mmdebstrap/caching_proxy.py
 +++ b/upstream/mmdebstrap/caching_proxy.py
-@@ -14,6 +14,39 @@ oldcachedir = None
+@@ -14,6 +14,41 @@ oldcachedir = None
  newcachedir = None
  readonly = False
  
@@ -43,7 +43,7 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
  
  class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
      def do_GET(self):
-@@ -79,11 +112,11 @@ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
+@@ -79,11 +114,11 @@ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
              conn.request("GET", self.path, None, dict(self.headers))
              res = conn.getresponse()
              assert (res.status, res.reason) == (200, "OK"), (res.status, res.reason)
