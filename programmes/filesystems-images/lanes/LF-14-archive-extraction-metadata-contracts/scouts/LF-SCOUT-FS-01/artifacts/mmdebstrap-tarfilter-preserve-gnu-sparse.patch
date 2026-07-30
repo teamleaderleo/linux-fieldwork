@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -104,6 +104,64 @@ class TransformAction(argparse.Action):
+@@ -104,6 +104,58 @@ class TransformAction(argparse.Action):
          setattr(namespace, "trans", items)
  
  
@@ -60,7 +60,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
  def main():
      parser = argparse.ArgumentParser(
          formatter_class=argparse.RawDescriptionHelpFormatter,
-@@ -295,8 +353,41 @@ def main():
+@@ -295,7 +347,43 @@ def main():
                  for r, s in args.trans:
                      member.name = r.sub(s, member.name)
              if member.isfile():
