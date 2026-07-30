@@ -1,0 +1,61 @@
+diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
+--- a/upstream/mmdebstrap/tarfilter
++++ b/upstream/mmdebstrap/tarfilter
+@@ -163,2 +163,21 @@ def _copy_bracket_expression(pattern, start):
+     return pattern[start:], len(pattern)
+ 
++def _normalize_extended_repetition(operators):
++    minimum = 1
++    maximum = 1
++
++    for operator in operators:
++        if operator == "*":
++            minimum = 0
++            maximum = None
++        elif operator == "+":
++            if maximum == 1:
++                maximum = None
++        else:
++            minimum = 0
++
++    if maximum is None:
++        return "+" if minimum else "*"
++    return "?"
++
++
+@@ -189,6 +208,12 @@ def _translate_pattern(pattern, extended):
+ 
+             escaped = pattern[index + 1]
++            if escaped == "0":
++                result.append("0")
++                branch_start = False
++                index += 2
++                continue
++
+             if escaped in unsupported_alpha_escapes and escaped not in "123456789":
+                 raise ValueError(
+                     "unsupported alphabetic regex escape: \\%s" % escaped
+@@ -224,6 +249,23 @@ def _translate_pattern(pattern, extended):
+             index += 1
+             continue
+ 
++        if not extended and char == "*" and branch_start:
++            result.append("\\*")
++            branch_start = False
++            index += 1
++            continue
++
++        if extended and char in "*+?" and not branch_start:
++            end = index + 1
++            while end < len(pattern) and pattern[end] in "*+?":
++                end += 1
++            result.append(
++                _normalize_extended_repetition(pattern[index:end])
++            )
++            branch_start = False
++            index = end
++            continue
++
+         if not extended and char in basic_operators:
+             result.append("\\" + char)
+             branch_start = False
