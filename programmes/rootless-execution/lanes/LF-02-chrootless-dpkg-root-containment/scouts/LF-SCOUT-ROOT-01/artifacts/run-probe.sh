@@ -58,6 +58,17 @@ capture_environment() {
     } > "$result_dir/environment.txt"
 }
 
+capture_host_dpkg_config() {
+    local output="$result_dir/host-dpkg-config.txt"
+    : > "$output"
+    for path in /etc/dpkg/dpkg.cfg /etc/dpkg/dpkg.cfg.d/*; do
+        [[ -f "$path" ]] || continue
+        printf '===== %s =====\n' "$path" >> "$output"
+        cat "$path" >> "$output"
+        printf '\n' >> "$output"
+    done
+}
+
 host_fingerprint() {
     local output=$1
     shift
@@ -84,7 +95,7 @@ trace_command() {
     printf '%q ' "$@" > "$result_dir/$name.command"
     printf '\n' >> "$result_dir/$name.command"
     set +e
-    strace -ff -qq -s 4096 \
+    strace -ff -qq -yy -s 4096 \
         -e trace=%file,%process,%network \
         -o "$prefix" \
         -- "$@" > "$stdout" 2> "$stderr"
@@ -262,7 +273,6 @@ run_mmdebstrap_probe() {
 
 write_summary() {
     python3 - "$result_dir" <<'PY'
-import glob
 import json
 import pathlib
 import sys
@@ -278,18 +288,25 @@ summary = {
 }
 for status_path in sorted(result_dir.glob("*.status")):
     summary["phases"][status_path.stem] = int(status_path.read_text(encoding="utf-8").strip())
+service_actions = 0
+unexpected_mutations = 0
 for summary_path in sorted(result_dir.glob("*-access.summary.txt")):
     values = {}
     for line in summary_path.read_text(encoding="utf-8").splitlines():
         key, value = line.split("=", 1)
         values[key] = int(value) if value.isdigit() else value
     summary["classifications"][summary_path.name.removesuffix("-access.summary.txt")] = values
+    service_actions += int(values.get("category[service action]", 0))
+    unexpected_mutations += int(values.get("category[unexpected mutation]", 0))
+summary["promotion_signal"] = service_actions > 0 or unexpected_mutations > 0
+summary["decision"] = "promote" if summary["promotion_signal"] else "retain"
 result_dir.joinpath("summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(summary, indent=2))
 PY
 }
 
 capture_environment
+capture_host_dpkg_config
 prepare_fixture
 
 host_paths=(
@@ -299,6 +316,7 @@ host_paths=(
     /var/lib/dpkg/status
     /var/log/dpkg.log
     /var/log/alternatives.log
+    /run/needrestart/unpacked
 )
 host_fingerprint "$result_dir/host-before.tsv" "${host_paths[@]}"
 
@@ -309,14 +327,11 @@ host_fingerprint "$result_dir/host-after.tsv" "${host_paths[@]}"
 diff -u "$result_dir/host-before.tsv" "$result_dir/host-after.tsv" \
     > "$result_dir/host-fingerprint.diff"
 
-if grep -R -E 'execve(at)?\(.*(systemctl|invoke-rc\.d|service|deb-systemd-invoke|start-stop-daemon)' \
-    "$result_dir"/*.trace* > "$result_dir/service-action-exec.txt"; then
-    echo 'service-control execution observed' >&2
-    exit 1
-else
-    : > "$result_dir/service-action-exec.txt"
-fi
+grep -R -E 'execve(at)?\(.*(systemctl|invoke-rc\.d|service|deb-systemd-invoke|start-stop-daemon|/usr/lib/needrestart/)' \
+    "$result_dir"/*.trace* > "$result_dir/service-action-exec.txt" || :
+grep -R -E '/(run|var/run)/needrestart/' \
+    "$result_dir"/*.trace* > "$result_dir/needrestart-runtime-access.txt" || :
 
 write_summary | tee "$result_dir/summary.stdout"
 
-echo "LF-02 containment probe passed"
+echo "LF-02 containment probe completed"
