@@ -5,6 +5,7 @@ on:
     paths:
       - "investigations/lf-02-upgrade-failure-recovery/**"
       - "tests/test_lf02_upgrade_failure_summary.py"
+      - "tests/test_lf02_guarded_runner.py"
       - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/classify-strace.py"
       - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/write-provenance.py"
       - ".github/workflows/lf-02-upgrade-failure-recovery.yml"
@@ -27,19 +28,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes strace
 
-      - name: Check probe syntax and summary regressions
+      - name: Check probe syntax and regressions
         run: |
           python3 -m py_compile \
             investigations/lf-02-upgrade-failure-recovery/build-fixtures.py \
             investigations/lf-02-upgrade-failure-recovery/summarize.py \
             tests/test_lf02_upgrade_failure_summary.py \
+            tests/test_lf02_guarded_runner.py \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/classify-strace.py \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/write-provenance.py
-          python3 -m unittest discover -s tests -p 'test_lf02_upgrade_failure_summary.py' -v
+          python3 -m unittest discover -s tests -p 'test_lf02_*.py' -v
           bash -n investigations/lf-02-upgrade-failure-recovery/run.sh
+          bash -n investigations/lf-02-upgrade-failure-recovery/run-guarded.sh
 
-      - name: Run upgrade failure and recovery matrix
-        run: bash investigations/lf-02-upgrade-failure-recovery/run.sh
+      - name: Run guarded upgrade failure and recovery matrix
+        run: bash investigations/lf-02-upgrade-failure-recovery/run-guarded.sh
 
       - name: Remove account name from public evidence
         if: always()
