@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -68,40 +68,104 @@ class TypeFilterAction(argparse.Action):
+@@ -68,37 +68,110 @@ class TypeFilterAction(argparse.Action):
          setattr(namespace, "typefilter", items)
  
  
@@ -133,7 +133,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +            )
 +        )
          setattr(namespace, "trans", items)
-@@ -292,8 +356,8 @@ def main():
+@@ -292,8 +365,8 @@ def main():
                  member.uid += args.idshift
                  member.gid += args.idshift
              if hasattr(args, "trans"):
