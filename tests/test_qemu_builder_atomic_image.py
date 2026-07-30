@@ -41,21 +41,19 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
         return destination
 
     @staticmethod
+    def publication_helpers(source: str) -> str:
+        start = source.index("WORKDIR=\nIMAGE_TMPDIR=\nIMAGE_TMP=\n")
+        end = source.index("\ntrap cleanup ", start)
+        return source[start:end].rstrip() + "\n"
+
+    @staticmethod
     def function_block(source: str, name: str) -> str:
         start = source.index(f"{name}() {{")
         end = source.index("\n}\n", start) + len("\n}\n")
         return source[start:end]
 
-    @classmethod
-    def helper_blocks(cls, source: str) -> tuple[str, str]:
-        declarations = "WORKDIR=\nIMAGE_TMPDIR=\nIMAGE_TMP=\n"
-        prepare = cls.function_block(source, "prepare_image")
-        publish = cls.function_block(source, "publish_image")
-        cleanup = cls.function_block(source, "cleanup")
-        return declarations + prepare + publish, cleanup
-
     def write_harness(self, root: pathlib.Path, candidate: pathlib.Path) -> pathlib.Path:
-        helpers, cleanup = self.helper_blocks(candidate.read_text(encoding="utf-8"))
+        helpers = self.publication_helpers(candidate.read_text(encoding="utf-8"))
         script = root / "harness.sh"
         script.write_text(
             "#!/bin/sh\n"
@@ -65,7 +63,6 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
             "IMAGE=$2\n"
             "umask 022\n"
             + helpers
-            + cleanup
             + "trap cleanup EXIT INT TERM QUIT\n"
             + "prepare_image\n"
             + "case $mode in\n"
@@ -79,6 +76,17 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
             + "  *) die \"unknown mode: $mode\" ;;\n"
             + "esac\n",
             encoding="utf-8",
+        )
+        syntax = subprocess.run(
+            ["/bin/sh", "-n", str(script)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(
+            syntax.returncode,
+            0,
+            syntax.stdout + syntax.stderr + "\n" + script.read_text(encoding="utf-8"),
         )
         return script
 
