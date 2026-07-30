@@ -1,4 +1,4 @@
-name: PR72 Deb822 unit diagnostic
+name: PR72 retained failure diagnostic
 
 on:
   pull_request:
@@ -10,41 +10,42 @@ permissions:
   contents: read
 
 jobs:
-  focused-unit:
+  artifact-failure:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Fetch exact PR72 source without checkout noise
+      - name: Download exact failed reproduction artifact
         shell: bash
         run: |
           set -euo pipefail
-          mkdir /tmp/source
-          gh api "/repos/${GITHUB_REPOSITORY}/tarball/5aed66e8193c67b91af75dd8e6e3ea676a104b59" > /tmp/source.tar.gz
-          tar -xzf /tmp/source.tar.gz --strip-components=1 -C /tmp/source
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8762098688/zip" > /tmp/a.zip
 
-      - name: Run focused PR72 tests
-        shell: bash
-        working-directory: /tmp/source
-        run: |
-          set +e
-          python3 -m unittest \
-            tests.test_mmdebstrap_sourcesfilter_deb822 \
-            tests.test_reproduction_harness -v
-          status=$?
-          set -e
-          printf 'focused_status=%s\n' "$status"
-
-      - name: Inspect failed reproduction preflight artifact
+      - name: Print first terminal case and exact failure context
         shell: bash
         run: |
-          set -euo pipefail
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8760389758/zip" > /tmp/a.zip
           python3 - <<'PY'
+          import re
           import zipfile
+
           with zipfile.ZipFile('/tmp/a.zip') as archive:
-              for name in archive.namelist():
-                  print(f'===== {name} =====')
-                  print(archive.read(name).decode('utf-8', 'replace'))
+              names = set(archive.namelist())
+              for name in ('exit-status', 'result.md', 'autopkgtest-output/summary'):
+                  if name in names:
+                      print(f'===== {name} =====')
+                      print(archive.read(name).decode('utf-8', 'replace'))
+
+              stderr = archive.read('autopkgtest-output/testsuite-stderr').decode('utf-8', 'replace').splitlines()
+              stdout = archive.read('autopkgtest-output/testsuite-stdout').decode('utf-8', 'replace').splitlines()
+              case_re = re.compile(r'\(\d+/\d+\) ')
+              cases = [index for index, line in enumerate(stderr) if case_re.search(line)]
+              print('===== terminal stderr case =====')
+              if cases:
+                  pos = cases[-1]
+                  for index in range(max(0, pos - 10), min(len(stderr), pos + 80)):
+                      print(f'{index + 1}: {stderr[index]}')
+              print('===== final stdout =====')
+              for index, line in enumerate(stdout[-80:], start=max(1, len(stdout) - 79)):
+                  print(f'{index}: {line}')
           PY
