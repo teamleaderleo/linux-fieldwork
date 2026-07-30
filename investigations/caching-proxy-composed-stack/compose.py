@@ -152,6 +152,10 @@ def compose(repo_root: pathlib.Path, destination: pathlib.Path) -> pathlib.Path:
             # bytes returned by http.client and must not be validated as such.
             expected_length = None if res.chunked else res.getheader("Content-Length")
             if expected_length is not None:
+                if not expected_length or any(
+                    char < "0" or char > "9" for char in expected_length
+                ):
+                    raise ValueError("invalid upstream Content-Length")
                 expected_length = int(expected_length)
                 if expected_length < 0:
                     raise ValueError("negative upstream Content-Length")
