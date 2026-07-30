@@ -1,0 +1,96 @@
+diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mmdebstrap-chrootless-env/run.sh
+--- a/investigations/mmdebstrap-chrootless-env/run.sh
++++ b/investigations/mmdebstrap-chrootless-env/run.sh
+@@ -4,11 +4,46 @@
+ repo_root="$(git rev-parse --show-toplevel)"
+ source_root="$repo_root/upstream/mmdebstrap"
+ result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/results"
+-runtime_parent="$(realpath -m "${RUNNER_TEMP:-/tmp}")"
+-if [[ "$runtime_parent" == / ]]; then
+-  echo "refusing unsafe runtime parent: $runtime_parent" >&2
+-  exit 2
++
++validate_runtime_parent() {
++  local candidate home_root
++  candidate="$(realpath -m "$1")"
++  case "$candidate" in
++    /tmp|/tmp/*|/var/tmp|/var/tmp/*|/home/runner/work/_temp|/home/runner/work/_temp/*)
++      ;;
++    *)
++      echo "refusing unsafe runtime parent: $candidate" >&2
++      return 2
++      ;;
++  esac
++  case "$candidate" in
++    "$repo_root"|"$repo_root"/*)
++      echo "refusing repository runtime parent: $candidate" >&2
++      return 2
++      ;;
++  esac
++  home_root="$(realpath -m "${HOME:-/nonexistent-home}")"
++  case "$candidate" in
++    /home/runner/work/_temp|/home/runner/work/_temp/*)
++      ;;
++    "$home_root"|"$home_root"/*)
++      echo "refusing home runtime parent: $candidate" >&2
++      return 2
++      ;;
++  esac
++  printf '%s\n' "$candidate"
++}
++
++if [[ ${1:-} == --check-runtime-parent ]]; then
++  if [[ $# -ne 2 ]]; then
++    echo "usage: $0 --check-runtime-parent PATH" >&2
++    exit 2
++  fi
++  validate_runtime_parent "$2" >/dev/null
++  exit
+ fi
++
++runtime_parent="$(validate_runtime_parent "${RUNNER_TEMP:-/tmp}")"
+ runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-env")"
+ case "$runtime" in
+   "$runtime_parent"/*) ;;
+@@ -28,4 +63,6 @@
+ esac
+ fixture="$runtime/fixture"
+ package="$runtime/lf-chrootless-env-probe_1.0_all.deb"
++source_copy="$runtime/source/mmdebstrap"
++source_mode_before="$(stat -c %a "$source_root/mmdebstrap")"
+ server_pid=
+@@ -47,3 +84,6 @@
+ rm -rf "$runtime" "$result_dir"
+ mkdir -p "$fixture/DEBIAN" "$fixture/usr/lib/lf-chrootless-env-probe"
+ mkdir -p "$result_dir" "$runtime/home" "$runtime/xdg" "$runtime/bin"
++mkdir -p "$(dirname "$source_copy")"
++cp --preserve=mode "$source_root/mmdebstrap" "$source_copy"
++chmod 0755 "$source_copy"
+@@ -198,5 +238,5 @@
+   printf -v hook 'mkdir -p "$1%s"; cp "%s" "$1%s"' \
+     "$package_dir" "$package" "$package"
+   command=(
+-    "$source_root/mmdebstrap"
++    "$source_copy"
+     --mode=chrootless
+     --variant=custom
+     --format=directory
+@@ -211,5 +251,3 @@
+   fi
+   command+=( '' "$target" )
+ }
+-
+-chmod 0755 "$source_root/mmdebstrap"
+@@ -426,6 +464,11 @@
+ fakeroot_environment_preserved=yes
+ safe_launch_succeeded=yes
+ clean_rerun_succeeded=yes
++source_mode_preserved=yes
++repository_source_clean=yes
+ EOF
++
++[[ "$(stat -c %a "$source_root/mmdebstrap")" == "$source_mode_before" ]]
++git diff --exit-code -- upstream/mmdebstrap/mmdebstrap
+ 
+ cat "$result_dir/summary.txt"
+ echo "mmdebstrap chrootless environment security regression passed"
