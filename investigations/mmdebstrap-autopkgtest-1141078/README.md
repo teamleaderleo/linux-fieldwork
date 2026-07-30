@@ -2,110 +2,181 @@
 
 Tracking: PR #72, issues #53, #54, #119, #153, and PR #171.
 
-## Explain it simply
+## TL;DR
 
-The package test runs hundreds of small cases. Linux Fieldwork temporarily places a tiny `mmdebstrap` proxy in the autopkgtest work directory. That proxy forwards each real invocation to the installed `/usr/bin/mmdebstrap` package while letting the reduction bypass source-format checks that belong to a newer source revision.
+Run `30578966104` completed 77 package-test cases, then failed at `(125/284) cwd-directory-not-accessible-by-unshared-user` because the reduction carrier exported relative `./mmdebstrap` and the test changed directories before execution.
 
-One test deliberately changes its working directory before it launches `mmdebstrap`. A command spelled `./mmdebstrap` then points inside the new directory. The proxy stays in the old autopkgtest work directory, so the command disappears from the test's point of view.
+The repaired carrier keeps the source-tree proxy for `coverage.sh` preflight, installs an executable copy at `$AUTOPKGTEST_TMP/mmdebstrap`, and exports that absolute path. A focused regression now executes the installation step, verifies byte and mode identity, changes cwd, and proves the temporary proxy—not a source-tree decoy—receives the hook arguments.
 
-Run `30578966104` exposed exactly that failure at `(125/284) cwd-directory-not-accessible-by-unshared-user`:
+Next action: consume exact-head repository CI, then rerun the disposable Debian sid package test. Packet B remains unvalidated until its dedicated hook-free phase actually executes.
+
+## Explain like I'm five
+
+The test suite makes a tiny helper named `mmdebstrap`. Think of it as a forwarding telephone: calls to the helper are passed to the installed `/usr/bin/mmdebstrap` package.
+
+One test walks into a different room before making the call. The old command said “use the helper in this room” (`./mmdebstrap`), so the helper disappeared when the room changed.
+
+The first attempted repair wrote down the address `$AUTOPKGTEST_TMP/mmdebstrap` but forgot to put the helper there. The final repair does both: it copies the helper to that exact address and then uses the address after the directory change.
+
+Literal example:
+
+```text
+source cwd: /tmp/autopkgtest.../real-tree
+exported command: ./mmdebstrap --setup-hook=...
+test action: env --chdir=/tmp/debian-chroot
+old result: env: './mmdebstrap': No such file or directory
+candidate: install proxy at /tmp/autopkgtest.../autopkgtest_tmp/mmdebstrap
+candidate result: that proxy runs and receives both hook arguments
+```
+
+## Why care
+
+A harness failure can impersonate a package failure. Here it also blocked the exact `root-without-cap-sys-admin` scheduling question owned by Packet B.
+
+A tempting alternative, `$SRC/mmdebstrap`, survives the directory change but executes the imported source script. That would silently change the subject from the installed Debian package to the checkout and produce a convincing answer to the wrong question.
+
+## Intent and precedent
+
+The imported cwd-changing test intentionally canonicalizes the two recognized relative source commands before invoking `env --chdir`. The reduction carrier added hook arguments to `./mmdebstrap`, so the exact-string safeguard no longer matched.
+
+The stable design rule is to choose executable identity before changing directories:
+
+- GNU `env --chdir=DIR` changes directory before invoking the command: https://www.gnu.org/software/coreutils/manual/html_node/env-invocation.html
+- Rust warns that relative program paths combined with `Command::current_dir` are platform-specific and recommends canonicalizing the program path: https://doc.rust-lang.org/std/process/struct.Command.html#method.current_dir
+- systemd service commands use an absolute path or a simple executable name searched in a fixed path; relative paths containing `/` are not the contract: https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html
+
+These are precedent for the design choice, not evidence that upstream intended this temporary proxy mechanism.
+
+## Question
+
+Can the investigation-only installed-package proxy remain executable after a test changes cwd, without accidentally executing the imported source script?
+
+## Source
+
+- Project: Debian `mmdebstrap` package test reduction
+- Imported package boundary: `mmdebstrap 1.5.7-3`
+- Imported source path: `upstream/mmdebstrap`
+- Broad carrier: PR #72
+- Focused scheduling candidate: PR #171
+- Failed carrier head: `ff89c85712ebcd888cba15ebb803bf7f7134c032`
+- Failed run: `30578966104`
+- Artifact: `mmdebstrap-reproduction-gha-30578966104-1`
+- Artifact digest: `sha256:c1c691504e6606b914862d5457313071e9b7db5d38490b872e30b10bdfa741be`
+- Console digest: `sha256:0ae1d172219b2a79c09d7e9b9534612434799d753e120979096e4da767452203`
+- Candidate patch: `installed-command-wrapper.patch`
+- New regression: `tests/test_mmdebstrap_autopkgtest_proxy_installation.py`
+
+Imported source files remain unchanged; all patches apply to a disposable copy.
+
+## Environment
+
+The retained run used Debian sid inside the repository's disposable autopkgtest container. Its artifact records:
+
+```text
+AUTOPKGTEST_TMP=/tmp/autopkgtest.QVLAOw/autopkgtest_tmp
+PWD=/tmp/autopkgtest.QVLAOw/build.AcG/real-tree
+```
+
+Those are different directories. That distinction exposed the incomplete first repair: exporting `$AUTOPKGTEST_TMP/mmdebstrap` is insufficient unless the proxy is installed there.
+
+## Baseline behavior
+
+The retained run passed 77 cases and then rendered this command:
+
+```text
+env --chdir=/tmp/debian-chroot ./mmdebstrap --setup-hook=... --hook-dir=...
+```
+
+The observed result was:
 
 ```text
 env: './mmdebstrap': No such file or directory
+test.sh failed
 ```
 
-The run had already completed 77 cases and skipped `root-without-cap-sys-admin` out of the hook-heavy phase. The later authoritative hook-free phase never ran because the broad phase uses `--exitfirst`.
+The broad phase used `--exitfirst`, so the later dedicated hook-free phase did not execute. This artifact neither validates nor refutes Packet B runtime behavior.
 
-## Why we care
+## Candidate
 
-A harness failure can impersonate a product failure. Here it also blocked the exact Packet B case we meant to observe.
+The patch now performs both required operations:
 
-The tempting repair, `CMD="$SRC/mmdebstrap ..."`, reaches a stable path but executes the imported source script. That silently changes the subject under test. The experiment exists to exercise the installed Debian package through the proxy, so that repair would produce a convincing answer to a different question.
+```sh
+chmod 0755 ./mmdebstrap
+install -m 0755 ./mmdebstrap "$AUTOPKGTEST_TMP/mmdebstrap"
+```
 
-## Chosen repair
-
-Use:
+and exports:
 
 ```text
-$AUTOPKGTEST_TMP/mmdebstrap
+$AUTOPKGTEST_TMP/mmdebstrap --setup-hook=... --hook-dir=...
 ```
 
-The testsuite creates the proxy in `$AUTOPKGTEST_TMP` after changing into that directory. The absolute expanded path survives later working-directory changes. The proxy still executes `/usr/bin/mmdebstrap`, so the installed package remains the behavioral subject.
+The source-tree copy remains available for the historical `coverage.sh` source preflight. The installed temporary copy is the stable behavioral command and still forwards to `/usr/bin/mmdebstrap`.
 
-The regression creates two possible executables:
+The candidate deliberately does not use `$SRC/mmdebstrap`, rewrite the cwd-changing test, or claim that the proxy belongs in final reusable package tooling.
 
-- a source-tree decoy that exits `97`;
-- the intended proxy under the autopkgtest temporary directory.
+## Reproduction
 
-It then changes directory and requires the intended proxy to receive the hook arguments. This proves both path stability and subject identity.
+Focused gate:
 
-## Alternatives considered
+```sh
+python3 -m unittest -v tests/test_mmdebstrap_autopkgtest_proxy_installation.py
+```
 
-### `./mmdebstrap`
+The regression:
 
-Small and readable, but its meaning changes with the working directory. Run `30578966104` demonstrated the failure.
+1. applies the exact retained patch to a temporary testsuite copy;
+2. checks the complete patched testsuite with `/bin/sh -n`;
+3. executes the exact `install -m 0755` line;
+4. requires destination bytes and executable mode to match the generated proxy;
+5. plants a source-tree decoy that exits `97`;
+6. replaces the installed copy with an observable stand-in;
+7. changes cwd and executes the rendered command;
+8. requires the installed temporary path to receive both hook arguments.
 
-### `$SRC/mmdebstrap`
+The disposable sid rerun remains the authoritative package-level gate.
 
-Stable across `chdir`, but `$SRC` names the imported source checkout. This bypasses the installed-package proxy and invalidates the reduction question.
+## Results
 
-### Bare `mmdebstrap`
+Demonstrated from run `30578966104`:
 
-This is the clean final package-test contract. It also restores the original source-preflight checks against the installed script. The broad reduction currently keeps a temporary proxy because the packaged script and imported source revision differ at those checks. Final reusable tooling should remove the proxy and prove the installed package through the original path.
+- the Deb822 compatibility candidate remained past its earlier failure;
+- 77 broad-phase cases completed;
+- `root-without-cap-sys-admin` was skipped out of the hook-heavy phase as intended;
+- test 125 failed because the relative proxy vanished after `--chdir`;
+- the dedicated hook-free phase never ran.
 
-### Copy the proxy into every possible working directory
+The first `$AUTOPKGTEST_TMP` repair was incomplete because patch text still created only `./mmdebstrap`. This was found by comparing the retained environment, patch action, exported command, and regression fixture rather than trusting the PR prose.
 
-This spreads test-only state across cases and misses future directory changes. One canonical executable path is easier to inspect and harder to misuse.
+## Interpretation
 
-### Rewrite the individual cwd test
+**Demonstrated behavior:** a relative executable containing `/` is resolved after the cwd change and can disappear.
 
-That hides a useful stress case. The test correctly asks whether the command remains executable after the cwd becomes inaccessible. The harness should supply a cwd-independent program path.
+**Harness defect:** exporting an absolute path without creating the executable at that path is another pre-product failure.
 
-## Historical precedent
+**Design choice:** retain two investigation-only proxy copies—one source-tree copy for historical preflight and one temporary absolute copy for behavioral invocation.
 
-The rule appears in several mature process APIs:
+**Open question:** after this repair, what is the first sid package-test result, and does the dedicated hook-free capability case execute with its hard-failure status contract?
 
-- GNU `env --chdir=DIR` changes directory before invoking the command: https://www.gnu.org/software/coreutils/manual/html_node/env-invocation.html
-- Rust documents relative program paths used with `Command::current_dir` as platform-specific and recommends canonicalizing the program path first: https://doc.rust-lang.org/std/process/struct.Command.html#method.current_dir
-- systemd accepts either an absolute executable path or a simple name searched in a fixed system path; a relative path containing `/` is rejected: https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html
-- GNU `realpath` exists to turn path references into canonical absolute names when the caller needs stable identity: https://www.gnu.org/software/coreutils/manual/html_node/realpath-invocation.html
+## Evidence boundary
 
-The shared lesson is straightforward: decide which program will run before changing directories, then carry a stable executable identity into the child launch.
+The focused regression uses temporary files and a stand-in executable. It proves path creation, byte/mode transfer, rendered argument selection, cwd independence, and decoy avoidance. It does not prove the installed Debian package, mirror, mount hooks, capability drop, or full package-test phase order.
 
-## Packet B interpretation
+The broad carrier remains an investigation mechanism. Final reusable package tooling should remove the proxy and prove the installed package through the original preflight path. An earlier ordinary broad-phase failure may still starve the dedicated Packet B phase under `--exitfirst`.
 
-The Packet B patch did what its focused tests claim:
+## Next step
 
-- parser acceptance works;
-- the capability case leaves the hook-heavy phase;
-- ordinary statuses remain hard in the dedicated phase;
-- timeout `124` remains neutral `77`.
+The reviewer is choosing whether the corrected proxy installation is sufficient to justify another disposable sid run. Supporting evidence must include:
 
-The sid artifact did not execute the dedicated phase. It therefore neither validates nor refutes the runtime behavior of `root-without-cap-sys-admin` under the new schedule.
+- exact-head repository CI with the new regression;
+- complete current diff review;
+- a fresh artifact showing which program path ran;
+- the first named test result;
+- whether the dedicated Packet B phase executed;
+- cleanup, status, and artifact identity.
 
-A further experiment-design question remains: the dedicated authoritative case sits after a broad `--exitfirst` matrix. Unrelated earlier failures can starve it. Two coherent designs are available:
-
-1. preserve upstream phase order and keep rerunning after each earlier blocker is repaired;
-2. in this reduction carrier only, defer the broad phase's ordinary failure, execute the focused authoritative phase, then restore the deferred status.
-
-The second design gives the focused question priority while preserving the broad failure. It should remain an investigation-only carrier and never weaken the package's final failure result.
-
-## Related defect class to audit
-
-Search for child launches that combine any of these:
-
-- `cwd=`, `current_dir`, `chdir`, `env --chdir`, `cd`, or a chroot/pivot operation;
-- a relative executable containing `/`, especially `./tool`;
-- a test proxy, wrapper, generated script, or temporary executable;
-- a source-tree path that can be confused with an installed binary;
-- a command string expanded after the directory change.
-
-Useful negative controls plant different exit codes at the source path, installed path, and temporary proxy path. The test should prove which one actually executes.
-
-## Current disposition
-
-PR #72 remains an investigation carrier. The current exact head is recorded in the PR. The corrected proxy-path regression must pass, followed by a fresh disposable sid run. Packet B can advance once the dedicated hook-free phase itself executes and its exact status is retained.
+If an unrelated broad failure appears first again, the investigation carrier should consider deferring that ordinary status, running the focused phase, then restoring the deferred failure. Such ordering must remain investigation-only and must never turn a real package failure into success.
 
 ## Authority
 
-Internal Linux Fieldwork work only. No external contact is included or authorized.
+Internal Linux Fieldwork work only. No Debian or other external issue, email, patch, merge request, comment, or review is authorized or included.
