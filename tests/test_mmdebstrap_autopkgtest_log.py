@@ -130,6 +130,18 @@ testsuite PASS
         self.assertIn("autopkgtest wrapper reported failure", result["signals"])
         self.assertIn("autopkgtest reported PASS", result["signals"])
 
+    def test_wrapper_pass_cannot_hide_later_failure_text(self):
+        result = MODULE.classify_text(
+            """
+testsuite PASS
+testsuite FAIL non-zero exit status 1
+"""
+        )
+        self.assertEqual(result["phase"], "unknown")
+        self.assertTrue(result["wrapper_failure_only"])
+        self.assertIn("autopkgtest reported PASS", result["signals"])
+        self.assertIn("autopkgtest wrapper reported failure", result["signals"])
+
     def test_earlier_mirror_failure_is_not_overridden_by_later_case(self):
         result = MODULE.classify_text(
             """
