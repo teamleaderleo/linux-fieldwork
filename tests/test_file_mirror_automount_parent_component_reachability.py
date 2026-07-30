@@ -105,7 +105,7 @@ class FileMirrorAutomountParentComponentReachabilityTest(unittest.TestCase):
             return []
         return [part.decode() for part in path.read_bytes().split(b"\0") if part]
 
-    def run(
+    def run_hook(
         self,
         script: pathlib.Path,
         root: pathlib.Path,
@@ -132,7 +132,7 @@ class FileMirrorAutomountParentComponentReachabilityTest(unittest.TestCase):
 
         predecessor_root = self.work / "predecessor-root"
         predecessor_log = self.work / "predecessor-mount.log"
-        predecessor = self.run(
+        predecessor = self.run_hook(
             self.predecessor,
             predecessor_root,
             uri,
@@ -154,7 +154,7 @@ class FileMirrorAutomountParentComponentReachabilityTest(unittest.TestCase):
 
         candidate_root = self.work / "candidate-root"
         candidate_log = self.work / "candidate-mount.log"
-        candidate = self.run(
+        candidate = self.run_hook(
             self.candidate,
             candidate_root,
             uri,
