@@ -2,14 +2,23 @@
 __pycache__/
 *.py[cod]
 
-# Local investigation artifacts
+# Large or sensitive investigation artifacts
 investigations/**/runs/**/*.tar
-investigations/**/runs/**/*.tar.*
+investigations/**/runs/**/*.tar.gz
+investigations/**/runs/**/*.tar.xz
+investigations/**/runs/**/*.tar.zst
+investigations/**/runs/**/*.tar.bz2
+investigations/**/runs/**/*.tgz
+investigations/**/runs/**/*.txz
 investigations/**/runs/**/*.img
 investigations/**/runs/**/*.raw
 investigations/**/runs/**/*.qcow2
 investigations/**/runs/**/*.squashfs
+investigations/**/runs/**/*.iso
+investigations/**/runs/**/*.mbox
+investigations/**/runs/**/*.log
 investigations/**/runs/**/rootfs/
+investigations/**/runs/**/autopkgtest-output/
 
 # Common local scratch
 .tmp/
