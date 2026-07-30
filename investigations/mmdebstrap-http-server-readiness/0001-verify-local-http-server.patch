@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/debian/tests/testsuite b/upstream/mmdebstrap/debian/tests/testsuite
 --- a/upstream/mmdebstrap/debian/tests/testsuite
 +++ b/upstream/mmdebstrap/debian/tests/testsuite
-@@ -126,6 +126,60 @@ chown "$AUTOPKGTEST_NORMAL_USER" ./shared
+@@ -127,6 +127,60 @@
  
  echo "$AUTOPKGTEST_NORMAL_USER ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 +
@@ -61,7 +61,8 @@ diff --git a/upstream/mmdebstrap/debian/tests/testsuite b/upstream/mmdebstrap/de
  
  # we cannot use mini_httpd (or most other http servers) because they perform a
  # chdir() into the directory that is to be served on startup. But later on we
-@@ -133,8 +187,15 @@ echo "$AUTOPKGTEST_NORMAL_USER ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+ # completely remove and replace that directory when creating the Debian mirror.
+@@ -133,8 +187,15 @@
  # Thus we need a really stupid server which is able to cope with having its
  # www-root being replaced under its feet.
  #mini_httpd -D -h 127.0.0.1 -p 80 -u "$AUTOPKGTEST_NORMAL_USER" -T UTF-8 -dd "$AUTOPKGTEST_TMP/shared/cache" &
