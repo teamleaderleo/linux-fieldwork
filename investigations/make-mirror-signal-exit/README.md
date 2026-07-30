@@ -2,9 +2,9 @@
 
 ## In simple words
 
-`make_mirror.sh` used one cleanup-only trap for ordinary exit and for `INT`/`TERM`. A parent-only termination signal could therefore run cleanup and then resume the long mirror workflow instead of exiting with the signal-derived status.
+`make_mirror.sh` used cleanup-only traps for ordinary exit and for `INT`/`TERM`. A parent-only termination signal could therefore run cleanup and then resume the long mirror workflow instead of exiting with the signal-derived status.
 
-This candidate separates normal exit cleanup from signal handling, stops and waits for the proxy child, and exits with 130, 131, or 143 after cleanup.
+This candidate separates normal exit cleanup from signal handling, stops and waits for either proxy child, tracks QEMU temporary cleanup separately, and exits with 130, 131, or 143 after cleanup.
 
 ## Canonical records
 
@@ -27,19 +27,20 @@ After readiness it changes that to:
 trap 'kill "$PROXYPID" || :;cleanup_newcachedir' EXIT INT TERM
 ```
 
-Near the QEMU path it installs another cleanup-only signal trap. None of those signal actions exits or re-raises.
+The QEMU path installs a third cleanup-only signal trap that also removes its temporary directory, then a fourth cleanup-only trap after normal QEMU completion. None of those signal actions exits or re-raises. Normal proxy stops also use raw `kill` without `wait` or clearing the stored PID.
 
 ## Candidate
 
 The candidate introduces:
 
 - `stop_proxy()`: signal the child if alive, `wait` for it even if already exited, and clear the PID;
-- `cleanup_owner()`: call `stop_proxy()` and remove the incomplete new cache only after the workflow has crossed the readiness boundary;
+- `cleanup_owner()`: call `stop_proxy()`, remove an active QEMU temporary directory when flagged, and remove the incomplete new cache only after the workflow has crossed the readiness boundary;
 - `signal_exit STATUS`: disable all traps, call `cleanup_owner()` once, and exit with the conventional signal-derived status;
 - separate traps for `EXIT`, `INT`, `QUIT`, and `TERM`;
-- reuse of `stop_proxy()` at the existing normal proxy-stop point without deleting the completed cache.
+- reuse of `stop_proxy()` at both normal proxy-stop points;
+- state flags that prevent successful mirror or completed-QEMU cleanup from being mistaken for failure cleanup.
 
-Separating child shutdown from cache cleanup is essential: normal successful mirror completion stops the proxy before atomically switching the finished cache into place. Calling failure cleanup from that normal stop point would delete the result.
+Separating child shutdown from cache cleanup is essential: normal successful mirror completion stops the first proxy before atomically switching the finished cache into place. Calling failure cleanup from that normal stop point would delete the result. Clearing `PROXYPID` is also required so a later EXIT path cannot act on a reused PID.
 
 Cleanup errors are contained with `|| :` so they cannot replace the cancellation status.
 
@@ -49,12 +50,12 @@ The regression applies the patch to an exact temporary source copy and checks sh
 
 A parent-PID-only `SIGTERM` is delivered while the shell waits for a foreground child:
 
-- baseline: the deferred cleanup-only trap runs, later work executes, and the owner exits 0;
+- baseline post-readiness trap: cleanup runs, later work executes, EXIT cleanup runs a second time, and the owner exits 0;
 - candidate: cleanup runs once, later work is absent, the owner exits 143, and the proxy child is reaped.
 
 An unsignaled candidate rerun must finish 0, execute the later marker, stop and reap the proxy, and clean exactly once through the ordinary EXIT path.
 
-The source assertion requires all three top-level cleanup-only signal traps to disappear while leaving unrelated nested `update_cache()` trap behavior outside this patch.
+The source assertion requires all four top-level cleanup-only signal traps and all raw top-level `kill $PROXYPID` stops to disappear while leaving unrelated nested `update_cache()` trap behavior outside this patch. It also requires QEMU temporary cleanup state to be enabled and disabled explicitly.
 
 ## Cleanup and safety
 
