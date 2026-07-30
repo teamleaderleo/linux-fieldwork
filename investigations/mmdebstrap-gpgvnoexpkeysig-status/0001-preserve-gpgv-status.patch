@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/gpgvnoexpkeysig b/upstream/mmdebstrap/gpgvnoexpkeysig
 --- a/upstream/mmdebstrap/gpgvnoexpkeysig
 +++ b/upstream/mmdebstrap/gpgvnoexpkeysig
-@@ -57,2 +57,34 @@
+@@ -57,2 +57,32 @@
  # we need eval because we cannot redirect a variable fd
 -eval 'exec gpgv "$@" '"$GPGSTATUSFD"'>&1 | sed "s/^\[GNUPG:\] EXPKEYSIG /[GNUPG:] GOODSIG /" >&'"$GPGSTATUSFD"
 +FILTER_DIR=$(mktemp -d "${TMPDIR:-/tmp}/gpgvnoexpkeysig.XXXXXXXXXX")
