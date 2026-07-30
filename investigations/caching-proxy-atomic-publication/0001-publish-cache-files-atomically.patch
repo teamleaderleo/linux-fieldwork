@@ -12,7 +12,7 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
  import urllib.parse
 +import contextlib
 +import tempfile
-@@ -14,6 +16,22 @@
+@@ -14,6 +16,24 @@
  oldcachedir = None
  newcachedir = None
  readonly = False
@@ -37,7 +37,7 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
 +
 +
  class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
-@@ -58,7 +76,7 @@
+@@ -58,7 +78,7 @@
              self.wfile.write(b"HTTP/1.1 200 OK\r\n")
              self.send_header("Content-Length", oldpath.stat().st_size)
              self.end_headers()
@@ -46,7 +46,7 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
                  # we are not using shutil.copyfileobj() because we want to
                  # write to two file objects simultaneously
                  while True:
-@@ -84,7 +102,7 @@
+@@ -84,7 +104,7 @@
                      continue
                  self.send_header(k, v)
              self.end_headers()
