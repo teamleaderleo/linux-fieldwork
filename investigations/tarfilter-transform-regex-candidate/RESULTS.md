@@ -69,3 +69,27 @@ Repository discovery in the local sandbox ran 78 tests. All tarfilter regex cand
 Setting `TMPDIR` to a writable disposable directory removed the other temporary-path safety failure. The exact pushed head still requires hosted CI on its ordinary non-root runner.
 
 After deleting the disposable roots, the focused 20-test gate passed again in 3.695 seconds and the caller-selected temporary directory was empty after explicit cleanup.
+
+## Helper E second-pass — Python special-group rejection
+
+- Reviewed exact predecessor head: `7f1865e48b77b89d4989b7de0fe4b85bad4377ec`.
+- Reviewed retained patch blobs: regex dialects `2d7c457b83700d51b173efd0825128b6853a5f47`; edge cases `a85ae4ef49e350061e42200f55857fe2bed23f17`.
+- Environment: Python 3.13.5, GNU tar 1.35, `LC_ALL=C`.
+- New probes showed that explicit `x` passed Python-only `(?...)` syntax to `re.compile()` while GNU tar rejected it:
+
+```text
+member  expression          predecessor result  GNU tar
+ab      s/a(?=b)/X/x        Xb                  status 2
+a       s/(?:a)/X/x         X                   status 2
+A       s/(?i)a/X/x         X                   status 2
+a       s/(?P<n>a)/X/x      X                   status 2
+```
+
+The inline-flag case activated case-insensitive Python matching without GNU's `i` flag. Review `4822922810` classified the exact head as `REPAIR`.
+
+Repair commits:
+
+- `7291bb3ca7e30359dffe5a5f8200768d54f75479`: reject active `(?` in extended mode before Python compilation;
+- `4d6cfc383df94cb21f4b86000398e948b65d6da7`: add direct GNU differential regressions for lookahead, noncapturing groups, inline flags, and named groups.
+
+The retained edge patch parses cleanly with `git apply --numstat`. The four local GNU reference probes used disposable directories and left no persistent state. Exact stacked application, full inherited regression, repository discovery, cleanup/rerun, and hosted CI remain the acceptance gates for the repaired head.
