@@ -4,13 +4,35 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 source_root="$repo_root/upstream/mmdebstrap"
 result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/direct-path-results"
-runtime_parent="$(realpath -m "${RUNNER_TEMP:-/tmp}")"
 
-if [[ "$runtime_parent" == / ]]; then
-  echo "refusing unsafe runtime parent: $runtime_parent" >&2
+validate_runtime_parent() {
+  local requested=$1 canonical
+  canonical="$(realpath -m "$requested")"
+  case "$canonical" in
+    /tmp | /tmp/* | /var/tmp | /var/tmp/* | /home/runner/work/_temp | /home/runner/work/_temp/*) ;;
+    *)
+      echo "refusing unsafe runtime parent: $canonical" >&2
+      return 2
+      ;;
+  esac
+  printf '%s\n' "$canonical"
+}
+
+if [[ ${1-} == --check-runtime-parent ]]; then
+  if [[ $# -ne 2 ]]; then
+    echo 'usage: direct_path_probe.sh --check-runtime-parent PATH' >&2
+    exit 2
+  fi
+  validate_runtime_parent "$2" >/dev/null
+  exit
+fi
+
+runtime_parent="$(validate_runtime_parent "${RUNNER_TEMP:-/tmp}")"
+runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-direct-path")"
+if [[ "$runtime" == "$runtime_parent" ]]; then
+  echo "refusing runtime equal to parent: $runtime" >&2
   exit 2
 fi
-runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-direct-path")"
 case "$runtime" in
   "$runtime_parent"/*) ;;
   *)
@@ -35,7 +57,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for command_name in dpkg dpkg-query python3 realpath timeout; do
+for command_name in cp dpkg dpkg-query python3 realpath stat timeout; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "missing required command: $command_name" >&2
     exit 2
@@ -44,10 +66,14 @@ done
 
 rm -rf "$runtime" "$result_dir"
 mkdir -p "$runtime/fake-bin" "$runtime/home" "$result_dir"
-chmod 0755 "$source_root/mmdebstrap"
+source_mode_before="$(stat -c '%a' "$source_root/mmdebstrap")"
+candidate="$runtime/mmdebstrap-candidate"
+cp --preserve=mode "$source_root/mmdebstrap" "$candidate"
+cmp "$source_root/mmdebstrap" "$candidate"
+chmod 0755 "$candidate"
 
 mutation="$runtime/mmdebstrap-caller-path-mutation"
-python3 - "$source_root/mmdebstrap" "$mutation" <<'PY'
+python3 - "$candidate" "$mutation" <<'PY'
 from pathlib import Path
 import sys
 
@@ -110,7 +136,7 @@ run_case() {
   grep -Fx -- '--print-architecture' "$wrapper_log"
 }
 
-run_case candidate "$source_root/mmdebstrap"
+run_case candidate "$candidate"
 if grep -F -- '--force-script-chrootless' \
   "$result_dir/candidate-dpkg-wrapper.log"; then
   echo "candidate direct chrootless dpkg used caller PATH" >&2
@@ -131,8 +157,16 @@ if [[ "$candidate_status" -eq 0 ]]; then
   candidate_succeeded=yes
 fi
 
+source_mode_after="$(stat -c '%a' "$source_root/mmdebstrap")"
+[[ "$source_mode_after" == "$source_mode_before" ]]
+git diff --exit-code -- upstream/mmdebstrap/mmdebstrap
+
 cat >"$result_dir/summary.txt" <<EOF
 product_source=upstream/mmdebstrap/mmdebstrap
+executed_candidate_copy=$candidate
+source_mode_before=$source_mode_before
+source_mode_after=$source_mode_after
+repository_source_unchanged=yes
 variant=essential
 candidate_transaction_status=$candidate_status
 candidate_full_transaction_succeeded=$candidate_succeeded
