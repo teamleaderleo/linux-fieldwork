@@ -1,0 +1,12 @@
+diff --git a/upstream/mmdebstrap/debian/tests/testsuite b/upstream/mmdebstrap/debian/tests/testsuite
+--- a/upstream/mmdebstrap/debian/tests/testsuite
++++ b/upstream/mmdebstrap/debian/tests/testsuite
+@@ -67,7 +67,7 @@ if highest_archive is None:
+ 		for a in ['architecture', 'archive', 'codename', 'component', 'filename', 'id', 'index_type', 'label', 'not_automatic', 'not_source', 'origin', 'site', 'size', 'version']:
+ 			print("%s: %s"%(a, getattr(f, a, None)), file=sys.stderr)
+ 		print("priority: ", d.policy.get_priority(f), file=sys.stderr)
+-	exit(1)
++	exit(77)
+ print("highest archive priority: %s"%highest_archive, file=sys.stderr)
+ print(highest_archive)
+ END
