@@ -29,7 +29,7 @@ class CachingProxyParentSwapRaceTest(complete.CachingProxyCompleteStackTest):
                 call_count += 1
                 current_call = call_count
             # The handler validates oldcachedir first and newcachedir second.
-            # Pause after both resolved paths exist but before oldpath.is_file().
+            # Pause after both paths resolve and before any cache existence check.
             if current_call == 2:
                 validated.set()
                 if not release.wait(timeout=10):
