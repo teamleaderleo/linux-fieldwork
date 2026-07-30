@@ -1,0 +1,82 @@
+diff --git a/upstream/mmdebstrap/debian/tests/testsuite b/upstream/mmdebstrap/debian/tests/testsuite
+--- a/upstream/mmdebstrap/debian/tests/testsuite
++++ b/upstream/mmdebstrap/debian/tests/testsuite
+@@ -127,6 +127,60 @@
+ 
+ echo "$AUTOPKGTEST_NORMAL_USER ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
++
++# BEGIN local mirror HTTP server helpers
++probe_http_server() {
++	python3 - "$1" "$2" <<'PY'
++import socket
++import sys
++
++try:
++    with socket.create_connection((sys.argv[1], int(sys.argv[2])), timeout=0.2):
++        pass
++except OSError:
++    raise SystemExit(1)
++PY
++}
++
++stop_http_server() {
++	_httpd_pid=$1
++	if kill -0 "$_httpd_pid" 2>/dev/null; then
++		kill "$_httpd_pid" 2>/dev/null || :
++	fi
++	wait "$_httpd_pid" 2>/dev/null || :
++}
++
++wait_for_http_server() {
++	_httpd_pid=$1
++	_httpd_log=$2
++	_httpd_host=$3
++	_httpd_port=$4
++	_httpd_attempts=$5
++
++	while [ "$_httpd_attempts" -gt 0 ]; do
++		if ! kill -0 "$_httpd_pid" 2>/dev/null; then
++			wait "$_httpd_pid" 2>/dev/null || :
++			echo "local mirror HTTP server exited before becoming ready" >&2
++			[ ! -s "$_httpd_log" ] || cat "$_httpd_log" >&2
++			return 1
++		fi
++		if probe_http_server "$_httpd_host" "$_httpd_port"; then
++			sleep 0.1
++			if kill -0 "$_httpd_pid" 2>/dev/null; then
++				if probe_http_server "$_httpd_host" "$_httpd_port"; then
++					return 0
++				fi
++			fi
++		fi
++		_httpd_attempts=$((_httpd_attempts - 1))
++		sleep 0.1
++	done
++
++	echo "local mirror HTTP server did not become ready" >&2
++	[ ! -s "$_httpd_log" ] || cat "$_httpd_log" >&2
++	return 1
++}
++# END local mirror HTTP server helpers
+ 
+ # we cannot use mini_httpd (or most other http servers) because they perform a
+ # chdir() into the directory that is to be served on startup. But later on we
+ # completely remove and replace that directory when creating the Debian mirror.
+@@ -133,8 +187,15 @@
+ # Thus we need a really stupid server which is able to cope with having its
+ # www-root being replaced under its feet.
+ #mini_httpd -D -h 127.0.0.1 -p 80 -u "$AUTOPKGTEST_NORMAL_USER" -T UTF-8 -dd "$AUTOPKGTEST_TMP/shared/cache" &
+-python3 -m http.server --directory="$AUTOPKGTEST_TMP/shared/cache" --bind 127.0.0.1 80 2>/dev/null &
++HTTPD_LOG="$AUTOPKGTEST_TMP/http.server.log"
++python3 -m http.server --directory="$AUTOPKGTEST_TMP/shared/cache" --bind 127.0.0.1 80 2>"$HTTPD_LOG" &
+ HTTPD_PID=$!
+-trap "kill $HTTPD_PID" INT QUIT TERM EXIT
++trap 'stop_http_server "$HTTPD_PID"' EXIT
++trap 'exit 130' INT
++trap 'exit 131' QUIT
++trap 'exit 143' TERM
++if ! wait_for_http_server "$HTTPD_PID" "$HTTPD_LOG" 127.0.0.1 80 50; then
++	exit 77
++fi
+ 
+ # create a fake mmdebstrap file in the current directory that coverage.sh can
