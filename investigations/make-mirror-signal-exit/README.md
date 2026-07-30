@@ -42,7 +42,7 @@ The candidate introduces:
 
 Separating child shutdown from cache cleanup is essential: normal successful mirror completion stops the first proxy before atomically switching the finished cache into place. Calling failure cleanup from that normal stop point would delete the result. Clearing `PROXYPID` is also required so a later EXIT path cannot act on a reused PID.
 
-Cleanup errors are contained with `|| :` so they cannot replace the cancellation status.
+Cleanup errors are contained with `|| :` inside `cleanup_owner()`. This protects a signal-derived status, and it also deliberately preserves the primary command failure on ordinary EXIT paths instead of allowing a later cleanup failure to replace it. The tradeoff is that a failed cleanup can leave retained cache or temporary state while the original status is reported; retained cleanup evidence therefore remains part of review.
 
 ## Negative control and candidate matrix
 
