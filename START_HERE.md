@@ -54,7 +54,14 @@ Start notes and investigations from [`templates/`](templates/). Follow [`program
 
 ## 3. Explain it simply
 
-Near the top, add `## In simple words` and answer:
+Near the top, add these reader-facing fields:
+
+- `## TL;DR` — the current answer and next action in a few sentences;
+- `## Explain like I'm five` — a concrete, low-jargon explanation;
+- `## Why care` — the practical failure, risk, or opportunity.
+
+Existing lightweight notes may keep the combined `## In simple words` heading.
+Whichever form is used, answer:
 
 - What is this?
 - Where does it sit in the system?

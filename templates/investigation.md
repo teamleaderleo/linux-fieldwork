@@ -1,8 +1,16 @@
 # Investigation title
 
-## In simple words
+## TL;DR
 
-Explain what component or workflow is involved, where it sits, what is being tested or changed, why someone could care, and the current answer or next step.
+State the current answer and next action in a few sentences.
+
+## Explain like I'm five
+
+Explain what component or workflow is involved and where it sits using a concrete, low-jargon example.
+
+## Why care
+
+State the practical failure, risk, or opportunity.
 
 ## Question
 
