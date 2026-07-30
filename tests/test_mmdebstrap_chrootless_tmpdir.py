@@ -20,7 +20,7 @@ class MmdebstrapChrootlessTmpdirTests(unittest.TestCase):
 
     @staticmethod
     def extract_helper(source_text: str) -> str:
-        start_marker = "sub chrootless_dpkg_environment() {"
+        start_marker = "sub chrootless_dpkg_environment($) {"
         end_marker = "\nsub chrootless_unsafe_environment() {"
         start = source_text.index(start_marker)
         end = source_text.index(end_marker, start)
