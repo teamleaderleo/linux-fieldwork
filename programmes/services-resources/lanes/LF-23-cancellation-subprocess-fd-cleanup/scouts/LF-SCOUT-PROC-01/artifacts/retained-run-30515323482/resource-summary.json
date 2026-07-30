@@ -1,0 +1,137 @@
+{
+  "active-worker": {
+    "interrupted_exit": 25,
+    "rerun_exit": 0,
+    "rerun_retained_paths": [],
+    "retained_paths": [],
+    "signal": "SIGTERM",
+    "signal_scope": "process-group",
+    "snapshots": {
+      "after-exit": {
+        "locks": [],
+        "pids": [],
+        "sockets": [],
+        "target_mounts": []
+      },
+      "after-signal": {
+        "locks": [],
+        "pids": [798],
+        "sockets": [],
+        "target_mounts": []
+      },
+      "before-signal": {
+        "locks": [
+          "2: FLOCK  ADVISORY  WRITE 798 08:01:8915353 0 EOF"
+        ],
+        "pids": [798, 823, 824],
+        "sockets": [
+          "u_str ESTAB      0      0                  * 16683                * 16684 users:((\"perl\",pid=823,fd=7))",
+          "u_str ESTAB      0      0                  * 16684                * 16683 users:((\"perl\",pid=824,fd=8),(\"perl\",pid=824,fd=1),(\"perl\",pid=824,fd=0),(\"perl\",pid=798,fd=8))"
+        ],
+        "target_mounts": [
+          "260 418 0:51 / /work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/active-worker/tmp/mmdebstrap.3tVobhdRwo/dev/pts rw,nosuid,noexec,relatime - devpts none rw,uid=5,mode=620,ptmxmode=666",
+          "297 418 0:62 / /work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/active-worker/tmp/mmdebstrap.3tVobhdRwo/dev/shm rw,nosuid,nodev,noexec,relatime - tmpfs shm rw,size=65536k,inode64"
+        ]
+      }
+    }
+  },
+  "before-child-launch": {
+    "interrupted_exit": 25,
+    "rerun_exit": 0,
+    "rerun_retained_paths": [],
+    "retained_paths": [],
+    "signal": "SIGTERM",
+    "signal_scope": "process-group",
+    "snapshots": {
+      "after-exit": {
+        "locks": [],
+        "pids": [],
+        "sockets": [],
+        "target_mounts": []
+      },
+      "after-signal": {
+        "locks": [
+          "8: FLOCK  ADVISORY  WRITE 699 08:01:8914793 0 EOF"
+        ],
+        "pids": [699],
+        "sockets": [
+          "u_str ESTAB      0      0                  * 12261                * 12260 users:((\"perl\",pid=699,fd=8))",
+          "u_str ESTAB      0      0                  * 12260                * 12261 users:((\"perl\",pid=699,fd=7))"
+        ],
+        "target_mounts": []
+      },
+      "before-signal": {
+        "locks": [
+          "8: FLOCK  ADVISORY  WRITE 699 08:01:8914793 0 EOF"
+        ],
+        "pids": [699],
+        "sockets": [
+          "u_str ESTAB      0      0                  * 12261                * 12260 users:((\"perl\",pid=699,fd=8))",
+          "u_str ESTAB      0      0                  * 12260                * 12261 users:((\"perl\",pid=699,fd=7))"
+        ],
+        "target_mounts": []
+      }
+    }
+  },
+  "cleanup": {
+    "interrupted_exit": 25,
+    "rerun_exit": 0,
+    "rerun_retained_paths": [],
+    "retained_paths": [],
+    "signal": "SIGTERM",
+    "signal_scope": "process-group",
+    "snapshots": {
+      "after-exit": {
+        "locks": [],
+        "pids": [],
+        "sockets": [],
+        "target_mounts": []
+      },
+      "after-signal": {
+        "locks": [
+          "1: FLOCK  ADVISORY  WRITE 892 08:01:8915429 0 EOF"
+        ],
+        "pids": [892],
+        "sockets": [],
+        "target_mounts": []
+      },
+      "before-signal": {
+        "locks": [
+          "1: FLOCK  ADVISORY  WRITE 892 08:01:8915429 0 EOF"
+        ],
+        "pids": [892],
+        "sockets": [],
+        "target_mounts": []
+      }
+    }
+  },
+  "run-progress-parent-only": {
+    "interrupted_exit": 0,
+    "interruption_logged": true,
+    "misreported_success": true,
+    "rerun_exit": 0,
+    "returned_success": true,
+    "signal": "SIGTERM",
+    "signal_scope": "run_progress-owner-pid-only",
+    "snapshots": {
+      "after-exit": {
+        "locks": [],
+        "pids": [],
+        "sockets": [],
+        "target_mounts": []
+      },
+      "after-signal": {
+        "locks": [],
+        "pids": [991, 992, 993, 994],
+        "sockets": [],
+        "target_mounts": []
+      },
+      "before-signal": {
+        "locks": [],
+        "pids": [991, 992, 993, 994],
+        "sockets": [],
+        "target_mounts": []
+      }
+    }
+  }
+}
