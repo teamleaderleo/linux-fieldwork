@@ -1,16 +1,7 @@
 diff --git a/upstream/mmdebstrap/proxysolver b/upstream/mmdebstrap/proxysolver
 --- a/upstream/mmdebstrap/proxysolver
 +++ b/upstream/mmdebstrap/proxysolver
-@@ -40,14 +40,17 @@
- try:
-     with open(fname, "w") as f:
-         with subprocess.Popen(
-             ["/usr/lib/apt/solvers/apt", "-oDebug::EDSP::WriteSolution=yes"],
-             stdin=sys.stdin.fileno(),
-             stdout=subprocess.PIPE,
-             bufsize=0,  # unbuffered
-             text=True,  # open in text mode
-         ) as p:
+@@ -49,4 +49,7 @@
              for line in p.stdout:
                  print(line, end="")
                  f.write(line)
@@ -18,4 +9,3 @@ diff --git a/upstream/mmdebstrap/proxysolver b/upstream/mmdebstrap/proxysolver
 +    if returncode != 0:
 +        raise SystemExit(returncode)
  except (FileNotFoundError, PermissionError) as e:
-     print(
