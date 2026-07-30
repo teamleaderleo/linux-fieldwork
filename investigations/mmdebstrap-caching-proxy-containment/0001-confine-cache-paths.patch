@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_proxy.py
 --- a/upstream/mmdebstrap/caching_proxy.py
 +++ b/upstream/mmdebstrap/caching_proxy.py
-@@ -14,16 +14,51 @@
+@@ -14,16 +14,64 @@
  oldcachedir = None
  newcachedir = None
  readonly = False
@@ -9,9 +9,25 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
  
 +def cache_path(root, request_target, host):
 +    parsed = urllib.parse.urlsplit(request_target)
++    try:
++        host_parsed = urllib.parse.urlsplit("//" + host)
++        request_port = parsed.port or 80
++        host_port = host_parsed.port or 80
++    except ValueError as error:
++        raise ValueError("invalid proxy request target") from error
 +    if (
-+        parsed.scheme != "http"
-+        or parsed.netloc != host
++        parsed.scheme.lower() != "http"
++        or parsed.username is not None
++        or parsed.password is not None
++        or parsed.hostname is None
++        or host_parsed.username is not None
++        or host_parsed.password is not None
++        or host_parsed.hostname is None
++        or host_parsed.path
++        or host_parsed.query
++        or host_parsed.fragment
++        or parsed.hostname.lower() != host_parsed.hostname.lower()
++        or request_port != host_port
 +        or parsed.query
 +        or parsed.fragment
 +        or not parsed.path.startswith("/")
@@ -22,11 +38,10 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
 +    if not raw_path or "%2f" in lowered or "%5c" in lowered:
 +        raise ValueError("unsafe cache path")
 +    decoded = urllib.parse.unquote(raw_path)
-+    if "\0" in decoded or decoded.startswith("/") or "//" in decoded:
++    components = decoded.split("/")
++    if "\0" in decoded or any(part in ("", ".", "..") for part in components):
 +        raise ValueError("unsafe cache path")
-+    relative = pathlib.PurePosixPath(decoded)
-+    if any(part in (".", "..") for part in relative.parts):
-+        raise ValueError("unsafe cache path")
++    relative = pathlib.PurePosixPath(*components)
 +    root = root.resolve()
 +    candidate = (root / pathlib.Path(*relative.parts)).resolve()
 +    if candidate == root or not candidate.is_relative_to(root):
@@ -60,7 +75,7 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
 +            return
  
          if not readonly:
-@@ -112,6 +147,6 @@ def main():
+@@ -112,6 +160,6 @@ def main():
      print(f"starting caching proxy for {newcachedir}", file=sys.stderr)
      httpd = http.server.ThreadingHTTPServer(
 -        server_address=("", 8080), RequestHandlerClass=ProxyRequestHandler
