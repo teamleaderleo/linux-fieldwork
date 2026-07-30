@@ -1,24 +1,24 @@
-# LF-02 evidence names must identify exact objects
+# LF-02 evidence names and types must be exact
 
 ## TL;DR
 
-The LF-02 summarizer originally accepted target-path prefix collisions and could read a classifier-selected event file outside the retained results directory. A later peer review found the same escape remained for every fixed-name input: provenance, fixture manifest, phase records, snapshots, classifier summaries, and the host fingerprint.
+The LF-02 summarizer originally accepted target-path prefix collisions and could read a classifier-selected event file outside the retained results directory. Later peer review found the same escape for fixed-name inputs, an unsafe summary-output symlink, and JSON booleans accepted as integers.
 
-The current repair routes every consumed file through one containment boundary, rejects symlinks anywhere below the results root, and publishes `summary.json` atomically so an existing output symlink is replaced rather than followed.
+The current repair routes every input through one symlink-free containment boundary, publishes `summary.json` atomically, and requires exact JSON integer types for schemas, durations, exit statuses, category counts, and totals.
 
 ## Explain like I'm five
 
-A label saying “this happened inside `/tmp/target`” should not pass just because the text also starts `/tmp/target-decoy`.
+A label saying “this happened inside `/tmp/target`” should not pass just because another path starts `/tmp/target-decoy`.
 
-A receipt inside one evidence box should not be allowed to point through a shortcut to a different box. That applies whether the filename came from JSON or was hard-coded in the summarizer.
+A receipt inside one evidence box should not be a shortcut to a different box. The final summary should replace a shortcut instead of writing through it.
 
-The final summary has the same rule: if `summary.json` is a shortcut to another file, replace the shortcut with the new summary. Do not write through it.
+And `true` should not count as the number `1`. Python normally allows that comparison, but an evidence schema must distinguish a yes/no answer from a numeric version or count.
 
 ## Why care
 
-This investigation decides whether chrootless package scripts ran against the intended target and whether every outside-target event was reconciled. A look-alike root or substituted artifact can make the summary certify evidence from another location.
+This investigation decides whether chrootless package behavior is mapped behavior, unresolved, or a product candidate. A look-alike target, substituted artifact, redirected output, or wrong JSON type can make the retained summary certify evidence different from what the contract describes.
 
-The package lifecycle can be correct while the retained receipt overstates what was proved. An unsafe output path can additionally modify an unrelated file during validation.
+The package lifecycle itself may be correct while the receipt overstates what was proved.
 
 ## Concrete failures
 
@@ -27,79 +27,81 @@ The package lifecycle can be correct while the retained receipt overstates what 
 ```text
 expected target: /tmp/target
 logged target:   /tmp/target-decoy
-old check:        "dpkg_root=/tmp/target" appears in the line → accepted
+old check:        expected text appears as a prefix → accepted
 new check:        parsed dpkg_root value differs → rejected
 ```
 
-### Dynamic artifact escape
+### Artifact escape
 
 ```text
 results directory: /tmp/run/results
 recorded event:   ../outside.tsv
-old check:         open /tmp/run/results/../outside.tsv
-new check:         parent traversal is rejected before reading
+old check:         open the parent file
+new check:         reject traversal before reading
 ```
 
-### Fixed artifact symlink escape
+### Fixed artifact symlink
 
 ```text
 results/provenance.json -> ../outside-provenance.json
 old check:                Path.read_text() follows the symlink
-new check:                any symlink component below results is rejected
+new check:                reject any symlink component below results
 ```
 
-The same rule covers nested directory symlinks such as `results/fixtures -> ../outside-fixtures`, phase JSON, snapshots, classifier summaries, and `host-fingerprint.diff`.
+The same rule covers nested directory symlinks, phases, snapshots, classifier summaries, classifier TSVs, and `host-fingerprint.diff`.
 
 ### Summary output symlink
 
 ```text
 results/summary.json -> ../unrelated.json
 old write:            overwrite unrelated.json
-new write:            create a private in-root temporary and os.replace() the symlink itself
+new write:            write an in-root temporary and replace the symlink itself
 ```
 
-The outside target remains byte-identical and no temporary survives.
+### Boolean numeric look-alike
 
-## Was this intentional?
+```json
+{"schema_version": true, "duration_ms": true, "exit_status": false}
+```
 
-No useful policy depends on prefix matching or cross-root evidence substitution. The script log already uses space-delimited `key=value` fields, and every input is meant to belong to the retained results set.
-
-Allowing an in-root symlink to another evidence object would also weaken identity, even if its resolved path remained below the root. The validator therefore rejects symlink components rather than merely checking the final resolved prefix.
+Python has `True == 1`, `False == 0`, and `isinstance(True, int)`. The old checks could therefore accept booleans for numeric evidence. The repair requires `type(value) is int` before applying version, minimum, or equality rules.
 
 ## Repair
 
 `summarize.py` now:
 
-1. parses every script-log token as one non-empty `key=value` field;
-2. rejects duplicate or missing `phase`, `script_version`, `dpkg_root`, and `cwd` fields;
-3. compares `dpkg_root` and `cwd` with the exact resolved target string;
-4. checks failing and recovery postinst records through exact parsed fields;
-5. requires every evidence path to be relative, free of `..`, below the canonical results root, symlink-free below that root, and a regular file;
-6. uses that same loader for provenance, fixtures, phases, snapshots, classifier summaries, classifier event TSVs, and host fingerprint;
-7. requires the results and target paths to exist as directories;
-8. writes `summary.json` through an in-root temporary plus `os.replace()` and removes any temporary on failure.
+1. parses script-log tokens as exact non-empty `key=value` fields;
+2. rejects duplicate or missing required fields;
+3. compares `dpkg_root` and `cwd` with the exact resolved target;
+4. requires every evidence path to be relative, free of `..`, below the canonical results root, symlink-free below that root, and a regular file;
+5. applies that boundary to every consumed input;
+6. requires provenance, fixture, phase, snapshot, and classifier schema versions to be the integer `1`;
+7. requires integer—not boolean—durations, exit statuses, category counts, category totals, and outside-event totals;
+8. requires existing results and target directories;
+9. publishes `summary.json` atomically and removes any abandoned temporary.
 
 ## Regression matrix
 
-`tests/test_lf02_evidence_path_exactness.py` mutates otherwise-valid synthetic evidence and requires rejection under ordinary Python and real `python -O` for:
+`tests/test_lf02_evidence_path_exactness.py` requires ordinary and real `python -O` agreement for rejection of:
 
-- a target-prefix decoy;
-- a classifier artifact parent escape;
-- a fixed JSON symlink escape;
-- a nested directory symlink escape;
-- a phase-record symlink escape;
-- a host-fingerprint symlink escape;
-- a duplicate script-log field.
+- target-prefix collision;
+- classifier parent traversal;
+- fixed-file and nested-directory symlink escapes;
+- phase and host-fingerprint symlinks;
+- duplicate script fields;
+- boolean schema version;
+- boolean duration and exit status;
+- boolean category count and totals.
 
-A separate success control pre-creates `summary.json` as a symlink to an outside sentinel. Both Python modes must complete successfully, leave the sentinel unchanged, replace the symlink with a regular summary, and leave no hidden temporary.
+A success control pre-creates `summary.json` as a symlink to an outside sentinel. Both modes must leave the sentinel unchanged, replace the symlink with a regular summary, and leave no hidden temporary.
 
 ## Evidence boundary
 
-The script log remains a deliberately simple whitespace-separated format; field values containing spaces are outside the current fixture contract. The validator proves retained pathname identity at open and publication time. It does not prevent a process with mutation authority from racing a regular file after validation or replacing the configured results root itself.
+The script log remains a whitespace-separated fixture format; values containing spaces are outside the current contract. The validator proves pathname and JSON-type identity at read and summary-publication time. It does not prevent a process with mutation authority from racing a regular file after validation or replacing the configured results root.
 
 ## Disposition
 
-`REPAIR` pending exact-head focused and repository execution on the current PR #178 head. The older run receipts expire when this evidence boundary changes.
+`REPAIR` pending exact-head focused, dedicated lifecycle, and repository execution on PR #178. Every older receipt expired when this evidence boundary changed.
 
 ## Authority
 
