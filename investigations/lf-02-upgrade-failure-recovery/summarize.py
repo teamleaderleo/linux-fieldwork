@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+from typing import Any
 
 
 PHASE_ORDER = (
@@ -20,15 +22,47 @@ PHASE_ORDER = (
 )
 
 SNAPSHOT_EXPECTATIONS = {
-    "install-v1": ("installed", "1.0", "default=one\n"),
-    "local-edit": ("installed", "1.0", "user=preserved\n"),
-    "unpack-v2": ("unpacked", "2.0", "user=preserved\n"),
-    "configure-v2": ("installed", "2.0", "user=preserved\n"),
-    "unpack-v3-fail": ("unpacked", "3.0", "user=preserved\n"),
-    "configure-v3-fail": ("half-configured", "3.0", "user=preserved\n"),
-    "unpack-v3-recover": ("unpacked", "3.1", "user=preserved\n"),
-    "configure-v3-recover": ("installed", "3.1", "user=preserved\n"),
-    "purge": (("absent", "not-installed"), None, None),
+    "install-v1": ("installed", "1.0"),
+    "local-edit": ("installed", "1.0"),
+    "unpack-v2": ("unpacked", "2.0"),
+    "configure-v2": ("installed", "2.0"),
+    "unpack-v3-fail": ("unpacked", "3.0"),
+    "configure-v3-fail": ("half-configured", "3.0"),
+    "unpack-v3-recover": ("unpacked", "3.1"),
+    "configure-v3-recover": ("installed", "3.1"),
+    "purge": (("absent", "not-installed"), None),
+}
+
+CONFFILE_EXPECTATIONS = {
+    "install-v1": {"etc/lf-lifecycle.conf": "default=one\n"},
+    "local-edit": {"etc/lf-lifecycle.conf": "user=preserved\n"},
+    "unpack-v2": {
+        "etc/lf-lifecycle.conf": "user=preserved\n",
+        "etc/lf-lifecycle.conf.dpkg-new": "default=two\n",
+    },
+    "configure-v2": {
+        "etc/lf-lifecycle.conf": "user=preserved\n",
+        "etc/lf-lifecycle.conf.dpkg-dist": "default=two\n",
+    },
+    "unpack-v3-fail": {
+        "etc/lf-lifecycle.conf": "user=preserved\n",
+        "etc/lf-lifecycle.conf.dpkg-dist": "default=two\n",
+        "etc/lf-lifecycle.conf.dpkg-new": "default=three\n",
+    },
+    "configure-v3-fail": {
+        "etc/lf-lifecycle.conf": "user=preserved\n",
+        "etc/lf-lifecycle.conf.dpkg-dist": "default=three\n",
+    },
+    "unpack-v3-recover": {
+        "etc/lf-lifecycle.conf": "user=preserved\n",
+        "etc/lf-lifecycle.conf.dpkg-dist": "default=three\n",
+        "etc/lf-lifecycle.conf.dpkg-new": "default=three-recovered\n",
+    },
+    "configure-v3-recover": {
+        "etc/lf-lifecycle.conf": "user=preserved\n",
+        "etc/lf-lifecycle.conf.dpkg-dist": "default=three-recovered\n",
+    },
+    "purge": {},
 }
 
 CATEGORY_IDS = {
@@ -40,85 +74,119 @@ CATEGORY_IDS = {
 }
 
 
-def load_json(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text(encoding="utf-8"))
+class ValidationError(RuntimeError):
+    """Raised when retained evidence violates the declared contract."""
 
 
-def validate_snapshot(label: str, record: dict[str, object]) -> None:
-    expected_status, expected_payload, expected_conf = SNAPSHOT_EXPECTATIONS[label]
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValidationError(message)
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    record = json.loads(path.read_text(encoding="utf-8"))
+    require(isinstance(record, dict), f"{path}: expected a JSON object")
+    return record
+
+
+def validate_snapshot(label: str, record: dict[str, Any]) -> None:
+    expected_status, expected_payload = SNAPSHOT_EXPECTATIONS[label]
     package = record["package"]
     actual_status = package["status_word"]
     if isinstance(expected_status, tuple):
-        assert actual_status in expected_status, (label, actual_status, expected_status)
+        require(
+            actual_status in expected_status,
+            f"{label}: status {actual_status!r} outside {expected_status!r}",
+        )
     else:
-        assert actual_status == expected_status, (label, actual_status, expected_status)
-    assert record["payload_version"] == expected_payload, (
-        label,
-        record["payload_version"],
-        expected_payload,
+        require(
+            actual_status == expected_status,
+            f"{label}: status {actual_status!r}, expected {expected_status!r}",
+        )
+    require(
+        record["payload_version"] == expected_payload,
+        f"{label}: payload {record['payload_version']!r}, expected {expected_payload!r}",
     )
+
     conffiles = record["conffiles"]
-    principal = conffiles.get("etc/lf-lifecycle.conf")
-    if expected_conf is None:
-        assert principal is None, (label, principal)
-    else:
-        assert principal is not None, (label, conffiles)
-        assert principal["content"] == expected_conf, (label, principal)
+    require(isinstance(conffiles, dict), f"{label}: conffiles must be an object")
+    expected_conffiles = CONFFILE_EXPECTATIONS[label]
+    require(
+        set(conffiles) == set(expected_conffiles),
+        f"{label}: conffile paths {sorted(conffiles)!r}, expected {sorted(expected_conffiles)!r}",
+    )
+    for path, expected_content in expected_conffiles.items():
+        actual = conffiles[path]
+        require(isinstance(actual, dict), f"{label}: {path} metadata must be an object")
+        require(
+            actual.get("content") == expected_content,
+            f"{label}: {path} content {actual.get('content')!r}, expected {expected_content!r}",
+        )
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--results", type=Path, required=True)
-    parser.add_argument("--target", required=True)
-    args = parser.parse_args()
-
-    results = args.results.resolve()
-    target = str(Path(args.target).resolve())
+def build_summary(results: Path, target: str) -> dict[str, Any]:
     provenance = load_json(results / "provenance.json")
     fixtures = load_json(results / "fixtures/manifest.json")
 
-    phases: dict[str, dict[str, object]] = {}
+    phases: dict[str, dict[str, Any]] = {}
     for path in sorted(results.glob("*.phase.json")):
         record = load_json(path)
-        assert record["schema_version"] == 1
-        assert record["duration_ms"] >= 0
-        phases[record["name"]] = record
-    assert tuple(name for name in PHASE_ORDER if name in phases) == PHASE_ORDER
-    assert set(phases) == set(PHASE_ORDER)
+        require(record.get("schema_version") == 1, f"{path.name}: unsupported schema")
+        require(record.get("duration_ms", -1) >= 0, f"{path.name}: negative duration")
+        name = record.get("name")
+        require(isinstance(name, str), f"{path.name}: missing phase name")
+        require(name not in phases, f"duplicate phase record: {name}")
+        phases[name] = record
+    require(set(phases) == set(PHASE_ORDER), f"phase set mismatch: {sorted(phases)!r}")
     for name in PHASE_ORDER:
         phase = phases[name]
         if name == "configure-v3-fail":
-            assert phase["expected_exit"] == "nonzero"
-            assert phase["exit_status"] != 0
+            require(phase.get("expected_exit") == "nonzero", f"{name}: expected_exit")
+            require(phase.get("exit_status") != 0, f"{name}: deliberate failure succeeded")
         else:
-            assert phase["expected_exit"] == "0"
-            assert phase["exit_status"] == 0
+            require(phase.get("expected_exit") == "0", f"{name}: expected_exit")
+            require(phase.get("exit_status") == 0, f"{name}: nonzero exit")
 
-    snapshots: dict[str, dict[str, object]] = {}
+    snapshots: dict[str, dict[str, Any]] = {}
     for label in SNAPSHOT_EXPECTATIONS:
         record = load_json(results / f"{label}.snapshot.json")
-        assert record["schema_version"] == 1
+        require(record.get("schema_version") == 1, f"{label}: unsupported schema")
         validate_snapshot(label, record)
         snapshots[label] = record
 
     final_script_log = snapshots["purge"]["script_log"]
-    assert final_script_log
+    require(isinstance(final_script_log, list) and bool(final_script_log), "empty script log")
     for line in final_script_log:
-        assert f"dpkg_root={target}" in line, line
-        assert f"cwd={target}" in line, line
-    assert any("phase=postinst script_version=3.0" in line for line in final_script_log)
-    assert any("phase=postinst script_version=3.1" in line for line in final_script_log)
+        require(f"dpkg_root={target}" in line, f"script log has wrong dpkg_root: {line}")
+        require(f"cwd={target}" in line, f"script log has wrong cwd: {line}")
+    require(
+        any("phase=postinst script_version=3.0" in line for line in final_script_log),
+        "missing failing 3.0 postinst log",
+    )
+    require(
+        any("phase=postinst script_version=3.1" in line for line in final_script_log),
+        "missing recovery 3.1 postinst log",
+    )
 
-    classifications: dict[str, dict[str, object]] = {}
+    classifications: dict[str, dict[str, Any]] = {}
     totals = {identifier: 0 for identifier in CATEGORY_IDS}
     for name in PHASE_ORDER:
         record = load_json(results / f"{name}-access.summary.json")
-        assert record["schema_version"] == 1
-        assert set(record["categories"]) == CATEGORY_IDS
-        assert record["category_total_matches_events"] is True
-        assert record["category_total"] == record["outside_access_events"]
+        require(record.get("schema_version") == 1, f"{name}: unsupported classifier schema")
+        categories = record.get("categories")
+        require(isinstance(categories, dict), f"{name}: categories must be an object")
+        require(set(categories) == CATEGORY_IDS, f"{name}: category set mismatch")
+        require(
+            record.get("category_total_matches_events") is True,
+            f"{name}: classifier category total flag is false",
+        )
+        require(
+            record.get("category_total") == record.get("outside_access_events"),
+            f"{name}: category total differs from outside access events",
+        )
         classifications[name] = record
-        for identifier, count in record["categories"].items():
+        for identifier, count in categories.items():
+            require(isinstance(count, int) and count >= 0, f"{name}: invalid {identifier} count")
             totals[identifier] += count
 
     host_diff = (results / "host-fingerprint.diff").read_text(encoding="utf-8")
@@ -126,15 +194,23 @@ def main() -> int:
     lifecycle_contract = True
     product_candidate = (
         totals["unexpected_mutation"] > 0
+        or totals["service_action"] > 0
         or not host_fingerprint_unchanged
         or not lifecycle_contract
     )
+    blocked_unresolved = totals["unresolved"] > 0 and not product_candidate
+    if product_candidate:
+        disposition = "promote-product-candidate"
+    elif blocked_unresolved:
+        disposition = "blocked-unresolved"
+    else:
+        disposition = "retain-mapped-behavior"
 
     conffile_siblings = {
         label: sorted(record["conffiles"])
         for label, record in snapshots.items()
     }
-    summary = {
+    return {
         "schema_version": 1,
         "question": "chrootless dpkg upgrade, expected configure failure, recovery, and purge",
         "provenance": provenance,
@@ -172,10 +248,27 @@ def main() -> int:
             "unresolved": totals["unresolved"],
             "host_fingerprint_unchanged": host_fingerprint_unchanged,
             "product_candidate": product_candidate,
+            "blocked_unresolved": blocked_unresolved,
         },
-        "disposition": "promote-product-candidate" if product_candidate else "retain-mapped-behavior",
+        "disposition": disposition,
         "authority": "internal Linux Fieldwork investigation; no upstream contact",
     }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--results", type=Path, required=True)
+    parser.add_argument("--target", required=True)
+    args = parser.parse_args()
+
+    results = args.results.resolve()
+    target = str(Path(args.target).resolve())
+    try:
+        summary = build_summary(results, target)
+    except (ValidationError, FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        print(f"evidence validation failed: {exc}", file=sys.stderr)
+        return 2
+
     (results / "summary.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8"
     )
