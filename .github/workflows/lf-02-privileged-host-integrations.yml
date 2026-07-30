@@ -60,3 +60,45 @@ jobs:
             investigations/lf-02-privileged-host-integrations/env-results/
           if-no-files-found: warn
           retention-days: 14
+
+  compact-classifier-evidence:
+    needs: privileged-host-integrations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Download retained matrix
+        uses: actions/download-artifact@v4
+        with:
+          name: lf-02-privileged-host-integrations-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence
+
+      - name: Print and assert the corrected logind matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          summary=$(find evidence -path '*/results/summary.json' -print -quit)
+          test -n "$summary"
+          python3 - "$summary" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          summary = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          expected = {
+              "default-root": "inhibitor-fd-received",
+              "no-inhibit-root": "not-observed",
+              "isolated-root": "not-observed",
+          }
+          print(f"schema_version={summary['schema_version']}")
+          for label, result in expected.items():
+              case = summary["cases"][label]
+              print(
+                  f"{label}: logind_result={case['logind_result']} "
+                  f"access_denied={str(case['logind_access_denied']).lower()} "
+                  f"inhibitor_fd_received={str(case['inhibitor_fd_received']).lower()}"
+              )
+              assert case["logind_result"] == result
+              assert case["logind_access_denied"] is False
+          assert summary["findings"]["default_inhibitor_fd_received"] is True
+          assert summary["findings"]["inhibit_controls_have_no_logind_call"] is True
+          PY
