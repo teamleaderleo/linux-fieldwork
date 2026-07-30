@@ -94,6 +94,22 @@ def require(condition: bool, message: str) -> None:
         raise ValidationError(message)
 
 
+def require_integer(
+    value: Any, name: str, *, minimum: int | None = None
+) -> int:
+    """Accept JSON integers while rejecting booleans and numeric look-alikes."""
+
+    require(type(value) is int, f"{name}: expected an integer, got {value!r}")
+    if minimum is not None:
+        require(value >= minimum, f"{name}: value {value!r} is below {minimum}")
+    return value
+
+
+def require_schema(record: dict[str, Any], name: str) -> None:
+    version = require_integer(record.get("schema_version"), f"{name}: schema_version")
+    require(version == 1, f"{name}: unsupported schema {version!r}")
+
+
 def contained_artifact(results: Path, name: str, artifact_name: str) -> Path:
     """Resolve one regular evidence file without following in-root symlink components."""
 
@@ -229,13 +245,18 @@ def classify_service_actions(
 
 def build_summary(results: Path, target: str) -> dict[str, Any]:
     provenance = load_json(results, "provenance", "provenance.json")
+    require_schema(provenance, "provenance")
     fixtures = load_json(results, "fixtures", "fixtures/manifest.json")
+    require_schema(fixtures, "fixtures")
 
     phases: dict[str, dict[str, Any]] = {}
     for path in sorted(results.glob("*.phase.json")):
         record = load_json(results, path.name, path.name)
-        require(record.get("schema_version") == 1, f"{path.name}: unsupported schema")
-        require(record.get("duration_ms", -1) >= 0, f"{path.name}: negative duration")
+        require_schema(record, path.name)
+        duration_ms = require_integer(
+            record.get("duration_ms"), f"{path.name}: duration_ms", minimum=0
+        )
+        require(duration_ms >= 0, f"{path.name}: negative duration")
         name = record.get("name")
         require(isinstance(name, str), f"{path.name}: missing phase name")
         require(name not in phases, f"duplicate phase record: {name}")
@@ -243,18 +264,19 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
     require(set(phases) == set(PHASE_ORDER), f"phase set mismatch: {sorted(phases)!r}")
     for name in PHASE_ORDER:
         phase = phases[name]
+        exit_status = require_integer(phase.get("exit_status"), f"{name}: exit_status")
         if name == "configure-v3-fail":
             require(phase.get("expected_exit") == "nonzero", f"{name}: expected_exit")
-            require(phase.get("exit_status") != 0, f"{name}: deliberate failure succeeded")
+            require(exit_status != 0, f"{name}: deliberate failure succeeded")
         else:
             require(phase.get("expected_exit") == "0", f"{name}: expected_exit")
-            require(phase.get("exit_status") == 0, f"{name}: nonzero exit")
+            require(exit_status == 0, f"{name}: nonzero exit")
 
     snapshots: dict[str, dict[str, Any]] = {}
     for label in SNAPSHOT_EXPECTATIONS:
         artifact_name = f"{label}.snapshot.json"
         record = load_json(results, label, artifact_name)
-        require(record.get("schema_version") == 1, f"{label}: unsupported schema")
+        require_schema(record, label)
         validate_snapshot(label, record)
         snapshots[label] = record
 
@@ -292,23 +314,31 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
     for name in PHASE_ORDER:
         artifact_name = f"{name}-access.summary.json"
         record = load_json(results, name, artifact_name)
-        require(record.get("schema_version") == 1, f"{name}: unsupported classifier schema")
+        require_schema(record, name)
         categories = record.get("categories")
         require(isinstance(categories, dict), f"{name}: categories must be an object")
         require(set(categories) == CATEGORY_IDS, f"{name}: category set mismatch")
         for identifier, count in categories.items():
-            require(isinstance(count, int) and count >= 0, f"{name}: invalid {identifier} count")
+            require_integer(count, f"{name}: {identifier} count", minimum=0)
         computed_total = sum(categories.values())
         require(
             record.get("category_total_matches_events") is True,
             f"{name}: classifier category total flag is false",
         )
+        category_total = require_integer(
+            record.get("category_total"), f"{name}: category_total", minimum=0
+        )
+        outside_events = require_integer(
+            record.get("outside_access_events"),
+            f"{name}: outside_access_events",
+            minimum=0,
+        )
         require(
-            record.get("category_total") == computed_total,
+            category_total == computed_total,
             f"{name}: category total differs from category counts",
         )
         require(
-            record.get("outside_access_events") == computed_total,
+            outside_events == computed_total,
             f"{name}: outside access events differ from category counts",
         )
         mapped, unmapped = classify_service_actions(
