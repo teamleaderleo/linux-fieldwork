@@ -10,22 +10,26 @@ This follow-up keeps the imported source untouched and retains a small increment
 
 - Parent compatibility record: #36.
 - Bounded defect: #98.
+- Candidate pull request: #102.
 - Replacement-language predecessor: PR #56.
 - Target-scope and reference-metadata predecessor: PR #68.
 - Branch: `fix/tarfilter-transform-occurrence-selectors`.
+- Investigation owner: `teamleaderleo`; formal peer review remains pending.
 - No upstream contact is authorized or made.
 
-A repository issue/PR/file search found no existing numeric-occurrence candidate. Existing LF-14 transform work mentions the missing feature only as a future boundary.
+A repository issue/PR/file/branch search found no existing numeric-occurrence candidate. Existing LF-14 transform work mentions the missing feature only as a future boundary.
 
 ## Exact source boundary
 
 - Imported file: `upstream/mmdebstrap/tarfilter`.
 - Imported blob: `ad776167a8473d5d15dbe22e850f4f6db35cf278`.
 - Base retained patch: `investigations/tarfilter-transform-target-scopes/tarfilter-transform-target-scopes.patch`.
+- Base patch blob at branch creation: `1703984aa0c030e5131618a3541ee85bfd68ec65`.
 - Incremental patch: `tarfilter-transform-occurrence-selectors.patch`.
 - Regression: `tests/test_tarfilter_transform_occurrences.py`.
+- Differential reference: GNU tar 1.35.
 
-The test copies the exact imported file into a temporary repository, applies the PR #68 patch, and then applies this occurrence-selector patch. The imported tree remains unchanged.
+The test copies the exact imported file into a temporary repository, applies the PR #68 patch, and then applies this occurrence-selector patch. The imported tree remains unchanged. Keeping the patch incremental preserves the predecessor failure and avoids a second competing copy of the already-reviewed transform implementation.
 
 ## Reference contract
 
@@ -44,7 +48,7 @@ The local GNU tar 1.35 differential probe also established these parser details:
 | `s/a/b/2g3` | last decimal run selects third | `a/a/b/b` |
 | `s/A/b/2gi3` | case-insensitive, third onward | `a/a/b/b` |
 
-A contiguous decimal string is one selector. When several decimal runs occur, the last completed run controls the start point.
+A contiguous decimal string is one selector. When several decimal runs occur, the last completed run controls the start point. The wider exploratory output is retained in `observations.md`.
 
 ## Candidate mechanism
 
@@ -78,13 +82,27 @@ The counter resets independently for every member name, hard-link target, and sy
 - `s/a/b/2g` to apply independently to a regular member name, hard-link target, and symlink target;
 - the candidate archive metadata to equal a GNU tar archive created from the same file/link fixture.
 
-Run with:
+Focused and complete commands:
 
 ```sh
 python3 -m unittest tests.test_tarfilter_transform_occurrences -v
+python3 -m unittest discover -s tests -v
 ```
 
-Repository discovery runs this alongside the existing substitution, scope, path, sparse, and safety regressions.
+Repository discovery runs this alongside the existing substitution, scope, path, sparse, Debian/security, and safety regressions.
+
+## Validation result
+
+Candidate code head `8c3ba696310fe0a631c74749df08055677fd109e` passed Linux Fieldwork CI run `30542362599`, job `90869929455`.
+
+- 41 repository tests passed in 4.853 seconds.
+- all three focused occurrence-selector tests passed;
+- patch composition passed;
+- the predecessor rejection passed;
+- the GNU tar name and link-target matrix passed;
+- adjacent LF-14 and repository safety tests passed.
+
+`RESULTS.md` retains the exact run and merge-ref receipt. Documentation-only consolidation commits follow the validated code head, so the final complete head needs one more CI receipt before merge.
 
 ## Evidence limits
 
@@ -97,12 +115,24 @@ Repository discovery runs this alongside the existing substitution, scope, path,
 
 Every copied source tree, patched candidate, input fixture, GNU reference archive, and output archive lives below `TemporaryDirectory`. The regression accepts no caller-selected cleanup root and performs no privileged operation.
 
-## Self-review checklist
+## Self-review and handoff
 
 - searched existing issues, PRs, branches, investigations, notes, and tests;
 - read the imported parser, PR #68 integrated patch, and adjacent differential tests;
 - retained the predecessor failure as an executable negative control;
 - compared supported results directly with GNU tar;
 - checked member and link-target state, not only command exit codes;
+- consolidated the durable record to avoid a directory of tiny overlapping files;
 - recorded unsupported grammar separately instead of presenting full GNU transform compatibility;
 - retained a reusable note for later transform parsers.
+
+To resume: read this file, `observations.md`, and `RESULTS.md`; then inspect the incremental patch and regression. Apply the PR #68 patch first, then the occurrence patch.
+
+After #98, the next bounded slices under #36 are:
+
+1. extended-regex `x` and the Python/GNU regex-dialect boundary;
+2. persistent `flags=` scope statements and semicolon-separated expression parsing;
+3. GNU sed case-conversion replacement escapes;
+4. remaining BRE and backreference compatibility.
+
+Each should receive its own issue, predecessor negative control, differential matrix, investigation, and reusable note.
