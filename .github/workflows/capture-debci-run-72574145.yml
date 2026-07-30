@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - investigation/debci-run-72574145
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/capture-debci-run-72574145.yml
   workflow_dispatch:
 
 permissions:
