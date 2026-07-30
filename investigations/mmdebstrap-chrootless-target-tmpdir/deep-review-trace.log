@@ -1,0 +1,157 @@
++ set -euo pipefail
+++ git rev-parse --show-toplevel
++ repo_root=/home/runner/work/linux-fieldwork/linux-fieldwork
++ source_root=/home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap
++ result_dir=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results
++ runtime_root=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review
++ source_spec='deb [trusted=yes] https://deb.debian.org/debian sid main'
++ trap cleanup EXIT INT TERM
++ rm -rf /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review
++ mkdir -p /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results
++ chmod +x /home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap/mmdebstrap
++ unset_log=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unset.log
+++ run_mmdebstrap /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unset.log env -u TMPDIR
+++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unset.log
+++ shift
+++ set +e
+++ env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/runner LC_ALL=C.UTF-8 timeout 240 env -u TMPDIR /home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap/mmdebstrap --dry-run --mode=chrootless --variant=apt sid /dev/null 'deb [trusted=yes] https://deb.debian.org/debian sid main'
+++ local status=0
+++ set -e
+++ printf '%s\n' 0
++ unset_status=0
+++ selected_tmpdir /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unset.log
+++ sed -n 's/^I: using \(.*\) as tempdir$/\1/p' /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unset.log
+++ head -n 1
++ unset_selected=/tmp/mmdebstrap.mpHttTy6qC
++ [[ 0 -eq 0 ]]
++ [[ /tmp/mmdebstrap.mpHttTy6qC == /tmp/mmdebstrap.* ]]
++ empty_log=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-empty.log
+++ run_mmdebstrap /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-empty.log env TMPDIR=
+++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-empty.log
+++ shift
+++ set +e
+++ env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/runner LC_ALL=C.UTF-8 timeout 240 env TMPDIR= /home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap/mmdebstrap --dry-run --mode=chrootless --variant=apt sid /dev/null 'deb [trusted=yes] https://deb.debian.org/debian sid main'
+++ local status=0
+++ set -e
+++ printf '%s\n' 0
++ empty_status=0
+++ selected_tmpdir /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-empty.log
+++ sed -n 's/^I: using \(.*\) as tempdir$/\1/p' /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-empty.log
+++ head -n 1
++ empty_selected=/tmp/mmdebstrap.xIiW0IJWN8
++ [[ 0 -eq 0 ]]
++ [[ /tmp/mmdebstrap.xIiW0IJWN8 == /tmp/mmdebstrap.* ]]
++ writable=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/writable
++ mkdir /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/writable
++ writable_log=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-writable.log
+++ run_mmdebstrap /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-writable.log env TMPDIR=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/writable
+++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-writable.log
+++ shift
+++ set +e
+++ env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/runner LC_ALL=C.UTF-8 timeout 240 env TMPDIR=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/writable /home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap/mmdebstrap --dry-run --mode=chrootless --variant=apt sid /dev/null 'deb [trusted=yes] https://deb.debian.org/debian sid main'
+++ local status=0
+++ set -e
+++ printf '%s\n' 0
++ writable_status=0
+++ selected_tmpdir /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-writable.log
+++ sed -n 's/^I: using \(.*\) as tempdir$/\1/p' /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-writable.log
+++ head -n 1
++ writable_selected=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/writable/mmdebstrap.DbcI4udq8M
++ [[ 0 -eq 0 ]]
++ [[ /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/writable/mmdebstrap.DbcI4udq8M == \/\h\o\m\e\/\r\u\n\n\e\r\/\w\o\r\k\/\_\t\e\m\p\/\l\i\n\u\x\-\f\i\e\l\d\w\o\r\k\-\m\m\d\e\b\s\t\r\a\p\-\d\e\e\p\-\r\e\v\i\e\w\/\w\r\i\t\a\b\l\e/mmdebstrap.* ]]
++ find /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/writable -mindepth 1 -print -quit
++ grep -q .
++ unwritable=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/unwritable
++ mkdir /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/unwritable
++ chmod 0555 /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/unwritable
++ unwritable_log=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log
+++ run_mmdebstrap /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log env TMPDIR=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/unwritable
+++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log
+++ shift
+++ set +e
+++ env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/runner LC_ALL=C.UTF-8 timeout 240 env TMPDIR=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/unwritable /home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap/mmdebstrap --dry-run --mode=chrootless --variant=apt sid /dev/null 'deb [trusted=yes] https://deb.debian.org/debian sid main'
+++ local status=13
+++ set -e
+++ printf '%s\n' 13
++ unwritable_status=13
++ assert_failure_names_path 13 /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/unwritable
++ local status=13
++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log
++ local requested=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/unwritable
++ [[ 13 -eq 0 ]]
++ assert_no_selected_tmpdir /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log
++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log
++ local selected
+++ selected_tmpdir /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log
+++ sed -n 's/^I: using \(.*\) as tempdir$/\1/p' /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log
+++ head -n 1
++ selected=
++ [[ -n '' ]]
++ grep -F /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/unwritable /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log
++ grep -F 'Error in tempdir()' /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log
++ grep -F 'Permission denied' /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-unwritable.log
++ missing=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/missing
++ missing_log=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-missing.log
+++ run_mmdebstrap /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-missing.log env TMPDIR=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/missing
+++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-missing.log
+++ shift
+++ set +e
+++ env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/runner LC_ALL=C.UTF-8 timeout 240 env TMPDIR=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/missing /home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap/mmdebstrap --dry-run --mode=chrootless --variant=apt sid /dev/null 'deb [trusted=yes] https://deb.debian.org/debian sid main'
+++ local status=2
+++ set -e
+++ printf '%s\n' 2
++ missing_status=2
++ assert_failure_names_path 2 /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-missing.log /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/missing
++ local status=2
++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-missing.log
++ local requested=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/missing
++ [[ 2 -eq 0 ]]
++ assert_no_selected_tmpdir /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-missing.log
++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-missing.log
++ local selected
+++ selected_tmpdir /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-missing.log
+++ sed -n 's/^I: using \(.*\) as tempdir$/\1/p' /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-missing.log
+++ head -n 1
++ selected=
++ [[ -n '' ]]
++ grep -F /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/missing /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-missing.log
++ grep -F 'Error in tempdir()' /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-missing.log
++ not_directory=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/not-a-directory
++ printf 'not a directory\n'
++ not_directory_log=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-not-directory.log
+++ run_mmdebstrap /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-not-directory.log env TMPDIR=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/not-a-directory
+++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-not-directory.log
+++ shift
+++ set +e
+++ env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/runner LC_ALL=C.UTF-8 timeout 240 env TMPDIR=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/not-a-directory /home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap/mmdebstrap --dry-run --mode=chrootless --variant=apt sid /dev/null 'deb [trusted=yes] https://deb.debian.org/debian sid main'
+++ local status=25
+++ set -e
+++ printf '%s\n' 25
++ not_directory_status=25
++ assert_failure_names_path 25 /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-not-directory.log /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/not-a-directory
++ local status=25
++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-not-directory.log
++ local requested=/home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/not-a-directory
++ [[ 25 -eq 0 ]]
++ assert_no_selected_tmpdir /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-not-directory.log
++ local log_file=/home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-not-directory.log
++ local selected
+++ selected_tmpdir /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-not-directory.log
+++ sed -n 's/^I: using \(.*\) as tempdir$/\1/p' /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-not-directory.log
+++ head -n 1
++ selected=
++ [[ -n '' ]]
++ grep -F /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review/not-a-directory /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-not-directory.log
++ grep -F 'Error in tempdir()' /home/runner/work/linux-fieldwork/linux-fieldwork/investigations/mmdebstrap-unwritable-tmpdir/results/deep-not-directory.log
++ perl -c /home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap/mmdebstrap
+/home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap/mmdebstrap syntax OK
+++ sed -e '/^__END__$/,$d' /home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap/mmdebstrap
+++ wc --max-line-length
++ max_line_length=79
++ [[ 79 -gt 79 ]]
++ perlcritic --severity 4 --verbose 8 /home/runner/work/linux-fieldwork/linux-fieldwork/upstream/mmdebstrap/mmdebstrap
+[Subroutines::ProhibitSubroutinePrototypes] Subroutine prototypes used at line 3905, column 1.  (Severity: 5)
+[ValuesAndExpressions::ProhibitLeadingZeros] Integer with leading zeros: "01777" at line 3913, column 38.  (Severity: 5)
++ cleanup
++ chmod -R u+w /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review
++ rm -rf /home/runner/work/_temp/linux-fieldwork-mmdebstrap-deep-review
