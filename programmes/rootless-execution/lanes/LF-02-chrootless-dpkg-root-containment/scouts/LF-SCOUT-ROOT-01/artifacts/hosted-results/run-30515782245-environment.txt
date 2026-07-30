@@ -1,0 +1,19 @@
+date_utc=2026-07-30T05:08:33Z
+runner=GitHub-hosted ubuntu-24.04
+os=Ubuntu 24.04.4 LTS
+kernel=Linux 6.17.0-1020-azure x86_64
+uid=1001
+gid=1001
+user=runner
+dpkg=1.22.6
+apt=2.8.3
+update-alternatives=1.22.6
+strace=6.8
+perl=5.38.2
+upstream_requested_revision=debian/1.5.7-3
+upstream_resolved_commit=6fde999741f4fe1e7bf38079acf29432ef87a35e
+
+Host dpkg configuration relevant to the result:
+
+/etc/dpkg/dpkg.cfg.d/needrestart:
+status-logger=(test -x /usr/lib/needrestart/dpkg-status && /usr/lib/needrestart/dpkg-status || cat > /dev/null)
