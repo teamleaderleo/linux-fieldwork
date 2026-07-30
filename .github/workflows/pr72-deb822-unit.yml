@@ -16,25 +16,71 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Print exact terminal failure only
+      - name: Print capability outcome and terminal failure
         shell: bash
         run: |
           set -euo pipefail
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8762098688/zip" > /tmp/a.zip
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8765484385/zip" > /tmp/a.zip
           python3 - <<'PY'
-          import re, zipfile
+          import re
+          import zipfile
+
           with zipfile.ZipFile('/tmp/a.zip') as archive:
-              stderr = archive.read('autopkgtest-output/testsuite-stderr').decode('utf-8', 'replace').splitlines()
-              stdout = archive.read('autopkgtest-output/testsuite-stdout').decode('utf-8', 'replace').splitlines()
-          cases = [i for i, line in enumerate(stderr) if re.search(r'\(\d+/\d+\) ', line)]
-          print('===== terminal case =====')
-          pos = cases[-1]
-          print('\n'.join(stderr[max(0, pos - 8):pos + 8]))
-          print('===== terminal stdout =====')
-          print('\n'.join(stdout[-40:]))
+              names = archive.namelist()
+              def read(name):
+                  return archive.read(name).decode('utf-8', 'replace')
+
+              for name in names:
+                  if name.endswith(('exit-status', 'result.md', 'preflight-error.txt')):
+                      print(f'===== {name} =====')
+                      print(read(name).rstrip())
+
+              stderr_name = next(name for name in names if name.endswith('testsuite-stderr'))
+              stdout_name = next(name for name in names if name.endswith('testsuite-stdout'))
+              stderr = read(stderr_name).splitlines()
+              stdout = read(stdout_name).splitlines()
+
+          boundaries = [
+              (index, line)
+              for index, line in enumerate(stderr)
+              if re.match(r'^\(\d+/\d+\) ', line)
+          ]
+
+          print('===== root-without-cap-sys-admin stderr context =====')
+          matches = [index for index, line in enumerate(stderr) if 'root-without-cap-sys-admin' in line]
+          if matches:
+              for index in matches:
+                  print('\n'.join(stderr[max(0, index - 12):index + 20]))
+          else:
+              print('case name absent from stderr')
+
+          print('===== root-without-cap-sys-admin stdout context =====')
+          stdout_matches = [index for index, line in enumerate(stdout) if 'root-without-cap-sys-admin' in line or 'cap_sys_admin' in line]
+          if stdout_matches:
+              for index in stdout_matches:
+                  print('\n'.join(stdout[max(0, index - 12):index + 30]))
+          else:
+              print('case name absent from stdout')
+
+          print('===== last case boundaries =====')
+          for _index, line in boundaries[-25:]:
+              print(line)
+
+          print('===== terminal case stderr =====')
+          terminal_index = boundaries[-1][0]
+          print('\n'.join(stderr[max(0, terminal_index - 10):terminal_index + 20]))
+
+          print('===== terminal stdout tail =====')
+          print('\n'.join(stdout[-100:]))
+
           print('===== failure signatures =====')
-          for source, lines in (('stderr', stderr[-250:]), ('stdout', stdout[-250:])):
+          pattern = re.compile(r'(E: |error|failed|failure|permission|not permitted|assert|traceback|timeout|timed out|exit status)', re.I)
+          emitted = 0
+          for source, lines in (('stderr', stderr[-500:]), ('stdout', stdout[-500:])):
               for line in lines:
-                  if re.search(r'(E: |error|failed|mount|permission|not permitted|cap_sys_admin)', line, re.I):
+                  if pattern.search(line):
                       print(f'{source}: {line}')
+                      emitted += 1
+                      if emitted >= 120:
+                          raise SystemExit
           PY
