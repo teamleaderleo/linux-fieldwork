@@ -1,38 +1,20 @@
 # Investigation title
 
-## In simple words
+## TL;DR
 
-### Explain it like I am five
+State the current answer and next action in a few sentences.
 
-Describe the component and its job with ordinary words. One useful analogy is welcome when it clarifies the authority or lifecycle involved.
+## Explain like I'm five
 
-### What goes wrong?
+Explain the component and its job with ordinary words. Include one literal input → action → result example.
 
-Give one literal input → action → bad result example. Name the exact file, byte stream, process, privilege, package, or decision affected.
+## Why care
 
-### Why should someone care?
+Name the affected file, bytes, process, privilege, package, user, or decision and describe the concrete consequence.
 
-Describe the concrete consequence and who or what receives it.
+## Intent and precedent
 
-### What happens if this remains?
-
-Explain the repeatable outcome. Say whether an error persists through caching, retries, saved state, cleanup, or later consumers.
-
-### Was this intentional?
-
-Separate:
-
-- evidence of a deliberate compatibility or design choice;
-- evidence of a shortcut or friendly-input assumption;
-- your interpretation where source history is incomplete.
-
-### Proposed answer or fix
-
-Describe the before/after behavior and why this boundary is preferable to narrower and broader alternatives.
-
-### Historical or technical precedent
-
-Link primary sources such as standards, official manuals, language documentation, upstream source/history, or an established weakness catalogue. Explain how each source applies to this case.
+State what source or history shows about intent. Separate evidence from interpretation, and link the primary sources that govern the behavior.
 
 ## Question
 
@@ -64,12 +46,7 @@ Describe what the unmodified source or current system does. Include the concrete
 
 Describe the behavior that would distinguish the likely explanations, or describe the candidate change being tested.
 
-State the compatibility policy explicitly:
-
-- accepted inputs or behaviors;
-- rejected inputs or behaviors;
-- preserved historical behavior;
-- deliberately deferred redesigns.
+State what the candidate accepts, rejects, preserves, and deliberately leaves for later work.
 
 ## Reproduction
 
@@ -87,14 +64,7 @@ For a candidate, show baseline and candidate under comparable conditions.
 
 ## Interpretation
 
-Explain what the results establish and how they answer the question.
-
-Label important conclusions as appropriate:
-
-- demonstrated defect;
-- plausible consequence kept outside the safe fixture;
-- design judgment;
-- open question.
+Explain what the results establish and how they answer the question. Distinguish demonstrated behavior, plausible consequence, design choice, and open question where relevant.
 
 ## Evidence boundary
 
@@ -104,7 +74,7 @@ State the exact limits: skipped test suites, untested platforms, reduced fixture
 
 Choose a concrete next action or close with a retained negative result.
 
-For a human decision, say what the reviewer is choosing in ordinary language and name the exact evidence that supports that choice.
+For a human decision, say what the reviewer is choosing and name the exact supporting evidence.
 
 ## Authority
 
