@@ -41,14 +41,18 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
         return destination
 
     @staticmethod
-    def helper_blocks(source: str) -> tuple[str, str]:
-        helper_start = source.index("WORKDIR=\n")
-        helper_end = source.index("\ncleanup() {", helper_start)
-        helpers = source[helper_start:helper_end] + "\n"
-        cleanup_start = helper_end + 1
-        cleanup_end = source.index("\ntrap cleanup ", cleanup_start)
-        cleanup = source[cleanup_start:cleanup_end].rstrip() + "\n"
-        return helpers, cleanup
+    def function_block(source: str, name: str) -> str:
+        start = source.index(f"{name}() {{")
+        end = source.index("\n}\n", start) + len("\n}\n")
+        return source[start:end]
+
+    @classmethod
+    def helper_blocks(cls, source: str) -> tuple[str, str]:
+        declarations = "WORKDIR=\nIMAGE_TMPDIR=\nIMAGE_TMP=\n"
+        prepare = cls.function_block(source, "prepare_image")
+        publish = cls.function_block(source, "publish_image")
+        cleanup = cls.function_block(source, "cleanup")
+        return declarations + prepare + publish, cleanup
 
     def write_harness(self, root: pathlib.Path, candidate: pathlib.Path) -> pathlib.Path:
         helpers, cleanup = self.helper_blocks(candidate.read_text(encoding="utf-8"))
@@ -198,9 +202,7 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
             self.assertIn('of="$IMAGE_TMP"', source)
             self.assertEqual(source.count("publish_image\n"), 1)
             self.assertLess(source.index("publish_image\n"), source.index("I: SUCCESS!"))
-            publication_start = source.index("publish_image() {")
-            publication_end = source.index("\n}\n", publication_start)
-            publication = source[publication_start:publication_end]
+            publication = self.function_block(source, "publish_image")
             rename = 'mv --no-target-directory -- "$IMAGE_TMP" "$IMAGE"'
             self.assertIn(rename, publication)
             self.assertLess(publication.index(rename), publication.index("IMAGE_TMP=\n"))
