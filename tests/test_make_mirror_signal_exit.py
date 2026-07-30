@@ -78,6 +78,7 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             "  printf 'cleanup\\n' >>\"$runtime/cleanup.log\"\n"
             "  rm -f \"$runtime/cache-state\"\n"
             "}\n"
+            "newcache=cache.B\n"
             "CLEANUP_PROXY_CACHE=yes\n"
             "CLEANUP_TMPDIR=no\n"
             + functions
@@ -103,6 +104,7 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
         runtime = script.parent
         process = subprocess.Popen(
             ["sh", str(script)],
+            cwd=runtime,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -192,6 +194,7 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             )
             completed = subprocess.run(
                 ["sh", str(script)],
+                cwd=script.parent,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -207,6 +210,46 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             )
             proxy_pid = int((runtime / "proxy.pid").read_text().strip())
             self.assertFalse(self.process_exists(proxy_pid))
+
+    def test_late_cleanup_preserves_published_cache(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="make-mirror-published-") as tmp:
+            root = pathlib.Path(tmp)
+            candidate_source = self.prepare_candidate(root)
+            functions, _traps = self.candidate_blocks(candidate_source)
+            runtime = root / "published"
+            shared = runtime / "shared"
+            published = shared / "cache.B"
+            published.mkdir(parents=True)
+            (shared / "cache").symlink_to("cache.B")
+            script = runtime / "published.sh"
+            script.write_text(
+                "#!/bin/sh\n"
+                "set -eu\n"
+                "cleanup_newcachedir() {\n"
+                "  printf 'deleted\\n' > cleanup.log\n"
+                "  rm -rf ./shared/cache.B\n"
+                "}\n"
+                "newcache=cache.B\n"
+                "PROXYPID=\n"
+                "CLEANUP_PROXY_CACHE=yes\n"
+                "CLEANUP_TMPDIR=no\n"
+                + functions
+                + "cleanup_owner\n"
+                "[ -d ./shared/cache.B ]\n"
+                "[ ! -e cleanup.log ]\n"
+                "[ \"$CLEANUP_PROXY_CACHE\" = no ]\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                ["sh", str(script)],
+                cwd=runtime,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertTrue(published.is_dir())
 
     def test_candidate_replaces_top_level_cleanup_only_signal_traps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="make-mirror-source-") as tmp:
@@ -237,6 +280,7 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             self.assertIn("cleanup_owner() {", candidate)
             self.assertIn("CLEANUP_TMPDIR=yes", candidate)
             self.assertIn("CLEANUP_TMPDIR=no", candidate)
+            self.assertIn('readlink ./shared/cache', candidate)
 
 
 if __name__ == "__main__":
