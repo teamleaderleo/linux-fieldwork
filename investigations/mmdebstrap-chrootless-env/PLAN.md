@@ -43,7 +43,7 @@ Candidate exact names:
 - `KUBECONFIG`;
 - `DOCKER_CONFIG`.
 
-Candidate name patterns cover token, secret, password, credential, and private-key variables. The matrix must measure false positives before retaining a pattern.
+Candidate name patterns cover token, secret, password, credential, private-key, access-key, authentication, JWT, and keytab variables. Exact checks also cover common agent, registry-auth, cloud-credential, package-manager configuration, and Kerberos keytab variables. Proxy and package-index URLs are rejected only when their URL authority embeds user information. The matrix must measure false positives before retaining a pattern.
 
 Advantages:
 

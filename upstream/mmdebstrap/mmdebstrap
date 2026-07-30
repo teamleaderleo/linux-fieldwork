@@ -3931,12 +3931,20 @@ sub chrootless_unsafe_environment() {
     my %exact = map { $_ => 1 } qw(
       SSH_AUTH_SOCK
       SSH_AGENT_PID
+      SSH_ASKPASS
+      GIT_ASKPASS
       GPG_AGENT_INFO
       DBUS_SESSION_BUS_ADDRESS
       XDG_RUNTIME_DIR
       KRB5CCNAME
+      KRB5_KTNAME
+      KRB5_CLIENT_KTNAME
       KUBECONFIG
       DOCKER_CONFIG
+      DOCKER_AUTH_CONFIG
+      REGISTRY_AUTH_FILE
+      NPM_CONFIG_USERCONFIG
+      AWS_ACCESS_KEY_ID
       AWS_SHARED_CREDENTIALS_FILE
       AWS_CONFIG_FILE
       GOOGLE_APPLICATION_CREDENTIALS
@@ -3954,10 +3962,34 @@ sub chrootless_unsafe_environment() {
           | CREDENTIALS?
           | PRIVATE_KEY
           | API_KEY
+          | ACCESS_KEY
+          | AUTH
+          | JWT
+          | KEYTAB
         )
         (?:$|_)
     }ix;
-    return sort grep { $exact{$_} || $_ =~ $sensitive_name } keys %ENV;
+    my %unsafe;
+
+    foreach my $name (keys %ENV) {
+        if ($exact{$name} || $name =~ $sensitive_name) {
+            $unsafe{$name} = 1;
+        }
+    }
+    foreach my $name (qw(
+        http_proxy https_proxy ftp_proxy all_proxy
+        HTTP_PROXY HTTPS_PROXY FTP_PROXY ALL_PROXY
+        PIP_INDEX_URL PIP_EXTRA_INDEX_URL
+        UV_INDEX_URL UV_EXTRA_INDEX_URL
+        )
+    ) {
+        next if !defined $ENV{$name};
+        if ($ENV{$name} =~ m{\A[a-z][a-z0-9+.-]*://[^/\s@]+@}i) {
+            $unsafe{$name} = 1;
+        }
+    }
+    my @unsafe = sort keys %unsafe;
+    return @unsafe;
 }
 
 sub run_essential() {

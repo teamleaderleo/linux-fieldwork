@@ -52,7 +52,9 @@ mkdir -p "$(dirname "$log")"
   for name in \
     LF_SECRET_CANARY \
     AWS_SECRET_ACCESS_KEY \
+    AWS_ACCESS_KEY_ID \
     GITHUB_TOKEN \
+    DOCKER_AUTH_CONFIG \
     SSH_AUTH_SOCK \
     DBUS_SESSION_BUS_ADDRESS \
     XDG_RUNTIME_DIR \
@@ -209,7 +211,11 @@ env \
   TMPDIR="$runtime" \
   LC_ALL=C.UTF-8 \
   LF_SECRET_CANARY=unsafe-secret-value \
+  AWS_ACCESS_KEY_ID=unsafe-access-key-value \
   GITHUB_TOKEN=unsafe-token-value \
+  CI_JOB_JWT=unsafe-jwt-value \
+  DOCKER_AUTH_CONFIG=unsafe-docker-auth-value \
+  https_proxy=http://proxy-user:unsafe-proxy-password@proxy.invalid \
   SSH_AUTH_SOCK="$runtime/not-an-agent.sock" \
   "${command[@]}" \
   >"$result_dir/unsafe.stdout" \
@@ -218,9 +224,19 @@ unsafe_status=$?
 set -e
 [[ $unsafe_status -ne 0 ]]
 grep -F 'LF_SECRET_CANARY' "$result_dir/unsafe.stderr"
+grep -F 'AWS_ACCESS_KEY_ID' "$result_dir/unsafe.stderr"
 grep -F 'GITHUB_TOKEN' "$result_dir/unsafe.stderr"
+grep -F 'CI_JOB_JWT' "$result_dir/unsafe.stderr"
+grep -F 'DOCKER_AUTH_CONFIG' "$result_dir/unsafe.stderr"
+grep -F 'https_proxy' "$result_dir/unsafe.stderr"
 grep -F 'SSH_AUTH_SOCK' "$result_dir/unsafe.stderr"
-if grep -F -e 'unsafe-secret-value' -e 'unsafe-token-value' \
+if grep -F \
+  -e 'unsafe-secret-value' \
+  -e 'unsafe-access-key-value' \
+  -e 'unsafe-token-value' \
+  -e 'unsafe-jwt-value' \
+  -e 'unsafe-docker-auth-value' \
+  -e 'unsafe-proxy-password' \
   "$result_dir/unsafe.stderr"; then
   echo "unsafe environment error disclosed a secret value" >&2
   exit 1
@@ -257,7 +273,9 @@ env \
   LF_APT_ENV_LOG="$apt_env_log" \
   LF_SECRET_CANARY=sanitized-secret-canary \
   AWS_SECRET_ACCESS_KEY=fake-aws-secret \
+  AWS_ACCESS_KEY_ID=fake-access-key \
   GITHUB_TOKEN=fake-github-token \
+  DOCKER_AUTH_CONFIG=fake-docker-auth \
   SSH_AUTH_SOCK="$san_socket" \
   DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/fake-session-bus" \
   XDG_RUNTIME_DIR="$runtime/xdg" \
@@ -273,7 +291,9 @@ cp "$san_log" "$result_dir/sanitized-environment.log"
 for name in \
   LF_SECRET_CANARY \
   AWS_SECRET_ACCESS_KEY \
+  AWS_ACCESS_KEY_ID \
   GITHUB_TOKEN \
+  DOCKER_AUTH_CONFIG \
   SSH_AUTH_SOCK \
   DBUS_SESSION_BUS_ADDRESS \
   XDG_RUNTIME_DIR \
@@ -343,6 +363,7 @@ negative_control=ambient credentials and agent socket reached direct chrootless 
 unsafe_launch_status=$unsafe_status
 unsafe_launch_rejected=yes
 unsafe_error_values_redacted=yes
+credentialed_proxy_rejected=yes
 apt_proxy_preserved=yes
 apt_token_preserved_to_apt_only=yes
 dpkg_environment_sanitized=yes
