@@ -10,10 +10,11 @@ This branch records the missing behavior with safe GNU tar comparisons and GNU s
 
 - Parent transform record: #36.
 - Local replacement defect: #125.
+- Characterization pull request: #135.
 - GNU tar 1.35 empty-capture crash: #124.
 - Regex-dialect characterization: #108 / PR #113.
 - Expression-list characterization: #117 / PR #122.
-- Numeric occurrence candidate: #98 / PR #102.
+- Numeric occurrence support: #98 / merged PR #102.
 - Characterization branch: `investigation/tarfilter-transform-case-conversion`.
 - Imported source remains unchanged.
 - No upstream contact is authorized or made.
@@ -25,11 +26,11 @@ A repository issue, PR, branch, investigation, note, and test search found no ex
 - Imported source: `upstream/mmdebstrap/tarfilter`.
 - Imported blob: `ad776167a8473d5d15dbe22e850f4f6db35cf278`.
 - Characterized predecessor: `investigations/tarfilter-transform-target-scopes/tarfilter-transform-target-scopes.patch` from PR #68.
-- Safe archive reference: GNU tar 1.35 under `LC_ALL=C`.
+- Local safe archive observation reference: GNU tar 1.35 under `LC_ALL=C`.
 - Empty-capture semantic reference: GNU sed 4.9 under `LC_ALL=C`.
 - Regression: `tests/test_tarfilter_transform_case_conversion.py`.
 
-The regression copies the imported source into `TemporaryDirectory`, applies the PR #68 patch, and compares safe archive metadata directly with GNU tar. It uses GNU sed for documented empty-capture replacement state and never invokes the known crashing GNU tar expressions.
+The regression copies the imported source into `TemporaryDirectory`, applies the PR #68 patch, and compares safe archive metadata directly with the GNU tar available on the hosted runner. It requires GNU sed identity for the documented empty-capture replacement matrix and never invokes the known crashing GNU tar expressions.
 
 ## Current predecessor behavior
 
@@ -129,13 +130,30 @@ The characterization requires:
 - one member/hard-link/symlink target comparison;
 - five GNU sed empty-capture state cases;
 - exact PR #68 patch application;
-- GNU tar and GNU sed version/locale boundaries.
+- `LC_ALL=C` for reference execution and GNU sed identity.
+
+## Validation
+
+Characterization head `495b7ce84cceac22d241d744351c5a93d0584b78` passed Linux Fieldwork CI run `30546251450`, job `90883033001`, against pull-request merge ref `887569232ed924255a46a98eb56608a2dc070346`.
+
+Repository discovery ran 54 tests in 7.711 seconds. All four case-conversion methods passed:
+
+```text
+test_case_controls_apply_to_member_and_link_target_fields ... ok
+test_gnu_sed_empty_capture_preserves_pending_one_shot_state ... ok
+test_literal_escaped_backslash_remains_a_shared_control ... ok
+test_predecessor_emits_case_control_letters_literally ... ok
+```
+
+The same merge-ref run included the current repository's caching-proxy, Debian, chrootless TMPDIR, archive-corpus, sparse, path, PAX, and transform regressions.
+
+This validation-record commit requires one final exact-head CI receipt before independent review.
 
 ## Cleanup and evidence limits
 
 All copied sources, path fixtures, links, and archives live under `TemporaryDirectory`. The test accepts no caller-selected cleanup root and performs no privileged operation.
 
-This record establishes replacement case-control state. It does not implement the correction. Regex dialect translation remains #108, expression lists remain #117, numeric selectors remain #98, and the GNU tar crash remains #124.
+This record establishes replacement case-control state. It does not implement the correction. Regex dialect translation remains #108, expression lists remain #117, numeric selectors are retained on `main`, and the GNU tar crash remains #124.
 
 ## Handoff
 
