@@ -1,6 +1,0 @@
-Imported source blob: ad776167a8473d5d15dbe22e850f4f6db35cf278
-Base retained patch: investigations/tarfilter-transform-target-scopes/tarfilter-transform-target-scopes.patch
-Base retained patch blob at branch creation: 1703984aa0c030e5131618a3541ee85bfd68ec65
-Reference implementation: GNU tar 1.35
-Parent issue: #36
-Bounded issue: #98
