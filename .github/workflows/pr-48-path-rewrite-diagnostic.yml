@@ -1,0 +1,27 @@
+name: PR 48 path rewrite diagnostic
+
+on:
+  pull_request:
+    paths:
+      - 'tests/test_tarfilter_path_rewrite_metadata.py'
+      - 'investigations/tarfilter-path-rewrite-metadata/**'
+      - '.github/workflows/pr-48-path-rewrite-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run focused regression verbosely
+        run: |
+          set -o pipefail
+          python3 -m unittest -v tests.test_tarfilter_path_rewrite_metadata 2>&1 | tee pr-48-test.log
+      - name: Record environment
+        if: always()
+        run: |
+          python3 --version
+          tar --version | head -n 1
