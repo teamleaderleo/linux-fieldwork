@@ -31,9 +31,13 @@ jobs:
         run: python3 -m unittest discover -s tests -v
 
       - name: Check shell syntax
-        run: bash -n scripts/capture-linux-context.sh
+        run: |
+          bash -n scripts/capture-linux-context.sh
+          bash -n scripts/reproduce-mmdebstrap-autopkgtest.sh
 
       - name: Check command help
         run: |
           python3 tools/tar_manifest.py --help >/dev/null
           python3 tools/manifest_diff.py --help >/dev/null
+          python3 tools/debian_bug_report.py --help >/dev/null
+          bash scripts/capture-linux-context.sh --help >/dev/null
