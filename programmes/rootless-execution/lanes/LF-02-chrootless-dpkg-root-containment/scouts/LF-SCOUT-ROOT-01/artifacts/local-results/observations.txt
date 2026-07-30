@@ -1,0 +1,57 @@
+Direct dpkg command boundary
+----------------------------
+
+dpkg --force-not-root --force-script-chrootless \
+  --root=/tmp/lf-02-work/target \
+  --log=/tmp/lf-02-work/target/var/log/dpkg.log \
+  --install /tmp/lf-02-work/lf-fieldwork-probe_1.0_all.deb
+
+Observed process path
+---------------------
+
+- host dpkg executed target-root maintainer scripts from:
+  - /tmp/lf-02-work/target/var/lib/dpkg/tmp.ci/preinst
+  - /tmp/lf-02-work/target/var/lib/dpkg/info/lf-fieldwork-probe.postinst
+  - /tmp/lf-02-work/target/var/lib/dpkg/info/lf-fieldwork-probe.prerm
+  - /tmp/lf-02-work/target/var/lib/dpkg/info/lf-fieldwork-probe.postrm
+- the shebang selected host /usr/bin/dash
+- scripts used host mkdir, id, readlink, and update-alternatives
+- dpkg supplied DPKG_ROOT=/tmp/lf-02-work/target
+- script working directory was /tmp/lf-02-work/target
+
+Target mutations
+----------------
+
+- /tmp/lf-02-work/target/usr/lib/lf-fieldwork-probe/tool
+- /tmp/lf-02-work/target/var/lib/dpkg/status and info files
+- /tmp/lf-02-work/target/var/lib/dpkg/alternatives/lf-fieldwork-probe
+- /tmp/lf-02-work/target/etc/alternatives/lf-fieldwork-probe
+- /tmp/lf-02-work/target/usr/bin/lf-fieldwork-probe
+- /tmp/lf-02-work/target/var/log/dpkg.log
+- /tmp/lf-02-work/target/var/log/alternatives.log
+- /tmp/lf-02-work/target/var/lib/lf-fieldwork-probe/script.log
+
+Outside-target reads and runtime interaction
+--------------------------------------------
+
+- host executable and dynamic-library lookup
+- host dpkg configuration: /etc/dpkg/dpkg.cfg and /etc/dpkg/dpkg.cfg.d/*
+- host locale and identity files
+- target ancestor traversal through /tmp
+- /dev/null, /proc, /sys, and failed nscd socket probes
+
+Host sentinels checked absent before and after
+----------------------------------------------
+
+- /usr/bin/lf-fieldwork-probe
+- /etc/alternatives/lf-fieldwork-probe
+- /var/lib/dpkg/alternatives/lf-fieldwork-probe
+
+Host files hashed before and after
+----------------------------------
+
+- /var/lib/dpkg/status
+- /var/log/dpkg.log
+- /var/log/alternatives.log
+
+All hashes remained unchanged. No service-control process or successful outside-target mutation was observed.
