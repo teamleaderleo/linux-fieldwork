@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
 --- a/upstream/mmdebstrap/mmdebstrap
 +++ b/upstream/mmdebstrap/mmdebstrap
-@@ -1207,6 +1207,42 @@ sub error {
+@@ -1207,6 +1207,38 @@ sub error {
      }
  }
  
@@ -40,7 +40,7 @@ diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
  # The encoding of dev_t is MMMM Mmmm mmmM MMmm, where M is a hex digit of
  # the major number and m is a hex digit of the minor number.
  sub major {
-@@ -5847,6 +5883,8 @@ sub main() {
+@@ -5847,6 +5879,8 @@ sub main() {
          open(STDERR, '>', $logfile) or error "cannot open $logfile: $!";
      }
  
@@ -67,7 +67,7 @@ diff --git a/upstream/mmdebstrap/tests/fail-with-unwritable-tmpdir b/upstream/mm
 new file mode 100755
 --- /dev/null
 +++ b/upstream/mmdebstrap/tests/fail-with-unwritable-tmpdir
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,41 @@
 +#!/bin/sh
 +set -eu
 +export LC_ALL=C.UTF-8
