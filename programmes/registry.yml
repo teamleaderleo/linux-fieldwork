@@ -1,0 +1,222 @@
+version: 1
+
+programmes:
+  rootless-execution:
+    title: Rootless execution, namespaces, and mounts
+    status_path: programmes/rootless-execution/STATUS.md
+    lanes:
+      - id: LF-01
+        slug: bootstrap-mode-parity
+        title: Bootstrap mode parity
+        state: inbox
+        environment: current-ci-plus-privileged-ci
+      - id: LF-02
+        slug: chrootless-dpkg-root-containment
+        title: Chrootless DPKG_ROOT containment
+        state: mapped
+        priority: immediate
+        environment: current-ci
+        path: programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/brief.md
+      - id: LF-03
+        slug: rootless-ownership-idmapped-mounts
+        title: Rootless ownership and idmapped mounts
+        state: mapped
+        priority: capability-check
+        environment: privileged-ci-or-vm
+        path: programmes/rootless-execution/lanes/LF-03-rootless-ownership-idmapped-mounts/brief.md
+      - id: LF-04
+        slug: mount-propagation-teardown
+        title: Mount propagation and teardown
+        state: inbox
+        environment: privileged-ci-or-vm
+      - id: LF-05
+        slug: pseudo-filesystem-assumptions
+        title: Pseudo-filesystem assumptions
+        state: inbox
+        environment: current-ci-plus-privileged-ci
+      - id: LF-06
+        slug: namespace-capability-lifecycle
+        title: Namespace capability lifecycle
+        state: inbox
+        environment: privileged-ci-or-vm
+
+  debian-packages:
+    title: Debian packages, transactions, and builds
+    status_path: programmes/debian-packages/STATUS.md
+    lanes:
+      - id: LF-07
+        slug: maintainer-script-interruption-idempotency
+        title: Maintainer-script interruption and idempotency
+        state: mapped
+        priority: immediate
+        environment: current-ci
+        path: programmes/debian-packages/lanes/LF-07-maintainer-script-interruption-idempotency/brief.md
+      - id: LF-08
+        slug: apt-dpkg-transaction-recovery
+        title: Apt and dpkg transaction recovery
+        state: inbox
+        environment: current-ci
+      - id: LF-09
+        slug: conffile-local-change-preservation
+        title: Conffile and local-change preservation
+        state: inbox
+        environment: current-ci
+      - id: LF-10
+        slug: triggers-ordering-deferred-work
+        title: Triggers, ordering, and deferred work
+        state: inbox
+        environment: current-ci
+      - id: LF-11
+        slug: merged-usr-path-assumptions
+        title: Merged-/usr path assumptions
+        state: mapped
+        priority: immediate
+        environment: current-ci-plus-vm
+        path: programmes/debian-packages/lanes/LF-11-merged-usr-path-assumptions/brief.md
+      - id: LF-12
+        slug: reproducible-package-variance
+        title: Reproducible package variance
+        state: mapped
+        priority: immediate
+        environment: current-ci
+        path: programmes/debian-packages/lanes/LF-12-reproducible-package-variance/brief.md
+      - id: LF-13
+        slug: foreign-architecture-binfmt-boundaries
+        title: Foreign architecture and binfmt boundaries
+        state: inbox
+        environment: privileged-ci-or-vm
+
+  filesystems-images:
+    title: Filesystems, archives, and disk images
+    status_path: programmes/filesystems-images/STATUS.md
+    lanes:
+      - id: LF-14
+        slug: archive-extraction-metadata-contracts
+        title: Archive extraction and metadata contracts
+        state: mapped
+        priority: immediate
+        environment: current-ci-plus-privileged-ci
+        path: programmes/filesystems-images/lanes/LF-14-archive-extraction-metadata-contracts/brief.md
+      - id: LF-15
+        slug: overlayfs-copy-up-metadata
+        title: OverlayFS copy-up, hard links, xattrs, and rename
+        state: mapped
+        priority: capability-check
+        environment: privileged-ci-or-vm
+        path: programmes/filesystems-images/lanes/LF-15-overlayfs-copy-up-metadata/brief.md
+      - id: LF-16
+        slug: rename-fsync-crash-durability
+        title: Rename, fsync, and crash durability
+        state: inbox
+        environment: vm-or-kernel-lab
+      - id: LF-17
+        slug: temporary-files-directory-contracts
+        title: Temporary files and directory contracts
+        state: inbox
+        environment: current-ci-plus-privileged-ci
+      - id: LF-18
+        slug: disk-image-dissection-growth-cleanup
+        title: Disk-image dissection, growth, and cleanup
+        state: inbox
+        environment: privileged-ci-or-vm
+      - id: LF-19
+        slug: verified-authenticated-root-images
+        title: Verified and authenticated root images
+        state: inbox
+        environment: privileged-ci-plus-vm
+
+  services-resources:
+    title: Services, processes, and resources
+    status_path: programmes/services-resources/STATUS.md
+    lanes:
+      - id: LF-20
+        slug: systemd-stop-timeout-descendant-cleanup
+        title: Systemd stop, timeout, and descendant cleanup
+        state: mapped
+        priority: vm-queue
+        environment: vm
+        path: programmes/services-resources/lanes/LF-20-systemd-stop-timeout-descendant-cleanup/brief.md
+      - id: LF-21
+        slug: tmpfiles-sysusers-package-lifecycle
+        title: Tmpfiles and sysusers package lifecycle
+        state: inbox
+        environment: current-ci-or-vm
+      - id: LF-22
+        slug: cgroup-v2-delegation-cleanup
+        title: Cgroup v2 delegation and resource cleanup
+        state: mapped
+        priority: capability-check
+        environment: privileged-ci-or-vm
+        path: programmes/services-resources/lanes/LF-22-cgroup-v2-delegation-cleanup/brief.md
+      - id: LF-23
+        slug: cancellation-subprocess-fd-cleanup
+        title: Cancellation, subprocess, and file-descriptor cleanup
+        state: mapped
+        priority: immediate
+        environment: current-ci
+        path: programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/brief.md
+      - id: LF-24
+        slug: shutdown-soft-reboot-persistence
+        title: Shutdown and soft-reboot persistence
+        state: inbox
+        environment: vm
+
+  security-networking:
+    title: Security and networking boundaries
+    status_path: programmes/security-networking/STATUS.md
+    lanes:
+      - id: LF-25
+        slug: no-new-privs-seccomp-landlock-composition
+        title: no_new_privs, seccomp, and Landlock composition
+        state: inbox
+        environment: current-ci-plus-kernel-matrix
+      - id: LF-26
+        slug: capability-credential-transitions
+        title: Capability and credential transitions
+        state: inbox
+        environment: privileged-ci-or-vm
+      - id: LF-27
+        slug: network-namespaces-dns-ownership
+        title: Network namespaces and DNS ownership
+        state: inbox
+        environment: privileged-ci-or-vm
+      - id: LF-28
+        slug: nftables-atomic-update-rollback
+        title: Nftables atomic update and rollback
+        state: inbox
+        environment: privileged-ci-or-vm
+      - id: LF-29
+        slug: netlink-compatibility-fallback
+        title: Netlink compatibility and fallback
+        state: inbox
+        environment: current-ci-plus-vm
+
+  boot-kernel:
+    title: Boot, devices, and deeper kernel work
+    status_path: programmes/boot-kernel/STATUS.md
+    lanes:
+      - id: LF-30
+        slug: initramfs-dependency-atomic-update
+        title: Initramfs dependency discovery and atomic update
+        state: inbox
+        environment: vm
+      - id: LF-31
+        slug: udev-device-hotplug-races
+        title: Udev and device hotplug races
+        state: inbox
+        environment: vm-or-kernel-lab
+      - id: LF-32
+        slug: ebpf-verifier-userspace-compatibility
+        title: eBPF verifier and userspace-tool compatibility
+        state: inbox
+        environment: vm-or-kernel-lab
+      - id: LF-33
+        slug: io-uring-cancellation-resource-release
+        title: io_uring cancellation and resource release
+        state: inbox
+        environment: current-ci-plus-kernel-matrix
+      - id: LF-34
+        slug: block-fault-injection-recovery
+        title: Block fault injection and recovery
+        state: inbox
+        environment: vm-or-kernel-lab

@@ -2,107 +2,38 @@
 
 ## In simple words
 
-This is the short working index for choosing Linux Fieldwork investigations. The detailed first landscape round maps 34 possible lanes. The list below highlights the strongest places to begin with the current repository and keeps deeper VM and kernel work visible for later.
+This is the short working index for choosing formal Linux Fieldwork lanes. The full inventory of 34 possibilities lives in [`programmes/registry.yml`](programmes/registry.yml). Ten lanes currently have dedicated directories because their questions and first probes are clear enough to scout.
 
-See [`research/2026-07-30-linux-landscape.md`](research/2026-07-30-linux-landscape.md) for full questions, first probes, target ideas, environment requirements, promotion signals, and stop signals.
+## Immediate current-CI lanes
 
-## Ready to scout
+1. [LF-02 — chrootless `DPKG_ROOT` containment](programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/brief.md)
+2. [LF-07 — maintainer-script interruption and idempotency](programmes/debian-packages/lanes/LF-07-maintainer-script-interruption-idempotency/brief.md)
+3. [LF-12 — reproducible package variance](programmes/debian-packages/lanes/LF-12-reproducible-package-variance/brief.md)
+4. [LF-14 — archive extraction and metadata contracts](programmes/filesystems-images/lanes/LF-14-archive-extraction-metadata-contracts/brief.md)
+5. [LF-23 — cancellation, subprocess, and file-descriptor cleanup](programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/brief.md)
+6. [LF-11 — merged-`/usr` path assumptions](programmes/debian-packages/lanes/LF-11-merged-usr-path-assumptions/brief.md)
 
-### 1. Chrootless `DPKG_ROOT` containment — LF-02
+## Capability-check lanes
 
-Trace every write and process action while installing a minimal package set through chrootless dpkg. Look for host mutations, host-versus-target confusion, service actions, and late failure.
+7. [LF-03 — rootless ownership and idmapped mounts](programmes/rootless-execution/lanes/LF-03-rootless-ownership-idmapped-mounts/brief.md)
+8. [LF-15 — OverlayFS copy-up and metadata behavior](programmes/filesystems-images/lanes/LF-15-overlayfs-copy-up-metadata/brief.md)
+9. [LF-22 — cgroup v2 delegation and cleanup](programmes/services-resources/lanes/LF-22-cgroup-v2-delegation-cleanup/brief.md)
 
-**Likely first target:** the imported `mmdebstrap` tree plus a deliberately small package set.
+## VM lane
 
-### 2. Maintainer-script interruption and idempotency — LF-07
+10. [LF-20 — systemd stop, timeout, and descendant cleanup](programmes/services-resources/lanes/LF-20-systemd-stop-timeout-descendant-cleanup/brief.md)
 
-Choose a package script with several observable side effects, terminate it after each step, rerun the package operation, and compare the result with a clean installation.
+## Programmes
 
-**Likely first targets:** small Debian packages using debhelper-generated service, account, cache, or configuration snippets.
-
-### 3. Reproducible package variance — LF-12
-
-Build a small package twice while varying time, path, locale, timezone, hostname, file order, or parallelism. Use diffoscope-style analysis to find the first meaningful difference.
-
-**Likely first targets:** short builds with generated manuals, archives, documentation, or embedded version data.
-
-### 4. Archive extraction and metadata contracts — LF-14
-
-Create a canonical archive corpus covering traversal paths, symlinks, hard links, sparse files, xattrs, ACLs, capabilities, device nodes, and numeric ownership. Compare behavior across rootless and privileged extraction paths.
-
-**Likely first target:** `mmdebstrap` tar filtering and import/export behavior.
-
-### 5. Cancellation and descendant cleanup — LF-23
-
-Interrupt orchestration tools while they own children, pipes, locks, temporary files, and output paths. Verify that reruns start from a clean state.
-
-**Likely first target:** the existing mmdebstrap runner and its child-process paths.
-
-### 6. Merged-`/usr` path assumptions — LF-11
-
-Compare equivalent operations inside merged and synthetic split root filesystems. Focus on symlink resolution, package scripts, initramfs paths, and target-root escapes.
-
-**Likely first targets:** Debian maintainer scripts and bootstrap hooks.
-
-## Ready after a capability check
-
-### 7. Rootless ownership and idmapped mounts — LF-03
-
-Test whether idmapped mounts provide a reliable host view of rootless trees while preserving intended on-disk ownership.
-
-**Needs:** mount and user-namespace support on the runner or a small VM.
-
-### 8. OverlayFS copy-up and metadata behavior — LF-15
-
-Exercise hard links, xattrs, rename, chmod, chown, open descriptors, and inode identity across lower and upper layers.
-
-**Needs:** privileged mount access.
-
-### 9. cgroup v2 delegation and cleanup — LF-22
-
-Create a delegated subtree, apply resource controls, hit limits, move processes, and verify complete teardown.
-
-**Needs:** a writable delegated cgroup hierarchy or a VM.
-
-### 10. Network namespace DNS ownership — LF-27
-
-Create isolated namespaces with different DNS responders and compare resolver behavior under copied, generated, and bind-mounted configuration.
-
-**Needs:** network namespace and virtual-interface privileges.
-
-### 11. nftables atomic update and rollback — LF-28
-
-Apply valid and invalid ruleset batches under traffic and verify that errors preserve the previous effective policy.
-
-**Needs:** network namespace and netfilter privileges.
-
-## VM queue
-
-- **LF-20:** systemd stop, timeout, restart, and descendant cleanup.
-- **LF-24:** shutdown and soft-reboot persistence.
-- **LF-30:** initramfs dependency discovery and atomic replacement.
-- **LF-18:** disk-image dissection, growth, and device cleanup.
-- **LF-19:** dm-verity and dm-integrity image assembly.
-- **LF-31:** udev and hotplug event ordering.
-- **LF-16:** rename, fsync, and crash durability.
-- **LF-34:** block fault injection and recovery.
-
-## Kernel and version-matrix queue
-
-- **LF-25:** `no_new_privs`, seccomp, and Landlock composition.
-- **LF-29:** netlink compatibility and fallback.
-- **LF-32:** eBPF verifier and userspace-tool compatibility.
-- **LF-33:** io_uring cancellation and resource release.
+- [`Rootless execution, namespaces, and mounts`](programmes/rootless-execution/STATUS.md)
+- [`Debian packages, transactions, and builds`](programmes/debian-packages/STATUS.md)
+- [`Filesystems, archives, and disk images`](programmes/filesystems-images/STATUS.md)
+- [`Services, processes, and resources`](programmes/services-resources/STATUS.md)
+- [`Security and networking boundaries`](programmes/security-networking/STATUS.md)
+- [`Boot, devices, and deeper kernel work`](programmes/boot-kernel/STATUS.md)
 
 ## Selection rule
 
-Choose one lane whose first probe fits the available environment. Begin with source and test mapping, then open an investigation only when the probe has distinguishing outcomes and a meaningful consequence.
+Choose a lane whose formal brief fits the available environment. Begin with source and test mapping. Open an investigation only when the probe has distinguishing outcomes and a meaningful consequence.
 
-A good active mix is:
-
-- one Debian package-transaction lane;
-- one namespace or filesystem lane;
-- one service or process-lifecycle lane;
-- one short reproducibility or archive lane.
-
-Keep the rest mapped until an active lane closes or branches into a clearly different question.
+Keep registry-level possibilities in the registry until they meet the lane promotion rule. See [`programmes/README.md`](programmes/README.md) and the [2026-07-30 selection record](research/rounds/2026-07-30-linux-landscape/selection.md).
