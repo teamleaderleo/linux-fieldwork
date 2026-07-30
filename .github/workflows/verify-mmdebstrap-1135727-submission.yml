@@ -70,14 +70,17 @@ jobs:
               encoding="utf-8"
           )
 
-          source_block = """my @tempdir_options = (TMPDIR => 1);
-          if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne '') {
-              @tempdir_options = (DIR => $ENV{TMPDIR});
-          }
-          $options->{root} = tempdir('mmdebstrap.XXXXXXXXXX', @tempdir_options);"""
-          assert source.count(source_block) == 1
-          for format_name in ("tar", "squashfs", "ext2", "ext4", "null"):
-              assert f"C<{format_name}>" in source
+          for line in (
+              "my @tempdir_options = (TMPDIR => 1);",
+              "if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne '') {",
+              "@tempdir_options = (DIR => $ENV{TMPDIR});",
+              "$options->{root} = tempdir('mmdebstrap.XXXXXXXXXX', @tempdir_options);",
+          ):
+              assert source.count(line) == 1, line
+          documentation = (
+              "For the C<tar>, C<squashfs>, C<ext2>, C<ext4>, and C<null> formats,"
+          )
+          assert source.count(documentation) == 1
           assert coverage.count("Test: fail-with-unwritable-tmpdir") == 1
           assert "TMPDIR=\"$tmpdir\"" in test
           assert "grep -F 'I: using /tmp/mmdebstrap.'" in test
