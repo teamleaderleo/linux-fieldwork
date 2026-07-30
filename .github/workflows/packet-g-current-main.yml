@@ -1,0 +1,104 @@
+name: Packet G current-main execution
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/packet-g-current-main.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packet-g-current-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out current-main carrier
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Materialize exact canonical Packet G units
+        shell: bash
+        env:
+          PR143_HEAD: 96ddac76ab9dead7875937a6edfa37137bc52eb9
+          PR159_HEAD: ebda4974541995a236f7fb791f8019b31d10f4b9
+          PR166_HEAD: 50fdbcd25b51842ff2b489a91e36668e0e2340ea
+        run: |
+          set -euo pipefail
+
+          fetch_head() {
+            git fetch --no-tags origin "$1"
+          }
+
+          copy_path() {
+            local ref=$1
+            local path=$2
+            mkdir -p "$(dirname "$path")"
+            git show "$ref:$path" > "$path"
+          }
+
+          for ref in "$PR143_HEAD" "$PR159_HEAD" "$PR166_HEAD"; do
+            fetch_head "$ref"
+          done
+
+          for path in \
+            investigations/mmdebstrap-coverage-parent-sigint/0001-fail-after-parent-sigint.patch \
+            investigations/mmdebstrap-coverage-parent-sigint/README.md \
+            notes/processes/cancellation-cleanup-must-not-fall-through-to-success.md \
+            tests/test_mmdebstrap_coverage_parent_sigint.py
+          do
+            copy_path "$PR143_HEAD" "$path"
+          done
+
+          for path in \
+            investigations/make-mirror-signal-exit/0001-preserve-signal-exit-status.patch \
+            investigations/make-mirror-signal-exit/README.md \
+            notes/processes/signal-traps-must-terminate-after-cleanup.md \
+            tests/test_make_mirror_signal_exit.py
+          do
+            copy_path "$PR159_HEAD" "$path"
+          done
+
+          for path in \
+            investigations/mmdebstrap-proxysolver-signal-status/0001-reraise-solver-signals.patch \
+            investigations/mmdebstrap-proxysolver-signal-status/README.md \
+            notes/processes/negative-subprocess-returncodes-are-signals.md \
+            tests/test_mmdebstrap_proxysolver_signal_status.py
+          do
+            copy_path "$PR166_HEAD" "$path"
+          done
+
+      - name: Verify current-main source and prerequisite identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object upstream/mmdebstrap/coverage.py)" = 9a522484aef05deae514a98e4b6adf5feb6c886d
+          test "$(git hash-object upstream/mmdebstrap/make_mirror.sh)" = 6c4be092edcf23b56b63a3befe238c099c45f590
+          test "$(git hash-object upstream/mmdebstrap/proxysolver)" = 5cd51fab89104d30b8b12bff18a49d38d9be0003
+          test "$(git hash-object investigations/mmdebstrap-proxysolver-exit-status/0001-propagate-solver-status.patch)" = 0c29e916fa33f41bb5bea0b4ee863d7a0eee5519
+          test -z "$(git diff --name-only -- upstream/mmdebstrap)"
+
+      - name: Run focused Packet G matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_mmdebstrap_coverage_parent_sigint.py' -v
+          python3 -m unittest discover -s tests -p 'test_make_mirror_signal_exit.py' -v
+          python3 -m unittest discover -s tests -p 'test_mmdebstrap_proxysolver_signal_status.py' -v
+
+      - name: Run immediate clean rerun
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_mmdebstrap_coverage_parent_sigint.py' -v
+          python3 -m unittest discover -s tests -p 'test_make_mirror_signal_exit.py' -v
+          python3 -m unittest discover -s tests -p 'test_mmdebstrap_proxysolver_signal_status.py' -v
+
+      - name: Confirm carrier changed no imported source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git diff --name-only -- upstream/mmdebstrap)"
+          git status --short
