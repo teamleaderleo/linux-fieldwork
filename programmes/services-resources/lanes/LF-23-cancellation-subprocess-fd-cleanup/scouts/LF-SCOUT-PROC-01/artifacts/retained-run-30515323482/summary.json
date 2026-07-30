@@ -1,0 +1,66 @@
+{
+  "all_interrupted_failed": true,
+  "all_process_groups_empty": true,
+  "all_reruns_clean": true,
+  "promotion_reproduced": true,
+  "results": [
+    {
+      "after_exit": {"pids": [], "process_count": 0},
+      "after_signal": {"pids": [699], "process_count": 1},
+      "before_signal": {"pids": [699], "process_count": 1},
+      "checkpoint": "before-child-launch\t699\t691\t699\t/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/before-child-launch/tmp/mmdebstrap.jtnN3Uh3In\t0=/dev/null|1=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/before-child-launch/stdout.log|2=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/before-child-launch/stderr.log|3=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/mmdebstrap.instrumented|4=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/before-child-launch/tmp/mmdebstrap.jtnN3Uh3In|5=pipe:[12259]|6=pipe:[12259]|7=socket:[12260]|8=socket:[12261]|9=pipe:[12262]|10=pipe:[12262]|11=<unreadable>",
+      "interrupted_exit": 25,
+      "output_target": "/dev/null",
+      "rerun_exit": 0,
+      "rerun_retained_paths": [],
+      "retained_paths": [],
+      "signal": "SIGTERM",
+      "signal_scope": "process-group",
+      "stage": "before-child-launch"
+    },
+    {
+      "after_exit": {"pids": [], "process_count": 0},
+      "after_signal": {"pids": [798], "process_count": 1},
+      "before_signal": {"pids": [798, 823, 824], "process_count": 3},
+      "checkpoint": "active-worker\t823\t798\t798\t/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/active-worker/tmp/mmdebstrap.3tVobhdRwo\t0=/dev/null|1=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/active-worker/stderr.log|2=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/active-worker/stderr.log|3=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/mmdebstrap.instrumented|4=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/active-worker/tmp/mmdebstrap.3tVobhdRwo|5=<unreadable>|6=pipe:[16682]|7=socket:[16683]|9=pipe:[16685]|10=pipe:[16685]",
+      "interrupted_exit": 25,
+      "output_target": "/dev/null",
+      "rerun_exit": 0,
+      "rerun_retained_paths": [],
+      "retained_paths": [],
+      "signal": "SIGTERM",
+      "signal_scope": "process-group",
+      "stage": "active-worker"
+    },
+    {
+      "after_exit": {"pids": [], "process_count": 0},
+      "after_signal": {"pids": [892], "process_count": 1},
+      "before_signal": {"pids": [892], "process_count": 1},
+      "checkpoint": "cleanup\t892\t691\t892\t/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/cleanup/tmp/mmdebstrap.WtkWXmlmAi\t0=/dev/null|1=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/cleanup/stdout.log|2=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/cleanup/stderr.log|3=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/mmdebstrap.instrumented|4=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/cleanup/tmp/mmdebstrap.WtkWXmlmAi|5=<unreadable>",
+      "interrupted_exit": 25,
+      "output_target": "/dev/null",
+      "rerun_exit": 0,
+      "rerun_retained_paths": [],
+      "retained_paths": [],
+      "signal": "SIGTERM",
+      "signal_scope": "process-group",
+      "stage": "cleanup"
+    }
+  ],
+  "run_progress_parent_only": {
+    "after_exit": {"pids": [], "process_count": 0},
+    "after_signal": {"pids": [991, 992, 993, 994], "process_count": 4},
+    "before_signal": {"pids": [991, 992, 993, 994], "process_count": 4},
+    "checkpoint": "run-progress-parent\t991\t691\t991\t\t0=/dev/null|1=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/run-progress-parent-only/stdout.log|2=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/run-progress-parent-only/stderr.log|3=/work/programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/mmdebstrap.run-progress-driver|4=pipe:[15993]|5=<unreadable>|6=pipe:[15994]",
+    "child_pid": 992,
+    "interrupted_exit": 0,
+    "interruption_logged": true,
+    "misreported_success": true,
+    "rerun_after_exit": {"pids": [], "process_count": 0},
+    "rerun_exit": 0,
+    "returned_success": true,
+    "signal": "SIGTERM",
+    "signal_scope": "run_progress-owner-pid-only",
+    "stage": "run-progress-parent-only"
+  }
+}
