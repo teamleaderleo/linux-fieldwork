@@ -22,10 +22,19 @@ Under direct chrootless `dpkg --root` execution:
 - Parent scout: issue #11 / PR #21
 - Imported mmdebstrap revision: `debian/1.5.7-3`, resolved commit `6fde999741f4fe1e7bf38079acf29432ef87a35e`
 - Investigation branch: `investigation/lf-02-upgrade-failure-recovery`
-- Runner: `run.sh`
+- Supported runner: `run-guarded.sh`
+- Matrix implementation: `run.sh`
 - Fixture builder: `build-fixtures.py`
 - Summary builder: `summarize.py`
 - Workflow: `.github/workflows/lf-02-upgrade-failure-recovery.yml`
+
+Run the matrix through:
+
+```sh
+bash investigations/lf-02-upgrade-failure-recovery/run-guarded.sh
+```
+
+`run.sh` is the child implementation and remains behind the guarded entry point.
 
 The first matrix uses the direct host `dpkg` boundary already mapped by the scout:
 
@@ -44,6 +53,17 @@ Apt-managed upgrades, triggers, and dependencies are later boundaries.
 The dedicated workflow runs on GitHub-hosted Ubuntu 24.04 and records exact repository provenance, tool versions, UID/GID, kernel, package archive digests, commands, timing, target snapshots, host fingerprints, and per-process syscall traces.
 
 Uploaded public evidence removes the account-name line from `environment.txt` and verifies its absence before artifact upload. UID and GID remain available for privilege interpretation.
+
+The guarded entry point:
+
+- rejects repository, home, relative, missing, and symlinked temporary roots;
+- accepts canonical disposable roots below `/tmp` or `/var/tmp`;
+- creates one unpredictable sandbox with `mktemp -d`;
+- validates the fixed result path and rejects symlinked path components;
+- removes only the exact validated sandbox with `rm -rf --`;
+- starts the matrix in a new process group;
+- forwards INT/TERM to that group, reaps the group leader, escalates after a bounded grace period, and exits 130/143;
+- prevents later matrix phases after cancellation.
 
 ## Baseline
 
@@ -103,7 +123,7 @@ Promotion takes precedence over unresolved classification when both appear. A cl
 - The syscall classifier observes path-bearing file/process/network calls. FD-only effects still require raw trace review.
 - The first matrix does not yet prove apt-managed upgrade, dependency ordering, triggers, multiarch, or rollback semantics for arbitrary packages.
 - A failed configure is expected evidence when the target status and later recovery match the declared contract.
-- The current runner still needs guarded recursive-deletion roots and cancellation semantics that terminate without resuming later phases.
+- Direct invocation of `run.sh` bypasses the outer runtime and cancellation controls and is outside the supported execution contract.
 
 ## Validation contract
 
@@ -113,6 +133,13 @@ Conffile paths and contents are exact per phase, including `.dpkg-new` during un
 
 Disposition precedence is covered for clean, service-action, unexpected-mutation, unresolved-only, mixed service/unresolved, and host-fingerprint-change cases.
 
+Guarded-runner regressions use real process groups and prove:
+
+- repository paths are rejected as recursive-cleanup roots before the child command runs;
+- natural child status 7 remains status 7 and the exact sandbox is removed;
+- SIGINT stops the child group, removes the sandbox, prevents the later marker, and returns 130;
+- SIGTERM does the same and returns 143.
+
 ## Results
 
 Dedicated workflow run `30557757766` completed successfully at head `40c2b1ec89e4d8391bbcbe95a14f96a4a87760ca`. Review found safety and decision-contract gaps, so that run remains exploratory evidence.
@@ -121,15 +148,7 @@ Generic Linux Fieldwork CI run `30557757125` passed compilation and all nine inh
 
 Helper B added public-evidence account-name removal at commit `353e963f1200eae7733e8f0814f2e18ccf53270b`. Run `30577790248` validated the scrub and exposed the prior decision defect by reporting 32 service actions with `retain-mapped-behavior`.
 
-Helper B then replaced assertion-only summary validation, added exact conffile sibling/content checks, recomputed classifier totals, and defined disposition precedence. Dedicated workflow run `30578410231` at exact head `6f9f89c432982f1227a1fd3b45ab9236c8ade96c` passed:
-
-- Python compilation and shell syntax;
-- normal and optimized-Python summary regressions;
-- the full upgrade/failure/recovery matrix;
-- account-name removal;
-- artifact upload and downloaded-artifact receipt.
-
-The corrected artifact reported:
+Helper B then replaced assertion-only summary validation, added exact conffile sibling/content checks, recomputed classifier totals, and defined disposition precedence. Dedicated workflow run `30578410231` at exact head `6f9f89c432982f1227a1fd3b45ab9236c8ade96c` passed the revised decision contract and reported:
 
 ```text
 disposition=promote-product-candidate
@@ -137,11 +156,19 @@ failure_recovery: exit=1 failed_status=half-configured recovery_status=installed
 containment: unexpected_mutations=0 service_actions=32 unresolved=0 host_fingerprint_unchanged=true
 ```
 
-The package lifecycle recovered as expected. The 32 classified host service actions now trigger the declared promotion result.
+Helper B added the guarded process-group entry point and real-process cleanup/cancellation regressions. Dedicated workflow run `30579252048` at code head `1f8badfb91d75dbff21e6bf83cc0e439a1630c86` passed:
+
+- Python and shell syntax;
+- all LF-02 summary, provenance, schema, unsafe-root, child-status, SIGINT, and SIGTERM regressions;
+- the full matrix through `run-guarded.sh`;
+- account-name removal;
+- artifact upload and downloaded-artifact receipt.
+
+The package lifecycle recovered as expected. The 32 classified host service actions trigger the declared promotion result.
 
 ## Next step
 
-Complete the runtime deletion guard plus INT/TERM child-process-group forwarding, reaping, and 130/143 exit preservation. Add reduced real-process regressions proving later phases do not resume after cancellation. Then rerun the dedicated matrix and artifact receipt. Refresh or restack the base before using generic repository CI as a merge signal.
+Refresh or restack the branch onto a current base so generic repository CI can act as a merge signal. Confirm the policy choice for classified service actions: issue #174 permits mapped treatment, while this branch follows the stricter promotion rule requested during review. Keep the PR in draft until those two human decisions are resolved.
 
 ## Authority
 
