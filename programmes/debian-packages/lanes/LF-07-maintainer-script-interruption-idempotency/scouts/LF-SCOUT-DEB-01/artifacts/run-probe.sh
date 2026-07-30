@@ -8,11 +8,46 @@ package_name=lf-script-idempotency-fixture
 package_dir="$work_dir/package"
 package_deb="$work_dir/${package_name}_1.0_all.deb"
 results_dir="$script_dir/results"
+assertions_file="$results_dir/assertions.tsv"
+assertion_failures=0
 
 rm -rf "$work_dir" "$results_dir"
 mkdir -p "$work_dir" "$results_dir"
 cp -a "$fixture_dir" "$package_dir"
 chmod 0755 "$package_dir/DEBIAN/postinst"
+
+printf 'check\texpected\tactual\tresult\n' > "$assertions_file"
+
+assert_equal() {
+    check=$1
+    expected=$2
+    actual=$3
+    if [ "$actual" = "$expected" ]; then
+        result=passed
+    else
+        result=failed
+        assertion_failures=$((assertion_failures + 1))
+    fi
+    printf '%s\t%s\t%s\t%s\n' "$check" "$expected" "$actual" "$result" >> "$assertions_file"
+}
+
+package_status() {
+    root=$1
+    awk -v package="$package_name" '
+        $1 == "Package:" && $2 == package { in_package=1 }
+        in_package && $1 == "Status:" { print $2 " " $3 " " $4; exit }
+    ' "$root/var/lib/dpkg/status"
+}
+
+registry_line_count() {
+    root=$1
+    registry="$root/var/lib/$package_name/registry"
+    if [ -f "$registry" ]; then
+        wc -l < "$registry" | tr -d ' '
+    else
+        printf '0\n'
+    fi
+}
 
 {
     date -u '+run_utc=%Y-%m-%dT%H:%M:%SZ'
@@ -136,12 +171,32 @@ snapshot() {
 
 clean_root="$work_dir/root-clean"
 make_root "$clean_root"
+set +e
 run_dpkg "$clean_root" --install "$package_deb" >"$results_dir/clean-install.log" 2>&1
+clean_rc=$?
+set -e
 snapshot "$clean_root" "$results_dir/clean.snapshot"
+clean_status=$(package_status "$clean_root")
+clean_registry_lines=$(registry_line_count "$clean_root")
+assert_equal 'clean.install_rc' '0' "$clean_rc"
+assert_equal 'clean.final_status' 'install ok installed' "$clean_status"
+assert_equal 'clean.registry_lines' '1' "$clean_registry_lines"
 
-printf 'point\tfirst_rc\tpre_recovery_status\tfinal_comparison\tregistry_lines\n' > "$results_dir/summary.tsv"
+printf 'point\tfirst_rc\tpre_recovery_status\trecovery_rc\tfinal_status\tfinal_comparison\tregistry_lines\tassertions\n' > "$results_dir/summary.tsv"
 
 for point in after-state after-registry after-config; do
+    case "$point" in
+        after-state)
+            expected_comparison=converged
+            expected_registry_lines=1
+            ;;
+        after-registry|after-config)
+            expected_comparison=diverged
+            expected_registry_lines=2
+            ;;
+    esac
+
+    failures_before=$assertion_failures
     root="$work_dir/root-$point"
     make_root "$root"
     printf '%s\n' "$point" > "$root/run/$package_name/interrupt-after"
@@ -151,13 +206,14 @@ for point in after-state after-registry after-config; do
     first_rc=$?
     set -e
 
-    pre_status=$(awk -v package="$package_name" '
-        $1 == "Package:" && $2 == package { in_package=1 }
-        in_package && $1 == "Status:" { print $2 " " $3 " " $4; exit }
-    ' "$root/var/lib/dpkg/status")
+    pre_status=$(package_status "$root")
     printf '%s\n' "$pre_status" > "$results_dir/$point.pre-recovery-status.txt"
 
+    set +e
     run_dpkg "$root" --configure "$package_name" >"$results_dir/$point.recovery.log" 2>&1
+    recovery_rc=$?
+    set -e
+    final_status=$(package_status "$root")
     snapshot "$root" "$results_dir/$point.snapshot"
 
     if diff -u --label clean.snapshot --label "$point.snapshot" "$results_dir/clean.snapshot" "$results_dir/$point.snapshot" > "$results_dir/$point.diff"; then
@@ -166,9 +222,24 @@ for point in after-state after-registry after-config; do
         comparison=diverged
     fi
 
-    registry_lines=$(wc -l < "$root/var/lib/$package_name/registry" | tr -d ' ')
-    printf '%s\t%s\t%s\t%s\t%s\n' \
-        "$point" "$first_rc" "$pre_status" "$comparison" "$registry_lines" \
+    registry_lines=$(registry_line_count "$root")
+
+    assert_equal "$point.interrupted_install_rc" '1' "$first_rc"
+    assert_equal "$point.pre_recovery_status" 'install ok half-configured' "$pre_status"
+    assert_equal "$point.recovery_rc" '0' "$recovery_rc"
+    assert_equal "$point.final_status" 'install ok installed' "$final_status"
+    assert_equal "$point.comparison" "$expected_comparison" "$comparison"
+    assert_equal "$point.registry_lines" "$expected_registry_lines" "$registry_lines"
+
+    if [ "$assertion_failures" -eq "$failures_before" ]; then
+        point_assertions=passed
+    else
+        point_assertions=failed
+    fi
+
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$point" "$first_rc" "$pre_status" "$recovery_rc" "$final_status" \
+        "$comparison" "$registry_lines" "$point_assertions" \
         >> "$results_dir/summary.tsv"
 done
 
@@ -178,3 +249,10 @@ for log in "$results_dir"/*.log; do
 done
 
 cat "$results_dir/summary.tsv"
+
+if [ "$assertion_failures" -ne 0 ]; then
+    printf '%s assertion(s) failed; see %s\n' "$assertion_failures" "$assertions_file" >&2
+    exit 1
+fi
+
+printf 'all assertions passed\n'
