@@ -40,7 +40,7 @@ diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mm
 @@ -399,1 +429,1 @@ mmdebstrap "$@" | {
 -  set -- "$@" -E "$EXTOPTS" "$IMAGE" "$SIZE"
 +  set -- "$@" -E "$EXTOPTS" "$IMAGE_TMP" "$SIZE"
-@@ -468,3 +498,3 @@ rm -f "$WORKDIR/efiimg"
+@@ -470,2 +500,2 @@
 -truncate --size="+$((34 * 512))" "$IMAGE"
 -/sbin/sfdisk "$IMAGE" <<EOF
 +truncate --size="+$((34 * 512))" "$IMAGE_TMP"
