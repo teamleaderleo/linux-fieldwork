@@ -92,9 +92,9 @@ mkdir -p "$result_dir"
 printf '%s\n' "$PATH" >"$result_dir/path.txt"
 if command -v lf-path-probe >/dev/null 2>&1; then
   lf-path-probe
-  printf 'caller_command_resolved=yes\n' >"$result_dir/result.txt"
+  printf 'configured_or_caller_command_resolved=yes\n' >"$result_dir/result.txt"
 else
-  printf 'caller_command_resolved=no\n' >"$result_dir/result.txt"
+  printf 'configured_or_caller_command_resolved=no\n' >"$result_dir/result.txt"
 fi
 for tool in dpkg ldconfig start-stop-daemon update-rc.d; do
   if tool_path="$(command -v "$tool" 2>/dev/null)"; then
@@ -116,7 +116,7 @@ package="$runtime/lf-path-precedence-probe_1.0_all.deb"
 cat >"$runtime/fake-bin/lf-path-probe" <<'EOF'
 #!/bin/sh
 set -eu
-printf 'source=caller-path\n' \
+printf 'source=fake-bin\n' \
   >"$DPKG_ROOT/var/lib/lf-path-precedence-probe/command.txt"
 EOF
 chmod 0755 "$runtime/fake-bin/lf-path-probe"
@@ -146,15 +146,22 @@ run_case() {
   local label=$1
   local path_value=$2
   local mmdebstrap_path=$3
+  local apt_config=${4-}
   local target="$runtime/$label-root"
   local hook
+  local -a launch_env=(
+    env -i
+    PATH="$path_value"
+    HOME="$runtime/home"
+    TMPDIR="$runtime"
+    LC_ALL=C.UTF-8
+  )
   hook="$(make_hook)"
+  if [[ -n "$apt_config" ]]; then
+    launch_env+=(APT_CONFIG="$apt_config")
+  fi
 
-  env -i \
-    PATH="$path_value" \
-    HOME="$runtime/home" \
-    TMPDIR="$runtime" \
-    LC_ALL=C.UTF-8 \
+  "${launch_env[@]}" \
     "$mmdebstrap_path" \
       --mode=chrootless \
       --variant=custom \
@@ -181,7 +188,7 @@ run_case candidate-clean "$system_path" "$candidate"
 run_case mutation-tainted "$tainted_path_value" "$mutation"
 
 for label in candidate-tainted candidate-clean; do
-  grep -Fx 'caller_command_resolved=no' \
+  grep -Fx 'configured_or_caller_command_resolved=no' \
     "$result_dir/$label-maintainer-script/result.txt"
   test ! -e "$result_dir/$label-maintainer-script/command.txt"
   for tool in dpkg ldconfig start-stop-daemon update-rc.d; do
@@ -194,12 +201,23 @@ candidate_clean_path="$(cat "$result_dir/candidate-clean-maintainer-script/path.
 [[ "$candidate_tainted_path" == "$candidate_clean_path" ]]
 [[ "$candidate_tainted_path" != *"$runtime/fake-bin"* ]]
 
-grep -Fx 'caller_command_resolved=yes' \
+grep -Fx 'configured_or_caller_command_resolved=yes' \
   "$result_dir/mutation-tainted-maintainer-script/result.txt"
-grep -Fx 'source=caller-path' \
+grep -Fx 'source=fake-bin' \
   "$result_dir/mutation-tainted-maintainer-script/command.txt"
 mutation_path="$(cat "$result_dir/mutation-tainted-maintainer-script/path.txt")"
 [[ "$mutation_path" == "$runtime/fake-bin:"* ]]
+
+configured_path="$runtime/fake-bin:$system_path"
+configured_path_config="$runtime/apt-configured-dpkg-path.conf"
+printf 'DPkg::Path "%s";\n' "$configured_path" >"$configured_path_config"
+run_case configured-authority "$system_path" "$candidate" "$configured_path_config"
+grep -Fx 'configured_or_caller_command_resolved=yes' \
+  "$result_dir/configured-authority-maintainer-script/result.txt"
+grep -Fx 'source=fake-bin' \
+  "$result_dir/configured-authority-maintainer-script/command.txt"
+configured_authority_path="$(cat "$result_dir/configured-authority-maintainer-script/path.txt")"
+[[ "$configured_authority_path" == "$configured_path" ]]
 
 empty_config="$runtime/apt-empty-dpkg-path.conf"
 printf 'DPkg::Path "";\n' >"$empty_config"
@@ -246,10 +264,13 @@ candidate_clean_maintainer_script_path=$candidate_clean_path
 candidate_clean_caller_command_resolved=no
 mutation_tainted_maintainer_script_path=$mutation_path
 mutation_tainted_caller_command_resolved=yes
+configured_authority_path=$configured_authority_path
+configured_authority_command_resolved=yes
+configured_authority_interpretation=explicit apt configuration is authoritative rather than caller PATH leakage
 expected_tools_resolved=yes
 empty_dpkg_path_status=$empty_dpkg_path_status
 empty_dpkg_path_failed_closed=yes
-interpretation=canonical DPkg::Path blocks caller-prefix command resolution and rejects an explicit empty apt path
+interpretation=canonical DPkg::Path blocks caller-prefix command resolution, honors explicit non-empty apt configuration, and rejects an explicit empty apt path
 EOF
 
 cat "$result_dir/summary.txt"
