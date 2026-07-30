@@ -2,7 +2,7 @@
 """Create a deterministic JSON Lines manifest for a tar archive.
 
 The manifest records archive metadata before extraction can discard or rewrite it.
-It is intended for root filesystem, container layer, and VM image build research.
+It is intended for root filesystem and VM root build research.
 """
 
 from __future__ import annotations
@@ -16,6 +16,18 @@ from pathlib import PurePosixPath
 from typing import BinaryIO, Iterable, Iterator
 
 BLOCK_SIZE = 1024 * 1024
+PAX_FIELDS_REPRESENTED_DIRECTLY = frozenset(
+    {
+        "path",
+        "linkpath",
+        "size",
+        "uid",
+        "gid",
+        "uname",
+        "gname",
+        "mtime",
+    }
+)
 
 
 def normalized_name(name: str) -> str:
@@ -58,6 +70,15 @@ def sha256_stream(stream: BinaryIO) -> str:
     return digest.hexdigest()
 
 
+def extra_pax_headers(member: tarfile.TarInfo) -> dict[str, str]:
+    """Return PAX metadata that is not already represented by a top-level field."""
+    return {
+        key: value
+        for key, value in sorted(member.pax_headers.items())
+        if key not in PAX_FIELDS_REPRESENTED_DIRECTLY
+    }
+
+
 def manifest_entries(archive: tarfile.TarFile) -> Iterator[dict[str, object]]:
     seen_paths: set[str] = set()
     for member in archive:
@@ -85,8 +106,9 @@ def manifest_entries(archive: tarfile.TarFile) -> Iterator[dict[str, object]]:
         if member.ischr() or member.isblk():
             entry["device_major"] = member.devmajor
             entry["device_minor"] = member.devminor
-        if member.pax_headers:
-            entry["pax_headers"] = dict(sorted(member.pax_headers.items()))
+        pax_headers = extra_pax_headers(member)
+        if pax_headers:
+            entry["pax_headers"] = pax_headers
 
         if member.isfile():
             extracted = archive.extractfile(member)
