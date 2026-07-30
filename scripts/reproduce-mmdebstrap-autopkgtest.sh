@@ -6,6 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 imported_source="$repo_root/upstream/mmdebstrap"
 override_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/installed-command-wrapper.patch"
 sourcesfilter_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/sourcesfilter-deb822.patch"
+capability_patch="$repo_root/investigations/mmdebstrap-root-without-cap-sys-admin-scheduling/0001-run-capability-case-without-host-apt-hooks.patch"
 run_id=${RUN_ID:-"local-$(date -u +%Y%m%dT%H%M%SZ)"}
 run_dir=${RUN_DIR:-"$repo_root/investigations/mmdebstrap-autopkgtest-1141078/runs/$run_id"}
 timeout_duration=${AUTOPKGTEST_TIMEOUT:-165m}
@@ -53,6 +54,9 @@ fi
 if [[ ! -f $sourcesfilter_patch ]]; then
   finish_early 2 "Deb822 sourcesfilter patch is missing"
 fi
+if [[ ! -f $capability_patch ]]; then
+  finish_early 2 "no-CAP_SYS_ADMIN scheduling patch is missing"
+fi
 
 work_root=$(mktemp -d "${TMPDIR:-/tmp}/lf-mmdebstrap-autopkgtest.XXXXXXXX")
 case "$work_root" in
@@ -67,6 +71,8 @@ patch --batch --forward -p1 -d "$source_tree" -i "$override_patch" \
   >"$run_dir/override-patch.stdout" 2>"$run_dir/override-patch.stderr"
 patch --batch --forward -p1 -d "$source_tree" -i "$sourcesfilter_patch" \
   >"$run_dir/sourcesfilter-patch.stdout" 2>"$run_dir/sourcesfilter-patch.stderr"
+patch --batch --forward -p1 -d "$source_tree" -i "$capability_patch" \
+  >"$run_dir/capability-patch.stdout" 2>"$run_dir/capability-patch.stderr"
 
 bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
 
@@ -76,9 +82,10 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
   printf -- '- Run ID: `%s`\n' "$run_id"
   printf -- '- Timeout: `%s`\n' "$timeout_duration"
   printf -- '- Imported source path: `%s`\n' "upstream/mmdebstrap"
-  printf -- '- Execution source: temporary copy with the recorded installed-command and Deb822 sourcesfilter patches\n'
+  printf -- '- Execution source: temporary copy with installed-command, Deb822 sourcesfilter, and no-CAP_SYS_ADMIN scheduling patches\n'
   printf -- '- Wrapper purpose: execute `/usr/bin/mmdebstrap` while bypassing source-preflight checks that current tooling applies to the older packaged script\n'
   printf -- '- Sourcesfilter purpose: process current Deb822 apt source entries through python-apt exploded entries instead of asserting\n'
+  printf -- '- Scheduling purpose: run the mount-capability case in the existing hook-free phase rather than below an incompatible bind-mount hook\n'
   if [[ -f $imported_source/.linux-fieldwork-source.json ]]; then
     printf '\n## Imported source\n\n```json\n'
     cat "$imported_source/.linux-fieldwork-source.json"
@@ -94,8 +101,10 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
     "$imported_source/make_mirror.sh" \
     "$override_patch" \
     "$sourcesfilter_patch" \
+    "$capability_patch" \
     "$source_tree/debian/tests/testsuite" \
-    "$source_tree/debian/tests/sourcesfilter"
+    "$source_tree/debian/tests/sourcesfilter" \
+    "$source_tree/coverage.txt"
   printf '```\n'
   printf '\n## Tool versions\n\n```text\n'
   dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
@@ -138,6 +147,7 @@ dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
   esac
   printf -- '- Source-preflight override: `installed-command-wrapper.patch`\n'
   printf -- '- Source compatibility override: `sourcesfilter-deb822.patch`\n'
+  printf -- '- Test scheduling override: `0001-run-capability-case-without-host-apt-hooks.patch`\n'
   if [[ -f $console_log ]]; then
     printf -- '- Console SHA-256: `%s`\n' "$(sha256sum "$console_log" | cut -d' ' -f1)"
   fi
