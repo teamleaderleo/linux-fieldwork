@@ -1,0 +1,27 @@
+## inherited maintainer-script environment
+
+env_count=133
+LF_SECRET_CANARY=lf-secret-canary-7f46
+AWS_SECRET_ACCESS_KEY=fake-aws-secret-3a91
+GITHUB_TOKEN=fake-github-token-91c2
+SSH_AUTH_SOCK=RUNTIME/fake-agent.sock
+DBUS_SESSION_BUS_ADDRESS=unix:path=RUNTIME/fake-session-bus
+HOME=RUNTIME/home
+XDG_RUNTIME_DIR=RUNTIME/xdg
+agent_socket_connect=success
+
+## fake host agent received
+
+lf-fieldwork-package-script
+
+## sanitized control
+
+env_count=19
+LF_SECRET_CANARY=<unset>
+AWS_SECRET_ACCESS_KEY=<unset>
+GITHUB_TOKEN=<unset>
+SSH_AUTH_SOCK=<unset>
+DBUS_SESSION_BUS_ADDRESS=<unset>
+HOME=RUNTIME/sanitized-home
+XDG_RUNTIME_DIR=<unset>
+agent_socket_connect=unavailable
