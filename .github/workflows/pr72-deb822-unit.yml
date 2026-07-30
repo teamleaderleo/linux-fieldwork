@@ -6,6 +6,7 @@ on:
       - '.github/workflows/pr72-deb822-unit.yml'
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -17,6 +18,27 @@ jobs:
       - name: Run focused PR72 tests
         shell: bash
         run: |
+          set +e
           python3 -m unittest \
             tests.test_mmdebstrap_sourcesfilter_deb822 \
-            tests.test_reproduction_harness -v
+            tests.test_reproduction_harness -v \
+            > /tmp/focused.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/focused.log
+          printf 'focused_status=%s\n' "$status"
+
+      - name: Inspect failed reproduction preflight artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8760389758/zip" > /tmp/a.zip
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('/tmp/a.zip') as archive:
+              for name in archive.namelist():
+                  print(f'===== {name} =====')
+                  print(archive.read(name).decode('utf-8', 'replace'))
+          PY
