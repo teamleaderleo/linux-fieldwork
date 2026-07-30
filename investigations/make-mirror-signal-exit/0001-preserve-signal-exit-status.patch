@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirror.sh
 --- a/upstream/mmdebstrap/make_mirror.sh
 +++ b/upstream/mmdebstrap/make_mirror.sh
-@@ -326,5 +326,31 @@ if [ "$FORCE_UPDATE" != "yes" ] && [ -e "$oldmirrordir/dists/$DEFAULT_DI
+@@ -326,5 +326,35 @@ if [ "$FORCE_UPDATE" != "yes" ] && [ -e "$oldmirrordir/dists/$DEFAULT_DI
  fi
  
 +PROXYPID=
@@ -15,6 +15,10 @@ diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirro
 +    wait "$PROXYPID" 2>/dev/null || :
 +    PROXYPID=
 +  fi
++}
++
++cleanup_owner() {
++  stop_proxy
 +  if [ "${CLEANUP_PROXY_CACHE:-no}" = yes ]; then
 +    cleanup_newcachedir || :
 +  fi
@@ -23,18 +27,18 @@ diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirro
 +signal_exit() {
 +  status=$1
 +  trap - EXIT INT QUIT TERM
-+  stop_proxy
++  cleanup_owner
 +  exit "$status"
 +}
 +
  ./caching_proxy.py "$oldcachedir" "$newcachedir" &
  PROXYPID=$!
 -trap 'kill "$PROXYPID" || :' EXIT INT TERM
-+trap 'stop_proxy' EXIT
++trap 'cleanup_owner' EXIT
 +trap 'signal_exit 130' INT
 +trap 'signal_exit 131' QUIT
 +trap 'signal_exit 143' TERM
-@@ -338,7 +364,7 @@ if [ ! -s "$newmirrordir/dists/$DEFAULT_DIST/InRelease" ]; then
+@@ -338,7 +368,7 @@ if [ ! -s "$newmirrordir/dists/$DEFAULT_DIST/InRelease" ]; then
    exit 1
  fi
  
@@ -43,7 +47,7 @@ diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirro
  
  mkdir -p "$newcachedir"
  touch "$newcachedir/mmdebstrapcache"
-@@ -566,9 +592,8 @@ if [ "$HAVE_QEMU" = "yes" ]; then
+@@ -566,9 +596,8 @@ if [ "$HAVE_QEMU" = "yes" ]; then
      "$mirror"
  
 -  kill $PROXYPID
