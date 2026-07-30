@@ -30,13 +30,23 @@ PAX_FIELDS_REPRESENTED_DIRECTLY = frozenset(
 )
 
 
-def normalized_name(name: str) -> str:
-    """Return a stable relative POSIX path without a leading './'."""
+def normalized_member_name(name: str) -> str:
+    """Return a safe relative POSIX member path.
+
+    Root filesystem archives can legitimately contain a leading ``./``. Absolute
+    paths and parent traversal are rejected because normalizing either would merge
+    distinct archive entries and could hide a dangerous extraction target.
+    """
+    original = name
     while name.startswith("./"):
         name = name[2:]
     if name == ".":
         return ""
-    return str(PurePosixPath(name))
+
+    path = PurePosixPath(name)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"unsafe archive member path: {original!r}")
+    return str(path)
 
 
 def member_type(member: tarfile.TarInfo) -> str:
@@ -81,14 +91,15 @@ def extra_pax_headers(member: tarfile.TarInfo) -> dict[str, str]:
 
 def manifest_entries(archive: tarfile.TarFile) -> Iterator[dict[str, object]]:
     seen_paths: set[str] = set()
-    for member in archive:
-        path = normalized_name(member.name)
+    for archive_index, member in enumerate(archive):
+        path = normalized_member_name(member.name)
         if path in seen_paths:
             raise ValueError(f"archive contains duplicate path: {path!r}")
         seen_paths.add(path)
 
         entry: dict[str, object] = {
             "path": path,
+            "archive_index": archive_index,
             "type": member_type(member),
             "mode": f"{member.mode & 0o7777:04o}",
             "uid": member.uid,
@@ -102,7 +113,9 @@ def manifest_entries(archive: tarfile.TarFile) -> Iterator[dict[str, object]]:
         if member.gname:
             entry["gname"] = member.gname
         if member.linkname:
-            entry["linkname"] = normalized_name(member.linkname)
+            # Link targets are data. Preserve the exact spelling because ``../``
+            # and leading slashes have real semantics for symlinks and hardlinks.
+            entry["linkname"] = member.linkname
         if member.ischr() or member.isblk():
             entry["device_major"] = member.devmajor
             entry["device_minor"] = member.devminor
