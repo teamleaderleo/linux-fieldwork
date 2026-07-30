@@ -116,7 +116,7 @@ jobs:
               apt-get install -y --no-install-recommends \
                 autopkgtest ca-certificates python3 procps util-linux
               apt-get clean
-              scripts/reproduce-mmdebstrap-autopkgtest.sh
+              bash scripts/reproduce-mmdebstrap-autopkgtest.sh
             '
           status=$?
           set -e
