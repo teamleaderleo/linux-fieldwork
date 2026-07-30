@@ -4,17 +4,25 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 patch_file="$repo_root/investigations/mmdebstrap-chrootless-env/mmdebstrap-chrootless-target-tmpdir.patch"
 result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/target-tmpdir-results"
-runtime="${RUNNER_TEMP:-/tmp}/mmdebstrap-chrootless-target-tmpdir"
-
-case "$runtime" in
-  /|/tmp|/var/tmp)
-    echo "refusing unsafe runtime: $runtime" >&2
+temp_root="$(realpath -m -- "${RUNNER_TEMP:-/tmp}")"
+case "$temp_root" in
+  /tmp|/tmp/*|/var/tmp|/var/tmp/*|/home/runner/work/_temp|/home/runner/work/_temp/*)
+    ;;
+  /)
+    echo "refusing unsafe temporary root: $temp_root" >&2
     exit 2
     ;;
-  /tmp/*|/var/tmp/*|/home/runner/work/_temp/*)
+  *)
+    echo "temporary root must be disposable: $temp_root" >&2
+    exit 2
+    ;;
+esac
+runtime="$(realpath -m -- "$temp_root/mmdebstrap-chrootless-target-tmpdir")"
+case "$runtime" in
+  "$temp_root"/*)
     ;;
   *)
-    echo "runtime must be below a disposable temporary root: $runtime" >&2
+    echo "runtime must be a strict child of $temp_root: $runtime" >&2
     exit 2
     ;;
 esac
@@ -128,8 +136,8 @@ run_case() {
   } >"$result_dir/$label-summary.txt"
 }
 
-# Negative control: merged main without this one-line repair removes
-# mmdebstrap's already target-contained TMPDIR assignment.
+# Negative control: the environment-scrub candidate without this one-line
+# repair removes mmdebstrap's already target-contained TMPDIR assignment.
 run_case baseline "$repo_root/upstream/mmdebstrap" no
 baseline_target="$runtime/baseline-target"
 baseline_log="$result_dir/baseline-package-script.log"
