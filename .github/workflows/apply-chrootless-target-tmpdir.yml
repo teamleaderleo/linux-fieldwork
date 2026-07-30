@@ -1,9 +1,7 @@
 name: Apply chrootless target TMPDIR correction
 
 on:
-  push:
-    branches:
-      - fix/chrootless-target-tmpdir
+  pull_request:
     paths:
       - '.github/workflows/apply-chrootless-target-tmpdir.yml'
 
@@ -12,6 +10,7 @@ permissions:
 
 jobs:
   apply:
+    if: github.head_ref == 'fix/chrootless-target-tmpdir' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
