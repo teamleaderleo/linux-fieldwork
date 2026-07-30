@@ -1,9 +1,9 @@
 name: Apply mmdebstrap chrootless canonical PATH
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/mmdebstrap-chrootless-canonical-path
+      - investigation/mmdebstrap-chrootless-env-precedent
 
 permissions:
   contents: write
