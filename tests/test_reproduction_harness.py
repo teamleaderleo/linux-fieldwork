@@ -17,6 +17,11 @@ WRAPPER_PATCH = (
     / "investigations/mmdebstrap-autopkgtest-1141078"
     / "installed-command-wrapper.patch"
 )
+SOURCESFILTER_PATCH = (
+    REPOSITORY_ROOT
+    / "investigations/mmdebstrap-autopkgtest-1141078"
+    / "sourcesfilter-deb822.patch"
+)
 
 
 def extract_mmdebstrap_proxy(testsuite: str) -> str:
@@ -119,6 +124,24 @@ class ReproductionHarnessTest(unittest.TestCase):
         self.assertEqual(perl_syntax.returncode, 0, perl_syntax.stderr)
         self.assertEqual(pod.returncode, 0, pod.stderr)
         self.assertIn("proxy to the installed package under test", pod.stdout)
+
+    def test_sourcesfilter_patch_is_preflighted_applied_and_hashed(self) -> None:
+        self.assertTrue(SOURCESFILTER_PATCH.is_file())
+        self.assertIn(
+            'sourcesfilter_patch="$repo_root/investigations/'
+            'mmdebstrap-autopkgtest-1141078/sourcesfilter-deb822.patch"',
+            self.script,
+        )
+        self.assertIn('if [[ ! -f $sourcesfilter_patch ]]', self.script)
+        self.assertIn(
+            'patch --batch --forward -p1 -d "$source_tree" -i "$sourcesfilter_patch"',
+            self.script,
+        )
+        self.assertIn('"$source_tree/debian/tests/sourcesfilter"', self.script)
+        self.assertIn(
+            'Source compatibility override: `sourcesfilter-deb822.patch`',
+            self.script,
+        )
 
     def test_early_neutral_exit_retains_reason_in_artifact_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
