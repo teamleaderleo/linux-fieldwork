@@ -28,7 +28,7 @@ TMPDIR="$unwritable_tmp" timeout 240 \
   --variant=apt \
   sid \
   /dev/null \
-  https://deb.debian.org/debian \
+  "deb [trusted=yes] https://deb.debian.org/debian sid main" \
   >"$log_file" 2>&1
 command_status=$?
 set -e
