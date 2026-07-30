@@ -1,0 +1,43 @@
+name: Verify mmdebstrap direct chrootless PATH
+
+on:
+  pull_request:
+    paths:
+      - 'upstream/mmdebstrap/mmdebstrap'
+      - 'investigations/mmdebstrap-chrootless-env/direct_path_probe.sh'
+      - '.github/workflows/mmdebstrap-chrootless-direct-path.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  direct-path:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v4
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libdistro-info-perl \
+            libdpkg-perl \
+            uidmap
+
+      - name: Check probe syntax
+        run: bash -n investigations/mmdebstrap-chrootless-env/direct_path_probe.sh
+
+      - name: Run direct PATH probe
+        run: bash investigations/mmdebstrap-chrootless-env/direct_path_probe.sh
+
+      - name: Upload retained evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmdebstrap-chrootless-direct-path-${{ github.run_id }}-${{ github.run_attempt }}
+          path: investigations/mmdebstrap-chrootless-env/direct-path-results/
+          if-no-files-found: warn
+          retention-days: 14
