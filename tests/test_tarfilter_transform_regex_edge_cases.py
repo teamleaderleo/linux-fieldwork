@@ -100,7 +100,6 @@ class TarfilterTransformRegexEdgeCasesTest(
     def test_repeated_intervals_remain_nested_in_both_dialects(self) -> None:
         cases = (
             ("aaaaa", "s/a{2}{2,3}/X/x", "Xa"),
-            ("aaaaa", r"s/a\{2\}\{2,3\}/X/", "Xa"),
             ("aaa", "s/a{1,2}+/X/x", "X"),
             ("aaa", "s/a+{1,2}/X/x", "X"),
             ("b", "s/a{1,2}*/X/x", "Xb"),
@@ -120,6 +119,19 @@ class TarfilterTransformRegexEdgeCasesTest(
                         {expected_name: ("file", "")},
                     )
 
+    def test_consecutive_basic_intervals_are_rejected_like_gnu(self) -> None:
+        expression = r"s/a\{2\}\{2,3\}/X/"
+        with tempfile.TemporaryDirectory(prefix="tarfilter-regex-basic-interval-") as td:
+            work = pathlib.Path(td)
+            candidate = self.prepare_candidate(
+                work / "candidate-work", include_regex_patch=True
+            )
+            filtered = self.run_filter(candidate, "aaaaa", expression)
+            reference = self.run_gnu(work / "reference", "aaaaa", expression)
+            self.assertNotEqual(filtered.returncode, 0)
+            self.assertEqual(filtered.stdout, b"")
+            self.assertNotEqual(reference.returncode, 0)
+
     def test_edge_patch_source_contract(self) -> None:
         with tempfile.TemporaryDirectory(prefix="tarfilter-regex-edge-source-") as td:
             candidate = self.prepare_candidate(
@@ -133,9 +145,14 @@ class TarfilterTransformRegexEdgeCasesTest(
                 'if not extended and char == "*" and branch_start:', source
             )
             self.assertIn(
-                'return _normalize_repeated_quantifiers("".join(result))', source
+                'return _normalize_repeated_quantifiers("".join(result), extended)',
+                source,
             )
             self.assertIn('result[atom_start:] = ["(?:" + nested + ")"]', source)
+            self.assertIn(
+                'raise ValueError("consecutive basic-regex intervals are invalid")',
+                source,
+            )
 
 
 if __name__ == "__main__":

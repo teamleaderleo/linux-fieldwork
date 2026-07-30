@@ -58,11 +58,27 @@ Keep one current owner for a coherent piece of work. That owner may:
 
 Record a meaningful scope change or transfer. Do not force a useful investigation to remain inside an obsolete initial assignment.
 
+## Autonomous push work
+
+An issue may declare an autonomous multi-helper push for a bounded batch. In that mode:
+
+1. Every helper first reads [`README.md`](README.md), [`START_HERE.md`](START_HERE.md), this coordination guide, the push issue in full, and the live issues, pull requests, tracked records, and source revisions linked from its initial packet.
+2. A helper letter, callsign, packet, or review pairing identifies an initial focus. It does not reserve work, limit review authority, or require another helper to finish first.
+3. Begin useful work immediately. Do not wait for a coordinator, schedule, claim, reviewer assignment, or another packet when the next safe action is available.
+4. Make bounded repository changes, execute focused gates, inspect the complete current diff, rerun after cleanup, and review the exact head being recommended. Careful self-review is valid for reversible internal work; higher-consequence work still deserves stronger independent review.
+5. After completing the initial packet, inspect adjacent packets and the current open work. Continue with useful review, repair, evidence transfer, or closeout rather than ending solely because the initial packet is complete.
+6. Keep ownership discoverable while allowing overlap. A short claim or transfer comment records who is acting; it never locks the work.
+7. Record substantial completed work in at least two durable surfaces:
+   - the owning issue or pull request, with the disposition, exact head, executed gates, caveats, authority state, and next human decision;
+   - the relevant tracked fieldwork record, such as an investigation README or results file, scout report or artifact, reusable note, programme status, research selection record, or target map.
+8. Link records instead of copying large reports between them. The tracked record carries commands, fixtures, results, interpretation, and evidence limits; the issue or pull request carries routing, review state, and the current decision.
+9. Leave the repository sufficient for another person or agent to understand, reproduce, review, and continue the work even when the helper chat receives no follow-up message.
+
 ## Notes stay lightweight
 
 Use a note when the durable value is an explanation, command, workflow, source-reading lesson, or small demonstration. Notes do not need scout identities, formal review, promotion decisions, research metadata, or a full evidence packet.
 
-Add ordinary links when they help the reader understand the subject or find a related local record. The external-GitHub rule below concerns cross-reference backlinks to third-party projects; it is not a ban on useful links between Linux Fieldwork notes.
+Add ordinary links when they help the reader understand the subject or find a related record. Notes and other repository files do not create GitHub autolinked issue or pull-request references, so they do not need an automated backlink check.
 
 ## Formal lanes give direction, not scripts
 
@@ -100,9 +116,9 @@ Keep the broad report as orientation. Link the focused work from it. Preserve pa
 
 ## External GitHub backlinks
 
-Quiet research must not create accidental backlinks or notifications in third-party official repositories.
+Quiet coordination should not create accidental backlinks or notifications in third-party official repositories.
 
-For third-party GitHub issues, pull requests, discussions, and commits, use backlink-suppressing references:
+Apply backlink suppression to GitHub interaction text: issue and pull-request titles and bodies, comments, reviews, discussions, and intentional issue references in commit messages. In those surfaces, use:
 
 ```text
 https://redirect.github.com/OWNER/REPOSITORY/issues/NUMBER
@@ -111,9 +127,13 @@ https://redirect.github.com/OWNER/REPOSITORY/discussions/NUMBER
 https://redirect.github.com/OWNER/REPOSITORY/commit/SHA
 ```
 
-Do not use bare third-party shorthand such as `OWNER/REPO#123` in prose. Direct links among controlled `teamleaderleo/*` repositories are fine. Repository homepages, documentation sites, specifications, package registries, and release pages may be linked normally.
+Do not use bare third-party shorthand such as `OWNER/REPO#123` in interaction prose. Direct links among controlled `teamleaderleo/*` repositories are fine.
 
-Use a direct third-party issue, pull-request, discussion, or commit link only when it records an explicitly authorized upstream interaction.
+Repository notes, reports, maps, and other tracked files may link directly to third-party GitHub work because GitHub does not create autolinked issue or pull-request references in repository files. Those files do not need an automated reference scanner.
+
+Repository homepages, documentation sites, specifications, package registries, release pages, and ordinary web sources may be linked normally.
+
+Use a direct third-party issue, pull-request, discussion, or commit link in interaction text only when it records an explicitly authorized upstream interaction.
 
 This link rule does not itself authorize contact. Issues, email, merge requests, patches, comments, and reviews in an upstream project still require a deliberate decision.
 

@@ -1,0 +1,36 @@
+diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_proxy.py
+--- a/upstream/mmdebstrap/caching_proxy.py
++++ b/upstream/mmdebstrap/caching_proxy.py
+@@ -97,6 +97,11 @@
+             conn.request("GET", self.path, None, dict(self.headers))
+             res = conn.getresponse()
+             assert (res.status, res.reason) == (200, "OK"), (res.status, res.reason)
++            expected_length = res.getheader("Content-Length")
++            if expected_length is not None:
++                expected_length = int(expected_length)
++                if expected_length < 0:
++                    raise ValueError("negative upstream Content-Length")
+             self.wfile.write(b"HTTP/1.1 200 OK\r\n")
+             for k, v in res.getheaders():
+                 # do not allow a persistent connection
+@@ -105,6 +110,7 @@
+                 self.send_header(k, v)
+             self.end_headers()
+             with cache_destination(newpath) as f:
++                received = 0
+                 # we are not using shutil.copyfileobj() because we want to
+                 # write to two file objects simultaneously and throttle the
+                 # writing speed to 1024 kB/s
+@@ -114,7 +120,12 @@
+                         break
+                     self.wfile.write(buf)
+                     f.write(buf)
++                    received += len(buf)
+                     time.sleep(64 / 1024)  # 1024 kB/s
++                if expected_length is not None and received != expected_length:
++                    raise http.client.IncompleteRead(
++                        b"", expected_length - received
++                    )
+             self.wfile.flush()
+         except Exception as e:
+             self.send_error(502)

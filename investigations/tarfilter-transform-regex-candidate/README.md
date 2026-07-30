@@ -26,9 +26,14 @@ Patch order in the regression:
 1. imported `upstream/mmdebstrap/tarfilter`, blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`;
 2. `investigations/tarfilter-transform-target-scopes/tarfilter-transform-target-scopes.patch`;
 3. `investigations/tarfilter-transform-occurrence-selectors/tarfilter-transform-occurrence-selectors.patch`;
-4. `tarfilter-transform-regex-dialects.patch` from this directory.
+4. `tarfilter-transform-regex-dialects.patch` from this directory;
+5. `tarfilter-transform-regex-edge-cases.patch` from this directory.
 
-Regression: `tests/test_tarfilter_transform_regex_candidate.py`.
+Regressions:
+
+- `tests/test_tarfilter_transform_regex_candidate.py`;
+- `tests/test_tarfilter_transform_regex_edge_cases.py`.
+
 Differential reference: GNU tar 1.35 with `LC_ALL=C`.
 
 The imported file is copied into `TemporaryDirectory`; every patch is applied to that copy.
@@ -60,7 +65,7 @@ Backreferences `\1` through `\9` remain in the translated pattern. Python compil
 
 ## Anchors and branches
 
-GNU basic `^` and `$` are anchors only in permitted positions. The scanner keeps leading `^`, trailing `$`, and anchors immediately after a translated group or alternation boundary. It escapes middle-position anchors before Python compilation.
+GNU basic `^` and `$` are anchors only in permitted positions. The scanner keeps leading `^`, trailing `$`, and anchors immediately after a translated group or alternation boundary. It escapes middle-position basic anchors before Python compilation. GNU extended mode keeps `^` and `$` active at every position, matching the observed GNU tar behavior.
 
 The regression includes anchors at:
 
@@ -96,10 +101,18 @@ Alphabetic escapes outside numeric backreferences also receive an explicit rejec
 - independent member-name, hard-link-target, and symlink-target counting;
 - candidate early rejection and GNU acceptance for the named unsupported POSIX bracket forms.
 
+`tests/test_tarfilter_transform_regex_edge_cases.py` reruns that complete matrix after the edge patch and adds:
+
+- branch-leading basic `*`;
+- literal `\0` in both dialects;
+- GNU-compatible nested simple and interval repetition in the tested extended forms;
+- tested nested basic repetition;
+- matching rejection of consecutive basic intervals.
+
 Commands:
 
 ```sh
-python3 -m unittest tests.test_tarfilter_transform_regex_candidate -v
+python3 -m unittest discover -s tests -p 'test_tarfilter_transform_regex*.py' -v
 python3 -m unittest discover -s tests -v
 ```
 
@@ -119,7 +132,7 @@ It excludes:
 
 - POSIX classes, collating elements, equivalence classes, and locale-sensitive ranges;
 - GNU word-boundary and other alphabetic escapes;
-- malformed-pattern diagnostic parity;
+- malformed-pattern diagnostic parity and interval combinations beyond the executed matrix;
 - persistent `flags=` statements and semicolon-separated expression lists;
 - replacement case-conversion escapes;
 - complete POSIX regex compatibility and performance limits.
@@ -130,4 +143,4 @@ The merged note `notes/filesystems/archive-transform-regex-dialects-need-an-expl
 
 ## Resume point
 
-Read this file, `observations.md`, the patch, and the regression. Apply the three patches in the recorded order. Then inspect `RESULTS.md` and PR #151 for the latest exact-head receipt and review state.
+Read this file, `observations.md`, both candidate patches, and both candidate regressions. Apply the four retained patches in the recorded order. Then inspect `RESULTS.md` and PR #151 for the latest exact-head receipt and review state.

@@ -23,7 +23,7 @@ With `x`, unescaped operator punctuation remains active. Escaped punctuation rem
 
 ### Anchors
 
-The scanner records whether the next token begins an expression or alternation branch. It keeps `^` active only there. It keeps `$` active at expression end or immediately before a selected-dialect group/alternation boundary. Other occurrences are escaped as literals.
+The scanner records whether the next token begins an expression or alternation branch. In basic mode it keeps `^` active at branch starts and `$` active at branch ends, escaping other positions as literals. In extended mode GNU tar keeps both anchors active at every position, including the middle-position `a^b` and `a$b` controls.
 
 Representative composition probes retained in the regression:
 
@@ -51,6 +51,12 @@ aaa/aaa  s/a+/b/x2      aaa/b
 ```
 
 The same selected match is required independently for the member name, hard-link target, and symlink target.
+
+### Repeated quantifiers
+
+GNU tar 1.35 accepts the executed nested repetition forms that Python rejects or interprets as lazy or possessive syntax. The edge patch wraps the preceding atom in a noncapturing group before applying each later quantifier, preserving user capture numbering.
+
+The same GNU tar rejects consecutive basic intervals such as `a\{2\}\{2,3\}`. The candidate rejects that proven form before archive output. Other malformed or nested interval combinations stay outside this subset.
 
 ## Explicit unsupported policy
 
