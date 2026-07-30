@@ -41,17 +41,20 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
         return destination
 
     @staticmethod
-    def publication_helpers(source: str) -> str:
-        start = source.index("prepare_image() {")
-        end = source.index("\ntrap cleanup ", start)
-        declarations = "WORKDIR=\nIMAGE_TMPDIR=\nIMAGE_TMP=\n"
-        return declarations + source[start:end].rstrip() + "\n"
-
-    @staticmethod
     def function_block(source: str, name: str) -> str:
         start = source.index(f"{name}() {{")
         end = source.index("\n}\n", start) + len("\n}\n")
         return source[start:end]
+
+    @classmethod
+    def publication_helpers(cls, source: str) -> str:
+        declarations = "WORKDIR=\nIMAGE_TMPDIR=\nIMAGE_TMP=\n"
+        return (
+            declarations
+            + cls.function_block(source, "prepare_image")
+            + cls.function_block(source, "publish_image")
+            + cls.function_block(source, "cleanup")
+        )
 
     def write_harness(self, root: pathlib.Path, candidate: pathlib.Path) -> pathlib.Path:
         helpers = self.publication_helpers(candidate.read_text(encoding="utf-8"))
