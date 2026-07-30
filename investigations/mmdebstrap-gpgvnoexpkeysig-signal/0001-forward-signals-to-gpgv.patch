@@ -1,7 +1,8 @@
 diff --git a/upstream/mmdebstrap/gpgvnoexpkeysig b/upstream/mmdebstrap/gpgvnoexpkeysig
 --- a/upstream/mmdebstrap/gpgvnoexpkeysig
 +++ b/upstream/mmdebstrap/gpgvnoexpkeysig
-@@ -62,25 +62,49 @@ FILTER_DIR=$(mktemp -d "${TMPDIR:-/tmp}/gpgvnoexpkeysig.XXXXXXXXXX")
+@@ -58,30 +58,54 @@
+ FILTER_DIR=$(mktemp -d "${TMPDIR:-/tmp}/gpgvnoexpkeysig.XXXXXXXXXX")
  FILTER_PIPE="$FILTER_DIR/status"
  FILTER_PID=
 +GPGV_PID=
