@@ -39,7 +39,7 @@ The package currently solves this by skipping inspection entirely:
 doCheck = false;
 ```
 
-The matrix asks whether we can put the correct card on the test bench, remove only factory-private flags from the test process, or do both—while leaving the actual product build unchanged.
+The matrix asks whether we can put the correct card on the test bench, remove only factory-private flags from the test process, or do both—while preserving legitimate Go build tags and leaving the actual product build unchanged.
 
 ## Why care
 
@@ -72,7 +72,7 @@ The vendoring flag and tag inheritance are individually intentional. Their colli
 
 - Nixpkgs issue: `NixOS/nixpkgs#516481`;
 - reported good revision: `4590696c8693fea477850fe379a01544293ca4e2`;
-- reported bad revision: `acd02b8`;
+- reported bad revision: `acd02b8771d0546f96ee281ac45c3a6f81b9bfba`;
 - pinned current revision: `396e6226eab2fd092b1690abcd33ea522fde16dc`;
 - package: `pkgs/by-name/go/gomarkdoc/package.nix`;
 - shared builder: `pkgs/build-support/go/module.nix`;
@@ -89,12 +89,14 @@ Each revision runs the same five modes:
 | Mode | Build behavior | Test-only change |
 |---|---|---|
 | `baseline` | unchanged | none |
-| `unset-goflags` | unchanged | remove inherited `GOFLAGS` before tests |
-| `filter-goflags` | unchanged | retain only `-tags` spellings before tests |
+| `unset-goflags` | unchanged | remove inherited `GOFLAGS` before tests as a broad differential control |
+| `filter-goflags` | unchanged | retain only supported `-tags` spellings before tests |
 | `add-fixture` | unchanged | create the referenced empty config file |
-| `add-fixture-unset-goflags` | unchanged | combine the two narrow repairs |
+| `add-fixture-filter-goflags` | unchanged | create the fixture and retain only supported tag flags |
 
 `matrix.nix` uses `overrideAttrs` to set `doCheck = true`. Fixture creation happens in `postPatch`; flag changes happen in `preCheck`. Dependency vendoring, compilation, linker flags, source, installed output, and package metadata remain unchanged.
+
+The combined mode intentionally uses tag filtering rather than complete flag removal. It therefore tests the bounded correction we could actually recommend while `unset-goflags` remains available to show whether a broader workaround changes the result.
 
 `run_matrix.py` records for every case:
 
@@ -122,9 +124,9 @@ Interpretation: restore the explicit empty fixture in the package source during 
 
 ### Both interact
 
-Only `add-fixture-unset-goflags` passes.
+Only `add-fixture-filter-goflags` passes.
 
-Interpretation: the package needs a split correction and the upstream test suite has two independent assumptions.
+Interpretation: the package needs the missing test fixture plus a package-local filter that preserves gomarkdoc's supported `-tags` contract while excluding builder-private flags.
 
 ### Baseline now passes
 
@@ -154,13 +156,13 @@ The matrix proves package behavior on Linux x86-64 with the Nix version installe
 
 Creating the absent fixture in `postPatch` proves whether its presence changes the suite; it does not establish what content upstream intended beyond the filename's explicit “empty” contract.
 
-Clearing test-time `GOFLAGS` is package-local. It does not establish that shared `buildGoModule` should stop exporting flags, nor that arbitrary Go programs should ignore inherited `GOFLAGS`.
+Filtering or clearing test-time `GOFLAGS` is package-local. It does not establish that shared `buildGoModule` should stop exporting flags, nor that arbitrary Go programs should ignore inherited `GOFLAGS`. Complete removal is a differential control; tag-only filtering is the bounded candidate.
 
 ## Current decision
 
 Disposition: `INVESTIGATE` until the exact-head hosted matrix completes.
 
-The reviewer will choose among a package-local flag filter, a fixture restoration, a split package/upstream correction, a shared-builder follow-up supported by additional packages, or closure with a negative/stale result.
+The reviewer will choose among a package-local tag filter, a fixture restoration, a split correction, a shared-builder follow-up supported by additional packages, or closure with a negative/stale result.
 
 ## Authority
 
