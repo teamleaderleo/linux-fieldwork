@@ -43,6 +43,10 @@ The mutation control removes only the `TMPDIR` assignment and must reproduce a c
 
 The full chrootless security fixture also records package-script `TMPDIR` and created paths for apt-managed, clean-rerun, and fakeroot runs. Its direct dpkg case remains the outside-target negative control. The fixture cleanup path now canonicalizes and bounds recursive deletion before any `rm -rf`.
 
+## Validation boundary
+
+The candidate is checked by the shared Python suite, Perl syntax and POD checks, the current Debian sid `perltidy`, the explicit-TMPDIR regression, the full chrootless security fixture, and the expanded unwritable-TMPDIR review. Source lines before `__END__` remain within the repository's 79-column contract.
+
 ## Source boundary
 
 - imported implementation: `upstream/mmdebstrap/mmdebstrap`
