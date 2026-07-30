@@ -1,0 +1,45 @@
+name: Verify mmdebstrap chrootless environment security
+
+on:
+  pull_request:
+    paths:
+      - 'upstream/mmdebstrap/mmdebstrap'
+      - 'investigations/mmdebstrap-chrootless-env/**'
+      - '.github/workflows/mmdebstrap-chrootless-env-security.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libdistro-info-perl \
+            libdpkg-perl \
+            uidmap
+
+      - name: Check syntax
+        run: |
+          perl -c upstream/mmdebstrap/mmdebstrap
+          bash -n investigations/mmdebstrap-chrootless-env/run.sh
+
+      - name: Run security regression
+        run: bash investigations/mmdebstrap-chrootless-env/run.sh
+
+      - name: Upload retained evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmdebstrap-chrootless-env-${{ github.run_id }}-${{ github.run_attempt }}
+          path: investigations/mmdebstrap-chrootless-env/results/
+          if-no-files-found: warn
+          retention-days: 14
