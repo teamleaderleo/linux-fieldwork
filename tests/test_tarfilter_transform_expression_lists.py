@@ -283,6 +283,11 @@ class TarfilterTransformExpressionListTest(unittest.TestCase):
             "hard": ("hard", "target"),
             "sym": ("sym", "target"),
         }
+        ordered_expected: Snapshot = {
+            "final": ("file", ""),
+            "hard": ("hard", "final"),
+            "sym": ("sym", "final"),
+        }
         field_semicolon_expected: Snapshot = {
             "pre;fix/target": ("file", ""),
             "pre;fix/hard": ("hard", "pre;fix/target"),
@@ -310,6 +315,18 @@ class TarfilterTransformExpressionListTest(unittest.TestCase):
                     )
                     self.assertEqual(gnu_rc, 0, gnu_err)
                     self.assertEqual(gnu_result, expected)
+
+            alternate_delimiter_list = "s|^prefix/||;s|^target$|final|"
+            pred_rc, pred_result, _ = self.run_predecessor(
+                candidate, [alternate_delimiter_list]
+            )
+            self.assertNotEqual(pred_rc, 0)
+            self.assertIsNone(pred_result)
+            gnu_rc, gnu_result, gnu_err = self.run_gnu(
+                work / "alternate-delimiter-list", [alternate_delimiter_list]
+            )
+            self.assertEqual(gnu_rc, 0, gnu_err)
+            self.assertEqual(gnu_result, ordered_expected)
 
             trailing = "s,^prefix/,,;"
             pred_rc, pred_result, _ = self.run_predecessor(candidate, [trailing])
