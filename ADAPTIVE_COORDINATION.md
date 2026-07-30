@@ -41,6 +41,44 @@ Use issue comments for short checkpoints, blockers, transfers, review requests, 
 
 Detailed instructions are appropriate when a test method, safety condition, or exact compatibility boundary must be preserved. They are not the default.
 
+## Use comment cards for live release work
+
+A release desk needs one stable front-door issue whose body changes rarely. Put
+the rules, links, and card format in that body. Put each live release unit in
+one top-level comment on the desk.
+
+The worker edits that unit's comment in place as the head, evidence, owner, or
+disposition changes. Other workers update different comments, so routine
+progress does not create competing edits to one large issue body.
+
+Every live card should contain:
+
+```text
+STATUS CARD
+Unit:
+Owner:
+State: DRAFTING | REPAIR | REVIEW 1 | REVIEW 2 | RELEASE CANDIDATE | HOLD
+Exact head:
+TL;DR:
+Why care:
+Owning issue or PR:
+Tracked evidence:
+Latest gate:
+Remaining boundary:
+Next action:
+External-contact state:
+```
+
+The set of live card comments is the board. When a unit lands, is retired, or
+moves out of the release desk, add its exact final receipt to the owning issue
+or pull request and remove the live card. If the available GitHub client cannot
+delete comments, replace the card with one short `ARCHIVED` line and its final
+receipt link. Never keep a stale card as apparent live state.
+
+Long commands, transcripts, fixtures, and interpretation remain in tracked
+fieldwork records. A status card points to that evidence; it does not duplicate
+it.
+
 ## Identity and ownership
 
 Humans may use their GitHub identity. Agents and temporary workers may use a short stable callsign such as `LF-R01` for attribution during active work.

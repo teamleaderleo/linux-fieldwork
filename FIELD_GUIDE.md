@@ -67,6 +67,14 @@ Whenever an implementation mechanism changes, compare more than the headline out
 - State what was not tested.
 - Name the next disposition: fix, retain, expand, block, stop, or prepare an explicitly authorized upstream packet.
 
+### Prepare release packets for readers
+
+- Lead with `TL;DR`, `Explain like I'm five`, and `Why care`.
+- Give the issue draft one bounded observed problem, minimal reproduction, exact result, expected result, and evidence limits.
+- Give the pull-request draft one bounded change, test plan, compatibility boundary, and rollback or follow-up plan.
+- Point both drafts to the tracked investigation rather than pasting a second copy of every transcript.
+- Keep drafts internal until the external-contact state explicitly authorizes their destination.
+
 ## Do not
 
 - Do not approve a change because CI is green.

@@ -1,0 +1,12 @@
+diff --git a/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh b/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh
+--- a/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh
++++ b/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh
+@@ -45,5 +45,8 @@ safe_repo_path() {
+ 	case "$path" in
+ 		""|/*|..|../*) return 1 ;;
+ 	esac
++	case "/$path/" in
++		*"/../"*) return 1 ;;
++	esac
+ 	printf '%s\n' "$path"
+ }
