@@ -21,7 +21,10 @@ The reviewed change treats a non-empty explicit `TMPDIR` as a strict parent dire
 - Opened: 2026-05-05 09:13:01 UTC
 - Severity: minor
 - Found in: `mmdebstrap/1.5.7-3`
-- Status checked: still outstanding and unclassified on 2026-07-30
+- Pre-submission status check: outstanding and unclassified on 2026-07-30
+- Patch follow-up sent: 2026-07-30 16:34:37 UTC
+- Debbugs acknowledgement received: 2026-07-30 16:37:06 UTC
+- `patch` tag added: 2026-07-30 16:37:08 UTC
 
 The report used:
 
@@ -30,6 +33,16 @@ TMPDIR=/var/tmp/live mmdebstrap sid /dev/null
 ```
 
 The configured directory was unusable, and the program logged a temporary root below `/tmp`. The reporter expected the configured path to be used or a warning or error.
+
+## Submission result
+
+The reviewed patch was sent through Outlook to `1135727@bugs.debian.org`, with `1135727-submitter@bugs.debian.org` in Cc. The sent attachment was named `0001-honor-explicit-tmpdir-current.patch`; Outlook reported media type `text/x-diff` and size 3915 bytes.
+
+Debbugs confirmed receipt, forwarded the message to package maintainer `josch@debian.org`, and processed `Control: tags -1 + patch`. One receipt added the `patch` tag; a duplicate processing receipt ignored the repeated request because the same tag was already present.
+
+The exact envelope, receipt times, attachment metadata, sent body, follow-up boundary, and verification command are retained in `submission/README.md` and `submission/email.txt`.
+
+These receipts establish delivery and tag processing. Maintainer review, acceptance, package upload, bug closure, complete source-matrix execution, and Debian autopkgtest remain outside the recorded result.
 
 ## Source
 
@@ -145,6 +158,8 @@ The embedded manual previously described `TMPDIR` only as a tarball concern. The
 
 This establishes behavior on GitHub-hosted Ubuntu 24.04.4 LTS using the imported Debian revision and the real `mmdebstrap` dry-run path in `chrootless` mode. The focused runtime checks cover six environment states and the relevant source branch. The complete source suite, Debian autopkgtest environment, other architectures, and every privilege mode remain untested in Linux Fieldwork.
 
+The submission evidence adds Outlook envelope and attachment metadata plus automated Debbugs delivery and tag receipts. It does not add maintainer review or a post-send byte comparison of the mailbox attachment.
+
 ## References
 
 - Debian bug: `https://bugs.debian.org/1135727`
@@ -154,4 +169,4 @@ This establishes behavior on GitHub-hosted Ubuntu 24.04.4 LTS using the imported
 
 ## Authority
 
-This work modifies only `teamleaderleo/linux-fieldwork`. No Debian issue, email, merge request, patch submission, comment, or review has been created.
+A patch follow-up was sent to the already-open Debian bug #1135727 and processed by Debbugs. Issue #194 records that public thread as the sole current external-contact exception. Every other upstream issue, email, patch, merge request, comment, or review still requires a deliberate decision.

@@ -1,5 +1,5 @@
 To: 1135727@bugs.debian.org
-Cc: mh+debian-packages@zugschlus.de
+Cc: 1135727-submitter@bugs.debian.org
 Subject: [PATCH] mmdebstrap: honor non-empty TMPDIR as an exact parent directory
 
 Control: tags -1 + patch
@@ -8,19 +8,28 @@ Hello,
 
 I reproduced this issue against mmdebstrap 1.5.7-3.
 
-The fallback comes from File::Temp::tempdir(..., TMPDIR => 1), which delegates directory selection to File::Spec->tmpdir and may skip an unusable TMPDIR in favour of another writable candidate such as /tmp.
+The fallback comes from File::Temp::tempdir(..., TMPDIR => 1), which delegates
+directory selection to File::Spec->tmpdir and may skip an unusable TMPDIR in
+favour of another writable candidate such as /tmp.
 
-The attached patch treats a non-empty explicit TMPDIR as the exact parent directory by using File::Temp's DIR option at the real temporary-root creation call. It preserves the existing system-temporary-directory behaviour when TMPDIR is unset or empty.
+The attached patch treats a non-empty explicit TMPDIR as the exact parent
+directory by using File::Temp's DIR option at the actual temporary-root
+creation call. It preserves the existing system temporary-directory behaviour
+when TMPDIR is unset or empty.
 
-The patch also:
+The patch also adds a regression test for an unwritable explicit TMPDIR,
+verifies that no /tmp/mmdebstrap.* fallback is selected, and clarifies that
+this temporary-root path is used for tar, squashfs, ext2, ext4, and null
+output.
 
-- adds a regression test for an unwritable explicit TMPDIR;
-- verifies that no /tmp/mmdebstrap.* fallback is selected; and
-- clarifies that this temporary-root path is used for tar, squashfs, ext2, ext4, and null output.
-
-Focused verification on Ubuntu 24.04 covered unset, empty, writable, unwritable, missing, and non-directory TMPDIR values. Perl syntax, Perl::Critic severity 4, POD rendering, the 79-character code-line limit, and the rendered regression test's ShellCheck and shfmt checks passed.
+Verification on Ubuntu 24.04 covered unset, empty, writable, unwritable,
+missing, and non-directory TMPDIR values. Perl syntax, Perl::Critic severity
+4, POD rendering, the 79-character code-line limit, and the rendered
+regression test's ShellCheck and shfmt checks passed.
 
 The complete 283-case source matrix and Debian autopkgtest were not run.
 
 Regards,
-[Your name]
+
+Leo (Meng Hsi) Li
+GitHub: @teamleaderleo
