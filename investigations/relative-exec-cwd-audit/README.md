@@ -41,8 +41,9 @@ This class can produce:
 
 ## Intent and precedent
 
-- GNU `env --chdir=DIR` changes directory before command execution: https://www.gnu.org/software/coreutils/manual/html_node/env-invocation.html
+- GNU `env --chdir=DIR` and `env -C DIR` change directory before command execution: https://www.gnu.org/software/coreutils/manual/html_node/env-invocation.html
 - Rust says a relative program path combined with `Command::current_dir` has platform-specific and unstable behavior and recommends canonicalizing the program path first: https://doc.rust-lang.org/std/process/struct.Command.html#method.current_dir
+- Python `subprocess.Popen` permits an `executable=` override, so argv display text and executable identity can differ: https://docs.python.org/3/library/subprocess.html#subprocess.Popen
 - systemd accepts an absolute executable path or a simple filename searched in a fixed system path; relative paths containing `/` are excluded from that contract: https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html
 - GNU `realpath` provides canonical absolute path resolution when stable identity is required: https://www.gnu.org/software/coreutils/manual/html_node/realpath-invocation.html
 
@@ -50,11 +51,13 @@ These sources support an audit rule, not a universal defect verdict. A program d
 
 ## Audit tool
 
-`tools/relative_exec_cwd_audit.py` reports three explicit patterns:
+`tools/relative_exec_cwd_audit.py` reports three explicit pattern families:
 
-- Python child launch calls with `cwd=` and a relative argv[0] containing `/`;
-- Rust `Command::new("relative/path")` chains with `.current_dir(...)`;
-- shell `env --chdir ... relative/path` launches.
+- Python subprocess-style calls with `cwd=` and a literal relative selected executable containing `/` or `\`; `args=` and `executable=` are distinguished so a decoy argv name is not mistaken for executable identity;
+- Rust `Command::new("relative/path")` chains with `.current_dir(...)`, including multiline string literals and the ordinary trailing comma;
+- shell `env --chdir`, `env -C`, and absolute-path `.../env` launches, while consuming common value-taking options before the command.
+
+POSIX and Windows absolute paths are evaluated with their own path rules. Drive-absolute, rooted Windows, and UNC paths are controls; drive-relative spellings such as `C:tools\runner.exe` remain findings.
 
 The tool reports review prompts. It exposes text, JSON, and `--fail-on-findings` modes:
 
@@ -62,6 +65,33 @@ The tool reports review prompts. It exposes text, JSON, and `--fail-on-findings`
 python3 tools/relative_exec_cwd_audit.py path/to/file.py path/to/build.rs
 python3 tools/relative_exec_cwd_audit.py --json --fail-on-findings path/to/tree
 ```
+
+## Second-pass review repair
+
+Independent review found four blind spots in the first scanner head:
+
+1. Python calls using `args=` were invisible, and `executable=` could select a different program than argv[0].
+2. Rust matching ran line-by-line, so `Command::new(` with its literal on the next line was missed; a trailing comma also prevented a match.
+3. GNU `env -C`, `/usr/bin/env`, and a preceding value-taking option such as `-u NAME` were missed.
+4. The Linux runner's `os.path.isabs` treated Windows rooted and UNC paths as relative.
+
+The repaired focused matrix uses distinct executable/decoy names and covers:
+
+- Python positional `args`, keyword `args=`, literal `executable=`, absolute override, and dynamic override;
+- single-line and multiline Rust builders;
+- long, short, attached-short, and absolute-path GNU `env` forms;
+- POSIX absolute, Windows drive-absolute, rooted, UNC, and drive-relative paths;
+- text, JSON, clean-status, and fail-on-findings CLI behavior.
+
+Local focused result before publication:
+
+```text
+python3 -m unittest tests.test_relative_exec_cwd_audit -v
+Ran 15 tests
+OK
+```
+
+Both scanner and test module also passed `python3 -m py_compile`. Exact-head repository and focused workflow receipts remain required after publication.
 
 ## Decision method
 
@@ -173,15 +203,15 @@ A decoy can make a command succeed while testing the wrong file. Identity contro
 
 ## Evidence boundary
 
-The checker recognizes literal high-signal patterns. It does not resolve variables, macros, helper functions, shell command strings, symlink races, or executable replacement between review and launch. Findings need human classification.
+The checker recognizes literal high-signal patterns. It does not resolve variables, macros, helper functions, shell split strings, Rust builder variables, raw-string literals, symlink races, or executable replacement between review and launch. Python matching is intentionally subprocess-style by call name and can still produce review prompts for unrelated methods with the same name. Findings need human classification.
 
 The Windows probe tested a reduced directory tree and marker executables, not RPFM's full Qt/NuGet build.
 
 ## Disposition
 
-`MERGE LOCALLY`
+`REPAIR` pending exact-head focused and repository CI after the second-pass scanner repair.
 
-The checker, focused tests, repository inventory workflow, and Windows identity probe are reusable internal review tooling. The RPFM hypothesis closes as a retained negative result.
+The intended final decision is whether the checker, focused tests, repository inventory workflow, and Windows identity probe are reusable enough to merge as internal review tooling. The RPFM hypothesis remains a retained negative result.
 
 ## Authority
 
