@@ -5,7 +5,7 @@
 Three sharper host boundaries reproduced cleanly.
 
 1. A root chrootless transaction executed Ubuntu's host `needrestart` dpkg status logger and created `/run/needrestart/unpacked` on the host.
-2. APT connected to host systemd-logind, requested a blocking shutdown inhibitor, and received a real inhibitor file descriptor. Setting `DPkg::Inhibit-Shutdown "false"` and `DPkg::Inhibit-Sleep "false"` removed that system-bus interaction while target package state stayed identical.
+2. APT connected to host systemd-logind, requested a blocking shutdown inhibitor, and received a real inhibitor file descriptor. Setting `DPkg::Inhibit-Shutdown "false"` and `DPkg::Inhibit-Sleep "false"` removed that system-bus interaction while the normalized package-script and alternatives observations stayed equal.
 3. Maintainer scripts inherited fake cloud credentials and host session variables from the caller. An inherited fake `SSH_AUTH_SOCK` let the package script connect to a host Unix socket and send a canary message. A blank-environment control removed the credentials and socket access.
 
 These are stronger than the first unprivileged observation because they distinguish attempted host activity from successful host mutation, provide controls that remove each effect independently, and demonstrate a direct caller-credential/IPC path.
@@ -34,7 +34,7 @@ All three builds used the same local dependency-free LF-02 package, fresh target
 | `no-inhibit-root` | disabled | enabled | 0 | absent | executed | created |
 | `isolated-root` | disabled | temporarily disabled | 0 | absent | absent | absent |
 
-Normalized maintainer-script observations and `update-alternatives` state were identical across all three targets.
+Normalized maintainer-script observations and `update-alternatives` state were identical across all three targets. This is a component-level comparison, not a whole-target equality claim. The full tree manifests differ; `TARGET-STATE.md` records the exact comparison contract and retained diffs.
 
 ### Successful host mutation
 
@@ -73,7 +73,7 @@ DPkg::Inhibit-Shutdown "false";
 DPkg::Inhibit-Sleep "false";
 ```
 
-Target package state remained identical.
+The normalized maintainer-script log and alternatives database remained identical. The full target trees are compared separately and are not identical.
 
 ## Environment and host-agent canary
 
@@ -122,6 +122,7 @@ The needrestart result validates the general host-dpkg-config concern. Other hos
 - Chrootless maintainer scripts already execute host programs and can issue host syscalls. The environment result identifies a convenient credential and IPC discovery path; it does not claim that environment inheritance is unique to mmdebstrap.
 - The package fixture is synthetic and cooperative. Real packages with service, account, boot, and cache hooks remain useful next targets.
 - Raw traces expire with the workflow artifact; compact summaries and key evidence are retained in this branch.
+- Equality claims are component-scoped unless the full tree manifest field is also true.
 
 ## Decision
 
