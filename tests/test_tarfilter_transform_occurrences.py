@@ -150,6 +150,45 @@ class TarfilterTransformOccurrenceTest(unittest.TestCase):
                 completed.stderr.decode("utf-8", "replace"),
             )
 
+    def test_non_ascii_digits_remain_unsupported_like_gnu_tar(self) -> None:
+        expressions = ("s/a/b/٢", "s/a/b/²", "s/a/b/０")
+        with tempfile.TemporaryDirectory(prefix="tarfilter-occurrence-unicode-") as td:
+            work = pathlib.Path(td)
+            candidate = self.prepare_candidate(
+                work / "candidate-work", include_occurrence_patch=True
+            )
+            for expression in expressions:
+                with self.subTest(expression=expression):
+                    completed = self.run_filter(candidate, expression)
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertIn(
+                        "unsupported transform flags",
+                        completed.stderr.decode("utf-8", "replace"),
+                    )
+
+                    reference_work = work / expression.encode().hex()
+                    root = reference_work / "root"
+                    target = root / "a/a/a/a"
+                    target.parent.mkdir(parents=True)
+                    target.write_text("payload\n")
+                    reference = subprocess.run(
+                        [
+                            "tar",
+                            "--format=pax",
+                            "--transform",
+                            expression,
+                            "-cf",
+                            str(reference_work / "gnu.tar"),
+                            "-C",
+                            str(root),
+                            "a/a/a/a",
+                        ],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
+                    self.assertNotEqual(reference.returncode, 0)
+
     def test_candidate_matches_gnu_numeric_occurrence_semantics(self) -> None:
         cases = {
             "s/a/b/": "b/a/a/a",
