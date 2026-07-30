@@ -11,7 +11,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 HELPERS_PATH = ROOT / "tests/test_lf02_upgrade_failure_summary.py"
 
 spec = importlib.util.spec_from_file_location("lf02_summary_helpers", HELPERS_PATH)
-assert spec is not None and spec.loader is not None
+if spec is None or spec.loader is None:
+    raise RuntimeError(f"unable to load LF-02 test helpers from {HELPERS_PATH}")
 helpers = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helpers)
 
@@ -57,6 +58,70 @@ class LF02EvidencePathExactnessTest(unittest.TestCase):
             helpers.write_json(path, record)
 
         self.run_in_both_modes(mutate)
+
+    def test_fixed_json_symlink_escape_is_rejected(self) -> None:
+        def mutate(results: pathlib.Path, target: pathlib.Path) -> None:
+            outside = results.parent / "outside-provenance.json"
+            helpers.write_json(outside, {"schema_version": 1})
+            path = results / "provenance.json"
+            path.unlink()
+            path.symlink_to(outside)
+
+        self.run_in_both_modes(mutate)
+
+    def test_nested_directory_symlink_escape_is_rejected(self) -> None:
+        def mutate(results: pathlib.Path, target: pathlib.Path) -> None:
+            outside = results.parent / "outside-fixtures"
+            outside.mkdir()
+            helpers.write_json(outside / "manifest.json", {"schema_version": 1})
+            fixtures = results / "fixtures"
+            (fixtures / "manifest.json").unlink()
+            fixtures.rmdir()
+            fixtures.symlink_to(outside, target_is_directory=True)
+
+        self.run_in_both_modes(mutate)
+
+    def test_phase_symlink_escape_is_rejected(self) -> None:
+        def mutate(results: pathlib.Path, target: pathlib.Path) -> None:
+            source = results / "install-v1.phase.json"
+            outside = results.parent / "outside-phase.json"
+            outside.write_bytes(source.read_bytes())
+            source.unlink()
+            source.symlink_to(outside)
+
+        self.run_in_both_modes(mutate)
+
+    def test_host_fingerprint_symlink_escape_is_rejected(self) -> None:
+        def mutate(results: pathlib.Path, target: pathlib.Path) -> None:
+            outside = results.parent / "outside-host-fingerprint.diff"
+            outside.write_text("", encoding="utf-8")
+            path = results / "host-fingerprint.diff"
+            path.unlink()
+            path.symlink_to(outside)
+
+        self.run_in_both_modes(mutate)
+
+    def test_summary_output_replaces_symlink_without_touching_target(self) -> None:
+        for optimized in (False, True):
+            with self.subTest(optimized=optimized), tempfile.TemporaryDirectory() as tmp:
+                results, target = helpers.make_results(pathlib.Path(tmp))
+                outside = results.parent / "outside-summary.json"
+                sentinel = "do not overwrite\n"
+                outside.write_text(sentinel, encoding="utf-8")
+                summary = results / "summary.json"
+                summary.symlink_to(outside)
+
+                completed = helpers.run_summary(results, target, optimized=optimized)
+
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(outside.read_text(encoding="utf-8"), sentinel)
+                self.assertFalse(summary.is_symlink())
+                record = json.loads(summary.read_text(encoding="utf-8"))
+                self.assertEqual(record["disposition"], "retain-mapped-behavior")
+                self.assertEqual(
+                    list(results.glob(".summary.json.*.tmp")),
+                    [],
+                )
 
     def test_duplicate_script_field_is_rejected(self) -> None:
         def mutate(results: pathlib.Path, target: pathlib.Path) -> None:
