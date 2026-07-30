@@ -30,6 +30,7 @@ def load_module(path: pathlib.Path, name: str) -> types.ModuleType:
 
 class OriginHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:
+        self.server.request_count += 1
         self.send_response(200)
         self.send_header("Content-Length", str(len(PAYLOAD)))
         self.end_headers()
@@ -42,6 +43,7 @@ class OriginHandler(http.server.BaseHTTPRequestHandler):
 @contextlib.contextmanager
 def running_server(handler: type[http.server.BaseHTTPRequestHandler]):
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server.request_count = 0
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -162,6 +164,50 @@ class MmdebstrapCachingProxyContainmentTest(unittest.TestCase):
                     cached = new_cache / "debian/pool/main/p/package.deb"
                     self.assertEqual(cached.read_bytes(), PAYLOAD)
 
+    def test_candidate_accepts_case_insensitive_hostname_authority(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proxy-host-case-") as tmp:
+            root = pathlib.Path(tmp)
+            with running_server(OriginHandler) as origin:
+                port = origin.server_address[1]
+                host = f"LOCALHOST:{port}"
+                target = f"http://localhost:{port}/debian/pool/package.deb"
+                new_cache = root / "new"
+                with running_proxy(
+                    self.candidate, root / "old", new_cache
+                ) as proxy:
+                    status, body = proxy_get(proxy, target, host)
+                self.assertEqual(status, 200)
+                self.assertEqual(body, PAYLOAD)
+                self.assertEqual(origin.request_count, 1)
+                self.assertEqual(
+                    (new_cache / "debian/pool/package.deb").read_bytes(), PAYLOAD
+                )
+
+    def test_dot_empty_and_trailing_components_are_rejected_before_origin(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proxy-alias-components-") as tmp:
+            root = pathlib.Path(tmp)
+            old_cache = root / "old"
+            new_cache = root / "new"
+            with running_server(OriginHandler) as origin:
+                host = f"127.0.0.1:{origin.server_address[1]}"
+                targets = (
+                    f"http://{host}/debian/pool/./package.deb",
+                    f"http://{host}/debian/pool/%2e/package.deb",
+                    f"http://{host}/debian/pool/package.deb/",
+                    f"http://{host}/debian//pool/package.deb",
+                )
+                with running_proxy(
+                    self.candidate, old_cache, new_cache
+                ) as proxy:
+                    for target in targets:
+                        with self.subTest(target=target):
+                            status, _body = proxy_get(proxy, target, host)
+                            self.assertEqual(status, 400)
+
+                self.assertEqual(origin.request_count, 0)
+                self.assertEqual(list(old_cache.rglob("*")), [])
+                self.assertEqual(list(new_cache.rglob("*")), [])
+
     def test_absolute_request_target_cannot_write_outside_cache(self) -> None:
         with tempfile.TemporaryDirectory(prefix="proxy-absolute-write-") as tmp:
             root = pathlib.Path(tmp)
@@ -273,6 +319,9 @@ class MmdebstrapCachingProxyContainmentTest(unittest.TestCase):
         candidate = self.candidate_source.read_text(encoding="utf-8")
         self.assertIn('server_address=("", 8080)', baseline)
         self.assertIn('server_address=("127.0.0.1", 8080)', candidate)
+        self.assertIn('components = decoded.split("/")', candidate)
+        self.assertIn('part in ("", ".", "..")', candidate)
+        self.assertIn("parsed.hostname.lower()", candidate)
         self.assertIn("candidate.is_relative_to(root)", candidate)
 
 
