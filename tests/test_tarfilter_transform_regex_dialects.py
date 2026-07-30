@@ -115,6 +115,10 @@ class TarfilterTransformRegexDialectTest(unittest.TestCase):
         cases = (
             ("aaa", "s/a+/b/", "b", "aaa"),
             ("aaa", r"s/a\+/b/", "aaa", "b"),
+            ("aa", "s/a?/b/", "ba", "aa"),
+            ("aa", r"s/a\?/b/", "aa", "ba"),
+            ("ab", "s/a|b/c/", "cb", "ab"),
+            ("ab", r"s/a\|b/c/", "ab", "cb"),
             ("aaa", "s/(aa)/[&]/", "[aa]a", "aaa"),
             ("aaa", r"s/\(aa\)/[&]/", "aaa", "[aa]a"),
             ("aaa", "s/a{2}/b/", "ba", "aaa"),
@@ -143,9 +147,12 @@ class TarfilterTransformRegexDialectTest(unittest.TestCase):
     def test_predecessor_rejects_explicit_extended_flag(self) -> None:
         cases = (
             ("aaa", "s/a+/b/x", "b"),
+            ("aa", "s/a?/b/x", "ba"),
+            ("aa", r"s/a\?/b/x", "aa"),
+            ("ab", "s/a|b/c/x", "cb"),
+            ("ab", r"s/a\|b/c/x", "ab"),
             ("aaa", "s/(aa)/[&]/x", "[aa]a"),
             ("aaa", "s/a{2}/b/x", "ba"),
-            ("ab", "s/a|b/c/x", "cb"),
         )
         with tempfile.TemporaryDirectory(prefix="tarfilter-regex-x-") as td:
             work = pathlib.Path(td)
