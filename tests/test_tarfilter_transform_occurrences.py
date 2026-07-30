@@ -186,6 +186,7 @@ class TarfilterTransformOccurrenceTest(unittest.TestCase):
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True,
+                        errors="replace",
                     )
                     self.assertNotEqual(reference.returncode, 0)
 
