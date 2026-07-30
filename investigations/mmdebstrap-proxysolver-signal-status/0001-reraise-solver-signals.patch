@@ -1,0 +1,21 @@
+diff --git a/upstream/mmdebstrap/proxysolver b/upstream/mmdebstrap/proxysolver
+--- a/upstream/mmdebstrap/proxysolver
++++ b/upstream/mmdebstrap/proxysolver
+@@ -17,6 +17,7 @@ import subprocess
+ import sys
+ import os
+ import getpass
++import signal
+ 
+ if not os.path.exists("/usr/lib/apt/solvers/apt"):
+@@ -52,6 +53,12 @@ try:
+                 f.write(line)
+             returncode = p.wait()
++    if returncode < 0:
++        signum = -returncode
++        if signum not in (signal.SIGKILL, signal.SIGSTOP):
++            signal.signal(signum, signal.SIG_DFL)
++        os.kill(os.getpid(), signum)
+     if returncode != 0:
+         raise SystemExit(returncode)
+ except (FileNotFoundError, PermissionError) as e:
