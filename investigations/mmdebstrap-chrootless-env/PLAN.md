@@ -15,75 +15,108 @@ This investigation treats the exposure as a chrootless-mode hardening defect, no
 - affected path: chrootless `apt-get`/`dpkg` execution, which currently inherits `%ENV`
 - no upstream contact authorized
 
+## Threat model
+
+Chrootless mode deliberately runs package maintainer scripts without `chroot(1)`. Clearing environment variables does not make those scripts safe to treat as untrusted code.
+
+A same-user script may still be able to:
+
+- inspect ancestor or peer process environments through `/proc` where permissions allow;
+- derive and read the caller home directory;
+- discover sockets below runtime directories;
+- execute host programs and access host paths permitted to the invoking user.
+
+Therefore, environment filtering is only defense-in-depth against accidental direct inheritance. The primary mitigation must prevent users from unknowingly launching chrootless mode from a credential-rich session and must preserve the existing warning that a disposable containment boundary is required.
+
 ## Candidate designs
 
-### A. Denylist
+### A. Fail-closed launch check
 
-Remove high-risk credential and session variables immediately around chrootless apt/dpkg execution.
+Before chrootless package execution, inspect environment variable names for high-risk credentials and session endpoints. Refuse by default, listing names only and never values. Permit an explicit skip for users who have reviewed the risk.
+
+Candidate exact names:
+
+- `SSH_AUTH_SOCK`;
+- `GPG_AGENT_INFO`;
+- `DBUS_SESSION_BUS_ADDRESS`;
+- `XDG_RUNTIME_DIR`;
+- `KUBECONFIG`;
+- `DOCKER_CONFIG`.
+
+Candidate name patterns cover token, secret, password, credential, and private-key variables. The matrix must measure false positives before retaining a pattern.
 
 Advantages:
 
-- narrow compatibility impact;
-- easy to explain and test.
+- does not pretend to sandbox package scripts;
+- prevents common accidental launches from desktop, CI, cloud, and agent-rich sessions;
+- low impact on apt networking and authentication internals.
 
 Risks:
 
-- incomplete by construction;
-- secret variable names are open-ended;
-- future credential helpers and sockets can bypass the list.
+- variable-name matching is incomplete;
+- broad patterns may reject benign variables;
+- users can bypass the check explicitly.
 
-### B. Allowlist
+### B. Dpkg-only environment wrapper
 
-Construct a minimal environment for chrootless apt/dpkg execution and preserve only demonstrated requirements.
+Keep apt's environment intact for repository authentication and proxy access. Configure chrootless apt to execute dpkg through a temporary wrapper that constructs a minimal environment before dpkg starts package maintainer scripts.
 
 Candidate preserved classes:
 
 - `PATH`;
-- locale variables needed for deterministic parsing;
-- `DEBIAN_FRONTEND` and related noninteractive controls;
-- proxy variables required for repository access;
-- `SOURCE_DATE_EPOCH` where reproducibility depends on it;
-- mmdebstrap internal variables required by the execution path.
+- locale variables set by mmdebstrap;
+- `DEBIAN_FRONTEND` and `DEBCONF_*` noninteractive controls;
+- `SOURCE_DATE_EPOCH` and `TZ` where needed for reproducibility.
 
-Variables created by dpkg for maintainer scripts, including `DPKG_ROOT` and `DPKG_ADMINDIR`, must remain available because dpkg supplies them after mmdebstrap starts the subprocess.
+Variables created by dpkg for maintainer scripts, including `DPKG_ROOT` and `DPKG_ADMINDIR`, remain available because dpkg supplies them after the wrapper starts it.
 
 Advantages:
 
-- blocks arbitrary caller secrets and unanticipated socket variables;
-- has a defensible security boundary.
+- blocks arbitrary caller variables from direct inheritance by maintainer scripts;
+- does not strip proxy or repository credentials from apt itself;
+- limits compatibility risk to dpkg and maintainer-script behavior.
 
 Risks:
 
-- compatibility regressions if apt, authentication helpers, proxies, or user workflows rely on ambient variables;
-- exact preservation rules require evidence, not guesses.
+- still not a sandbox because `/proc`, home paths, and host filesystem access remain;
+- maintainer scripts or helpers may rely on additional ambient variables;
+- a wrapper path and cleanup lifecycle must be handled safely.
+
+### C. Documentation and safe invocation
+
+Document that chrootless mode is not a package-script sandbox. Recommend an unprivileged disposable container or chroot and a scrubbed launch environment. Do not recommend bypassing the root safety check on a normal host.
 
 ## Test matrix
 
 1. Reproduce the original inherited environment with fake values only.
-2. Apply each candidate to a temporary copy of the imported source.
-3. Require the package script not to receive:
+2. Require the launch check to reject a credential-rich environment and report variable names only.
+3. Require the explicit skip to restore the current behavior.
+4. Apply the dpkg-wrapper candidate to a temporary copy of the imported source.
+5. Require the package script not to receive:
    - `AWS_SECRET_ACCESS_KEY`;
    - `GITHUB_TOKEN`;
    - `SSH_AUTH_SOCK`;
    - `DBUS_SESSION_BUS_ADDRESS`;
    - an arbitrary `LF_SECRET_CANARY` variable.
-4. Require no connection to the fake agent socket.
-5. Record the complete sanitized environment using names and redacted values only.
-6. Verify required behavior for:
+6. Require no direct connection to the fake agent socket.
+7. Record the filtered environment using names and redacted values only.
+8. Verify required behavior for:
    - `PATH`;
    - `LC_ALL`/locale;
    - `DEBIAN_FRONTEND`;
+   - relevant `DEBCONF_*` variables;
    - `SOURCE_DATE_EPOCH`;
-   - HTTP and HTTPS proxy variables;
-   - apt authentication helpers, if applicable.
-7. Verify the maintainer script still receives valid `DPKG_ROOT` and `DPKG_ADMINDIR` from dpkg.
-8. Compare normalized target state with the unsanitized control.
-9. Verify ordinary non-chrootless execution is unchanged.
-10. Verify cleanup and a second clean run.
+   - `TZ`.
+9. Verify the maintainer script still receives valid `DPKG_ROOT` and `DPKG_ADMINDIR` from dpkg.
+10. Verify apt still sees proxy and repository-auth variables because filtering occurs only at the dpkg boundary.
+11. Compare normalized target state with the unsanitized control.
+12. Verify ordinary non-chrootless execution is unchanged.
+13. Add `/proc` and host-file controls that demonstrate the remaining non-sandbox boundary.
+14. Verify cleanup and a second clean run.
 
 ## Decision rule
 
-Prefer an allowlist only if the representative package and network-access matrix passes without hidden dependencies. Otherwise retain a narrow denylist as an immediately reviewable hardening candidate while documenting the residual risk.
+Retain the fail-closed launch check if it catches the demonstrated high-risk environment without unacceptable false positives. Retain the dpkg-only wrapper only if representative package and reproducibility tests pass and the documentation clearly states that it is defense-in-depth rather than isolation.
 
 ## Immediate safe-use guidance
 
@@ -91,7 +124,7 @@ Until a candidate is proven:
 
 ```sh
 env -i \
-  HOME="$HOME" \
+  HOME=/nonexistent \
   PATH=/usr/sbin:/usr/bin:/sbin:/bin \
   LC_ALL=C.UTF-8 \
   DEBIAN_FRONTEND=noninteractive \
