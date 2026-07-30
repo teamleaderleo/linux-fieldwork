@@ -62,6 +62,7 @@ import subprocess
 subprocess.run(['/usr/bin/proxy'], cwd=work)
 subprocess.run(['proxy'], cwd=work)
 subprocess.run(['./proxy'])
+subprocess.run(['./proxy'], cwd=None)
 """
         self.assertEqual(audit_text("sample.py", source), [])
 
