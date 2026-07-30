@@ -50,7 +50,7 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
                  # we are not using shutil.copyfileobj() because we want to
                  # write to two file objects simultaneously
                  while True:
-@@ -73,31 +95,46 @@ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
+@@ -73,31 +95,50 @@ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
          # download fresh copy
 +        response_started = False
          try:
