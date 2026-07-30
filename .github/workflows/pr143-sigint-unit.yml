@@ -1,0 +1,28 @@
+name: PR143 SIGINT diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pr143-sigint-unit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  focused-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Fetch exact PR143 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir /tmp/source
+          gh api "/repos/${GITHUB_REPOSITORY}/tarball/9951c169cc6c2ba6531fd4ee8059ec87af75d936" > /tmp/source.tar.gz
+          tar -xzf /tmp/source.tar.gz --strip-components=1 -C /tmp/source
+      - name: Run only SIGINT regression
+        shell: bash
+        working-directory: /tmp/source
+        run: python3 -m unittest tests.test_mmdebstrap_coverage_parent_sigint -v
