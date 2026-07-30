@@ -6,16 +6,27 @@ This programme turns Linux package collections, runtimes, developer tools, found
 
 ## Current direction
 
-- **Mapped:** [LF-35 — package collection candidate harvesting](lanes/LF-35-package-collection-candidate-harvesting/brief.md)
-- **Mapped:** [LF-36 — downstream patch retirement and upstream transfer](lanes/LF-36-downstream-patch-retirement/brief.md)
+- **Investigating:** [LF-35 — package collection candidate harvesting](lanes/LF-35-package-collection-candidate-harvesting/brief.md)
+- **Investigating:** [LF-36 — downstream patch retirement and upstream transfer](lanes/LF-36-downstream-patch-retirement/brief.md)
 - **Inbox:** LF-37 — cross-distribution build portability
 - **Inbox:** LF-38 — runtime and toolchain distribution regressions
 - **Inbox:** LF-39 — foundational-library boundary corpus
 - **Inbox:** LF-40 — package metadata, provenance, and verification
 
+## Retained rounds
+
+- [`2026-07-30 ecosystem candidate scan`](../../research/rounds/2026-07-30-ecosystem-candidate-scan/selection.md) — selections from Nixpkgs, Homebrew, libarchive, systemd, and adjacent Fieldwork queues.
+- [`LF-35 round 001`](lanes/LF-35-package-collection-candidate-harvesting/artifacts/round-001.md) — `gomarkdoc` test restoration, Homebrew recurring intake, AAVMF capability queue, and duplicate stops.
+- [`LF-36 round 001`](lanes/LF-36-downstream-patch-retirement/artifacts/round-001.md) — canonical fixes and exact triggers for future downstream patch removal.
+
 ## First sequence
 
-Run LF-35 continuously as the intake lane. Promote candidates into existing Linux Fieldwork programmes when their owning boundary is already clear. Use LF-36 for downstream patches that may be obsolete, incomplete, or suitable for upstream transfer. Keep LF-37 through LF-40 in the registry until a specific repository, revision, fixture, and first distinguishing probe exist.
+1. Run the `gomarkdoc` test-restoration matrix in current CI: inherited `GOFLAGS`, working directory, subpackage selection, and known-good versus known-bad nixpkgs revisions.
+2. Select a Homebrew #139929 leaf with current logs and no active pull request.
+3. Retain a small-buffer libarchive PPMd fixture and vary read chunk size.
+4. Queue systemd #43174 in a cgroup-v2 VM and capture ManagedOOM Varlink notifications around a user-manager reload.
+5. Keep AAVMF behind aarch64 QEMU capability.
+6. Recheck active canonical fixes as they land so downstream patches and workarounds can be removed promptly.
 
 ## Candidate target classes
 
