@@ -28,9 +28,15 @@ if touch "$unwritable_tmp/should-fail" 2>/dev/null; then
 fi
 
 chmod +x "$source_root/mmdebstrap"
+clean_env=(
+  env -i
+  PATH=/usr/sbin:/usr/bin:/sbin:/bin
+  HOME="${HOME:-/tmp}"
+  LC_ALL=C.UTF-8
+)
 
 set +e
-TMPDIR="$unwritable_tmp" timeout 240 \
+"${clean_env[@]}" TMPDIR="$unwritable_tmp" timeout 240 \
   "$source_root/mmdebstrap" \
   --dry-run \
   --mode=chrootless \
@@ -59,7 +65,7 @@ grep -F 'Error in tempdir()' "$unwritable_log"
 grep -F "$unwritable_tmp" "$unwritable_log"
 grep -F 'Permission denied' "$unwritable_log"
 
-TMPDIR="$writable_tmp" timeout 240 \
+"${clean_env[@]}" TMPDIR="$writable_tmp" timeout 240 \
   "$source_root/mmdebstrap" \
   --dry-run \
   --mode=chrootless \
