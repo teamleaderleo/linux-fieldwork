@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 import pathlib
+import signal
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -42,7 +44,18 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
-eval 'printf %s "$FAKE_GPGV_STATUS_OUTPUT" >&'"$status_fd"
+if [ -n "${FAKE_GPGV_PIDFILE-}" ]; then
+  printf '%s\n' "$$" >"$FAKE_GPGV_PIDFILE"
+fi
+if [ "${FAKE_GPGV_MODE-normal}" = sleep ]; then
+  sleep "${FAKE_GPGV_SLEEP-30}"
+fi
+repeat=${FAKE_GPGV_REPEAT-1}
+i=0
+while [ "$i" -lt "$repeat" ]; do
+  eval 'printf %s "$FAKE_GPGV_STATUS_OUTPUT" >&'"$status_fd"
+  i=$((i + 1))
+done
 printf '%s' "${FAKE_GPGV_STDOUT-}"
 printf '%s' "${FAKE_GPGV_STDERR-}" >&2
 exit "$FAKE_GPGV_STATUS"
@@ -55,9 +68,7 @@ exit "$FAKE_GPGV_STATUS"
         cls.filter_fail_bin.mkdir()
         (cls.filter_fail_bin / "gpgv").symlink_to(cls.fake_gpgv)
         fake_sed = cls.filter_fail_bin / "sed"
-        fake_sed.write_text(
-            "#!/bin/sh\ncat >/dev/null\nexit 9\n", encoding="utf-8"
-        )
+        fake_sed.write_text("#!/bin/sh\nexit 7\n", encoding="utf-8")
         fake_sed.chmod(0o755)
 
         cls.baseline = root / "baseline"
@@ -108,6 +119,9 @@ exit "$FAKE_GPGV_STATUS"
         stdout: str = "",
         stderr: str = "",
         bin_dir: pathlib.Path | None = None,
+        repeat: int = 1,
+        mode: str = "normal",
+        pidfile: pathlib.Path | None = None,
     ) -> dict[str, str]:
         env = os.environ.copy()
         env.update(
@@ -118,8 +132,12 @@ exit "$FAKE_GPGV_STATUS"
                 "FAKE_GPGV_STATUS_OUTPUT": status_output,
                 "FAKE_GPGV_STDOUT": stdout,
                 "FAKE_GPGV_STDERR": stderr,
+                "FAKE_GPGV_REPEAT": str(repeat),
+                "FAKE_GPGV_MODE": mode,
             }
         )
+        if pidfile is not None:
+            env["FAKE_GPGV_PIDFILE"] = str(pidfile)
         return env
 
     def run_wrapper(
@@ -132,6 +150,7 @@ exit "$FAKE_GPGV_STATUS"
         *,
         stdout: str = "",
         bin_dir: pathlib.Path | None = None,
+        repeat: int = 1,
     ) -> subprocess.CompletedProcess[str]:
         case_tmp = pathlib.Path(self.work.name) / label
         case_tmp.mkdir()
@@ -147,8 +166,9 @@ exit "$FAKE_GPGV_STATUS"
                 stdout=stdout,
                 stderr=stderr,
                 bin_dir=bin_dir,
+                repeat=repeat,
             ),
-            timeout=10,
+            timeout=15,
         )
         self.assertEqual(list(case_tmp.iterdir()), [], f"leftovers for {label}")
         return result
@@ -184,17 +204,63 @@ exit "$FAKE_GPGV_STATUS"
             )
         finally:
             os.close(write_fd)
-        try:
-            with os.fdopen(read_fd, encoding="utf-8") as stream:
-                captured_status = stream.read()
-        finally:
-            if read_fd >= 0:
-                try:
-                    os.close(read_fd)
-                except OSError:
-                    pass
+        with os.fdopen(read_fd, encoding="utf-8") as stream:
+            captured_status = stream.read()
         self.assertEqual(list(case_tmp.iterdir()), [], f"leftovers for {label}")
         return result, captured_status
+
+    @staticmethod
+    def process_exists(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def wait_for_pidfile(self, process: subprocess.Popen[str], pidfile: pathlib.Path) -> int:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if pidfile.exists():
+                return int(pidfile.read_text().strip())
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                self.fail(
+                    f"wrapper exited before verifier pid: {process.returncode}: "
+                    f"{stdout}{stderr}"
+                )
+            time.sleep(0.01)
+        self.fail("fake verifier pidfile was not created")
+
+    def start_sleeping_wrapper(
+        self, label: str
+    ) -> tuple[subprocess.Popen[str], pathlib.Path, int]:
+        case_tmp = pathlib.Path(self.work.name) / label
+        case_tmp.mkdir()
+        pidfile = case_tmp / "gpgv.pid"
+        process = subprocess.Popen(
+            ["/bin/sh", str(self.candidate)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self.environment(
+                case_tmp,
+                0,
+                EXPIRED,
+                mode="sleep",
+                pidfile=pidfile,
+            ),
+            start_new_session=True,
+        )
+        child_pid = self.wait_for_pidfile(process, pidfile)
+        return process, case_tmp, child_pid
+
+    def assert_process_gone(self, pid: int) -> None:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and self.process_exists(pid):
+            time.sleep(0.02)
+        self.assertFalse(self.process_exists(pid))
 
     def test_success_rewrites_only_expired_signature_status(self) -> None:
         output = EXPIRED + BAD
@@ -255,17 +321,45 @@ exit "$FAKE_GPGV_STATUS"
             self.assertIn("verifier-stderr", result.stderr)
             self.assertEqual(captured, expected_status)
 
-    def test_filter_failure_is_returned_when_verifier_succeeds(self) -> None:
-        candidate = self.run_wrapper(
-            self.candidate,
-            "candidate-filter-failure",
-            0,
-            EXPIRED,
-            bin_dir=self.filter_fail_bin,
-        )
-        self.assertEqual(candidate.returncode, 9)
+    def test_immediate_filter_failure_cannot_mutate_verifier_status(self) -> None:
+        for verifier_status, expected in ((0, 7), (2, 2)):
+            with self.subTest(verifier_status=verifier_status):
+                candidate = self.run_wrapper(
+                    self.candidate,
+                    f"candidate-filter-immediate-{verifier_status}",
+                    verifier_status,
+                    EXPIRED,
+                    bin_dir=self.filter_fail_bin,
+                    repeat=5000,
+                )
+                self.assertEqual(candidate.returncode, expected)
 
-    def test_candidate_source_has_explicit_status_handoff(self) -> None:
+    def test_parent_only_term_is_deferred_but_eventually_cleans(self) -> None:
+        process, case_tmp, child_pid = self.start_sleeping_wrapper(
+            "candidate-parent-only-term"
+        )
+        os.kill(process.pid, signal.SIGTERM)
+        time.sleep(0.25)
+        self.assertIsNone(process.poll(), "parent-only TERM unexpectedly became prompt")
+        self.assertTrue(self.process_exists(child_pid))
+
+        os.kill(child_pid, signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=10)
+        self.assertEqual(process.returncode, 143, stdout + stderr)
+        self.assert_process_gone(child_pid)
+        self.assertEqual(list(case_tmp.iterdir()), [])
+
+    def test_process_group_term_stops_verifier_and_cleans(self) -> None:
+        process, case_tmp, child_pid = self.start_sleeping_wrapper(
+            "candidate-process-group-term"
+        )
+        os.killpg(process.pid, signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=10)
+        self.assertEqual(process.returncode, 143, stdout + stderr)
+        self.assert_process_gone(child_pid)
+        self.assertEqual(list(case_tmp.iterdir()), [])
+
+    def test_candidate_source_uses_regular_status_spool(self) -> None:
         baseline = self.baseline.read_text(encoding="utf-8")
         candidate = self.candidate.read_text(encoding="utf-8")
         self.assertIn('gpgv "$@"', baseline)
@@ -273,7 +367,12 @@ exit "$FAKE_GPGV_STATUS"
         self.assertIn("GPGV_STATUS=$?", candidate)
         self.assertIn('exit "$GPGV_STATUS"', candidate)
         self.assertIn('exit "$FILTER_STATUS"', candidate)
-        self.assertIn("mkfifo", candidate)
+        self.assertIn('STATUS_FILE="$FILTER_DIR/status"', candidate)
+        self.assertIn('>"$STATUS_FILE"', candidate)
+        self.assertIn('<"$STATUS_FILE"', candidate)
+        self.assertNotIn("mkfifo", candidate)
+        self.assertNotIn("FILTER_PID", candidate)
+        self.assertLess(candidate.index('gpgv "$@"'), candidate.index('sed "s/^'))
 
 
 if __name__ == "__main__":
