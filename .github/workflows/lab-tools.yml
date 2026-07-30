@@ -1,0 +1,39 @@
+name: Linux lab tools
+
+on:
+  push:
+    paths:
+      - "tools/**"
+      - "tests/**"
+      - "scripts/**"
+      - ".github/workflows/lab-tools.yml"
+  pull_request:
+    paths:
+      - "tools/**"
+      - "tests/**"
+      - "scripts/**"
+      - ".github/workflows/lab-tools.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Linux Fieldwork
+        uses: actions/checkout@v4
+
+      - name: Compile Python tools
+        run: python3 -m compileall -q tools tests
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Check shell syntax
+        run: bash -n scripts/capture-linux-context.sh
+
+      - name: Check command help
+        run: |
+          python3 tools/tar_manifest.py --help >/dev/null
+          python3 tools/manifest_diff.py --help >/dev/null
