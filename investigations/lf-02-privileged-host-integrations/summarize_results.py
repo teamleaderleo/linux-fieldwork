@@ -2,11 +2,14 @@
 """Build the LF-02 privileged-host integration summary.
 
 The classifier deliberately distinguishes an explicit D-Bus AccessDenied reply
-from unrelated filesystem EACCES lines elsewhere in the strace output.
+from unrelated filesystem EACCES lines elsewhere in the strace output. Target
+state comparisons name each component so narrow equality is not mistaken for
+whole-tree equality.
 """
 
 from __future__ import annotations
 
+import difflib
 import json
 import pathlib
 import re
@@ -76,6 +79,36 @@ def classify_case(root: pathlib.Path, label: str) -> dict[str, Any]:
     }
 
 
+def tree_pair(
+    root: pathlib.Path,
+    left: str,
+    right: str,
+    diff_artifact: str,
+) -> dict[str, Any]:
+    left_text = read_text(root, f"{left}-tree.tsv")
+    right_text = read_text(root, f"{right}-tree.tsv")
+    changed_lines = [
+        line
+        for line in difflib.unified_diff(
+            left_text.splitlines(),
+            right_text.splitlines(),
+            fromfile=f"{left}-tree.tsv",
+            tofile=f"{right}-tree.tsv",
+            lineterm="",
+        )
+        if (line.startswith("+") or line.startswith("-"))
+        and not line.startswith("+++")
+        and not line.startswith("---")
+    ]
+    return {
+        "left": left,
+        "right": right,
+        "equal": left_text == right_text,
+        "difference_lines": len(changed_lines),
+        "diff_artifact": diff_artifact,
+    }
+
+
 def build_summary(root: pathlib.Path) -> dict[str, Any]:
     cases = {label: classify_case(root, label) for label in LABELS}
     script_equal = (
@@ -88,12 +121,44 @@ def build_summary(root: pathlib.Path) -> dict[str, Any]:
         == read_text(root, "no-inhibit-root-alternative.normalized")
         == read_text(root, "isolated-root-alternative.normalized")
     )
+    tree_equal = (
+        read_text(root, "default-root-tree.tsv")
+        == read_text(root, "no-inhibit-root-tree.tsv")
+        == read_text(root, "isolated-root-tree.tsv")
+    )
+    tree_pairs = {
+        "default_vs_no_inhibit": tree_pair(
+            root,
+            "default-root",
+            "no-inhibit-root",
+            "default-vs-no-inhibit-tree.diff",
+        ),
+        "default_vs_isolated": tree_pair(
+            root,
+            "default-root",
+            "isolated-root",
+            "default-vs-isolated-tree.diff",
+        ),
+        "no_inhibit_vs_isolated": tree_pair(
+            root,
+            "no-inhibit-root",
+            "isolated-root",
+            "no-inhibit-vs-isolated-tree.diff",
+        ),
+    }
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "cases": cases,
         "target_script_state_equal": script_equal,
         "target_alternatives_state_equal": alternative_equal,
+        "target_tree_state_equal": tree_equal,
+        "target_state_comparison": {
+            "maintainer_script_log_equal": script_equal,
+            "alternatives_database_equal": alternative_equal,
+            "full_tree_manifest_equal": tree_equal,
+            "tree_pairwise": tree_pairs,
+        },
         "findings": {
             "privileged_needrestart_host_mutation": (
                 cases["default-root"]["marker_changed"]
