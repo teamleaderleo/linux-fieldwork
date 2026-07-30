@@ -2,6 +2,8 @@
 
 Use this runbook whenever a person or agent is asked to add Linux learning, map a research direction, or investigate a Linux or Debian project through this repository.
 
+Read [`AGENTS.md`](AGENTS.md) for the repository-wide source, review, notes, safety, and completion contract.
+
 ## In simple words
 
 Choose the smallest useful record. Write a note for reusable understanding. Use the programme registry for a plausible formal direction. Give a lane its own directory when its bounded question and first probe are clear. Open an investigation when exact source work and repeatable evidence begin.
@@ -10,14 +12,17 @@ Choose the smallest useful record. Write a note for reusable understanding. Use 
 
 Search, in order:
 
-1. [`programmes/registry.yml`](programmes/registry.yml) and the relevant programme `STATUS.md`;
-2. [`targets/registry.yml`](targets/registry.yml) and any target map;
-3. `research/rounds/` for prior landscape reasoning;
-4. `notes/` for reusable explanations;
-5. `investigations/` for active or retained evidence;
-6. the relevant imported tree under `upstream/`.
+1. open and closed repository issues and pull requests;
+2. [`programmes/registry.yml`](programmes/registry.yml) and the relevant programme `STATUS.md`;
+3. [`targets/registry.yml`](targets/registry.yml) and any target map;
+4. `research/rounds/` for prior landscape reasoning;
+5. `notes/` for reusable explanations;
+6. `investigations/` for active or retained evidence;
+7. the relevant imported tree and nearby tests under `upstream/`.
 
-Link related records instead of repeating them.
+Link related records instead of repeating them. Record the duplicate search in a material investigation or pull request.
+
+Issue and pull-request prose are orientation. Confirm technical claims against the exact source, tests, workflows, and retained artifacts.
 
 ## 2. Choose the work type
 
@@ -70,17 +75,46 @@ For general system behavior, record the distribution, release, kernel, architect
 
 Update or create a target map when one upstream project becomes recurrent across several lanes or investigations.
 
-## 5. Run the smallest useful demonstration
+## 5. Read the code and map the tests
+
+Before designing a probe or patch:
+
+- identify the owning function, caller, cleanup path, and adjacent tests;
+- inspect the complete current implementation, not only the issue description;
+- identify what existing test would catch the defect and what is currently missing;
+- record the source and test map in the investigation or report.
+
+## 6. Run the smallest useful demonstration
 
 Prefer a command or test that preserves the important behavior while remaining easy to repeat. Capture the exact command, expected distinguishing outcomes, actual result, and cleanup steps.
 
 For a candidate change, compare baseline and candidate behavior under the same conditions.
 
-## 6. State the evidence boundary
+New regression harnesses must assert their contract. Add a negative control that deliberately breaks the claimed invariant and prove the harness becomes nonzero or otherwise fails clearly.
+
+## 7. Review the complete work
+
+Before asking for review:
+
+- inspect the complete final diff;
+- verify the exact head that executed;
+- check failure paths, cleanup, reruns, destructive path safety, privileges, and concurrency where relevant;
+- confirm that retained artifacts and prose match the executed result;
+- record a self-review and any remaining limits.
+
+Peer reviews must read the changed code and relevant existing code, anchor the reviewed commit, and re-review after required changes. Green CI alone is not approval.
+
+## 8. Write down the reusable lesson
+
+A material code investigation must create or update a related note under `notes/` when it produces a reusable Linux, Debian, shell, filesystem, packaging, permissions, process, or source-reading lesson.
+
+Link the note from the investigation, report, issue, or pull request. When no reusable note is appropriate, write `Notes: not applicable` and explain why.
+
+## 9. State the evidence boundary
 
 Say exactly what the work establishes and where the conclusion ends. Mention skipped test suites, untested platforms, privilege assumptions, mocked components, reduced fixtures, and environment-specific behavior.
 
-## 7. Decide the next step
+## 10. Decide the next step
 
 Choose one:
 
@@ -88,9 +122,12 @@ Choose one:
 - keep a possibility in the programme registry;
 - promote a possibility into a formal lane directory;
 - open or continue an investigation;
-- keep a local candidate change;
+- implement or retain a bounded local candidate change;
 - prepare an upstream packet after explicit authorization;
-- close with a negative result.
+- close with a negative result;
+- block with a named missing environment, decision, or dependency.
+
+Do not stop at a report when a confirmed defect has a small feasible local fix and regression test.
 
 ## Upstream contact
 
