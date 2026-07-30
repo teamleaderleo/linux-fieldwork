@@ -20,7 +20,7 @@ A redirected old-cache read could return bytes from a local file outside the cac
 - Exact base: `ed49c01a85e9d363626db5d2973a33b67209e13b`
 - Branch: `investigation/caching-proxy-parent-swap-race`
 - Generated candidate: `investigations/caching-proxy-complete-stack/compose.py`
-- Owning implementation fragments: `compose_impl.py` lines containing `request_context()`, `oldpath.is_file()`, `cache_destination()`, `new_cache_temporary()`, and `os.replace()`
+- Owning implementation fragments: `compose_impl.py` lines containing `request_context()`, the imported `oldpath.exists()` cache-hit check, `cache_destination()`, `new_cache_temporary()`, and `os.replace()`
 - Focused regression: `tests/test_caching_proxy_parent_swap_race.py`
 - Imported source: unchanged
 - Upstream contact: unauthorized
@@ -29,7 +29,7 @@ A redirected old-cache read could return bytes from a local file outside the cac
 
 `request_context()` resolves each requested cache path and verifies that it is a strict descendant of the resolved cache root. The handler then stores ordinary `pathlib.Path` objects.
 
-The cache-hit path later calls `oldpath.is_file()`, `oldpath.stat()`, and `oldpath.open()`. The publication path later derives a sibling temporary pathname with `path.with_name()`, opens it with `os.open()`, and publishes it with `os.replace()`. Each operation resolves pathname components again at operation time.
+The cache-hit path later calls `oldpath.exists()`, `oldpath.stat()`, and `oldpath.open()`. The publication path later derives a sibling temporary pathname with `path.with_name()`, opens it with `os.open()`, and publishes it with `os.replace()`. Each operation resolves pathname components again at operation time.
 
 The composed finding already lists same-UID pathname/component replacement between validation and open as outside scope. This investigation turns that limit into an executable question.
 
@@ -46,7 +46,7 @@ The focused test subclasses the complete seven-test composed matrix, preserving 
 
 Two additional tests use real loopback HTTP and real filesystem operations:
 
-1. pause after both `request_context()` calls return but before `oldpath.is_file()`; rename the checked old-cache parent and replace it with a symlink to an outside directory containing known bytes;
+1. pause after both `request_context()` calls return but before the handler performs its first cache existence check; rename the checked old-cache parent and replace it with a symlink to an outside directory containing known bytes;
 2. pause at `cache_destination()` after the new path was validated but before temporary creation; rename the checked new-cache parent and replace it with a symlink to an outside directory containing a sentinel.
 
 The tests assert HTTP status and body, origin request count, outside bytes, preserved checked directory, symlink state, final cache location, temporary cleanup, and inherited ordinary behavior.
