@@ -5,6 +5,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 imported_source="$repo_root/upstream/mmdebstrap"
 override_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/installed-command-wrapper.patch"
+sourcesfilter_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/sourcesfilter-deb822.patch"
 run_id=${RUN_ID:-"local-$(date -u +%Y%m%dT%H%M%SZ)"}
 run_dir=${RUN_DIR:-"$repo_root/investigations/mmdebstrap-autopkgtest-1141078/runs/$run_id"}
 timeout_duration=${AUTOPKGTEST_TIMEOUT:-165m}
@@ -49,6 +50,9 @@ fi
 if [[ ! -f $override_patch ]]; then
   finish_early 2 "installed-command wrapper patch is missing"
 fi
+if [[ ! -f $sourcesfilter_patch ]]; then
+  finish_early 2 "Deb822 sourcesfilter patch is missing"
+fi
 
 work_root=$(mktemp -d "${TMPDIR:-/tmp}/lf-mmdebstrap-autopkgtest.XXXXXXXX")
 case "$work_root" in
@@ -59,8 +63,10 @@ esac
 trap 'rm -rf -- "$work_root"' EXIT INT TERM
 source_tree="$work_root/mmdebstrap"
 cp -a "$imported_source" "$source_tree"
-patch -p1 -d "$source_tree" -i "$override_patch" \
+patch --batch --forward -p1 -d "$source_tree" -i "$override_patch" \
   >"$run_dir/override-patch.stdout" 2>"$run_dir/override-patch.stderr"
+patch --batch --forward -p1 -d "$source_tree" -i "$sourcesfilter_patch" \
+  >"$run_dir/sourcesfilter-patch.stdout" 2>"$run_dir/sourcesfilter-patch.stderr"
 
 bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
 
@@ -70,8 +76,9 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
   printf -- '- Run ID: `%s`\n' "$run_id"
   printf -- '- Timeout: `%s`\n' "$timeout_duration"
   printf -- '- Imported source path: `%s`\n' "upstream/mmdebstrap"
-  printf -- '- Execution source: temporary copy with the recorded installed-command wrapper patch\n'
+  printf -- '- Execution source: temporary copy with the recorded installed-command and Deb822 sourcesfilter patches\n'
   printf -- '- Wrapper purpose: execute `/usr/bin/mmdebstrap` while bypassing source-preflight checks that current tooling applies to the older packaged script\n'
+  printf -- '- Sourcesfilter purpose: process current Deb822 apt source entries through python-apt exploded entries instead of asserting\n'
   if [[ -f $imported_source/.linux-fieldwork-source.json ]]; then
     printf '\n## Imported source\n\n```json\n'
     cat "$imported_source/.linux-fieldwork-source.json"
@@ -81,11 +88,14 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
   sha256sum \
     "$imported_source/debian/tests/control" \
     "$imported_source/debian/tests/testsuite" \
+    "$imported_source/debian/tests/sourcesfilter" \
     "$imported_source/coverage.py" \
     "$imported_source/coverage.txt" \
     "$imported_source/make_mirror.sh" \
     "$override_patch" \
-    "$source_tree/debian/tests/testsuite"
+    "$sourcesfilter_patch" \
+    "$source_tree/debian/tests/testsuite" \
+    "$source_tree/debian/tests/sourcesfilter"
   printf '```\n'
   printf '\n## Tool versions\n\n```text\n'
   dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
@@ -127,6 +137,7 @@ dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
     *) printf -- '- Classification: `failure`\n' ;;
   esac
   printf -- '- Source-preflight override: `installed-command-wrapper.patch`\n'
+  printf -- '- Source compatibility override: `sourcesfilter-deb822.patch`\n'
   if [[ -f $console_log ]]; then
     printf -- '- Console SHA-256: `%s`\n' "$(sha256sum "$console_log" | cut -d' ' -f1)"
   fi
