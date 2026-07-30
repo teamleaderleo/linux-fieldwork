@@ -69,6 +69,100 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  windows-resolution:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Run Rust current_dir resolution probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP "relative-exec-cwd-probe"
+          Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
+          $repo = Join-Path $root "repo"
+          $caller = Join-Path $repo "rpfm_ui"
+          $renderer = Join-Path $repo "3rdparty/src/qt_rendering_widget"
+          $childBase = Join-Path $repo "3rdparty/src"
+          $repoExecutable = Join-Path $repo "nuget.exe"
+          $childExecutable = Join-Path $childBase "nuget.exe"
+          $probe = Join-Path $root "windows-probe.exe"
+          $evidence = Join-Path $PWD "windows-evidence"
+          New-Item -ItemType Directory -Force $caller, $renderer, $evidence | Out-Null
+
+          rustc investigations/relative-exec-cwd-audit/windows_marker.rs `
+            -o $repoExecutable
+          Copy-Item $repoExecutable $childExecutable
+          rustc investigations/relative-exec-cwd-audit/windows_probe.rs `
+            -o $probe
+
+          $relativeMarker = Join-Path $evidence "relative-marker.txt"
+          $relativeLaunch = Join-Path $evidence "relative-launch.txt"
+          $absoluteMarker = Join-Path $evidence "absolute-marker.txt"
+          $absoluteLaunch = Join-Path $evidence "absolute-launch.txt"
+          $missingMarker = Join-Path $evidence "missing-marker.txt"
+          $missingLaunch = Join-Path $evidence "missing-launch.txt"
+
+          Push-Location $caller
+          try {
+            & $probe "./../nuget.exe" $renderer $relativeMarker $relativeLaunch
+            & $probe $repoExecutable $renderer $absoluteMarker $absoluteLaunch
+            Remove-Item $childExecutable
+            & $probe "./../nuget.exe" $renderer $missingMarker $missingLaunch
+          }
+          finally {
+            Pop-Location
+          }
+
+          if (-not (Test-Path $absoluteMarker)) {
+            throw "absolute-path control did not execute"
+          }
+          $absoluteIdentity = (Get-Content $absoluteMarker -Raw).Trim()
+          if ([IO.Path]::GetFullPath($absoluteIdentity) -ne [IO.Path]::GetFullPath($repoExecutable)) {
+            throw "absolute-path control executed unexpected file: $absoluteIdentity"
+          }
+
+          $relativeIdentity = if (Test-Path $relativeMarker) {
+            (Get-Content $relativeMarker -Raw).Trim()
+          } else {
+            $null
+          }
+          $missingIdentity = if (Test-Path $missingMarker) {
+            (Get-Content $missingMarker -Raw).Trim()
+          } else {
+            $null
+          }
+          $summary = [ordered]@{
+            schema_version = 1
+            runner_os = $env:RUNNER_OS
+            runner_arch = $env:RUNNER_ARCH
+            rustc = (rustc --version)
+            caller = $caller
+            child_cwd = $renderer
+            relative_program = "./../nuget.exe"
+            repository_candidate = $repoExecutable
+            child_relative_candidate = $childExecutable
+            relative_identity = $relativeIdentity
+            absolute_identity = $absoluteIdentity
+            missing_child_candidate_identity = $missingIdentity
+            relative_launch = (Get-Content $relativeLaunch -Raw)
+            absolute_launch = (Get-Content $absoluteLaunch -Raw)
+            missing_launch = (Get-Content $missingLaunch -Raw)
+          }
+          $summary | ConvertTo-Json -Depth 4 | Set-Content `
+            (Join-Path $evidence "summary.json") -Encoding utf8
+          Get-Content (Join-Path $evidence "summary.json")
+
+      - name: Upload Windows resolution evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: relative-exec-cwd-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: windows-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
   artifact-receipt:
     needs: audit
     runs-on: ubuntu-24.04
@@ -92,4 +186,33 @@ jobs:
           if not isinstance(findings, list):
               raise SystemExit("downloaded audit output must be a JSON list")
           print(f"downloaded_findings={len(findings)}")
+          PY
+
+  windows-receipt:
+    needs: windows-resolution
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download and validate Windows evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "relative-exec-cwd-windows-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --dir evidence >/dev/null
+          python3 - evidence/summary.json <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
+          assert summary["schema_version"] == 1
+          assert summary["absolute_identity"] == summary["repository_candidate"]
+          print(f"relative_identity={summary['relative_identity']!r}")
+          print(
+              "missing_child_candidate_identity="
+              f"{summary['missing_child_candidate_identity']!r}"
+          )
           PY
