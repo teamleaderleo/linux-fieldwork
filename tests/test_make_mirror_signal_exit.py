@@ -218,13 +218,10 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
                 "trap 'kill \"$PROXYPID\" || :;cleanup_newcachedir' EXIT INT TERM",
                 candidate,
             )
-            nested_update_cache_trap = (
+            self.assertNotIn(
                 "trap 'kill \"$PROXYPID\" || :;cleanuptmpdir; "
-                "cleanup_newcachedir' EXIT INT TERM"
-            )
-            self.assertEqual(candidate.count(nested_update_cache_trap), 1)
-            self.assertLess(
-                candidate.index(nested_update_cache_trap), candidate.index("stop_proxy() {")
+                "cleanup_newcachedir' EXIT INT TERM",
+                candidate,
             )
             self.assertNotIn(
                 'trap "cleanup_newcachedir" EXIT INT TERM', candidate
