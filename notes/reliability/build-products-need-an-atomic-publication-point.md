@@ -31,6 +31,20 @@ When a pipeline writes directly to the final pathname:
 
 A final success message does not create a publication boundary if the name was visible earlier.
 
+## Publication changes terminal truth
+
+The successful rename is a commit point. After it succeeds, the final pathname contains the completed product. A later failure to remove an empty temporary directory must not silently convert that committed result into ordinary build failure.
+
+Post-publication cleanup should therefore:
+
+- clear active ownership of the moved temporary object;
+- attempt bounded cleanup of known private state;
+- warn when unexpected residue prevents cleanup;
+- retain unexpected residue for diagnosis instead of recursively deleting unknown files;
+- keep the published result and terminal status consistent.
+
+This rule does not excuse cleanup leaks. It prevents a cleanup warning from lying about whether publication occurred.
+
 ## Review checklist
 
 1. Identify the first operation that creates or truncates the output.
@@ -39,10 +53,12 @@ A final success message does not create a publication boundary if the name was v
 4. Put the temporary object on the destination filesystem.
 5. Preserve intended new-file mode; `mktemp` files are normally 0600.
 6. Use quoted, option-terminated rename and cleanup commands.
-7. Clear temporary-path state after successful rename.
-8. Test absent and existing final paths under injected failure.
-9. Test signal cleanup separately from ordinary failure.
-10. State symlink, metadata, concurrency, and crash-durability semantics.
+7. Clear temporary-object ownership immediately after successful rename.
+8. Keep post-publication cleanup failure distinct from pre-publication failure.
+9. Test absent and existing final paths under injected failure.
+10. Test unexpected post-publication residue.
+11. Test signal cleanup separately from ordinary failure.
+12. State symlink, metadata, concurrency, and crash-durability semantics.
 
 ## Symlink and metadata semantics
 
