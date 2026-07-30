@@ -5,26 +5,38 @@ Subject: [PATCH] test: keep PID 1 oomd policy across user manager reload
 
 A user manager reload republishes its active units. Its root -.slice uses the
 manager's own cgroup root, which is the same path PID 1 reports for
-user@<uid>.service. Preserve a regression that proves the system-manager
-ManagedOOMMemoryPressure=kill registration remains visible after the user
-manager reloads and that the service itself did not restart.
+user@<uid>.service. Preserve a regression that proves the exact system-manager
+ManagedOOMMemoryPressure=kill registration and its configured limit remain
+visible after the user manager reloads and that the service itself did not
+restart.
 ---
- test/units/TEST-55-OOMD.sh | 43 ++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 43 insertions(+)
+ test/units/TEST-55-OOMD.sh | 60 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 60 insertions(+)
 
 diff --git a/test/units/TEST-55-OOMD.sh b/test/units/TEST-55-OOMD.sh
 index 43937c6ec7..0000000000 100755
 --- a/test/units/TEST-55-OOMD.sh
 +++ b/test/units/TEST-55-OOMD.sh
-@@ -537,6 +537,49 @@ testcase_prekill_hook() {
+@@ -537,6 +537,66 @@ testcase_prekill_hook() {
      done
  }
  
 +testcase_user_manager_reload_preserves_system_oomd_registration() {
-+    local active_enter after uid user_service_path
++    local active_enter after block uid user_service_path
 +
 +    uid="$(id -u testuser)"
 +    user_service_path="/user.slice/user-${uid}.slice/user@${uid}.service"
++
++    oomctl_block_for_path() {
++        oomctl | awk -v target="$1" '
++            $1 == "Path:" {
++                if (found)
++                    exit
++                found = ($2 == target)
++            }
++            found { print }
++        '
++    }
 +
 +    mkdir -p /run/systemd/system/user@.service.d/
 +    cat >/run/systemd/system/user@.service.d/zz-oomd-reload-regression.conf <<'EOF'
@@ -37,8 +49,14 @@ index 43937c6ec7..0000000000 100755
 +    loginctl enable-linger testuser
 +    systemctl start "user@${uid}.service"
 +
-+    timeout 1m bash -xec \
-+        "until oomctl | grep -F 'Path: ${user_service_path}' >/dev/null; do sleep 1; done"
++    block=
++    for _ in {1..60}; do
++        block="$(oomctl_block_for_path "$user_service_path")"
++        [[ -n "$block" ]] && break
++        sleep 1
++    done
++    [[ -n "$block" ]]
++    assert_in 'Memory Pressure Limit: 50.00%' "$block"
 +    active_enter="$(systemctl show "user@${uid}.service" -P ActiveEnterTimestampMonotonic)"
 +
 +    systemctl --machine "testuser@.host" --user daemon-reload
@@ -47,7 +65,9 @@ index 43937c6ec7..0000000000 100755
 +    # oomd/user-manager event-loop turns instead of accepting a transient entry.
 +    for after in 1 5 10; do
 +        sleep "$after"
-+        oomctl | grep -F "Path: ${user_service_path}" >/dev/null
++        block="$(oomctl_block_for_path "$user_service_path")"
++        [[ -n "$block" ]]
++        assert_in 'Memory Pressure Limit: 50.00%' "$block"
 +        assert_eq \
 +            "$(systemctl show "user@${uid}.service" -P ActiveEnterTimestampMonotonic)" \
 +            "$active_enter"
