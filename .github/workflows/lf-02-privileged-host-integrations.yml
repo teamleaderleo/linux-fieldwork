@@ -11,6 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -65,17 +66,17 @@ jobs:
     needs: privileged-host-integrations
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Download retained matrix
-        uses: actions/download-artifact@v4
-        with:
-          name: lf-02-privileged-host-integrations-${{ github.run_id }}-${{ github.run_attempt }}
-          path: evidence
-
-      - name: Print and assert corrected result contracts
+      - name: Download retained matrix and assert corrected contracts
         shell: bash
         run: |
           set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "lf-02-privileged-host-integrations-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --dir evidence >/dev/null
           summary=$(find evidence -path '*/results/summary.json' -print -quit)
           test -n "$summary"
           python3 - "$summary" <<'PY'
