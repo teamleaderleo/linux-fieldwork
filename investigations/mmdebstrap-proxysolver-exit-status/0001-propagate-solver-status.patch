@@ -1,0 +1,11 @@
+diff --git a/upstream/mmdebstrap/proxysolver b/upstream/mmdebstrap/proxysolver
+--- a/upstream/mmdebstrap/proxysolver
++++ b/upstream/mmdebstrap/proxysolver
+@@ -49,4 +49,7 @@
+             for line in p.stdout:
+                 print(line, end="")
+                 f.write(line)
++            returncode = p.wait()
++    if returncode != 0:
++        raise SystemExit(returncode)
+ except (FileNotFoundError, PermissionError) as e:
