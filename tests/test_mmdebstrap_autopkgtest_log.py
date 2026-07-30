@@ -28,16 +28,14 @@ testsuite FAIL non-zero exit status 1
         self.assertIsNone(result["first_failed_test"])
         self.assertFalse(result["saw_named_test"])
         self.assertFalse(result["wrapper_failure_only"])
+        self.assertEqual(result["first_failure_signal"], "perltidy failed")
 
     def test_classifies_first_named_coverage_failure_with_dimensions(self):
         result = MODULE.classify_text(
             """
 ------------------------------------------------------------------------------
 (17/329) unshare-as-root-user-inside-chroot
-dist: testing
-mode: unshare
-variant: apt
-format: auto
+ dist: testing mode: unshare variant: apt format: auto
 ------------------------------------------------------------------------------
 result: FAILURE
 ------------------------------------------------------------------------------
@@ -58,15 +56,16 @@ testsuite FAIL non-zero exit status 1
             },
         )
         self.assertFalse(result["wrapper_failure_only"])
+        self.assertEqual(result["first_failure_signal"], "coverage.py reported FAILURE")
 
     def test_success_result_is_a_negative_control_for_failure_detection(self):
         result = MODULE.classify_text(
             """
 (1/329) help
-dist: testing
-mode: auto
-variant: apt
-format: auto
+ dist: testing
+ mode: auto
+ variant: apt
+ format: auto
 result: SUCCESS
 testsuite PASS
 """
@@ -74,6 +73,7 @@ testsuite PASS
         self.assertEqual(result["phase"], "pass")
         self.assertIsNone(result["first_failed_test"])
         self.assertFalse(result["wrapper_failure_only"])
+        self.assertIsNone(result["first_failure_line"])
 
     def test_classifies_mirror_failure_before_coverage(self):
         result = MODULE.classify_text(
@@ -91,7 +91,7 @@ testsuite FAIL non-zero exit status 77
     def test_ansi_and_timestamp_prefixes_do_not_hide_named_failure(self):
         result = MODULE.classify_text(
             """
-2026-07-30T00:00:00Z \x1b[32m(8/329) pivot_root\x1b[0m
+2026-07-30T00:00:00Z [32m(8/329) pivot_root[0m
 2026-07-30T00:00:01Z dist: testing
 2026-07-30T00:00:02Z mode: unshare
 2026-07-30T00:00:03Z result: FAILURE
@@ -117,6 +117,76 @@ result: FAILURE
         result = MODULE.classify_text("testsuite FAIL non-zero exit status 1\n")
         self.assertEqual(result["phase"], "unknown")
         self.assertTrue(result["wrapper_failure_only"])
+
+    def test_earlier_mirror_failure_is_not_overridden_by_later_case(self):
+        result = MODULE.classify_text(
+            """
+./make_mirror.sh failed
+(9/10) later-case
+result: FAILURE
+"""
+        )
+        self.assertEqual(result["phase"], "mirror")
+        self.assertEqual(result["first_failure_signal"], "make_mirror.sh failed")
+        self.assertEqual(result["first_failed_test"]["name"], "later-case")
+        self.assertLess(result["first_failure_line"], 4)
+
+    def test_earlier_case_failure_is_not_overridden_by_later_mirror(self):
+        result = MODULE.classify_text(
+            """
+(4/10) first-case
+result: FAILURE
+./make_mirror.sh failed
+"""
+        )
+        self.assertEqual(result["phase"], "coverage-case")
+        self.assertEqual(result["first_failed_test"]["name"], "first-case")
+        self.assertEqual(result["first_failure_signal"], "coverage.py reported FAILURE")
+
+    def test_earlier_preflight_failure_is_not_overridden_by_later_case(self):
+        result = MODULE.classify_text(
+            """
+perlcritic failed
+(4/10) later-case
+result: FAILURE
+"""
+        )
+        self.assertEqual(result["phase"], "coverage-preflight")
+        self.assertEqual(result["first_failure_signal"], "perlcritic")
+        self.assertEqual(result["first_failed_test"]["name"], "later-case")
+
+    def test_completed_success_clears_active_test_before_stray_failure_text(self):
+        result = MODULE.classify_text(
+            """
+(1/2) successful-case
+result: SUCCESS
+unrelated diagnostic contains result: FAILURE
+testsuite PASS
+"""
+        )
+        self.assertEqual(result["phase"], "pass")
+        self.assertIsNone(result["first_failed_test"])
+        self.assertEqual(result["last_named_test"]["name"], "successful-case")
+
+    def test_multiple_dimensions_on_one_line_are_all_retained(self):
+        result = MODULE.classify_text(
+            """
+(7/9) compact-case dist: testing mode: root variant: apt format: tar
+result: FAILURE
+"""
+        )
+        self.assertEqual(
+            result["first_failed_test"],
+            {
+                "index": 7,
+                "total": 9,
+                "name": "compact-case",
+                "dist": "testing",
+                "mode": "root",
+                "variant": "apt",
+                "format": "tar",
+            },
+        )
 
 
 if __name__ == "__main__":
