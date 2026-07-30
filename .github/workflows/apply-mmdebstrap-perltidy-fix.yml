@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - fix/mmdebstrap-perltidy-current
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
@@ -65,8 +72,9 @@ jobs:
         shell: bash
         run: |
           rm .github/workflows/apply-mmdebstrap-perltidy-fix.yml
+          rm -f .github/mmdebstrap-perltidy-trigger
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add upstream/mmdebstrap/mmdebstrap investigations/mmdebstrap-unwritable-tmpdir/submission/0001-honor-explicit-tmpdir.patch .github/workflows/apply-mmdebstrap-perltidy-fix.yml
+          git add -A
           git commit -m 'Format mmdebstrap TMPDIR assignment for current perltidy'
           git push origin HEAD:fix/mmdebstrap-perltidy-current
