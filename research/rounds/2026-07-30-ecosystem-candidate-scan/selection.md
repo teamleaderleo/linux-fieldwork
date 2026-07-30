@@ -1,6 +1,7 @@
 # Ecosystem Candidate Scan — Selection Record
 
 Date: 2026-07-30  
+Latest overlap refresh: 2026-07-31  
 Programme: [`ecosystem-contributions`](../../../programmes/ecosystem-contributions/STATUS.md)  
 Fieldwork parent: `teamleaderleo/fieldwork` programme #207 and broad-spectrum round 001
 
@@ -86,7 +87,7 @@ The candidate originally entered the current-CI queue. The live refresh found a 
 - the next read could replay them;
 - the regression crosses the boundary with four 1 KiB entries and 1000-byte input blocks.
 
-Independent implementation is stopped. Retain the case for parser refill accounting, regression-fixture design, and downstream patch retirement after release adoption.
+The 2026-07-31 refresh confirmed PR 3340 remains open and mergeable at exact head `78b75ec7c9bca13870cecb5cd4f60272bed86fc9`. Independent implementation remains stopped. Retain the case for parser refill accounting, regression-fixture design, and downstream patch retirement after release adoption.
 
 ## Adjacent non-Linux-first work retained in Fieldwork
 
@@ -124,3 +125,7 @@ Recheck issue comments, linked work, assignees, claims, and pull requests immedi
 ## Current decision
 
 Run the `gomarkdoc` test-restoration probe first in current CI. Queue the systemd-oomd trace for a VM. Keep AAVMF behind aarch64 QEMU capacity. Retain libarchive PPMd as an active-fix reference. Continue harvesting Homebrew and Nixpkgs regression reports into LF-35.
+
+## External-contact state
+
+The refresh read public issue and pull-request state only. No issue, pull-request, comment, review, email, patch submission, or other upstream contact was made or authorized.
