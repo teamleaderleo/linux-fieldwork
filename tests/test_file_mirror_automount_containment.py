@@ -11,9 +11,17 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SETUP_SOURCE = ROOT / "upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh"
 CUSTOMIZE_SOURCE = ROOT / "upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh"
-PATCH = ROOT / (
-    "investigations/mmdebstrap-file-mirror-containment/"
-    "0001-contain-file-mirror-targets.patch"
+PATCHES = (
+    ROOT
+    / (
+        "investigations/mmdebstrap-file-mirror-containment/"
+        "0001-contain-file-mirror-targets.patch"
+    ),
+    ROOT
+    / (
+        "investigations/mmdebstrap-file-mirror-containment/"
+        "0002-preserve-file-uri-target-path.patch"
+    ),
 )
 
 
@@ -46,15 +54,16 @@ class FileMirrorAutomountContainmentTest(unittest.TestCase):
             hooks.mkdir(parents=True)
             shutil.copy2(SETUP_SOURCE, hooks / "setup00.sh")
             shutil.copy2(CUSTOMIZE_SOURCE, hooks / "customize00.sh")
-        applied = subprocess.run(
-            ["patch", "--batch", "--forward", "-p1", "-i", str(PATCH)],
-            cwd=self.candidate_root,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=30,
-        )
-        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        for patch in PATCHES:
+            applied = subprocess.run(
+                ["patch", "--batch", "--forward", "-p1", "-i", str(patch)],
+                cwd=self.candidate_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
 
         self.baseline_setup = self.baseline_root / (
             "upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh"
@@ -153,15 +162,46 @@ class FileMirrorAutomountContainmentTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         canonical_source = source.resolve()
-        target = root.resolve() / canonical_source.relative_to("/")
+        target = root.resolve() / source.relative_to("/")
         self.assertTrue(target.is_dir())
         fields = self.nul_fields(self.mount_log)
         self.assertEqual(fields, ["-o", "ro,bind", str(canonical_source), str(target)])
         marker = root / "run/mmdebstrap/file-mirror-automount"
         entries = self.nul_fields(marker)
-        self.assertEqual(entries, [str(canonical_source.relative_to("/"))])
+        self.assertEqual(entries, [str(source.relative_to("/"))])
         self.assertNotIn("..", pathlib.PurePosixPath(entries[0]).parts)
         self.assertFalse(entries[0].startswith("/"))
+
+    def test_symlinked_repository_keeps_configured_uri_path_reachable(self) -> None:
+        canonical_source = self.work / "canonical-repository"
+        canonical_source.mkdir()
+        source_uri_path = self.work / "repository-link"
+        source_uri_path.symlink_to(canonical_source, target_is_directory=True)
+        root = self.work / "symlink-source-root"
+
+        result = self.run_hook(
+            self.candidate_setup,
+            root,
+            uris=f"file://{source_uri_path}",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        target = root.resolve() / source_uri_path.relative_to("/")
+        self.assertTrue(target.is_dir())
+        self.assertEqual(
+            self.nul_fields(self.mount_log),
+            ["-o", "ro,bind", str(canonical_source.resolve()), str(target)],
+        )
+        marker = root / "run/mmdebstrap/file-mirror-automount"
+        self.assertEqual(self.nul_fields(marker), [str(source_uri_path.relative_to("/"))])
+
+        cleaned = self.run_hook(self.candidate_customize, root)
+        self.assertEqual(cleaned.returncode, 0, cleaned.stderr)
+        self.assertEqual(self.nul_fields(self.umount_log), [str(target)])
+        self.assertFalse(marker.exists())
+
+        rerun = self.run_hook(self.candidate_customize, root)
+        self.assertEqual(rerun.returncode, 0, rerun.stderr)
+        self.assertEqual(self.nul_fields(self.umount_log), [str(target)])
 
     def test_candidate_rejects_symlinked_target_parent_escape(self) -> None:
         source = self.work / "symlink-source"
@@ -170,7 +210,7 @@ class FileMirrorAutomountContainmentTest(unittest.TestCase):
         outside = self.work / "outside-target"
         root.mkdir()
         outside.mkdir()
-        first_component = source.resolve().relative_to("/").parts[0]
+        first_component = source.relative_to("/").parts[0]
         (root / first_component).symlink_to(outside, target_is_directory=True)
         result = self.run_hook(
             self.candidate_setup,
@@ -236,7 +276,9 @@ class FileMirrorAutomountContainmentTest(unittest.TestCase):
         setup = self.candidate_setup.read_text(encoding="utf-8")
         customize = self.candidate_customize.read_text(encoding="utf-8")
         self.assertIn('rootdir="$(realpath -e -- "$1")"', setup)
+        self.assertIn('normalized_target="$(realpath -m -s -- "$target_source")"', setup)
         self.assertIn('canonical_target="$(realpath -m -- "$rootdir/$target_relative")"', setup)
+        self.assertIn('resolve_contained_target "/$path" "/$path"', setup)
         self.assertIn('printf \'%s\\0\' "$target_relative"', setup)
         self.assertIn('target=$(realpath -m -- "$rootdir/$entry")', customize)
         self.assertIn('rm -r "$target"', customize)
