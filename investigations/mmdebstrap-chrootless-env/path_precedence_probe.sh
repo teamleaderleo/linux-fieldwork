@@ -89,7 +89,9 @@ chmod 0755 "$runtime/fake-bin/lf-path-probe"
 chmod 0755 "$source_root/mmdebstrap"
 
 run_case() {
-  local label=$1 path_value=$2 target="$runtime/$label-root"
+  local label=$1
+  local path_value=$2
+  local target="$runtime/$label-root"
   local package_dir hook
   package_dir="$(dirname "$package")"
   printf -v hook 'mkdir -p "$1%s"; cp "%s" "$1%s"' \
