@@ -57,7 +57,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for command_name in cp dpkg dpkg-query python3 realpath stat timeout; do
+for command_name in \
+  apt-ftparchive \
+  cp \
+  dpkg \
+  dpkg-deb \
+  dpkg-query \
+  gzip \
+  python3 \
+  realpath \
+  stat \
+  timeout; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "missing required command: $command_name" >&2
     exit 2
@@ -86,6 +96,58 @@ Path(sys.argv[2]).write_text(source.replace(old, new), encoding="utf-8")
 PY
 chmod 0755 "$mutation"
 
+arch="$(dpkg --print-architecture)"
+fixture="$runtime/fixture"
+repository="$runtime/repository"
+pool="$repository/pool/main/l/lf-essential-path-probe"
+binary_dir="$repository/dists/test/main/binary-$arch"
+mkdir -p "$fixture/DEBIAN" "$fixture/usr/share/lf-essential-path-probe"
+mkdir -p "$pool" "$binary_dir"
+
+cat >"$fixture/DEBIAN/control" <<'EOF'
+Package: lf-essential-path-probe
+Version: 1.0
+Section: misc
+Priority: required
+Architecture: all
+Essential: yes
+Maintainer: Linux Fieldwork <noreply@example.invalid>
+Description: direct chrootless PATH probe
+ A local Essential package for exercising mmdebstrap run_essential.
+EOF
+
+cat >"$fixture/DEBIAN/postinst" <<'EOF'
+#!/bin/sh
+set -eu
+
+result_dir="$DPKG_ROOT/var/lib/lf-essential-path-probe"
+mkdir -p "$result_dir"
+printf '%s\n' "$PATH" >"$result_dir/path.txt"
+printf 'postinst-ran=yes\n' >"$result_dir/result.txt"
+EOF
+chmod 0755 "$fixture/DEBIAN/postinst"
+printf 'fixture payload\n' >"$fixture/usr/share/lf-essential-path-probe/payload"
+package="$pool/lf-essential-path-probe_1.0_all.deb"
+dpkg-deb --build --root-owner-group "$fixture" "$package" \
+  >"$result_dir/package-build.stdout" \
+  2>"$result_dir/package-build.stderr"
+
+(
+  cd "$repository"
+  apt-ftparchive packages pool >"dists/test/main/binary-$arch/Packages"
+  gzip -n -c "dists/test/main/binary-$arch/Packages" \
+    >"dists/test/main/binary-$arch/Packages.gz"
+  apt-ftparchive \
+    -o APT::FTPArchive::Release::Origin='Linux Fieldwork' \
+    -o APT::FTPArchive::Release::Label='Linux Fieldwork' \
+    -o APT::FTPArchive::Release::Suite='test' \
+    -o APT::FTPArchive::Release::Codename='test' \
+    -o APT::FTPArchive::Release::Architectures="$arch" \
+    -o APT::FTPArchive::Release::Components='main' \
+    release dists/test >dists/test/Release
+)
+chmod -R a+rX "$repository"
+
 write_wrapper() {
   local log_file=$1
   cat >"$runtime/fake-bin/dpkg" <<EOF
@@ -101,13 +163,13 @@ run_case() {
   local mmdebstrap_path=$2
   local target="$runtime/$label-root"
   local wrapper_log="$result_dir/$label-dpkg-wrapper.log"
-  local source_spec='deb [trusted=yes] https://deb.debian.org/debian sid main'
+  local source_spec="deb [trusted=yes] file://$repository test main"
   local status
 
   : >"$wrapper_log"
   write_wrapper "$wrapper_log"
   set +e
-  timeout 900 env -i \
+  timeout 300 env -i \
     PATH="$runtime/fake-bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     HOME="$runtime/home" \
     TMPDIR="$runtime" \
@@ -116,7 +178,7 @@ run_case() {
       --mode=chrootless \
       --variant=essential \
       --format=directory \
-      sid "$target" "$source_spec" \
+      test "$target" "$source_spec" \
       >"$result_dir/$label.stdout" \
       2>"$result_dir/$label.stderr"
   status=$?
@@ -127,12 +189,17 @@ run_case() {
     echo "$label transaction timed out" >&2
     exit 1
   fi
+  [[ "$status" -eq 0 ]]
   grep -F 'I: installing essential packages...' "$result_dir/$label.stderr"
-  test -s "$target/var/lib/dpkg/status"
+  test -f "$target/usr/share/lf-essential-path-probe/payload"
+  grep -Fx 'postinst-ran=yes' \
+    "$target/var/lib/lf-essential-path-probe/result.txt"
+  cp -a "$target/var/lib/lf-essential-path-probe" \
+    "$result_dir/$label-maintainer-script"
   dpkg-query --admindir="$target/var/lib/dpkg" \
     -W -f='${binary:Package}\n' \
     | sort >"$result_dir/$label-packages.txt"
-  test -s "$result_dir/$label-packages.txt"
+  grep -Fx lf-essential-path-probe "$result_dir/$label-packages.txt"
   grep -Fx -- '--print-architecture' "$wrapper_log"
 }
 
@@ -149,13 +216,15 @@ grep -F -- '--force-script-chrootless' \
 
 candidate_status="$(cat "$result_dir/candidate.status")"
 mutation_status="$(cat "$result_dir/mutation.status")"
-[[ "$candidate_status" == "$mutation_status" ]]
+[[ "$candidate_status" -eq 0 ]]
+[[ "$mutation_status" -eq 0 ]]
 cmp "$result_dir/candidate-packages.txt" "$result_dir/mutation-packages.txt"
 
-candidate_succeeded=no
-if [[ "$candidate_status" -eq 0 ]]; then
-  candidate_succeeded=yes
-fi
+canonical_path=/usr/sbin:/usr/bin:/sbin:/bin
+candidate_path="$(cat "$result_dir/candidate-maintainer-script/path.txt")"
+mutation_path="$(cat "$result_dir/mutation-maintainer-script/path.txt")"
+[[ "$candidate_path" == "$canonical_path" ]]
+[[ "$mutation_path" == "$runtime/fake-bin:"* ]]
 
 source_mode_after="$(stat -c '%a' "$source_root/mmdebstrap")"
 [[ "$source_mode_after" == "$source_mode_before" ]]
@@ -167,16 +236,20 @@ executed_candidate_copy=$candidate
 source_mode_before=$source_mode_before
 source_mode_after=$source_mode_after
 repository_source_unchanged=yes
+repository_type=local_unsigned_trusted_test_repository
 variant=essential
 candidate_transaction_status=$candidate_status
-candidate_full_transaction_succeeded=$candidate_succeeded
+candidate_full_transaction_succeeded=yes
 candidate_direct_run_essential_reached=yes
+candidate_maintainer_script_path=$candidate_path
 candidate_caller_dpkg_received_chrootless_args=no
 mutation_transaction_status=$mutation_status
+mutation_full_transaction_succeeded=yes
 mutation_direct_run_essential_reached=yes
+mutation_maintainer_script_path=$mutation_path
 mutation_caller_dpkg_received_chrootless_args=yes
 candidate_mutation_package_sets_equal=yes
-interpretation=direct run_essential uses canonical DPkg::Path independently of later package outcome
+interpretation=successful direct run_essential uses canonical DPkg::Path while the mutation restores caller-path dpkg resolution
 EOF
 
 cat "$result_dir/summary.txt"
