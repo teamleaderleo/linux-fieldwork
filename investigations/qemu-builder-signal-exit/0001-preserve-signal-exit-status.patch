@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
 --- a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
 +++ b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
-@@ -324,6 +324,18 @@ cleanup() {
+@@ -324,6 +324,16 @@ cleanup() {
    test -n "$WORKDIR" && rm -Rf "$WORKDIR"
  }
  
