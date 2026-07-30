@@ -49,13 +49,21 @@ jobs:
             scripts/capture-linux-context.sh \
             scripts/preflight-mmdebstrap-investigation.sh \
             scripts/reproduce-mmdebstrap-autopkgtest.sh; do
-            [[ -f "$script" ]] && bash -n "$script"
+            if [[ -f "$script" ]]; then
+              bash -n "$script"
+            fi
           done
-          [[ -f tools/tar_manifest.py ]] && python3 tools/tar_manifest.py --help >/dev/null
-          [[ -f tools/manifest_diff.py ]] && python3 tools/manifest_diff.py --help >/dev/null
-          [[ -f tools/debian_bug_report.py ]] && python3 tools/debian_bug_report.py --help >/dev/null
-          [[ -f scripts/capture-linux-context.sh ]] && bash scripts/capture-linux-context.sh --help >/dev/null
-          :
+          for tool in \
+            tools/tar_manifest.py \
+            tools/manifest_diff.py \
+            tools/debian_bug_report.py; do
+            if [[ -f "$tool" ]]; then
+              python3 "$tool" --help >/dev/null
+            fi
+          done
+          if [[ -f scripts/capture-linux-context.sh ]]; then
+            bash scripts/capture-linux-context.sh --help >/dev/null
+          fi
 
   capture-bug-report:
     if: startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') || startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')
