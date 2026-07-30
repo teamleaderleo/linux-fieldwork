@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/coverage.py b/upstream/mmdebstrap/coverage.py
 --- a/upstream/mmdebstrap/coverage.py
 +++ b/upstream/mmdebstrap/coverage.py
-@@ -415,8 +415,9 @@ def main():
+@@ -413,8 +413,9 @@ def main():
          proc = subprocess.Popen(argv)
          try:
              proc.wait()
