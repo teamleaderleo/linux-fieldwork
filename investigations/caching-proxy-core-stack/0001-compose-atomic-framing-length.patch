@@ -1,0 +1,131 @@
+--- a/upstream/mmdebstrap/caching_proxy.py
++++ b/upstream/mmdebstrap/caching_proxy.py
+@@ -2,6 +2,8 @@
+ 
+ import sys
+ import os
++import contextlib
++import secrets
+ import time
+ import http.client
+ import http.server
+@@ -12,6 +14,69 @@
+ oldcachedir = None
+ newcachedir = None
+ readonly = False
++
++
++HOP_BY_HOP_HEADERS = {
++    "connection",
++    "keep-alive",
++    "proxy-authenticate",
++    "proxy-authorization",
++    "proxy-connection",
++    "te",
++    "trailer",
++    "transfer-encoding",
++    "upgrade",
++}
++
++
++def downstream_headers(response):
++    headers = response.getheaders()
++    connection_tokens = set()
++    for name, value in headers:
++        if name.lower() == "connection":
++            connection_tokens.update(
++                token.strip().lower()
++                for token in value.split(",")
++                if token.strip()
++            )
++    blocked = HOP_BY_HOP_HEADERS | connection_tokens
++    if response.chunked:
++        blocked = blocked | {"content-length"}
++    return [
++        (name, value)
++        for name, value in headers
++        if name.lower() not in blocked
++    ]
++
++
++def new_cache_temporary(path):
++    for _ in range(100):
++        temporary = path.with_name(f".{path.name}.{secrets.token_hex(12)}")
++        try:
++            descriptor = os.open(
++                temporary,
++                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
++                0o666,
++            )
++        except FileExistsError:
++            continue
++        return descriptor, temporary
++    raise FileExistsError(f"unable to allocate temporary cache file for {path}")
++
++
++@contextlib.contextmanager
++def cache_destination(path):
++    if path == pathlib.Path("/dev/null"):
++        with path.open(mode="wb") as cache:
++            yield cache
++        return
++    descriptor, temporary = new_cache_temporary(path)
++    try:
++        with os.fdopen(descriptor, mode="wb") as cache:
++            yield cache
++        os.replace(temporary, path)
++    finally:
++        temporary.unlink(missing_ok=True)
+ 
+ 
+ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
+@@ -56,7 +121,7 @@
+             self.wfile.write(b"HTTP/1.1 200 OK\r\n")
+             self.send_header("Content-Length", oldpath.stat().st_size)
+             self.end_headers()
+-            with oldpath.open(mode="rb") as old, newpath.open(mode="wb") as new:
++            with oldpath.open(mode="rb") as old, cache_destination(newpath) as new:
+                 # we are not using shutil.copyfileobj() because we want to
+                 # write to two file objects simultaneously
+                 while True:
+@@ -75,14 +140,22 @@
+             conn.request("GET", self.path, None, dict(self.headers))
+             res = conn.getresponse()
+             assert (res.status, res.reason) == (200, "OK"), (res.status, res.reason)
++            headers = downstream_headers(res)
++            expected_length = None
++            if not res.chunked:
++                length_header = res.getheader("Content-Length")
++                if length_header is not None:
++                    expected_length = int(length_header)
++                    if expected_length < 0:
++                        raise ValueError("negative origin Content-Length")
+             self.wfile.write(b"HTTP/1.1 200 OK\r\n")
+-            for k, v in res.getheaders():
+-                # do not allow a persistent connection
+-                if k == "connection":
+-                    continue
++            for k, v in headers:
+                 self.send_header(k, v)
++            self.send_header("Connection", "close")
++            self.close_connection = True
+             self.end_headers()
+-            with newpath.open(mode="wb") as f:
++            with cache_destination(newpath) as f:
++                received = 0
+                 # we are not using shutil.copyfileobj() because we want to
+                 # write to two file objects simultaneously and throttle the
+                 # writing speed to 1024 kB/s
+@@ -92,7 +165,12 @@
+                         break
+                     self.wfile.write(buf)
+                     f.write(buf)
++                    received += len(buf)
+                     time.sleep(64 / 1024)  # 1024 kB/s
++                if expected_length is not None and received != expected_length:
++                    raise http.client.IncompleteRead(
++                        b"", expected_length - received
++                    )
+             self.wfile.flush()
+         except Exception as e:
+             self.send_error(502)
