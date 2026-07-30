@@ -101,6 +101,51 @@ class LF02EvidencePathExactnessTest(unittest.TestCase):
 
         self.run_in_both_modes(mutate)
 
+    def test_boolean_schema_version_is_rejected(self) -> None:
+        def mutate(results: pathlib.Path, target: pathlib.Path) -> None:
+            helpers.write_json(results / "provenance.json", {"schema_version": True})
+
+        self.run_in_both_modes(mutate)
+
+    def test_boolean_phase_duration_is_rejected(self) -> None:
+        def mutate(results: pathlib.Path, target: pathlib.Path) -> None:
+            path = results / "install-v1.phase.json"
+            record = json.loads(path.read_text(encoding="utf-8"))
+            record["duration_ms"] = True
+            helpers.write_json(path, record)
+
+        self.run_in_both_modes(mutate)
+
+    def test_boolean_phase_exit_status_is_rejected(self) -> None:
+        def mutate(results: pathlib.Path, target: pathlib.Path) -> None:
+            path = results / "install-v1.phase.json"
+            record = json.loads(path.read_text(encoding="utf-8"))
+            record["exit_status"] = False
+            helpers.write_json(path, record)
+
+        self.run_in_both_modes(mutate)
+
+    def test_boolean_category_count_is_rejected(self) -> None:
+        def mutate(results: pathlib.Path, target: pathlib.Path) -> None:
+            path = results / "install-v1-access.summary.json"
+            record = json.loads(path.read_text(encoding="utf-8"))
+            record["categories"]["required_host_read"] = True
+            record["category_total"] = 1
+            record["outside_access_events"] = 1
+            helpers.write_json(path, record)
+
+        self.run_in_both_modes(mutate)
+
+    def test_boolean_category_total_is_rejected(self) -> None:
+        def mutate(results: pathlib.Path, target: pathlib.Path) -> None:
+            path = results / "install-v1-access.summary.json"
+            record = json.loads(path.read_text(encoding="utf-8"))
+            record["category_total"] = False
+            record["outside_access_events"] = False
+            helpers.write_json(path, record)
+
+        self.run_in_both_modes(mutate)
+
     def test_summary_output_replaces_symlink_without_touching_target(self) -> None:
         for optimized in (False, True):
             with self.subTest(optimized=optimized), tempfile.TemporaryDirectory() as tmp:
