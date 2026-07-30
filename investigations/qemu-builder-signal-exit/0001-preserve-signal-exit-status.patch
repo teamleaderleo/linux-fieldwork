@@ -1,18 +1,15 @@
 diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
 --- a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
 +++ b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
-@@ -321,9 +321,22 @@ WORKDIR=
- 
- cleanup() {
--  test -n "$WORKDIR" && rm -Rf "$WORKDIR"
-+  test -z "$WORKDIR" || rm -Rf "$WORKDIR" || :
+@@ -324,6 +324,18 @@ cleanup() {
+   test -n "$WORKDIR" && rm -Rf "$WORKDIR"
  }
  
 -trap cleanup EXIT INT TERM QUIT
 +signal_exit() {
 +  status=$1
 +  trap - EXIT INT TERM QUIT
-+  cleanup
++  cleanup || :
 +  exit "$status"
 +}
 +
