@@ -1,6 +1,6 @@
 # LF-02 privileged host integrations follow-up
 
-This follow-up starts from LF-SCOUT-ROOT-01's promoted chrootless `DPKG_ROOT` result and tests the two strongest adjacent host effects under a disposable privileged caller.
+This follow-up starts from LF-SCOUT-ROOT-01's promoted chrootless `DPKG_ROOT` result and tests the two strongest adjacent host effects under a disposable privileged caller. Draft PR #22 targets a CI-only base branch containing the workflow definition, leaving the review-ready LF-02 branch unchanged.
 
 ## Questions
 
