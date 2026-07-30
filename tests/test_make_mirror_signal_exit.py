@@ -48,7 +48,7 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             './caching_proxy.py "$oldcachedir" "$newcachedir" &', function_start
         )
         functions = source[function_start:function_end]
-        trap_start = source.index("trap 'stop_proxy' EXIT", function_end)
+        trap_start = source.index("trap 'cleanup_owner' EXIT", function_end)
         trap_end = source.index("\n\nfor i in", trap_start)
         traps = source[trap_start:trap_end] + "\n"
         return functions, traps
@@ -98,7 +98,7 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
 
     def run_signaled(
         self, script: pathlib.Path
-    ) -> tuple[subprocess.Popen, pathlib.Path, int]:
+    ) -> tuple[subprocess.Popen, pathlib.Path, int, str, str]:
         runtime = script.parent
         process = subprocess.Popen(
             ["sh", str(script)],
@@ -119,9 +119,7 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
         proxy_pid = int((runtime / "proxy.pid").read_text().strip())
         os.kill(process.pid, signal.SIGTERM)
         stdout, stderr = process.communicate(timeout=10)
-        self.assertEqual(stdout, "")
-        self.assertEqual(stderr, "")
-        return process, runtime, proxy_pid
+        return process, runtime, proxy_pid, stdout, stderr
 
     @staticmethod
     def process_exists(pid: int) -> bool:
@@ -146,16 +144,28 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
                 root, "candidate", self.candidate_blocks(candidate_source)
             )
 
-            baseline_process, baseline_runtime, _baseline_proxy = self.run_signaled(
-                baseline_script
-            )
+            (
+                baseline_process,
+                baseline_runtime,
+                _baseline_proxy,
+                baseline_stdout,
+                _baseline_stderr,
+            ) = self.run_signaled(baseline_script)
             self.assertEqual(baseline_process.returncode, 0)
+            self.assertEqual(baseline_stdout, "")
             self.assertTrue((baseline_runtime / "after").exists())
+            self.assertTrue((baseline_runtime / "cache-state").exists())
 
-            candidate_process, candidate_runtime, candidate_proxy = self.run_signaled(
-                candidate_script
-            )
+            (
+                candidate_process,
+                candidate_runtime,
+                candidate_proxy,
+                candidate_stdout,
+                candidate_stderr,
+            ) = self.run_signaled(candidate_script)
             self.assertEqual(candidate_process.returncode, 143)
+            self.assertEqual(candidate_stdout, "")
+            self.assertEqual(candidate_stderr, "")
             self.assertFalse((candidate_runtime / "after").exists())
             self.assertFalse((candidate_runtime / "cache-state").exists())
             self.assertEqual(
@@ -206,11 +216,13 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             self.assertNotIn(
                 'trap "cleanup_newcachedir" EXIT INT TERM', candidate
             )
+            self.assertIn("trap 'cleanup_owner' EXIT", candidate)
             self.assertIn("trap 'signal_exit 130' INT", candidate)
             self.assertIn("trap 'signal_exit 131' QUIT", candidate)
             self.assertIn("trap 'signal_exit 143' TERM", candidate)
-            self.assertEqual(candidate.count("stop_proxy"), 4)
+            self.assertEqual(candidate.count("stop_proxy"), 3)
             self.assertIn('wait "$PROXYPID" 2>/dev/null || :', candidate)
+            self.assertIn("cleanup_owner() {", candidate)
 
 
 if __name__ == "__main__":
