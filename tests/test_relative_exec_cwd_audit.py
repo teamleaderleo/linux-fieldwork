@@ -148,6 +148,20 @@ env --chdir=/tmp/target --split-string='./proxy --check'
 """
         self.assertEqual(audit_text("probe.sh", source), [])
 
+    def test_shell_env_argument_text_is_not_a_launch(self) -> None:
+        source = """\
+printf '%s\\n' env --chdir=/tmp/target ./proxy
+logger env -C /tmp/target ../proxy
+"""
+        self.assertEqual(audit_text("probe.sh", source), [])
+
+    def test_shell_leading_assignment_preserves_env_command_position(self) -> None:
+        source = "TRACE=yes /usr/bin/env -C /tmp/target ../proxy --check\n"
+        findings = audit_text("probe.sh", source)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].program, "../proxy")
+        self.assertEqual(findings[0].cwd, "/tmp/target")
+
     def test_shell_absolute_and_simple_programs_are_controls(self) -> None:
         source = """\
 env --chdir=/tmp/target /usr/bin/proxy
