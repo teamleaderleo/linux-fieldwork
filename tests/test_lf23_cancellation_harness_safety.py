@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 import sys
@@ -17,10 +18,19 @@ class LF23CancellationHarnessSafetyTest(unittest.TestCase):
             "LF-SCOUT-PROC-01/artifacts/cancellation_harness.py"
         )
 
-    def run_with_output(self, output: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    def run_with_output(
+        self,
+        output: pathlib.Path,
+        *,
+        tmpdir: pathlib.Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        env = None
+        if tmpdir is not None:
+            env = dict(os.environ, TMPDIR=str(tmpdir))
         return subprocess.run(
             [sys.executable, str(self.harness), "--output", str(output)],
             cwd=self.repo,
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -37,7 +47,7 @@ class LF23CancellationHarnessSafetyTest(unittest.TestCase):
             sentinel = output / "sentinel"
             sentinel.write_text("preserve me\n")
 
-            completed = self.run_with_output(output)
+            completed = self.run_with_output(output, tmpdir=self.repo)
 
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("output must be a child", completed.stderr)
