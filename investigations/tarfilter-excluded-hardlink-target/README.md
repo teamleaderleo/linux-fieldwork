@@ -2,17 +2,17 @@
 
 ## TL;DR
 
-`mmdebstrap`'s `tarfilter` decides whether to keep each archive member by its own path. A hard-link entry contains no file bytes; it points at another archive member through `linkname`. The current source can therefore exclude the data-bearing target, retain the hard-link entry, exit 0, and emit an archive whose only remaining file points at a missing member.
+`mmdebstrap`'s `tarfilter` decides whether to keep each archive member by its own path. A hard-link entry contains no file bytes; it points at another archive member through `linkname`. Excluding the data-bearing target while retaining the link member can therefore produce a dangling archive entry that GNU tar rejects during the next pipeline stage.
 
-The retained probe compares a valid two-name hard-link archive with the result of `--path-exclude=/root/base`. Exact repository execution is pending on the investigation branch.
+Dpkg documents path filters as current-object-only decisions and warns that selected exclusions can cause later unpack failures. This investigation therefore begins as a compatibility and diagnosability map. Promotion to a tarfilter defect requires evidence that mmdebstrap promises a stronger successful-output contract for this case.
 
 ## Explain like I'm five
 
-An archive has two labels for one box. One label owns the box. The other label says, “use the first label's box.” The filter throws away the first label and keeps the second, leaving an instruction that points nowhere.
+An archive has two labels for one box. One label owns the box. The other label says, “use the first label's box.” The filter throws away the first label and keeps the second, leaving an instruction that points nowhere. The later unpack step finds the broken instruction and stops.
 
 ## Why care
 
-Path exclusions are used while constructing root filesystem archives. A successful filter command followed by an extraction failure moves the error into a later bootstrap or image stage. That makes cancellation, cleanup, and diagnosis harder, and the produced archive no longer satisfies the ordinary expectation that successful filtering yields an extractable stream.
+Mmdebstrap places this filter between `dpkg-deb` and GNU tar while building a root filesystem. The filter can exit 0 before GNU tar reports the dangling hard link. That result may follow the documented dpkg filter model, yet it still shifts the useful diagnostic into a later process. A precise compatibility record helps distinguish expected hazardous configuration from a filter implementation failure.
 
 ## Canonical records
 
@@ -21,7 +21,8 @@ Path exclusions are used while constructing root filesystem archives. A successf
 - Broad scout: `LF-SCOUT-FS-01`
 - Working branch: `investigate/tarfilter-excluded-hardlink-target`
 - Imported source: `upstream/mmdebstrap/tarfilter`
-- Imported blob at branch creation: `ad776167a8473d5d15dbe22e850f4f6db35cf278`
+- Imported tarfilter blob at branch creation: `ad776167a8473d5d15dbe22e850f4f6db35cf278`
+- Imported mmdebstrap blob at branch creation: `41aa46f989a2660cebdb0138e0847cde25b269a3`
 - Regression: `tests/test_tarfilter_excluded_hardlink_target.py`
 
 ## Exact source observation
@@ -34,7 +35,7 @@ for member in in_tar:
         continue
 ```
 
-Later path rewriting changes member names and hard-link targets in repaired transform paths, while ordinary path exclusion has no dependency check for `member.linkname`.
+Ordinary path exclusion has no dependency check for `member.linkname`.
 
 A retained hard-link member is written without a payload:
 
@@ -45,11 +46,34 @@ else:
     out_tar.addfile(member)
 ```
 
-For a hard link, `member.isfile()` is false. The output therefore relies on the named target member remaining in the archive.
+For a hard link, `member.isfile()` is false. The output relies on the named target member remaining in the archive.
+
+## Exact mmdebstrap pipeline
+
+When `/etc/dpkg/dpkg.cfg.d/99mmdebstrap` contains path rules, the imported main program converts them into tarfilter arguments and inserts the filter into the essential-package extraction pipeline:
+
+```text
+dpkg-deb --fsys-tarfile PACKAGE
+  | tarfilter --path-exclude=... --path-include=...
+  | tar -C ROOT --keep-directory-symlink --extract --file -
+```
+
+The parent waits for all three processes. A zero tarfilter status followed by a nonzero GNU tar status becomes `tar --extract failed`. This preserves overall failure while assigning the final diagnostic to the extraction stage.
+
+## Dpkg intent boundary
+
+Dpkg's `--path-exclude` documentation states that filters know only the object currently being filtered and have no visibility into later archive objects. It warns that exclusions can break the installed system and gives a directory example where later children fail to unpack.
+
+That documented model supports independent per-member filtering as an intentional compatibility baseline. It does not answer every hard-link question: a target may appear earlier, a link may appear first, and dependency-aware filtering could still be a deliberate mmdebstrap enhancement. The first reproduction therefore establishes behavior and diagnostic ownership, not an automatic bug verdict.
 
 ## Bounded question
 
-When a path rule removes the data-bearing member of a hard-link pair while retaining the link member, does the filtered archive stay internally coherent and extractable?
+When a path rule removes the data-bearing member of a hard-link pair while retaining the link member:
+
+1. what exact archive does tarfilter emit;
+2. where does the mmdebstrap-style pipeline fail;
+3. does this match dpkg's documented current-object filter model;
+4. is a more precise tarfilter diagnostic or dependency policy justified?
 
 ## Fixture and negative control
 
@@ -70,27 +94,43 @@ The filtered path runs:
 python3 upstream/mmdebstrap/tarfilter --path-exclude=/root/base
 ```
 
-The probe then records the filtered member table and asks GNU tar to extract it.
+The probe records the filtered member table and asks GNU tar to extract it.
 
 ## Distinguishing outcomes
 
 - target and dependent hard link both absent: dependency-aware filtering;
 - peer retained and extractable with bytes: materialized or retargeted result;
-- peer retained, target absent, extraction failure: dangling hard-link output;
-- filter rejects the unsupported dependency: explicit failure boundary.
+- peer retained, target absent, extraction failure: documented hazardous filter result or missing dependency handling;
+- filter rejects the dependency before output: explicit failure boundary.
 
-The test currently encodes the source-visible third outcome as the expected characterization. Exact CI decides whether GNU tar and the checked-out source exhibit it together.
+The test encodes the source-visible third outcome as the current characterization. Exact CI decides whether GNU tar and the checked-out source exhibit it together.
 
 ## Candidate design space
 
-A repair needs an explicit hard-link dependency policy. Plausible directions are:
+A stronger policy would require an explicit hard-link dependency contract. Plausible directions are:
 
-1. skip a retained hard-link member when its target is excluded;
-2. materialize the hard-link as a regular file when the target appeared earlier and its bytes remain available;
-3. buffer dependency state and resolve hard-link groups after reading more of the stream;
-4. reject a retained hard link whose target is filtered out.
+1. retain current per-member semantics and improve the investigation/docs only;
+2. detect a retained hard link whose already-seen target was excluded and fail with a focused diagnostic;
+3. skip a retained hard-link member when its target is known to be excluded;
+4. materialize the hard-link as a regular file when the target appeared earlier and its bytes remain available;
+5. buffer dependency state and resolve hard-link groups after reading more of the stream.
 
-Each direction changes path-filter semantics. The next step after reproduction is to compare dpkg's path-exclude behavior and test target-before-link, link-before-target, chains, multiple peers, and include-after-exclude rules before selecting a candidate.
+Options 2–5 extend or alter dpkg-compatible path-filter semantics and streaming behavior. Selection requires a broader ordering matrix and source-intent review.
+
+## Next matrix
+
+After the first exact execution, test:
+
+- target before link;
+- link before target;
+- several hard-link peers;
+- hard-link chains;
+- exclude followed by re-include;
+- target removal by `--type-exclude`;
+- path transforms combined with exclusions;
+- a minimal dpkg unpack control in an isolated root.
+
+A strong defect candidate needs a scenario accepted by documented configuration practice or a mismatch between tarfilter and dpkg behavior. A result confined to explicitly hazardous path selection belongs as a retained compatibility note or improved diagnostic proposal.
 
 ## Cleanup and rerun
 
@@ -102,15 +142,15 @@ A later candidate must rerun the same pathname immediately after the failing cas
 
 The first probe covers one target-before-link PAX archive under an ordinary user. It does not yet establish:
 
-- dpkg package-unpack parity;
+- direct dpkg unpack behavior for the same member order;
 - reverse member ordering;
 - hard-link chains or several peers;
-- path includes that restore the target later;
-- transforms combined with exclusions;
+- path includes that restore the target;
+- transforms or type filters combined with exclusions;
 - cross-extractor behavior;
 - privileged ownership, xattrs, ACLs, capabilities, or device nodes.
 
-Source inspection supports the ownership hypothesis. Exact behavior remains `execution-pending` until repository CI runs the retained test.
+Source inspection demonstrates the ownership mechanism and pipeline placement. Exact behavior remains `execution-pending` until repository CI runs the retained test. Dpkg documentation establishes the intended current-object visibility boundary; it does not settle whether mmdebstrap should add an earlier diagnostic.
 
 ## Authority
 
@@ -118,4 +158,4 @@ Internal Linux Fieldwork investigation only. No Debian or external upstream cont
 
 ## Disposition
 
-**EXECUTE.** Run the exact branch through Linux Fieldwork CI, classify the observed member table and GNU tar result, then compare dpkg semantics before choosing a repair.
+**EXECUTE AND CLASSIFY.** Run the exact branch through Linux Fieldwork CI. A passing characterization establishes a reproducible dpkg-compatible hazard. Promote only after the broader matrix or source intent supports a stronger invariant; otherwise retain the result as a compatibility and diagnostic record.
