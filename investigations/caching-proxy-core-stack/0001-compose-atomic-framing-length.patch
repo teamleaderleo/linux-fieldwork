@@ -9,10 +9,47 @@
  import time
  import http.client
  import http.server
-@@ -12,6 +14,69 @@
+@@ -12,6 +14,106 @@
  oldcachedir = None
  newcachedir = None
  readonly = False
++
++
++HOP_BY_HOP_REQUEST_HEADERS = {
++    "connection",
++    "keep-alive",
++    "proxy-authenticate",
++    "proxy-authorization",
++    "proxy-connection",
++    "te",
++    "trailer",
++    "transfer-encoding",
++    "upgrade",
++}
++
++
++def origin_request_headers(headers):
++    host_values = headers.get_all("Host", [])
++    if len(host_values) != 1:
++        raise ValueError("proxy request must contain exactly one Host header")
++
++    connection_tokens = set()
++    for value in headers.get_all("Connection", []):
++        connection_tokens.update(
++            token.strip().lower()
++            for token in value.split(",")
++            if token.strip()
++        )
++    if "host" in connection_tokens:
++        raise ValueError("Host cannot be a connection-specific field")
++    blocked = HOP_BY_HOP_REQUEST_HEADERS | connection_tokens
++    result = [
++        (name, value)
++        for name, value in headers.raw_items()
++        if name.lower() not in blocked
++    ]
++    result.append(("Connection", "close"))
++    return result
 +
 +
 +HOP_BY_HOP_HEADERS = {
@@ -79,7 +116,19 @@
  
  
  class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
-@@ -56,7 +121,7 @@
+@@ -23,6 +125,11 @@
+         sanitizedpath = urllib.parse.unquote(self.path.removeprefix(pathprefix))
+         oldpath = oldcachedir / sanitizedpath
+         newpath = newcachedir / sanitizedpath
++        try:
++            origin_headers = origin_request_headers(self.headers)
++        except ValueError as error:
++            self.send_error(400, str(error))
++            return
+ 
+         if not readonly:
+             newpath.parent.mkdir(parents=True, exist_ok=True)
+@@ -56,7 +163,7 @@
              self.wfile.write(b"HTTP/1.1 200 OK\r\n")
              self.send_header("Content-Length", oldpath.stat().st_size)
              self.end_headers()
@@ -88,8 +137,17 @@
                  # we are not using shutil.copyfileobj() because we want to
                  # write to two file objects simultaneously
                  while True:
-@@ -75,14 +140,22 @@
-             conn.request("GET", self.path, None, dict(self.headers))
+@@ -72,17 +179,30 @@
+         try:
+             print(f"\rproxy download: {self.path}", file=sys.stderr)
+             conn = http.client.HTTPConnection(self.headers["Host"], timeout=5)
+-            conn.request("GET", self.path, None, dict(self.headers))
++            conn.putrequest(
++                "GET", self.path, skip_host=True, skip_accept_encoding=True
++            )
++            for name, value in origin_headers:
++                conn.putheader(name, value)
++            conn.endheaders()
              res = conn.getresponse()
              assert (res.status, res.reason) == (200, "OK"), (res.status, res.reason)
 +            headers = downstream_headers(res)
@@ -116,7 +174,7 @@
                  # we are not using shutil.copyfileobj() because we want to
                  # write to two file objects simultaneously and throttle the
                  # writing speed to 1024 kB/s
-@@ -92,7 +165,12 @@
+@@ -92,7 +212,12 @@
                          break
                      self.wfile.write(buf)
                      f.write(buf)
