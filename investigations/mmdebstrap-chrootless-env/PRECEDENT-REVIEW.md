@@ -2,7 +2,7 @@
 
 Date: 2026-07-30
 
-Tracking: issue #40. Related reviews and repairs: PRs #57, #65, #73, and #74; issue #69.
+Tracking: issues #40 and #107. Related reviews and repairs: PRs #57, #65, #73, and #74; issue #69.
 
 ## Scope
 
@@ -116,24 +116,44 @@ The prior TMPDIR implementation review established another reusable rule: enforc
 9. **A green harness that never reaches the product path.** Keep mutation controls, exact source assertions, and product-execution receipts separate.
 10. **Claiming equality after comparing only selected logs.** Use the existing root-versus-chrootless archive comparison or narrow the claim.
 
-## New focused question: maintainer-script PATH precedence
+## Confirmed focused finding: maintainer-script PATH precedence
 
-The current clean dpkg environment preserves `PATH`, but mmdebstrap constructs that value by appending apt's `DPkg::Path` to the caller's existing path. A caller-controlled directory therefore remains before the package-manager path.
+Issue #107 owns this finding.
 
-This matters because Debian Policy explicitly expects maintainer scripts to resolve ordinary tools through `PATH`. The unresolved question is not whether a maintainer script is sandboxed; it is whether chrootless installation should execute tools from caller-writable path entries before the package manager's known tool path.
+The corrected probe at exact head `1506982c47b3faa4a44ceec742d939e5de8b500f` ran a real apt-managed chrootless package transaction. A harmless command existed only in a disposable caller-controlled path directory.
 
-A dedicated probe on this branch uses a harmless command in a disposable caller path. It records whether an apt-managed chrootless maintainer script resolves that command from the caller directory and compares the result with a clean-path control. No production change is included.
+The tainted run supplied:
+
+```text
+<fake-bin>:/usr/sbin:/usr/bin:/sbin:/bin
+```
+
+The maintainer script received:
+
+```text
+<fake-bin>:/usr/sbin:/usr/bin:/sbin:/bin:/usr/sbin:/usr/bin:/sbin:/bin
+```
+
+It resolved and executed the caller-path command. The clean control received only the system path plus the appended duplicate and did not resolve the command.
+
+- Workflow: `30542979455`, success.
+- Artifact: `8759472834`.
+- Digest: `sha256:95e179066eee3311a112ccce5b9bb5ff5b8361808415295cab0888b1a2d898a8`.
+
+The first attempt failed before mmdebstrap execution because the shell probe referenced a local variable in the same declaration under `set -u`. That carrier failure is superseded and is not product evidence.
+
+This finding is compatibility, reproducibility, and hardening evidence. It is not a new sandbox escape or privilege-escalation claim. The candidate direction is to keep apt's environment for repository compatibility while supplying the dpkg/maintainer-script boundary with a canonical package-manager path derived from apt's `DPkg::Path`.
 
 ## Further investigation queue
 
-1. Run the PATH-precedence probe and retain exact evidence.
-2. If reproduced, open a focused compatibility/hardening issue rather than expanding issue #40 with an unbounded fix.
-3. Test a candidate where maintainer scripts receive a canonical package-manager path while apt retains the caller environment needed for repository access.
-4. Execute a real essential-package chrootless transaction to cover direct `run_essential()` dynamically.
-5. Run the imported root-versus-chrootless archive comparison against the candidate.
-6. Add detector allow/deny examples for benign near-matches, mixed case, and URL userinfo.
-7. Retain explicit `/proc` and host-file controls so the residual non-sandbox boundary stays visible.
-8. Define override wording precisely: skipping the launch refusal does not restore the former maintainer-script environment.
+1. Test a canonical maintainer-script path candidate against the tainted and clean controls.
+2. Execute a real essential-package chrootless transaction to cover direct `run_essential()` dynamically.
+3. Run the imported root-versus-chrootless archive comparison against the candidate.
+4. Run the imported fakeroot comparison and foreign-architecture controls.
+5. Add detector allow/deny examples for benign near-matches, mixed case, and URL userinfo.
+6. Retain explicit `/proc` and host-file controls so the residual non-sandbox boundary stays visible.
+7. Define override wording precisely: skipping the launch refusal does not restore the former maintainer-script environment.
+8. Investigate apt-side execution/search variables separately; do not merge that question into the proven PATH finding without a product-level probe.
 
 ## Authority
 
