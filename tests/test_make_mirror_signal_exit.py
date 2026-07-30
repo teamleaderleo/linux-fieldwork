@@ -20,7 +20,7 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
         )
 
     def prepare_candidate(self, root: pathlib.Path) -> str:
-        tree = root / "candidate"
+        tree = root / "candidate-tree"
         destination = tree / "upstream/mmdebstrap/make_mirror.sh"
         destination.parent.mkdir(parents=True)
         destination.write_text(self.source.read_text(encoding="utf-8"), encoding="utf-8")
@@ -218,9 +218,13 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
                 "trap 'kill \"$PROXYPID\" || :;cleanup_newcachedir' EXIT INT TERM",
                 candidate,
             )
-            self.assertNotIn(
-                "trap 'kill \"$PROXYPID\" || :;cleanuptmpdir; cleanup_newcachedir' EXIT INT TERM",
-                candidate,
+            nested_update_cache_trap = (
+                "trap 'kill \"$PROXYPID\" || :;cleanuptmpdir; "
+                "cleanup_newcachedir' EXIT INT TERM"
+            )
+            self.assertEqual(candidate.count(nested_update_cache_trap), 1)
+            self.assertLess(
+                candidate.index(nested_update_cache_trap), candidate.index("stop_proxy() {")
             )
             self.assertNotIn(
                 'trap "cleanup_newcachedir" EXIT INT TERM', candidate
