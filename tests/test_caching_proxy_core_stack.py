@@ -26,6 +26,8 @@ PATCH = ROOT / (
 HALF = b"A" * (64 * 1024)
 COMPLETE = HALF + (b"B" * (64 * 1024))
 CHUNKED = b"decoded-chunked-payload\n"
+NO_LENGTH = b"eof-framed-payload\n"
+NEGATIVE_LENGTH = b"negative-length-payload\n"
 
 
 class StackOrigin(http.server.BaseHTTPRequestHandler):
@@ -70,6 +72,23 @@ class StackOrigin(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(f"{len(piece):X}\r\n".encode("ascii"))
                 self.wfile.write(piece + b"\r\n")
             self.wfile.write(b"0\r\n\r\n")
+            self.wfile.flush()
+            return
+
+        if self.path.endswith("/nolength"):
+            self.send_response(200)
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(NO_LENGTH)
+            self.wfile.flush()
+            return
+
+        if self.path.endswith("/negative"):
+            self.send_response_only(200, "OK")
+            self.send_header("Content-Length", "-1")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(NEGATIVE_LENGTH)
             self.wfile.flush()
             return
 
@@ -274,6 +293,34 @@ class CachingProxyCoreStackTest(unittest.TestCase):
         self.assertEqual(body, CHUNKED)
         self.assertEqual((cache / "chunked").read_bytes(), CHUNKED)
 
+    def test_response_without_declared_length_uses_eof_framing(self) -> None:
+        with running_server(StackOrigin) as origin, self.running_proxy() as (proxy, cache):
+            origin_port = int(origin.server_address[1])
+            status, body = self.proxy_get(
+                int(proxy.server_address[1]), origin_port, "nolength"
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, NO_LENGTH)
+        self.assertEqual((cache / "nolength").read_bytes(), NO_LENGTH)
+        self.assertEqual(
+            origin.counts[f"http://127.0.0.1:{origin_port}/nolength"], 1
+        )
+
+    def test_negative_declared_length_is_rejected_before_publication(self) -> None:
+        with running_server(StackOrigin) as origin, self.running_proxy() as (proxy, cache):
+            origin_port = int(origin.server_address[1])
+            status, _body = self.proxy_get(
+                int(proxy.server_address[1]), origin_port, "negative"
+            )
+
+        self.assertEqual(status, 502)
+        self.assertFalse((cache / "negative").exists())
+        self.assertEqual(list(cache.glob(".negative.*")), [])
+        self.assertEqual(
+            origin.counts[f"http://127.0.0.1:{origin_port}/negative"], 1
+        )
+
     def test_combined_patch_contains_every_merged_core_invariant(self) -> None:
         text = self.source.read_text(encoding="utf-8")
         self.assertIn("os.O_WRONLY | os.O_CREAT | os.O_EXCL", text)
@@ -282,6 +329,7 @@ class CachingProxyCoreStackTest(unittest.TestCase):
         self.assertIn("if response.chunked:", text)
         self.assertIn('blocked = blocked | {"content-length"}', text)
         self.assertIn("if not res.chunked:", text)
+        self.assertIn("expected_length < 0", text)
         self.assertIn("received != expected_length", text)
         self.assertIn('self.send_header("Connection", "close")', text)
 
