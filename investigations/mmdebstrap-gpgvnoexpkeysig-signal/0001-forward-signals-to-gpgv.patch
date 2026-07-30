@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/gpgvnoexpkeysig b/upstream/mmdebstrap/gpgvnoexpkeysig
 --- a/upstream/mmdebstrap/gpgvnoexpkeysig
 +++ b/upstream/mmdebstrap/gpgvnoexpkeysig
-@@ -58,30 +58,54 @@
+@@ -58,30 +58,63 @@
  FILTER_DIR=$(mktemp -d "${TMPDIR:-/tmp}/gpgvnoexpkeysig.XXXXXXXXXX")
  FILTER_PIPE="$FILTER_DIR/status"
  FILTER_PID=
@@ -33,7 +33,16 @@ diff --git a/upstream/mmdebstrap/gpgvnoexpkeysig b/upstream/mmdebstrap/gpgvnoexp
 +  if [ -n "$GPGV_PID" ] && kill -0 "$GPGV_PID" 2>/dev/null; then
 +    kill -"$signum" "$GPGV_PID" 2>/dev/null || :
 +  fi
-+  cleanup
++  if [ -n "$GPGV_PID" ]; then
++    wait "$GPGV_PID" 2>/dev/null || :
++    GPGV_PID=
++  fi
++  if [ -n "$FILTER_PID" ]; then
++    wait "$FILTER_PID" 2>/dev/null || :
++    FILTER_PID=
++  fi
++  rm -f "$FILTER_PIPE"
++  rmdir "$FILTER_DIR" 2>/dev/null || :
 +  exit "$status"
 +}
 +
