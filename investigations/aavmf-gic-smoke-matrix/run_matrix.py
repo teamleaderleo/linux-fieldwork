@@ -107,10 +107,16 @@ def build_case_app(
     store_paths = [line.strip() for line in output.splitlines() if line.startswith("/nix/store/")]
     app = pathlib.Path(store_paths[-1]) if status == 0 and store_paths else None
     executable = app / "bin/aavmf-gic-case" if app is not None else None
-    if status == 0:
-        require(app is not None, f"{label}: Nix reported success without a store path")
-        require(executable is not None and executable.is_file(), f"{label}: missing case executable")
-        require(os.access(executable, os.X_OK), f"{label}: case executable is not executable")
+    validation_error: str | None = None
+    if status == 0 and app is None:
+        status = 2
+        validation_error = "Nix reported success without a store path"
+    elif status == 0 and (executable is None or not executable.is_file()):
+        status = 2
+        validation_error = "case executable is absent from the returned store path"
+    elif status == 0 and executable is not None and not os.access(executable, os.X_OK):
+        status = 2
+        validation_error = "case executable is not executable"
     return {
         "schema_version": 1,
         "revision_label": label,
@@ -122,6 +128,7 @@ def build_case_app(
         "log": log_path.name,
         "app_store_path": str(app) if app is not None else None,
         "executable": str(executable) if executable is not None else None,
+        "validation_error": validation_error,
     }
 
 
@@ -215,18 +222,38 @@ def build_summary(
         require(mode in MODES, f"unknown GIC mode: {mode}")
         require(mode not in by_revision[label], f"duplicate case: {label}/{mode}")
         by_revision[label][mode] = record
-    for label, records in by_revision.items():
-        require(set(records) == set(MODES), f"{label}: incomplete GIC matrix")
 
     build_success = all(record["exit_status"] == 0 for record in builds)
     no_infrastructure_timeout = not any(record["infrastructure_timeout"] for record in builds + cases)
-    good_default_passed = by_revision["known-good"]["default"]["passed"] is True
-    complete_execution = build_success and no_infrastructure_timeout and len(cases) == len(revisions) * len(MODES)
+    complete_case_set = all(set(records) == set(MODES) for records in by_revision.values())
+    complete_execution = (
+        build_success
+        and no_infrastructure_timeout
+        and complete_case_set
+        and len(cases) == len(revisions) * len(MODES)
+    )
+    good_default = by_revision["known-good"].get("default")
+    good_default_passed = good_default is not None and good_default["passed"] is True
     valid_environment = complete_execution and good_default_passed
-    classifications = {label: classify(records) for label, records in by_revision.items()}
-    bad_default = by_revision["known-bad"]["default"]["passed"] is True
-    bad_max = by_revision["known-bad"]["max"]["passed"] is True
-    tcg_reproduces_reported_boundary = valid_environment and bad_default and not bad_max
+
+    classifications: dict[str, str] = {}
+    for label, records in by_revision.items():
+        if build_by_label[label]["exit_status"] != 0:
+            classifications[label] = "case-app-build-failed"
+        elif set(records) != set(MODES):
+            classifications[label] = "incomplete-execution"
+        else:
+            classifications[label] = classify(records)
+
+    bad_default = by_revision["known-bad"].get("default")
+    bad_max = by_revision["known-bad"].get("max")
+    tcg_reproduces_reported_boundary = (
+        valid_environment
+        and bad_default is not None
+        and bad_default["passed"] is True
+        and bad_max is not None
+        and bad_max["passed"] is False
+    )
 
     return {
         "schema_version": 1,
@@ -246,6 +273,7 @@ def build_summary(
             "all_builds_succeeded": build_success,
             "no_infrastructure_timeout": no_infrastructure_timeout,
             "known_good_default_passed": good_default_passed,
+            "complete_case_set": complete_case_set,
             "complete_execution": complete_execution,
         },
         "valid_environment": valid_environment,
@@ -274,9 +302,16 @@ def main() -> int:
     parser.add_argument("--qemu-timeout", type=int, default=60)
     args = parser.parse_args()
 
-    require(CASE_NIX.is_file(), f"missing case expression: {CASE_NIX}")
-    require(args.build_timeout > 0, "build timeout must be positive")
-    require(args.case_timeout > args.qemu_timeout > 0, "case timeout must exceed positive QEMU timeout")
+    try:
+        require(CASE_NIX.is_file(), f"missing case expression: {CASE_NIX}")
+        require(args.build_timeout > 0, "build timeout must be positive")
+        require(
+            args.case_timeout > args.qemu_timeout > 0,
+            "case timeout must exceed positive QEMU timeout",
+        )
+    except MatrixError as exc:
+        print(f"matrix configuration failed: {exc}", file=sys.stderr)
+        return 2
 
     results = args.results.resolve()
     if results.exists():
