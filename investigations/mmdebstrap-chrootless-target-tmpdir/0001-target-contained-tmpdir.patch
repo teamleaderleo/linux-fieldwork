@@ -145,7 +145,7 @@ index 767b4b7..5b9f019 100644
  safe_launch_succeeded=yes
  clean_rerun_succeeded=yes
 diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
-index bbe2b64..5cf0b42 100644
+index bbe2b64..41aa46f 100644
 --- a/upstream/mmdebstrap/mmdebstrap
 +++ b/upstream/mmdebstrap/mmdebstrap
 @@ -3902,7 +3902,22 @@ sub run_prepare {
@@ -153,7 +153,7 @@ index bbe2b64..5cf0b42 100644
  }
  
 -sub chrootless_dpkg_environment() {
-+sub chrootless_dpkg_environment($) {
++sub chrootless_dpkg_environment {
 +    my $root   = shift;
 +    my $tmpdir = "$root/tmp";
 +
@@ -161,12 +161,12 @@ index bbe2b64..5cf0b42 100644
 +        error "chrootless target temporary directory is a symlink: $tmpdir";
 +    }
 +    if (!-e $tmpdir) {
-+        make_path($tmpdir, { mode => 01777 });
++        make_path($tmpdir, { mode => oct("1777") });
 +    } elsif (!-d $tmpdir) {
 +        error "chrootless target temporary path is not a directory:"
 +          . " $tmpdir";
 +    }
-+    chmod 01777, $tmpdir
++    chmod oct("1777"), $tmpdir
 +      or error "cannot set mode 01777 on $tmpdir: $!";
 +
      my @names = qw(
