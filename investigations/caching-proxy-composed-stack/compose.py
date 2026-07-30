@@ -26,6 +26,7 @@ REQUIRED_PATCH_MARKERS = {
     ),
     REQUIRED_REPAIRS[2]: (
         'expected_length = res.getheader("Content-Length")',
+        "expected_length < 0",
         "received != expected_length",
         "http.client.IncompleteRead",
     ),
