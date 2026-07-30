@@ -55,9 +55,9 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
 
     @staticmethod
     def baseline_blocks(source: str) -> tuple[str, str]:
-        trap = "trap 'kill \"$PROXYPID\" || :' EXIT INT TERM"
+        trap = "trap 'kill \"$PROXYPID\" || :;cleanup_newcachedir' EXIT INT TERM"
         if source.count(trap) != 1:
-            raise AssertionError("baseline cleanup-only trap changed")
+            raise AssertionError("baseline post-readiness trap changed")
         return "", trap + "\n"
 
     def write_harness(
@@ -154,7 +154,11 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             self.assertEqual(baseline_process.returncode, 0)
             self.assertEqual(baseline_stdout, "")
             self.assertTrue((baseline_runtime / "after").exists())
-            self.assertTrue((baseline_runtime / "cache-state").exists())
+            self.assertFalse((baseline_runtime / "cache-state").exists())
+            self.assertEqual(
+                (baseline_runtime / "cleanup.log").read_text().splitlines(),
+                ["cleanup", "cleanup"],
+            )
 
             (
                 candidate_process,
