@@ -8,13 +8,14 @@ diff --git a/upstream/mmdebstrap/proxysolver b/upstream/mmdebstrap/proxysolver
 +import signal
  
  if not os.path.exists("/usr/lib/apt/solvers/apt"):
-@@ -52,6 +53,12 @@ try:
+@@ -52,6 +53,13 @@ try:
                  f.write(line)
              returncode = p.wait()
 +    if returncode < 0:
 +        signum = -returncode
 +        if signum not in (signal.SIGKILL, signal.SIGSTOP):
 +            signal.signal(signum, signal.SIG_DFL)
++            signal.pthread_sigmask(signal.SIG_UNBLOCK, {signum})
 +        os.kill(os.getpid(), signum)
      if returncode != 0:
          raise SystemExit(returncode)
