@@ -48,7 +48,13 @@ class MakeMirrorProxyLaunchOwnershipTest(unittest.TestCase):
 
     @staticmethod
     def functions(source: str) -> str:
-        start = source.index("record_signal() {\n")
+        starts = (
+            "handle_launch_signal() {\n",
+            "record_signal() {\n",
+        )
+        start = next((source.index(item) for item in starts if item in source), None)
+        if start is None:
+            raise AssertionError("launch signal handler seam changed")
         end = source.index("trap 'cleanup_owner' EXIT", start)
         functions = source[start:end]
 
