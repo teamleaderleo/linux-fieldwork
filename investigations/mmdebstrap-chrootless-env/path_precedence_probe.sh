@@ -34,7 +34,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for command_name in dpkg-deb dpkg-query realpath; do
+for command_name in dpkg-deb dpkg-query python3 realpath; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "missing required command: $command_name" >&2
     exit 2
@@ -69,6 +69,13 @@ if command -v lf-path-probe >/dev/null 2>&1; then
 else
   printf 'caller_command_resolved=no\n' >"$result_dir/result.txt"
 fi
+for tool in dpkg ldconfig start-stop-daemon update-rc.d; do
+  if tool_path="$(command -v "$tool" 2>/dev/null)"; then
+    printf '%s=%s\n' "$tool" "$tool_path"
+  else
+    printf '%s=<missing>\n' "$tool"
+  fi
+done >"$result_dir/tools.txt"
 EOF
 chmod 0755 "$runtime/fixture/DEBIAN/postinst"
 printf 'fixture payload\n' >"$runtime/fixture/usr/share/lf-path-precedence/payload"
@@ -88,9 +95,24 @@ EOF
 chmod 0755 "$runtime/fake-bin/lf-path-probe"
 chmod 0755 "$source_root/mmdebstrap"
 
+mutation="$runtime/mmdebstrap-caller-path-mutation"
+python3 - "$source_root/mmdebstrap" "$mutation" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+old = '    my @result = (\'-i\', "PATH=$dpkgpath", "TMPDIR=$tmpdir");\n'
+new = '    my @result = (\'-i\', "PATH=$ENV{PATH}", "TMPDIR=$tmpdir");\n'
+if source.count(old) != 1:
+    raise SystemExit("canonical PATH source marker not found exactly once")
+Path(sys.argv[2]).write_text(source.replace(old, new), encoding="utf-8")
+PY
+chmod 0755 "$mutation"
+
 run_case() {
   local label=$1
   local path_value=$2
+  local mmdebstrap_path=$3
   local target="$runtime/$label-root"
   local package_dir hook
   package_dir="$(dirname "$package")"
@@ -102,7 +124,7 @@ run_case() {
     HOME="$runtime/home" \
     TMPDIR="$runtime" \
     LC_ALL=C.UTF-8 \
-    "$source_root/mmdebstrap" \
+    "$mmdebstrap_path" \
       --mode=chrootless \
       --variant=custom \
       --format=directory \
@@ -122,31 +144,44 @@ run_case() {
 }
 
 system_path=/usr/sbin:/usr/bin:/sbin:/bin
-run_case tainted "$runtime/fake-bin:$system_path"
-run_case clean "$system_path"
+tainted_path_value="$runtime/fake-bin:$system_path"
+run_case candidate-tainted "$tainted_path_value" "$source_root/mmdebstrap"
+run_case candidate-clean "$system_path" "$source_root/mmdebstrap"
+run_case mutation-tainted "$tainted_path_value" "$mutation"
+
+for label in candidate-tainted candidate-clean; do
+  grep -Fx 'caller_command_resolved=no' \
+    "$result_dir/$label-maintainer-script/result.txt"
+  test ! -e "$result_dir/$label-maintainer-script/command.txt"
+  for tool in dpkg ldconfig start-stop-daemon update-rc.d; do
+    grep -E "^$tool=/" "$result_dir/$label-maintainer-script/tools.txt"
+  done
+done
+
+candidate_tainted_path="$(cat "$result_dir/candidate-tainted-maintainer-script/path.txt")"
+candidate_clean_path="$(cat "$result_dir/candidate-clean-maintainer-script/path.txt")"
+[[ "$candidate_tainted_path" == "$candidate_clean_path" ]]
+[[ "$candidate_tainted_path" != *"$runtime/fake-bin"* ]]
 
 grep -Fx 'caller_command_resolved=yes' \
-  "$result_dir/tainted-maintainer-script/result.txt"
+  "$result_dir/mutation-tainted-maintainer-script/result.txt"
 grep -Fx 'source=caller-path' \
-  "$result_dir/tainted-maintainer-script/command.txt"
-tainted_path="$(cat "$result_dir/tainted-maintainer-script/path.txt")"
-[[ "$tainted_path" == "$runtime/fake-bin:"* ]]
-
-grep -Fx 'caller_command_resolved=no' \
-  "$result_dir/clean-maintainer-script/result.txt"
-test ! -e "$result_dir/clean-maintainer-script/command.txt"
-clean_path="$(cat "$result_dir/clean-maintainer-script/path.txt")"
-[[ "$clean_path" != *"$runtime/fake-bin"* ]]
+  "$result_dir/mutation-tainted-maintainer-script/command.txt"
+mutation_path="$(cat "$result_dir/mutation-tainted-maintainer-script/path.txt")"
+[[ "$mutation_path" == "$runtime/fake-bin:"* ]]
 
 cat >"$result_dir/summary.txt" <<EOF
 product_source=upstream/mmdebstrap/mmdebstrap
 caller_path_directory=$runtime/fake-bin
-tainted_maintainer_script_path=$tainted_path
-tainted_caller_command_resolved=yes
-clean_maintainer_script_path=$clean_path
-clean_caller_command_resolved=no
-interpretation=caller PATH prefix reaches apt-managed chrootless maintainer scripts
+candidate_tainted_maintainer_script_path=$candidate_tainted_path
+candidate_tainted_caller_command_resolved=no
+candidate_clean_maintainer_script_path=$candidate_clean_path
+candidate_clean_caller_command_resolved=no
+mutation_tainted_maintainer_script_path=$mutation_path
+mutation_tainted_caller_command_resolved=yes
+expected_tools_resolved=yes
+interpretation=canonical DPkg::Path blocks caller-prefix command resolution
 EOF
 
 cat "$result_dir/summary.txt"
-echo 'mmdebstrap chrootless PATH precedence probe passed'
+echo 'mmdebstrap chrootless canonical PATH candidate passed'
