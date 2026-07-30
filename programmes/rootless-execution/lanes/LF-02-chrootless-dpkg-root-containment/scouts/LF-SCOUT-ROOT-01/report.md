@@ -2,11 +2,11 @@
 
 ## In simple words
 
-A tiny package with four maintainer scripts was installed into a disposable target directory while its scripts executed through host programs. `dpkg` supplied the intended `DPKG_ROOT`, started the scripts with the target as their working directory, and the package's `update-alternatives` action created its database entry and links beneath that target. Four direct dpkg phases completed cleanly: install, reinstall, purge, and install after purge.
+The target package itself behaved correctly: its files, dpkg database entries, logs, and `update-alternatives` links stayed beneath the selected root. Install, reinstall, purge, install-after-purge, and two complete imported `mmdebstrap` runs all succeeded.
 
-The local trace classified 769 accesses outside the target. They were host program, library, configuration, locale, and identity reads, plus device/process runtime interaction. It found zero successful host mutations, zero service actions, and zero unresolved accesses. Host dpkg and alternatives sentinels remained unchanged.
+The host still participated in package-management side effects. On the GitHub Ubuntu runner, host dpkg configuration launched `/usr/lib/needrestart/dpkg-status` during target-root package operations. That program attempted to update `/run/needrestart/unpacked`; the runner's unprivileged UID blocked the write. Each imported `mmdebstrap` run also connected successfully to the host system D-Bus socket at `/run/dbus/system_bus_socket`.
 
-**Decision: `retain`.** Keep this bounded negative result and its reusable probe. This fixture gives no promotion signal for a defect investigation.
+**Decision: `promote`.** LF-02 defines host service actions as a promotion signal. The evidence shows repeatable host restart-management and D-Bus activity even though target package state remained clean and every attempted host marker write failed.
 
 ## Scout identity and home lane
 
@@ -14,8 +14,9 @@ The local trace classified 769 accesses outside the target. They were host progr
 - Home lane: `LF-02`
 - Assignment: issue `#11`
 - Working branch: `scout/lf-scout-root-01/lf-02-dpkg-root-containment`
-- Reviewer: `LF-SCOUT-DEB-02`
-- Cross-review duty: `LF-SCOUT-PROC-01` on LF-23 after its `READY FOR REVIEW` post
+- Pull request: `#21`
+- Assigned reviewer: `LF-SCOUT-DEB-02`
+- Cross-review duty: review `LF-SCOUT-PROC-01` on LF-23 after its `READY FOR REVIEW` post
 
 ## Exact source or package boundary
 
@@ -23,14 +24,14 @@ The local trace classified 769 accesses outside the target. They were host progr
 
 - Project: Debian `mmdebstrap`
 - Imported path: `upstream/mmdebstrap/`
+- Imported executable version: `1.5.7`
 - Requested revision: `debian/1.5.7-3`
 - Resolved upstream commit: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
 - Repository import commit: `51c8480d7e61b3e31d74f69864042a3fc8c1d772`
 - Source metadata: `upstream/mmdebstrap/.linux-fieldwork-source.json`
-- Imported executable version: `1.5.7`
 - Imported executable blob used for source reading: `dfb5e37b68271a46b9e75128cdd85975fbb383a1`
 
-The branch begins after the repository's separate explicit-`TMPDIR` candidate. That candidate does not alter the chrootless dpkg call path examined here.
+The branch also contains the repository's separate explicit-`TMPDIR` candidate. That candidate leaves the chrootless dpkg call path examined here unchanged.
 
 ### Package fixture
 
@@ -38,245 +39,225 @@ The branch begins after the repository's separate explicit-`TMPDIR` candidate. T
 - Version: `1.0`
 - Architecture: `all`
 - Dependencies: none
-- Local built archive size: `1180` bytes
-- Local built archive SHA-256: `0f41eb83272ab38f9d24524da2568967a686d3cfc2b76bd9659df30eb2df74b2`
+- Hosted archive size: `1018` bytes
+- Hosted archive SHA-256: `e0c7d467562e79f7e605eb973d7dec385d4910a0a8737a352ba453c0feaab6e8`
 - Fixture source: `artifacts/fixture/`
 
 The fixture contains one payload at `/usr/lib/lf-fieldwork-probe/tool` and four maintainer scripts:
 
 - `preinst` records `DPKG_ROOT`, working directory, UID/GID, and interpreter;
-- `postinst` records the same values and calls `update-alternatives --install`;
+- `postinst` records the same values, prepares target alternatives directories, and calls `update-alternatives --install`;
 - `prerm` calls `update-alternatives --remove`;
 - `postrm` records its phase.
 
-This was the smallest useful fixture because it has no package dependencies or network requirement, exercises every common maintainer-script phase, and uses a common dpkg-root-aware helper with externally visible database and symlink effects.
+This dependency-free package gives visible script, payload, dpkg database, and alternatives effects while keeping repository and network inputs out of the package boundary.
 
 ## Environment and privileges
 
-### Local bounded run
+### Local direct-dpkg run
 
 - Date: 2026-07-30
 - Runner: disposable Debian 13 container
 - Kernel: Linux `6.12.13`, x86_64
-- Orchestration UID: `0`
-- Package action UID/GID: `65534:65534` (`nobody`)
+- Package-action UID/GID: `65534:65534` (`nobody`)
 - `dpkg`: `1.22.22`
 - `apt`: `3.0.3`
 - `update-alternatives`: `1.22.22`
 - Network access: unavailable
 - Target: `/tmp/lf-02-work/target`
 
-The package action ran without host privileges. Root was used only to prepare the disposable runner and then hand the package operation to UID 65534.
+The local image lacked the Ubuntu `needrestart` dpkg status logger. It provided the clean comparison case: target package effects stayed contained and the host sentinels remained unchanged.
 
-### GitHub-hosted reproducible run
+### GitHub-hosted imported-source run
 
-The retained runner at `artifacts/run-probe.sh` executes under the ordinary GitHub-hosted runner account on Ubuntu 24.04. It runs direct dpkg phases and two full imported-`mmdebstrap` builds under `strace`, stores all generated evidence below `artifacts/results/`, and is invoked by `.github/workflows/lf-02-chrootless-dpkg-root-containment.yml`.
+- Workflow run: `30515782245`
+- Artifact ID: `8748803333`
+- Artifact digest: `sha256:6ab07c15205d33897ec3a58f4781171547f35ec8deb14714c9dce578991ce86f`
+- Runner: GitHub-hosted Ubuntu `24.04.4 LTS`
+- Kernel: Linux `6.17.0-1020-azure`, x86_64
+- UID/GID: `1001:1001` (`runner`)
+- `dpkg`: `1.22.6`
+- `apt`: `2.8.3`
+- `update-alternatives`: `1.22.6`
+- `strace`: `6.8`
+
+Relevant host dpkg configuration:
+
+```text
+/etc/dpkg/dpkg.cfg.d/needrestart:
+status-logger=(test -x /usr/lib/needrestart/dpkg-status && /usr/lib/needrestart/dpkg-status || cat > /dev/null)
+```
+
+Retained summaries are under `artifacts/hosted-results/`. The raw workflow artifact contains commands, stdout/stderr, target trees, script logs, host fingerprints, classifications, and all per-process traces.
 
 ## Source and test map
 
 The imported call path is:
 
-1. `setup()` performs setup, apt update/download, and extraction.
+1. `setup()` performs hooks, apt setup/download, extraction, and installation.
 2. `setup()` calls `run_essential()` before `run_install()`.
-3. In chrootless mode, `run_essential()` invokes host `dpkg` directly with:
+3. In chrootless mode, `run_essential()` invokes host `dpkg` with:
    - `--force-not-root`
    - `--force-script-chrootless`
    - `--root=<target>`
    - `--log=<target>/var/log/dpkg.log`
-4. In chrootless mode, `run_install()` invokes host `apt-get` with dpkg options carrying the same flags and target.
-5. `run_progress()` forks and directly `exec`s the requested host command; the chrootless branch supplies no chroot wrapper.
-6. `dpkg --force-script-chrootless` executes maintainer scripts in the host process environment and exports `DPKG_ROOT` for package code and helpers.
+4. In chrootless mode, `run_install()` invokes host `apt-get` with dpkg options carrying the same root and script-chrootless flags.
+5. `run_progress()` forks and directly executes the requested host command.
+6. `dpkg --force-script-chrootless` runs maintainer scripts with host executables while exporting `DPKG_ROOT`.
+7. Host `/etc/dpkg/dpkg.cfg*` remains an input because dpkg reads configuration before applying command-line root options.
 
 Relevant imported source ranges in `upstream/mmdebstrap/mmdebstrap`:
 
-- setup order and handoff: approximately lines `2978-2985`;
-- apt configuration rooted at the target: approximately lines `3085-3112`;
 - progress fork and direct exec: approximately lines `1847-1902`;
+- setup order and handoff: approximately lines `2978-2985`;
+- apt state rooted at the target: approximately lines `3085-3112`;
 - direct essential dpkg command: approximately lines `3918-3963`;
-- chrootless apt/dpkg options for remaining packages: approximately lines `4056-4065`;
+- chrootless apt/dpkg options: approximately lines `4056-4065`;
 - root-without-fakeroot safety check: approximately lines `6051-6064`;
-- documented chrootless warning and host dependency boundary: approximately lines `8187-8201`.
-
-The source also records a known host-input boundary: dpkg reads host configuration before command-line root options, so host `/etc/dpkg/dpkg.cfg*` can affect the target operation.
+- documented chrootless host dependency warning: approximately lines `8187-8201`.
 
 ## Probe design and distinguishing outcomes
 
 ### Direct dpkg probe
 
-The direct probe isolates the exact command boundary used by `run_essential()` and runs:
+The runner exercises the exact direct dpkg boundary through four phases:
 
 1. install;
-2. reinstall over the installed package;
+2. reinstall over installed state;
 3. purge;
 4. install after purge.
 
-Each phase traces process execution and path-bearing filesystem/network system calls. Before and after the four phases, the probe fingerprints host package state and three sentinel paths.
+Each phase runs under `strace -ff -yy -e trace=%file,%process,%network`. The probe checks payloads, package status, alternatives state, script observations, cleanup, and host fingerprints.
 
-### Imported mmdebstrap probe
+### Imported `mmdebstrap` probe
 
-The reusable runner calls the imported executable with:
+The imported executable runs twice into fresh directories with:
 
-- `--mode=chrootless`;
-- `--variant=custom`;
-- the local `.deb` as the only included package;
-- `--skip=update` so the package path stays local and the result has no repository-network dependency;
-- directory output;
-- a setup hook that makes the local archive available at the same absolute path below the target, matching mmdebstrap's documented local-package requirement.
+```sh
+upstream/mmdebstrap/mmdebstrap \
+  --mode=chrootless \
+  --variant=custom \
+  --format=directory \
+  --skip=update \
+  --include=<local-fixture.deb> \
+  --setup-hook=<copy-local-archive-below-target> \
+  '' <target>
+```
 
-It repeats the full build into two fresh targets and compares normalized script and alternatives state.
+The runner compares normalized maintainer-script observations and alternatives database state across both builds.
 
-### Distinguishing outcomes
+### Outcome rules
 
-- **Contained negative result:** target-only successful mutations, explicit host reads/runtime interaction, clean purge, and successful rerun.
-- **Promotion signal:** any successful outside-target mutation, host service-control execution, host state interpreted as target state, misleading success, or partial target state that breaks a rerun.
-- **Blocked result:** missing privilege/tool support prevents observing the package boundary.
+- **Promote:** successful outside-target mutation, host service/restart action, host state treated as target state, misleading success, or partial state that breaks rerun.
+- **Retain:** target-only successful mutations, classified host reads/runtime interaction, clean cleanup, and repeatable rerun.
+- **Blocked:** missing privilege or tooling prevents observing the package boundary.
 
 ## Commands or scripts
 
-The local command boundary was:
-
-```sh
-env -i \
-  PATH=/usr/sbin:/usr/bin:/sbin:/bin \
-  HOME=/tmp/lf-02-work/target/nonexistent-home \
-  TMPDIR=/tmp/lf-02-work/target/tmp \
-  XDG_RUNTIME_DIR=/tmp/lf-02-work/target/run \
-  LC_ALL=C \
-  dpkg \
-    --force-not-root \
-    --force-script-chrootless \
-    --root=/tmp/lf-02-work/target \
-    --log=/tmp/lf-02-work/target/var/log/dpkg.log \
-    --install /tmp/lf-02-work/lf-fieldwork-probe_1.0_all.deb
-```
-
-The purge phase replaced the final argument with:
-
-```sh
---purge lf-fieldwork-probe
-```
-
-Run the complete retained probe from the repository root with:
+Run the complete probe from the repository root:
 
 ```sh
 bash programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/run-probe.sh
 ```
 
-The runner:
+Key retained files:
 
-- builds the fixture with `dpkg-deb --build --root-owner-group`;
-- records exact versions and source identity;
-- traces all dpkg/mmdebstrap child processes with `strace -ff`;
-- classifies each outside-target event with `artifacts/classify-strace.py`;
-- compares host fingerprints;
-- verifies target payload, dpkg state, alternatives state, cleanup, and reruns;
-- stores raw traces, commands, logs, trees, classifications, and summary JSON in `artifacts/results/`.
+- `artifacts/run-probe.sh` — fixture build, direct phases, imported-source runs, assertions, and summary;
+- `artifacts/classify-strace.py` — cwd/dirfd-aware path and Unix-socket classifier;
+- `artifacts/fixture/` — minimal package source;
+- `artifacts/local-results/` — direct comparison evidence;
+- `artifacts/hosted-results/` — durable hosted summary and service-action rows;
+- `.github/workflows/lf-02-chrootless-dpkg-root-containment.yml` — repeatable Ubuntu runner.
 
 ## Observed results
 
-### Script execution boundary
+### Package execution and target state
 
-The local trace showed:
+All six tested operations exited `0`:
 
-- target maintainer-script paths under `/tmp/lf-02-work/target/var/lib/dpkg/`;
-- host `/usr/bin/dash` selected by each script's shebang;
-- host `mkdir`, `id`, `readlink`, and `update-alternatives` processes;
-- `DPKG_ROOT=/tmp/lf-02-work/target` inside scripts;
-- script working directory `/tmp/lf-02-work/target`;
-- UID/GID `65534:65534` inside scripts.
+- direct install;
+- direct reinstall;
+- direct purge;
+- direct install after purge;
+- imported `mmdebstrap` run one;
+- imported `mmdebstrap` run two.
 
-### Successful target mutations
+The imported runs recorded:
 
-Observed writes beneath the target included:
+- `DPKG_ROOT=<selected target>`;
+- working directory equal to the selected target;
+- UID/GID `1001:1001`;
+- interpreter `/usr/bin/dash`;
+- target payload at `/usr/lib/lf-fieldwork-probe/tool`;
+- target links at `/usr/bin/lf-fieldwork-probe` and `/etc/alternatives/lf-fieldwork-probe`;
+- target alternatives database entry at `/var/lib/dpkg/alternatives/lf-fieldwork-probe`.
 
-- package payload;
-- target dpkg status/info/triggers state;
-- target dpkg and alternatives logs;
-- `/var/lib/dpkg/alternatives/lf-fieldwork-probe` beneath the target;
-- `/etc/alternatives/lf-fieldwork-probe` beneath the target;
-- `/usr/bin/lf-fieldwork-probe` beneath the target;
-- the fixture's script observation log.
+Direct purge removed the payload, both links, and the alternatives database entry. Install-after-purge restored valid installed state. Both imported runs produced identical normalized script and alternatives evidence.
 
-The alternatives links used absolute logical targets, as dpkg alternatives normally does, while the link objects and database entry were created beneath `DPKG_ROOT`.
+### Hosted outside-target classification
 
-### Outside-target classification
+| Scope | Outside events | Required host reads | Harmless runtime | Unexpected mutations | Service actions | Unresolved |
+|---|---:|---:|---:|---:|---:|---:|
+| direct four phases | 1187 | 1003 | 170 | 0 | 14 | 0 |
+| `mmdebstrap` run one | 4690 | 4544 | 141 | 0 | 5 | 0 |
+| `mmdebstrap` run two | 4691 | 4545 | 141 | 0 | 5 | 0 |
 
-Across install, reinstall, purge, and install after purge:
+Host fingerprints were unchanged. The fingerprint set covered the fixture's host alternatives paths, host dpkg status/log files, and `/run/needrestart/unpacked`.
 
-| Category | Events |
-|---|---:|
-| required host read | 637 |
-| harmless runtime interaction | 132 |
-| unexpected mutation | 0 |
-| service action | 0 |
-| unresolved | 0 |
-| **total** | **769** |
+### Promotion evidence
 
-Required host reads covered:
+Each imported run produced these service-action rows:
 
-- executable and dynamic-library lookup;
-- host dpkg configuration;
-- locale and identity files;
-- metadata reads and target ancestor traversal;
-- the local package archive used as probe input.
+| System call | Host path | Result |
+|---|---|---|
+| `connect` | `/run/dbus/system_bus_socket` | success (`0`) |
+| `execve` | `/usr/lib/needrestart/dpkg-status` | success (`0`) |
+| `mkdir` | `/run/needrestart` | `EEXIST` |
+| `openat` | `/run/needrestart/unpacked` | `EACCES` |
+| `utimensat` | `/run/needrestart/unpacked` | `ENOENT` |
 
-Harmless runtime interaction covered:
+The direct dpkg phases repeatedly launched the same host `needrestart` status logger. The marker write failed because UID 1001 lacked permission. This privilege boundary prevented host mutation while leaving the host action observable.
 
-- `/dev/null`;
-- `/proc` and `/sys` runtime reads;
-- failed nscd Unix-socket probes;
-- failed `mkdir` calls returning `EEXIST` while traversing existing `/tmp` ancestors.
+### Local comparison
 
-### Host integrity checks
+The Debian 13 local image had no `needrestart` status logger. Its four direct phases classified:
 
-These host sentinel paths were absent before and after:
+- required host reads: `637`;
+- harmless runtime interactions: `132`;
+- unexpected mutations: `0`;
+- service actions: `0`;
+- unresolved: `0`.
 
-- `/usr/bin/lf-fieldwork-probe`;
-- `/etc/alternatives/lf-fieldwork-probe`;
-- `/var/lib/dpkg/alternatives/lf-fieldwork-probe`.
-
-Hashes for these host files remained unchanged:
-
-- `/var/lib/dpkg/status`;
-- `/var/log/dpkg.log`;
-- `/var/log/alternatives.log`.
-
-### Cleanup and rerun
-
-- Initial install: exit `0`.
-- Reinstall: exit `0`.
-- Purge: exit `0`.
-- Install after purge: exit `0`.
-- Purge removed the payload, both alternatives links, and alternatives database entry from the target.
-- The fixture deliberately retained its target-side observation directory and log.
-- dpkg emitted its normal warning that `/usr` remained nonempty and therefore stayed present.
-- The clean install after purge produced valid installed state again.
-
-Retained local summaries are under `artifacts/local-results/`.
+This comparison ties the hosted promotion signal to host dpkg configuration and host package-manager integrations, while the fixture and direct command boundary remain the same.
 
 ## Interpretation
 
-For this deliberately small package, `DPKG_ROOT` containment held across dpkg database work, payload extraction, all four maintainer-script phases, and `update-alternatives` state changes. Maintainer scripts still had the power to execute host programs and read host state. The observed package respected the target root when constructing every mutable path.
+`DPKG_ROOT` correctly redirected the tested package's payload, dpkg state, logs, and alternatives data. The flag also supplied the intended environment and target working directory to maintainer scripts.
 
-The most important boundary is therefore package cooperation. `--force-script-chrootless` relocates dpkg's own work and supplies `DPKG_ROOT`; it does not confine arbitrary script syscalls. A package that opens `/etc/...`, calls a host service manager, or ignores `DPKG_ROOT` can still cross the host boundary. This fixture exercised a compliant helper and produced a contained negative result.
+Chrootless execution still consumed host package-manager configuration and host services. Ubuntu's dpkg status logger ran outside the target, and apt connected to the host system D-Bus during each imported run. Unprivileged execution protected `/run/needrestart/unpacked` from modification in this environment; a caller with broader host permissions would give the same hook more authority.
 
-The host dpkg configuration read is expected from the imported source and remains a reproducibility/input concern. The selected host configuration introduced no outside mutation in this run.
+The defect candidate sits at the boundary between chrootless target operations and inherited host dpkg/apt integrations. Follow-up work should test suppression or target-aware handling of host dpkg status loggers and host D-Bus access, then compare behavior across Debian and Ubuntu configurations.
 
 ## Evidence limits
 
-- The fixture is synthetic and intentionally cooperative. It exercises a common helper, while account management, init-system integration, cache regeneration, boot tooling, absolute-path shell redirection, and adversarial scripts remain outside this probe.
-- The local run traced direct dpkg rather than the complete imported mmdebstrap orchestration because the local container lacked network access and packaged `strace`. The retained GitHub runner covers the complete imported path with local package input.
-- The local custom ptrace tracer captured process execution plus a bounded set of path-bearing syscalls. It cannot attribute every fd-only operation after an open, every kernel-internal path traversal, or syscall families outside its capture list.
-- The `strace` classifier resolves ordinary absolute paths precisely. Relative paths tied to changing working directories or directory file descriptors receive conservative treatment and remain visible in the raw trace.
-- Host integrity fingerprints cover package database/log files and fixture-specific alternatives sentinels. The syscall trace supplies the wider path inventory.
-- A contained result for this package provides no universal safety claim for chrootless package installation.
+- The fixture is synthetic and cooperative. It covers common maintainer-script phases and `update-alternatives`; account management, boot tooling, cache regeneration, and adversarial scripts remain separate probes.
+- The classifier covers path-bearing file, process, and network calls reported by `strace`; fd-only effects after acquisition require reading the raw trace context.
+- The hosted marker write failed under UID 1001. This run demonstrates invocation and attempted host runtime activity, plus a successful system D-Bus connection. It does not demonstrate a successful host filesystem mutation.
+- The system D-Bus trace records a successful socket connection. Message-level semantics sit outside this syscall probe.
+- The raw workflow artifact expires on 2026-08-13. Durable summary, environment, and service-action rows are committed under `artifacts/hosted-results/`.
+- The repository-wide `Linux Fieldwork CI` workflow has an unrelated baseline failure in its shell-help step. The lane-specific `Verify LF-02 chrootless containment` workflow passed for the final branch state.
 
 ## Promotion or stop decision
 
-**Result: `retain`.** Retain the negative result, fixture, classifier, and repeatable CI probe. The observed effects stayed within the declared target, required host reads were classified, purge completed, and reruns succeeded. No candidate defect or broader investigation is promoted from this package boundary.
+**Result: `promote`.** The target package state was repeatable and contained, while the complete imported call path repeatedly invoked host restart-management code and connected to the host system D-Bus. Those effects meet LF-02's host-service-action promotion rule.
 
-A future lane extension should select a real package with account, cache, service, or boot-related maintainer-script behavior and apply the same classifier.
+Suggested next investigation boundary:
+
+1. reproduce with host `needrestart` status logging enabled and disabled;
+2. identify the smallest mmdebstrap/dpkg option or environment change that suppresses host status loggers for target-root operations;
+3. determine why the custom apt path connects to the host system D-Bus and whether the connection can be avoided;
+4. run the same matrix under a disposable privileged caller to test whether `/run/needrestart/unpacked` becomes a successful host mutation.
 
 ## Upstream authority state
 
-No upstream contact is authorized or performed. This scout created no Debian bug comment, Salsa issue, merge request, mailing-list post, email, or external patch submission. All work remains inside `teamleaderleo/linux-fieldwork`.
+No upstream contact was made. This scout created no Debian bug comment, Salsa issue, merge request, mailing-list post, email, or external patch submission. All work remains inside `teamleaderleo/linux-fieldwork` pending review and authorization.
