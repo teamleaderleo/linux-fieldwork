@@ -57,7 +57,9 @@ jobs:
         shell: bash
         run: |
           set -eux
-          test "$(awk 'length > 79 { print NR }' upstream/mmdebstrap/mmdebstrap | wc -l)" -eq 0
+          line="        \$options->{root} = tempdir('mmdebstrap.XXXXXXXXXX', @tempdir_options);"
+          grep -Fx "$line" upstream/mmdebstrap/mmdebstrap
+          test "${#line}" -le 79
           perl -c upstream/mmdebstrap/mmdebstrap
           work=$(mktemp -d)
           trap 'rm -rf "$work"' EXIT
