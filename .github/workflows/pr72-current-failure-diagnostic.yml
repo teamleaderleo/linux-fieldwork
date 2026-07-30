@@ -1,0 +1,68 @@
+name: PR72 current failure diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pr72-current-failure-diagnostic.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect-artifact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Print bounded failure evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8762098688/zip" > /tmp/reproduction.zip
+          python3 - <<'PY'
+          import re
+          import zipfile
+
+          archive = zipfile.ZipFile('/tmp/reproduction.zip')
+          names = archive.namelist()
+          print('artifact_entries=', len(names))
+
+          def text(name):
+              return archive.read(name).decode('utf-8', 'replace')
+
+          for name in names:
+              if name.endswith(('exit-status', 'result.md', 'preflight-error.txt')):
+                  print(f'===== {name} =====')
+                  print(text(name).rstrip())
+
+          streams = {}
+          for suffix in ('testsuite-stderr', 'testsuite-stdout', 'autopkgtest-console.log'):
+              matches = [name for name in names if name.endswith(suffix)]
+              for name in matches:
+                  streams[name] = text(name).splitlines()
+
+          for name, lines in streams.items():
+              print(f'===== bounded {name} ({len(lines)} lines) =====')
+              if name.endswith('testsuite-stderr'):
+                  boundaries = [line for line in lines if re.match(r'^\(\d+/\d+\) ', line)]
+                  print('--- last case boundaries ---')
+                  print('\n'.join(boundaries[-20:]))
+              print('--- final 120 lines ---')
+              print('\n'.join(lines[-120:]))
+
+          pattern = re.compile(
+              r'^(?:Traceback|AssertionError|FAIL(?:ED)?\b|not ok\b|E: |ERROR\b|.*timed out\b)',
+              re.IGNORECASE,
+          )
+          print('===== failure signatures =====')
+          emitted = 0
+          for name, lines in streams.items():
+              for number, line in enumerate(lines, 1):
+                  if pattern.search(line):
+                      print(f'{name}:{number}: {line}')
+                      emitted += 1
+                      if emitted >= 100:
+                          raise SystemExit
+          PY
