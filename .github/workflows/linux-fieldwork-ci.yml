@@ -55,6 +55,7 @@ jobs:
           [[ -f tools/manifest_diff.py ]] && python3 tools/manifest_diff.py --help >/dev/null
           [[ -f tools/debian_bug_report.py ]] && python3 tools/debian_bug_report.py --help >/dev/null
           [[ -f scripts/capture-linux-context.sh ]] && bash scripts/capture-linux-context.sh --help >/dev/null
+          :
 
   capture-bug-report:
     if: startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') || startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')
@@ -105,7 +106,7 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
               apt-get install -y --no-install-recommends \
-                autopkgtest ca-certificates python3 procps util-linux
+                autopkgtest ca-certificates patch python3 procps util-linux
               apt-get clean
               scripts/reproduce-mmdebstrap-autopkgtest.sh
             '
