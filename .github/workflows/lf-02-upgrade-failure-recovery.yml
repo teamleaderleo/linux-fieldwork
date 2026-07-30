@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "investigations/lf-02-upgrade-failure-recovery/**"
+      - "tests/test_lf02_upgrade_failure_summary.py"
       - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/classify-strace.py"
       - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/write-provenance.py"
       - ".github/workflows/lf-02-upgrade-failure-recovery.yml"
@@ -26,13 +27,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes strace
 
-      - name: Check probe syntax
+      - name: Check probe syntax and summary regressions
         run: |
           python3 -m py_compile \
             investigations/lf-02-upgrade-failure-recovery/build-fixtures.py \
             investigations/lf-02-upgrade-failure-recovery/summarize.py \
+            tests/test_lf02_upgrade_failure_summary.py \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/classify-strace.py \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/write-provenance.py
+          python3 -m unittest tests.test_lf02_upgrade_failure_summary -v
           bash -n investigations/lf-02-upgrade-failure-recovery/run.sh
 
       - name: Run upgrade failure and recovery matrix
@@ -118,11 +121,12 @@ jobs:
           assert observations["recovery_payload_version"] == "3.1"
           assert observations["purge_principal_conffile_absent"] is True
           assert inputs["lifecycle_contract_satisfied"] is True
-          expected_disposition = (
-              "promote-product-candidate"
-              if inputs["product_candidate"]
-              else "retain-mapped-behavior"
-          )
+          if inputs["product_candidate"]:
+              expected_disposition = "promote-product-candidate"
+          elif inputs["blocked_unresolved"]:
+              expected_disposition = "blocked-unresolved"
+          else:
+              expected_disposition = "retain-mapped-behavior"
           assert summary["disposition"] == expected_disposition
 
           for name, classification in summary["classifications"].items():
@@ -135,4 +139,6 @@ jobs:
           assert failed["conffiles"]["etc/lf-lifecycle.conf"]["content"] == "user=preserved\n"
           assert recovered["conffiles"]["etc/lf-lifecycle.conf"]["content"] == "user=preserved\n"
           assert "etc/lf-lifecycle.conf" not in purged["conffiles"]
+          environment_lines = (results / "environment.txt").read_text().splitlines()
+          assert all(not line.startswith("user=") for line in environment_lines)
           PY
