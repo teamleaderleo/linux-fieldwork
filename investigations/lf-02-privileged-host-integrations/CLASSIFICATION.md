@@ -4,13 +4,14 @@
 
 The first privileged-host integration summary treated any traced `Permission denied` text as a logind `AccessDenied` result. That was too broad: filesystem `EACCES` lines from unrelated target paths were enough to set `logind_access_denied: true` even when no logind call occurred.
 
-This note records the corrected parser contract for issue #97.
+This note records the corrected parser contract and exact validation for issue #97.
 
 ## Source boundary
 
 - Investigation: PR #22
 - Reviewed investigation head: `ce2ccfa75efef0ffb4b678e97633179c38e14ada`
-- Classifier fix branch: `fix/lf-02-logind-result-classifier`
+- Classifier correction: PR #99
+- Validated correction head: `b4025defd44c540ba9ac89f6be9209c087248d82`
 - Runner: `run.sh`
 - Summary implementation: `summarize_results.py`
 - Regression: `tests/test_lf02_privileged_summary.py`
@@ -60,21 +61,35 @@ The unit regression covers:
 - successful `SCM_RIGHTS` inhibitor-FD reply: `inhibitor-fd-received`, access denied false;
 - bare `AccessDenied` text without a logind call: not attributed to logind.
 
-The full privileged matrix remains responsible for proving the real default, no-inhibit, and isolated host-service behavior.
+The full privileged matrix also asserts the real default, no-inhibit, and isolated hosted outcomes.
 
 ## Schema note
 
 The corrected summary sets `schema_version: 2` and adds `logind_result` while retaining existing booleans. Consumers should prefer the enum for interpretation and treat old schema-1 `logind_access_denied` values as unreliable when they were derived from generic `Permission denied` text.
 
-## Expected corrected retained matrix
+## Exact corrected matrix
 
-Based on the retained traces:
+Exact-head workflow run `30542077484` passed both jobs:
 
-- `default-root`: `inhibitor-fd-received`, access denied false;
-- `no-inhibit-root`: `not-observed`, access denied false;
-- `isolated-root`: `not-observed`, access denied false.
+- privileged matrix job `90869013908`;
+- compact classifier evidence job `90869113837`.
 
-These expectations remain provisional until the exact-head workflow regenerates the matrix.
+Artifact `8759116856` has digest `sha256:7398d281260e9a53c4c8bbd37ce210f9e23ec8a81c2a6230ff496a87ac1db4c4`.
+
+The compact job downloaded the retained artifact and asserted:
+
+```text
+schema_version=2
+default-root: logind_result=inhibitor-fd-received access_denied=false inhibitor_fd_received=true
+no-inhibit-root: logind_result=not-observed access_denied=false inhibitor_fd_received=false
+isolated-root: logind_result=not-observed access_denied=false inhibitor_fd_received=false
+```
+
+This corrects the old false-positive booleans without changing the underlying host-integration finding: the default case acquired an inhibitor FD, while both explicit controls removed the logind call.
+
+## Repository-wide CI note
+
+The dedicated LF-02 workflow is green. The repository-wide `Linux Fieldwork CI` job on this stacked branch fails in its shell-help step because PR #22's older base workflow references the absent file `scripts/reproduce-mmdebstrap-autopkgtest.sh`. Unit tests, including the new classifier regression, pass before that inherited stale-base failure. This correction does not modify the repository-wide workflow.
 
 ## Evidence limits
 
