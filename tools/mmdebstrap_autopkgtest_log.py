@@ -36,7 +36,9 @@ def _append_signal(signals: list[str], signal: str) -> None:
 
 def classify_lines(lines: Iterable[str]) -> dict[str, Any]:
     current: dict[str, Any] | None = None
+    last_named_test: dict[str, Any] | None = None
     first_failed_test: dict[str, Any] | None = None
+    failure_events: list[dict[str, Any]] = []
     signals: list[str] = []
     saw_named_test = False
     saw_pass = False
@@ -44,7 +46,7 @@ def classify_lines(lines: Iterable[str]) -> dict[str, Any]:
     saw_preflight_failure = False
     saw_wrapper_failure = False
 
-    for raw_line in lines:
+    for line_number, raw_line in enumerate(lines, start=1):
         line = _clean(raw_line)
 
         test_match = TEST_RE.search(line)
@@ -54,27 +56,57 @@ def classify_lines(lines: Iterable[str]) -> dict[str, Any]:
                 "total": int(test_match.group("total")),
                 "name": test_match.group("name"),
             }
+            last_named_test = current
             saw_named_test = True
-            continue
 
-        detail_match = DETAIL_RE.search(line)
-        if current is not None and detail_match:
-            current[detail_match.group("key")] = detail_match.group("value")
-
-        if "result: FAILURE" in line and first_failed_test is None and current is not None:
-            first_failed_test = dict(current)
-            _append_signal(signals, "coverage.py reported FAILURE")
+        if current is not None:
+            for detail_match in DETAIL_RE.finditer(line):
+                current[detail_match.group("key")] = detail_match.group("value")
 
         lower = line.lower()
+        if "result: failure" in lower and current is not None:
+            failed = dict(current)
+            if first_failed_test is None:
+                first_failed_test = failed
+                failure_events.append(
+                    {
+                        "line": line_number,
+                        "phase": "coverage-case",
+                        "signal": "coverage.py reported FAILURE",
+                    }
+                )
+            _append_signal(signals, "coverage.py reported FAILURE")
+            current = None
+        elif "result: success" in lower and current is not None:
+            current = None
+
         if "./make_mirror.sh failed" in line:
+            if not saw_mirror_failure:
+                failure_events.append(
+                    {
+                        "line": line_number,
+                        "phase": "mirror",
+                        "signal": "make_mirror.sh failed",
+                    }
+                )
             saw_mirror_failure = True
             _append_signal(signals, "make_mirror.sh failed")
-        if any(marker in lower for marker in PREFLIGHT_MARKERS):
+
+        matched_preflight = next(
+            (marker for marker in PREFLIGHT_MARKERS if marker in lower), None
+        )
+        if matched_preflight is not None:
+            if not saw_preflight_failure:
+                failure_events.append(
+                    {
+                        "line": line_number,
+                        "phase": "coverage-preflight",
+                        "signal": matched_preflight,
+                    }
+                )
             saw_preflight_failure = True
-            for marker in PREFLIGHT_MARKERS:
-                if marker in lower:
-                    _append_signal(signals, marker)
-                    break
+            _append_signal(signals, matched_preflight)
+
         if "testsuite pass" in lower:
             saw_pass = True
             _append_signal(signals, "autopkgtest reported PASS")
@@ -82,21 +114,19 @@ def classify_lines(lines: Iterable[str]) -> dict[str, Any]:
             saw_wrapper_failure = True
             _append_signal(signals, "autopkgtest wrapper reported failure")
 
-    if first_failed_test is not None:
-        phase = "coverage-case"
-    elif saw_mirror_failure:
-        phase = "mirror"
-    elif saw_preflight_failure:
-        phase = "coverage-preflight"
-    elif saw_pass:
-        phase = "pass"
+    if failure_events:
+        first_failure = min(failure_events, key=lambda event: event["line"])
+        phase = first_failure["phase"]
     else:
-        phase = "unknown"
+        first_failure = None
+        phase = "pass" if saw_pass else "unknown"
 
     return {
         "phase": phase,
+        "first_failure_line": first_failure["line"] if first_failure else None,
+        "first_failure_signal": first_failure["signal"] if first_failure else None,
         "first_failed_test": first_failed_test,
-        "last_named_test": current,
+        "last_named_test": dict(last_named_test) if last_named_test else None,
         "saw_named_test": saw_named_test,
         "wrapper_failure_only": saw_wrapper_failure and phase == "unknown",
         "signals": signals,
@@ -115,8 +145,10 @@ def _read(path: str) -> str:
 
 def _print_human(result: dict[str, Any]) -> None:
     print(f"phase: {result['phase']}")
+    if result["first_failure_line"] is not None:
+        print(f"first failure line: {result['first_failure_line']}")
     failed = result["first_failed_test"]
-    if failed:
+    if result["phase"] == "coverage-case" and failed:
         details = " ".join(
             f"{key}={failed[key]}"
             for key in ("dist", "mode", "variant", "format")
