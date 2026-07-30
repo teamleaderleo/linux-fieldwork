@@ -38,7 +38,8 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
         tree = pathlib.Path(tempdir.name) / "tree"
         destination = tree / "upstream/mmdebstrap/debian/tests"
         destination.mkdir(parents=True)
-        shutil.copy2(SOURCE, destination / "testsuite")
+        candidate = destination / "testsuite"
+        shutil.copy2(SOURCE, candidate)
         completed = subprocess.run(
             [
                 "patch",
@@ -55,8 +56,17 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
             stderr=subprocess.PIPE,
             timeout=30,
         )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        return (destination / "testsuite").read_text(encoding="utf-8")
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        syntax = subprocess.run(
+            ["/bin/sh", "-n", str(candidate)],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
+        self.assertEqual(syntax.returncode, 0, syntax.stdout + syntax.stderr)
+        return candidate.read_text(encoding="utf-8")
 
     def run_block(self, block, source_path, actual_path, user):
         script = block.replace(source_path, shlex.quote(str(actual_path)))
@@ -111,6 +121,15 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
                 literal.read_text(encoding="utf-8").endswith(
                     "debci.*:100000:65536\n"
                 )
+            )
+
+            leading_option = tmp_path / "leading-option"
+            leading_option.write_text("-debci:200000:65536\n", encoding="utf-8")
+            result = self.run_block(block, source_path, leading_option, "-debci")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                leading_option.read_text(encoding="utf-8"),
+                "-debci:200000:65536\n",
             )
 
             empty = tmp_path / "empty"
