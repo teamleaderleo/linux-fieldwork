@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
 --- a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
 +++ b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
-@@ -320,1 +320,22 @@
+@@ -320,1 +320,25 @@
  WORKDIR=
 +IMAGE_TMPDIR=
 +IMAGE_TMP=
@@ -9,6 +9,9 @@ diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mm
 +prepare_image() {
 +  image_parent=$(realpath -e -- "$(dirname -- "$IMAGE")") \
 +    || die "cannot resolve image parent for $IMAGE"
++  case $image_parent in
++    /) die "refusing filesystem root as image parent" ;;
++  esac
 +  image_name=$(basename -- "$IMAGE")
 +  case $image_name in
 +    "" | . | .. | /) die "invalid image path: $IMAGE" ;;
@@ -25,27 +28,27 @@ diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mm
 +  IMAGE_TMP=
 +  IMAGE_TMPDIR=
 +}
-@@ -323,1 +344,5 @@ cleanup() {
+@@ -323,1 +347,5 @@ cleanup() {
    test -n "$WORKDIR" && rm -Rf "$WORKDIR"
 +  if test -n "$IMAGE_TMPDIR"; then
 +    rm -f -- "$IMAGE_TMP"
 +    rmdir "$IMAGE_TMPDIR" 2>/dev/null || :
 +  fi
-@@ -328,1 +353,2 @@ trap cleanup EXIT INT TERM QUIT
+@@ -328,1 +356,2 @@ trap cleanup EXIT INT TERM QUIT
  WORKDIR=$(mktemp -d)
 +prepare_image
-@@ -399,1 +425,1 @@ mmdebstrap "$@" | {
+@@ -399,1 +428,1 @@ mmdebstrap "$@" | {
 -  set -- "$@" -E "$EXTOPTS" "$IMAGE" "$SIZE"
 +  set -- "$@" -E "$EXTOPTS" "$IMAGE_TMP" "$SIZE"
-@@ -468,3 +494,3 @@ rm -f "$WORKDIR/efiimg"
+@@ -468,3 +497,3 @@ rm -f "$WORKDIR/efiimg"
 -truncate --size="+$((34 * 512))" "$IMAGE"
 -/sbin/sfdisk "$IMAGE" <<EOF
 +truncate --size="+$((34 * 512))" "$IMAGE_TMP"
 +/sbin/sfdisk "$IMAGE_TMP" <<EOF
-@@ -477,1 +503,1 @@ EOF
+@@ -477,1 +506,1 @@ EOF
 -dd if="$WORKDIR/fat" of="$IMAGE" conv=notrunc,sparse bs=512 "seek=$FAT_OFFSET_SECTORS" status=none
 +dd if="$WORKDIR/fat" of="$IMAGE_TMP" conv=notrunc,sparse bs=512 "seek=$FAT_OFFSET_SECTORS" status=none
-@@ -486,1 +512,3 @@ if test -n "$VMFPKG" && test "$(dpkg-query -f '${db:Status-Status}' -W "$VMFPKG")" != installed; then
+@@ -486,1 +515,3 @@ if test -n "$VMFPKG" && test "$(dpkg-query -f '${db:Status-Status}' -W "$VMFPKG")" != installed; then
  fi
  
 +publish_image
