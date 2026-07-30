@@ -4,13 +4,15 @@ A GitHub-hosted workbench for investigating Linux and Debian projects from a pho
 
 ## In simple words
 
-Linux Fieldwork is a lab notebook and working copy for learning how Linux systems behave, testing concrete questions, and preparing candidate fixes. Short lessons belong in `notes/`. Reproducible technical claims belong in `investigations/`. Broad surveys and possible directions belong in `research/`. Imported project trees live in `upstream/` with their source identity preserved.
+Linux Fieldwork is a lab notebook and working copy for learning how Linux systems behave, mapping formal research directions, testing concrete questions, and preparing candidate fixes. Casual lessons belong in `notes/`. Formal possibilities live in `programmes/` and `research/`. Recurring upstream systems live in `targets/`. Repeatable technical claims belong in `investigations/`. Imported project trees live in `upstream/` with their source identity preserved.
 
 ## Enter here
 
 - [`START_HERE.md`](START_HERE.md) — choose the right kind of work and record it consistently.
-- [`RESEARCH_LANES.md`](RESEARCH_LANES.md) — current shortlist of promising Linux and Debian investigation lanes.
-- [`research/`](research/) — broad landscape rounds, source orientation, and first-probe designs.
+- [`RESEARCH_LANES.md`](RESEARCH_LANES.md) — current shortlist of formally mapped lanes.
+- [`programmes/`](programmes/) — long-lived Linux research directions, lane registry, and formal lane directories.
+- [`targets/`](targets/) — recurring upstream projects and subsystem maps.
+- [`research/`](research/) — dated landscape rounds, selection records, and source orientation.
 - [`notes/`](notes/) — Linux lessons, command discoveries, explanations, and small demonstrations.
 - [`investigations/`](investigations/) — bounded questions with exact sources, commands, evidence, and limits.
 - [`templates/`](templates/) — starter documents for notes and investigations.
@@ -18,15 +20,19 @@ Linux Fieldwork is a lab notebook and working copy for learning how Linux system
 
 ## Working surfaces
 
-**Research rounds map possible directions.** They organize promising questions, source targets, first probes, environment requirements, promotion signals, and stop signals before a lane becomes active work.
+**Programmes organize formal research.** Their registry preserves all plausible lanes. Programme status files carry current direction. Strong lanes receive dedicated directories with bounded questions, first probes, promotion signals, and stop signals.
+
+**Targets orient recurring upstream systems.** A target map connects exact source identity, relevant programmes, mapped lanes, existing investigations, and contribution boundaries.
+
+**Research rounds survey broad territory.** They retain selection reasoning and source orientation after their lane inventory has moved into programmes and targets.
 
 **Notes capture reusable understanding.** Use them for concepts, commands, operational recipes, source-reading lessons, and behavior that can be demonstrated without a full research record.
 
-**Investigations test bounded questions.** They record the source revision, environment, baseline behavior, hypothesis or candidate change, reproduction commands, results, interpretation, evidence boundary, and next step.
+**Investigations test bounded questions.** They record source revisions, environments, baseline behavior, hypotheses or candidate changes, reproduction commands, results, interpretation, evidence boundaries, and next steps.
 
-**Imported source trees support real code work.** They provide a preserved upstream revision for reading, testing, and candidate changes.
+**Imported source trees support real code work.** They provide preserved upstream revisions for reading, testing, and candidate changes.
 
-A research lane can become an investigation when its source boundary and distinguishing probe are clear. A note can become an investigation when its claim needs stronger verification. An investigation can link back to research rounds and notes that explain the surrounding Linux concepts.
+A research round can add an inbox lane. A lane can receive a formal directory when its first probe is clear. A lane becomes an investigation when exact source work begins. General lessons can move into notes at any stage.
 
 ## Working source trees
 
@@ -48,8 +54,12 @@ Negative results belong here too. A careful result that supports existing behavi
 
 ## Repository map
 
-- [`RESEARCH_LANES.md`](RESEARCH_LANES.md) — active shortlist and environment queues.
-- [`research/`](research/) — dated landscape rounds and possible investigation lanes.
+- [`programmes/registry.yml`](programmes/registry.yml) — canonical programme and lane inventory.
+- [`programmes/`](programmes/) — programme status files and formal lane directories.
+- [`targets/registry.yml`](targets/registry.yml) — recurring target inventory.
+- [`targets/`](targets/) — durable target maps.
+- [`RESEARCH_LANES.md`](RESEARCH_LANES.md) — current mapped-lane shortlist.
+- [`research/rounds/`](research/rounds/) — dated landscape rounds.
 - [`notes/shell/`](notes/shell/) — shells, quoting, pipelines, scripts, and command behavior.
 - [`notes/filesystems/`](notes/filesystems/) — paths, mounts, permissions, storage, and filesystem behavior.
 - [`notes/packaging/`](notes/packaging/) — package formats, build systems, repositories, and package tooling.
