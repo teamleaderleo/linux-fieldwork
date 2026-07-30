@@ -6,15 +6,24 @@ source_root="$repo_root/upstream/mmdebstrap"
 result_dir="$repo_root/investigations/mmdebstrap-unwritable-tmpdir/results"
 runtime_root="${RUNNER_TEMP:-/tmp}/linux-fieldwork-mmdebstrap-tmpdir"
 unwritable_tmp="$runtime_root/unwritable"
-log_file="$result_dir/mmdebstrap.log"
+writable_tmp="$runtime_root/writable"
+unwritable_log="$result_dir/unwritable.log"
+writable_log="$result_dir/writable.log"
 summary_file="$result_dir/summary.json"
+source_spec="deb [trusted=yes] https://deb.debian.org/debian sid main"
+
+cleanup() {
+  chmod 0700 "$unwritable_tmp" 2>/dev/null || true
+  rm -rf "$runtime_root"
+}
+trap cleanup EXIT INT TERM
 
 rm -rf "$runtime_root" "$result_dir"
-mkdir -p "$unwritable_tmp" "$result_dir"
+mkdir -p "$unwritable_tmp" "$writable_tmp" "$result_dir"
 chmod 0555 "$unwritable_tmp"
 
 if touch "$unwritable_tmp/should-fail" 2>/dev/null; then
-  echo "probe setup failed: TMPDIR is writable" >&2
+  echo "probe setup failed: unwritable TMPDIR accepts files" >&2
   exit 1
 fi
 
@@ -28,55 +37,93 @@ TMPDIR="$unwritable_tmp" timeout 240 \
   --variant=apt \
   sid \
   /dev/null \
-  "deb [trusted=yes] https://deb.debian.org/debian sid main" \
-  >"$log_file" 2>&1
-command_status=$?
+  "$source_spec" \
+  >"$unwritable_log" 2>&1
+unwritable_status=$?
 set -e
 
-selected_tmp="$(sed -n 's/^I: using \(.*\) as tempdir$/\1/p' "$log_file" | head -n 1)"
-warning_for_requested_tmp=false
-if grep -Eiq "(warn|error|cannot|failed).*$unwritable_tmp|$unwritable_tmp.*(warn|error|cannot|failed)" "$log_file"; then
-  warning_for_requested_tmp=true
+unwritable_selected="$(sed -n 's/^I: using \(.*\) as tempdir$/\1/p' "$unwritable_log" | head -n 1)"
+
+if [[ "$unwritable_status" -eq 0 ]]; then
+  echo "expected explicit unwritable TMPDIR to fail" >&2
+  cat "$unwritable_log" >&2
+  exit 1
 fi
 
-python3 - "$summary_file" "$command_status" "$unwritable_tmp" "$selected_tmp" "$warning_for_requested_tmp" <<'PY'
+if [[ -n "$unwritable_selected" ]]; then
+  echo "mmdebstrap selected a fallback directory after TMPDIR validation should have failed: $unwritable_selected" >&2
+  exit 1
+fi
+
+grep -F 'cannot use TMPDIR' "$unwritable_log"
+grep -F "$unwritable_tmp" "$unwritable_log"
+
+TMPDIR="$writable_tmp" timeout 240 \
+  "$source_root/mmdebstrap" \
+  --dry-run \
+  --mode=chrootless \
+  --variant=apt \
+  sid \
+  /dev/null \
+  "$source_spec" \
+  >"$writable_log" 2>&1
+writable_status=$?
+writable_selected="$(sed -n 's/^I: using \(.*\) as tempdir$/\1/p' "$writable_log" | head -n 1)"
+
+if [[ "$writable_status" -ne 0 ]]; then
+  echo "writable explicit TMPDIR unexpectedly failed" >&2
+  cat "$writable_log" >&2
+  exit 1
+fi
+
+if [[ "$writable_selected" != "$writable_tmp"/mmdebstrap.* ]]; then
+  echo "writable explicit TMPDIR was not honored: $writable_selected" >&2
+  exit 1
+fi
+
+if find "$writable_tmp" -mindepth 1 -print -quit | grep -q .; then
+  echo "temporary files remained under writable TMPDIR" >&2
+  find "$writable_tmp" -mindepth 1 -maxdepth 2 -print >&2
+  exit 1
+fi
+
+candidate_commit="$(git rev-parse HEAD)"
+python3 - "$summary_file" "$candidate_commit" "$unwritable_tmp" "$unwritable_status" "$writable_tmp" "$writable_status" "$writable_selected" <<'PY'
 import json
 import pathlib
 import sys
 
-path, status, requested, selected, warned = sys.argv[1:]
+(
+    path,
+    candidate_commit,
+    unwritable_tmp,
+    unwritable_status,
+    writable_tmp,
+    writable_status,
+    writable_selected,
+) = sys.argv[1:]
+
 data = {
-    "source_revision": "6fde999741f4fe1e7bf38079acf29432ef87a35e",
+    "upstream_revision": "6fde999741f4fe1e7bf38079acf29432ef87a35e",
+    "candidate_commit": candidate_commit,
     "mode": "chrootless",
-    "requested_tmpdir": requested,
-    "requested_tmpdir_writable": False,
-    "selected_tmpdir": selected or None,
-    "command_status": int(status),
-    "diagnostic_mentions_unwritable_tmpdir": warned == "true",
+    "unwritable_case": {
+        "requested_tmpdir": unwritable_tmp,
+        "command_status": int(unwritable_status),
+        "selected_tmpdir": None,
+        "diagnostic_names_requested_tmpdir": True,
+        "result": "rejected",
+    },
+    "writable_case": {
+        "requested_tmpdir": writable_tmp,
+        "command_status": int(writable_status),
+        "selected_tmpdir": writable_selected,
+        "cleanup_complete": True,
+        "result": "honored",
+    },
 }
 pathlib.Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(data, indent=2))
 PY
 
-if [[ -z "$selected_tmp" ]]; then
-  echo "mmdebstrap did not log a selected temporary directory" >&2
-  tail -n 80 "$log_file" >&2
-  exit 1
-fi
-
-if [[ "$selected_tmp" == "$unwritable_tmp"/* ]]; then
-  echo "mmdebstrap used the requested unwritable TMPDIR unexpectedly" >&2
-  exit 1
-fi
-
-if [[ "$selected_tmp" != /tmp/mmdebstrap.* ]]; then
-  echo "mmdebstrap selected an unexpected fallback directory: $selected_tmp" >&2
-  exit 1
-fi
-
-if [[ "$warning_for_requested_tmp" == true ]]; then
-  echo "mmdebstrap reported the unusable TMPDIR; silent fallback was not reproduced" >&2
-  exit 1
-fi
-
-echo "Reproduced: explicit unwritable TMPDIR was silently replaced with $selected_tmp"
+echo "Verified: unusable explicit TMPDIR fails early; writable explicit TMPDIR remains honored"
