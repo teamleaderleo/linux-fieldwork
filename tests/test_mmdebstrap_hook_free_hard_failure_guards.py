@@ -60,7 +60,7 @@ class HookFreeHardFailureGuardsTest(unittest.TestCase):
         timeout_status: int,
     ) -> tuple[subprocess.CompletedProcess[str], pathlib.Path]:
         fakebin = root / "fakebin"
-        fakebin.mkdir()
+        fakebin.mkdir(parents=True)
         call_log = root / "timeout-called"
         self.write_fake(
             fakebin / "grep-dctrl",
