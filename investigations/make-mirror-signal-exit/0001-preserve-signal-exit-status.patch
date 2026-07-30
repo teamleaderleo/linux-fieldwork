@@ -1,0 +1,89 @@
+diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirror.sh
+--- a/upstream/mmdebstrap/make_mirror.sh
++++ b/upstream/mmdebstrap/make_mirror.sh
+@@ -335,5 +335,43 @@ if [ "$FORCE_UPDATE" != "yes" ] && [ -e "$oldmirrordir/dists/$DEFAULT_DIST/InRelease" ]; then
+ fi
+ 
++PROXYPID=
++CLEANUP_PROXY_CACHE=no
++CLEANUP_TMPDIR=no
++
++stop_proxy() {
++  if [ -n "${PROXYPID:-}" ]; then
++    if kill -0 "$PROXYPID" 2>/dev/null; then
++      kill "$PROXYPID" 2>/dev/null || :
++    fi
++    wait "$PROXYPID" 2>/dev/null || :
++    PROXYPID=
++  fi
++}
++
++cleanup_owner() {
++  stop_proxy
++  if [ "${CLEANUP_TMPDIR:-no}" = yes ]; then
++    cleanuptmpdir || :
++  fi
++  if [ "${CLEANUP_PROXY_CACHE:-no}" = yes ]; then
++    if [ -L ./shared/cache ] && [ "$(readlink ./shared/cache)" = "$newcache" ]; then
++      CLEANUP_PROXY_CACHE=no
++    else
++      cleanup_newcachedir || :
++    fi
++  fi
++}
++
++signal_exit() {
++  status=$1
++  trap - EXIT INT QUIT TERM
++  cleanup_owner
++  exit "$status"
++}
++
+ ./caching_proxy.py "$oldcachedir" "$newcachedir" &
+ PROXYPID=$!
+-trap 'kill "$PROXYPID" || :' EXIT INT TERM
++trap 'cleanup_owner' EXIT
++trap 'signal_exit 130' INT
++trap 'signal_exit 131' QUIT
++trap 'signal_exit 143' TERM
+@@ -345,10 +383,9 @@ for i in $(seq 10); do
+ done
+ if [ ! -s "$newmirrordir/dists/$DEFAULT_DIST/InRelease" ]; then
+   echo "failed to start proxy" >&2
+-  kill $PROXYPID
+   exit 1
+ fi
+ 
+-trap 'kill "$PROXYPID" || :;cleanup_newcachedir' EXIT INT TERM
++CLEANUP_PROXY_CACHE=yes
+ 
+ mkdir -p "$newcachedir"
+@@ -406,5 +443,5 @@ for dist in oldstable stable testing unstable; do
+ done
+ 
+-kill $PROXYPID
++stop_proxy
+ 
+ # Create some symlinks so that we can trick apt into accepting multiple apt
+@@ -454,11 +491,10 @@ if [ "$HAVE_QEMU" = "yes" ]; then
+   done
+   if [ ! -s "$newmirrordir/dists/$DEFAULT_DIST/InRelease" ]; then
+     echo "failed to start proxy" >&2
+-    kill $PROXYPID
+     exit 1
+   fi
+ 
+   tmpdir="$(mktemp -d)"
+-  trap 'kill "$PROXYPID" || :;cleanuptmpdir; cleanup_newcachedir' EXIT INT TERM
++  CLEANUP_TMPDIR=yes
+ 
+   pkgs=perl-doc,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,qemu-user-binfmt,dpkg-dev,mini-httpd,libdevel-cover-perl,libtemplate-perl,debootstrap,procps,apt-cudf,aspcud,python3,libcap2-bin,gpg-from-sq,debootstrap,distro-info-data,iproute2,ubuntu-keyring,apt-utils,squashfs-tools-ng,genext2fs,linux-image-generic,passwd,e2fsprogs,uuid-runtime
+@@ -561,6 +597,6 @@ if [ "$HAVE_QEMU" = "yes" ]; then
+     "$mirror"
+ 
+-  kill $PROXYPID
++  stop_proxy
+   cleanuptmpdir
+-  trap "cleanup_newcachedir" EXIT INT TERM
++  CLEANUP_TMPDIR=no
+ fi
