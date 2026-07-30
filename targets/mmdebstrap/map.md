@@ -2,7 +2,7 @@
 
 ## In simple words
 
-`mmdebstrap` creates Debian root filesystems through several privilege and isolation modes. Linux Fieldwork already carries an exact imported source tree and one retained investigation, making it the first active formal target.
+`mmdebstrap` creates Debian root filesystems through several privilege and isolation modes. Linux Fieldwork already carries an exact imported source tree and retained investigations, making it the first active formal target.
 
 ## Source identity
 
@@ -28,9 +28,10 @@ The project crosses Debian package installation, privilege modes, user namespace
 - [LF-14 — archive extraction and metadata contracts](../../programmes/filesystems-images/lanes/LF-14-archive-extraction-metadata-contracts/brief.md)
 - [LF-23 — cancellation, subprocess, and file-descriptor cleanup](../../programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/brief.md)
 
-## Existing investigation
+## Existing investigations
 
 - [`mmdebstrap` explicit `TMPDIR` handling](../../investigations/mmdebstrap-unwritable-tmpdir/README.md)
+- [Debian autopkgtest `#1141078` transition triage](../../investigations/mmdebstrap-autopkgtest-1141078-transition-triage/README.md) — coordination issue #53
 
 ## Source and test surfaces
 
