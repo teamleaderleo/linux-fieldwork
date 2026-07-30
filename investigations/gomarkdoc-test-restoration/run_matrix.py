@@ -17,11 +17,11 @@ MODES = (
     "unset-goflags",
     "filter-goflags",
     "add-fixture",
-    "add-fixture-unset-goflags",
+    "add-fixture-filter-goflags",
 )
 DEFAULT_REVISIONS = {
     "known-good": "4590696c8693fea477850fe379a01544293ca4e2",
-    "known-bad": "acd02b8",
+    "known-bad": "acd02b8771d0546f96ee281ac45c3a6f81b9bfba",
     "current": "396e6226eab2fd092b1690abcd33ea522fde16dc",
 }
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -52,7 +52,7 @@ def classify_revision(cases: dict[str, dict[str, Any]]) -> str:
 
     flag_only = bool(passed & {"unset-goflags", "filter-goflags"})
     fixture_only = "add-fixture" in passed
-    combined = "add-fixture-unset-goflags" in passed
+    combined = "add-fixture-filter-goflags" in passed
 
     if flag_only and not fixture_only:
         return "test-time-goflags-is-sufficient"
@@ -61,7 +61,7 @@ def classify_revision(cases: dict[str, dict[str, Any]]) -> str:
     if flag_only and fixture_only:
         return "either-narrow-repair-is-sufficient"
     if combined:
-        return "fixture-and-test-flags-interact"
+        return "fixture-and-supported-tag-filter-interact"
     return "no-tested-repair-restores-suite"
 
 
