@@ -21,7 +21,11 @@ run_mmdebstrap() {
   local log_file=$1
   shift
   set +e
-  timeout 240 "$@" \
+  env -i \
+    PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+    HOME="${HOME:-/tmp}" \
+    LC_ALL=C.UTF-8 \
+    timeout 240 "$@" \
     "$source_root/mmdebstrap" \
     --dry-run \
     --mode=chrootless \
