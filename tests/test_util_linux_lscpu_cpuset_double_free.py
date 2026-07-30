@@ -34,7 +34,7 @@ class UtilLinuxLscpuCpusetDoubleFreeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="util-linux-cpuset-patch-") as tmp:
             tree = pathlib.Path(tmp) / "source"
             shutil.copytree(FIXTURE, tree)
-            for extra in ([], ["--dry-run"]):
+            for extra in (["--dry-run"], []):
                 result = subprocess.run(
                     [
                         "patch",
@@ -52,8 +52,6 @@ class UtilLinuxLscpuCpusetDoubleFreeTest(unittest.TestCase):
                     timeout=30,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                if not extra:
-                    break
             patched = (tree / "lib/path.c").read_text(encoding="utf-8")
             self.assertIn("cpuset_free(*set);\n\t\t*set = NULL;", patched)
             self.assertLess(patched.index("cpuset_free(*set);"), patched.index("*set = NULL;"))
