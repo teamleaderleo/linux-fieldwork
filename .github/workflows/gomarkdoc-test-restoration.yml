@@ -24,8 +24,8 @@ jobs:
       - name: Check out exact Linux Fieldwork head
         uses: actions/checkout@v4
 
-      - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@v3
+      - name: Install pinned Determinate Nix v3.21.9
+        uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858
 
       - name: Validate matrix code
         run: |
@@ -41,6 +41,7 @@ jobs:
           python3 investigations/gomarkdoc-test-restoration/run_matrix.py \
             --results \
             "$GITHUB_WORKSPACE/evidence/gomarkdoc-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --known-bad acd02b8771d0546f96ee281ac45c3a6f81b9bfba \
             --case-timeout 1200
 
       - name: Upload complete package evidence
@@ -71,25 +72,50 @@ jobs:
           import os
           import pathlib
 
+          def require(condition: bool, message: str) -> None:
+              if not condition:
+                  raise SystemExit(message)
+
           summaries = list(pathlib.Path("evidence").rglob("summary.json"))
-          if len(summaries) != 1:
-              raise SystemExit(f"expected one summary, found {summaries!r}")
+          require(len(summaries) == 1, f"expected one summary, found {summaries!r}")
           summary = json.loads(summaries[0].read_text(encoding="utf-8"))
-          actions = summary["github_actions"]
-          assert summary["schema_version"] == 1
-          assert actions["run_id"] == os.environ["GITHUB_RUN_ID"]
-          assert actions["run_attempt"] == os.environ["GITHUB_RUN_ATTEMPT"]
-          assert actions["head_sha"] == os.environ["GITHUB_SHA"]
-          assert len(summary["cases"]) == 15
-          assert set(summary["classifications"]) == {
-              "known-good",
-              "known-bad",
-              "current",
-          }
-          assert summary["controls"]["known_good_baseline_passed"] is True
-          assert summary["controls"]["known_bad_baseline_failed"] is True
-          assert summary["controls"]["no_case_timed_out"] is True
-          assert summary["valid_reproduction"] is True
+          actions = summary.get("github_actions", {})
+          require(summary.get("schema_version") == 1, "unsupported summary schema")
+          require(
+              actions.get("run_id") == os.environ["GITHUB_RUN_ID"],
+              "summary run_id does not match this workflow run",
+          )
+          require(
+              actions.get("run_attempt") == os.environ["GITHUB_RUN_ATTEMPT"],
+              "summary run_attempt does not match this workflow attempt",
+          )
+          require(
+              actions.get("head_sha") == os.environ["GITHUB_SHA"],
+              "summary head_sha does not match this workflow head",
+          )
+          require(len(summary.get("cases", [])) == 15, "matrix does not contain 15 cases")
+          require(
+              set(summary.get("classifications", {}))
+              == {"known-good", "known-bad", "current"},
+              "matrix classification set is incomplete",
+          )
+          controls = summary.get("controls", {})
+          require(
+              controls.get("known_good_baseline_passed") is True,
+              "reported good baseline did not pass",
+          )
+          require(
+              controls.get("known_bad_baseline_failed") is True,
+              "reported bad baseline did not fail",
+          )
+          require(
+              controls.get("no_case_timed_out") is True,
+              "one or more matrix cases timed out",
+          )
+          require(
+              summary.get("valid_reproduction") is True,
+              "summary does not classify the matrix as a valid reproduction",
+          )
           print(f"current_decision={summary['current_decision']}")
           for label, classification in summary["classifications"].items():
               print(f"{label}={classification}")
