@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+: "${DPKG_ROOT:?DPKG_ROOT missing}"
+printf 'phase=prerm arg1=%s\n' "${1-}" >> "$DPKG_ROOT/var/lib/lf-fieldwork-probe/script.log"
+update-alternatives --remove lf-fieldwork-probe /usr/lib/lf-fieldwork-probe/tool
