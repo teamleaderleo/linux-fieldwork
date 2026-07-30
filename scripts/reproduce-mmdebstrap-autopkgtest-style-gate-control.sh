@@ -9,16 +9,16 @@ output=$(realpath -m -- "$output_input")
 runs_root=$(realpath -m -- "$repo_root/investigations/mmdebstrap-autopkgtest-1141078/runs")
 
 case "$output" in
-  "$runs_root"/*|/tmp/*|/var/tmp/*)
-    ;;
-  *)
-    printf 'output must be a child of %s, /tmp, or /var/tmp: %s\n' "$runs_root" "$output" >&2
+  /|/tmp|/var/tmp|"$runs_root")
+    printf 'refusing unsafe output directory: %s\n' "$output" >&2
     exit 2
     ;;
 esac
 case "$output" in
-  /|/tmp|/var/tmp|"$runs_root")
-    printf 'refusing unsafe output directory: %s\n' "$output" >&2
+  "$runs_root"/*|/tmp/*|/var/tmp/*)
+    ;;
+  *)
+    printf 'output must be a child of %s, /tmp, or /var/tmp: %s\n' "$runs_root" "$output" >&2
     exit 2
     ;;
 esac
