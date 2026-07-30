@@ -87,15 +87,22 @@ def tree_pair(
 ) -> dict[str, Any]:
     left_text = read_text(root, f"{left}-tree.tsv")
     right_text = read_text(root, f"{right}-tree.tsv")
-    changed_lines = [
-        line
-        for line in difflib.unified_diff(
+    diff_lines = list(
+        difflib.unified_diff(
             left_text.splitlines(),
             right_text.splitlines(),
             fromfile=f"{left}-tree.tsv",
             tofile=f"{right}-tree.tsv",
             lineterm="",
         )
+    )
+    rendered_diff = "\n".join(diff_lines)
+    if rendered_diff:
+        rendered_diff += "\n"
+    (root / diff_artifact).write_text(rendered_diff, encoding="utf-8")
+    changed_lines = [
+        line
+        for line in diff_lines
         if (line.startswith("+") or line.startswith("-"))
         and not line.startswith("+++")
         and not line.startswith("---")
