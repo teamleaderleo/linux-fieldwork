@@ -6869,11 +6869,11 @@ sub main() {
         # since the output is a tarball, we create the rootfs in a temporary
         # directory
         my @tempdir_options = (TMPDIR => 1);
-if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne '') {
-    @tempdir_options = (DIR => $ENV{TMPDIR});
-}
-$options->{root}
-  = tempdir('mmdebstrap.XXXXXXXXXX', @tempdir_options);
+        if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne '') {
+            @tempdir_options = (DIR => $ENV{TMPDIR});
+        }
+        $options->{root}
+          = tempdir('mmdebstrap.XXXXXXXXXX', @tempdir_options);
         info "using $options->{root} as tempdir";
         # add an flock on the temporary directory to prevent cleanup by systemd
         # see section Age in tmpfiles.d(5)
