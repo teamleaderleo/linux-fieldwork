@@ -219,7 +219,7 @@ class TarfilterTransformCaseConversionTest(unittest.TestCase):
                 "preabc-defpost",
             ),
             (r"s/.*/\Lx\Uy\Ez/", "LxUyEz", "xYz"),
-            (r"s/[a-z]/\u&/g", "AubCu-udueuf", "ABC-DEF"),
+            (r"s/[a-z]/\u&/g", "AubC-udueuf", "ABC-DEF"),
         )
         with tempfile.TemporaryDirectory(prefix="tarfilter-case-control-") as td:
             work = pathlib.Path(td)
