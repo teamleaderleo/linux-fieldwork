@@ -1,0 +1,60 @@
+diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
+--- a/upstream/mmdebstrap/tarfilter
++++ b/upstream/mmdebstrap/tarfilter
+@@ -33,7 +33,7 @@ class PathFilterAction(argparse.Action):
+         items = getattr(namespace, "pathfilter", [])
+         regex = re.compile(fnmatch.translate(values))
+-        items.append((self.dest, regex))
++        items.append((self.dest, values, regex))
+         setattr(namespace, "pathfilter", items)
+ 
+ 
+@@ -213,30 +213,44 @@ def main():
+         copyfileobj(sys.stdin.buffer, sys.stdout.buffer)
+         exit()
+ 
+     # same logic as in dpkg/src/filters.c/filter_should_skip()
+-    prefix_prog = re.compile(r"^([^*?[\\]*).*")
++    def normalize_filter_path(name):
++        # Archive members commonly use a leading ./ prefix. Remove only that
++        # structural prefix and leading slashes; filename dots remain data.
++        while name.startswith("./"):
++            name = name[2:]
++        return "/" + name.lstrip("/")
++
++    def literal_glob_prefix(pattern):
++        for index, character in enumerate(pattern):
++            if character in "*?[":
++                return pattern[:index].rstrip("/")
++        return pattern.rstrip("/")
+ 
+     def path_filter_should_skip(member):
+         skip = False
+         if not hasattr(args, "pathfilter"):
+             return False
+-        # normalize path and make it absolute by stripping off all leading
+-        # dots and slashes and then prepending a slash
+-        name = "/" + member.name.lstrip("./")
+-        for t, r in args.pathfilter:
++        name = normalize_filter_path(member.name)
++        for t, _pattern, r in args.pathfilter:
+             if r.match(name) is not None:
+                 if t == "path_include":
+                     skip = False
+                 else:
+                     skip = True
+         if skip and (member.isdir() or member.issym()):
+-            for t, r in args.pathfilter:
++            parent = name.rstrip("/")
++            for t, pattern, _r in args.pathfilter:
+                 if t != "path_include":
+                     continue
+-                prefix = prefix_prog.sub(r"\1", r.pattern)
+-                prefix = prefix.rstrip("/")
+-                if name.startswith(prefix):
++                prefix = literal_glob_prefix(pattern)
++                if prefix and (
++                    prefix == parent or prefix.startswith(parent + "/")
++                ):
+                     return False
+         return skip
