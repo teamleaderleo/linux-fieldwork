@@ -45,9 +45,9 @@ Latest authoritative workflow: `30551542868`
 - retained artifact: `8765484385`;
 - artifact digest: `sha256:0da65bdd591a7eac1fbac00215caebd371ad84379325940d0b5ea9a2307d6942`.
 
-Artifact inspection completed after the original handoff. The current head ran
-77 cases and first failed at `(125/284)
-cwd-directory-not-accessible-by-unshared-user`. Its command changes directory
+Artifact inspection completed after the original handoff. The previous head
+`10bc4f1e19db897dffa4853984c90a5adf89e8b4` ran 77 cases and first failed
+at `(125/284) cwd-directory-not-accessible-by-unshared-user`. Its command changes directory
 to the deliberately inaccessible target and then invokes the temporary
 installed-command proxy as `./mmdebstrap`; `env --chdir` therefore cannot find
 that repository-relative proxy and reports `No such file or directory`. This
@@ -271,12 +271,12 @@ Diagnostic PRs should never merge. Close them as soon as their bounded question 
 
 ## Immediate pickup checklist
 
-1. Treat the latest PR #72 result as a relative-proxy harness failure at case 125.
-2. Keep PR #171 as the owner of authoritative hook-free hard-failure scheduling.
-3. Check PR #118 exact-head CI; merge only the successor, not PR #94.
-4. Check PR #162 exact-head CI before extending the cache stack.
-5. Check PR #169 and PR #179 exact-head CI.
-6. Retain PR #72's history and tooling in its branch and conversation, but retire the broad draft carrier; promote reusable tools only in focused current-main slices.
+1. Treat head `10bc4f1e19db897dffa4853984c90a5adf89e8b4` as a relative-proxy harness failure at case 125.
+2. Review current PR #72 head `4146f5f01d9e9474abd72a1308e0d919369401b0` and workflow `30577374058` before deciding the broad carrier.
+3. Keep PR #171 as the owner of authoritative hook-free hard-failure scheduling.
+4. Check PR #118 exact-head CI; merge only the successor, not PR #94.
+5. Check PR #162 exact-head CI before extending the cache stack.
+6. Check PR #169 and PR #179 exact-head CI.
 7. Close stale/duplicate carriers instead of accumulating parallel owners.
 
 ## Final status at handoff
@@ -289,6 +289,7 @@ Completed cleanup:
 
 Still intentionally open:
 
+- PR #72 — current head `4146f5f01d9e9474abd72a1308e0d919369401b0` composes the hard-failure scheduling patch; exact-head workflow `30577374058` is in progress;
 - PR #171 — required hard-failure scheduling correction, CI queued;
 - PR #118 — canonical explicit request-validation/containment successor, CI queued;
 - PR #162 — core cache composition gate, CI queued;
@@ -297,7 +298,6 @@ Still intentionally open:
 
 Retired after evidence transfer:
 
-- PR #167 — diagnostic question answered; closed without merge;
-- PR #72 — broad current-sid reduction carrier; history and reusable-tooling source remain preserved in the branch and conversation, while focused owners carry the live fixes.
+- PR #167 — diagnostic question answered; closed without merge.
 
 No upstream contact occurred.
