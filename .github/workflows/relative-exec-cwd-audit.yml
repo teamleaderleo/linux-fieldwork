@@ -1,0 +1,95 @@
+name: Audit relative executables across cwd changes
+
+on:
+  pull_request:
+    paths:
+      - "tools/relative_exec_cwd_audit.py"
+      - "tests/test_relative_exec_cwd_audit.py"
+      - "investigations/relative-exec-cwd-audit/**"
+      - ".github/workflows/relative-exec-cwd-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Run focused regressions
+        run: python3 -m unittest tests.test_relative_exec_cwd_audit -v
+
+      - name: Inventory current repository findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python3 tools/relative_exec_cwd_audit.py --json \
+            tools tests scripts investigations programmes upstream \
+            > evidence/findings.json
+          python3 - evidence/findings.json <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          findings = json.loads(path.read_text(encoding="utf-8"))
+          if not isinstance(findings, list):
+              raise SystemExit("audit output must be a JSON list")
+          for item in findings:
+              required = {
+                  "path",
+                  "line",
+                  "language",
+                  "kind",
+                  "program",
+                  "cwd",
+                  "explanation",
+              }
+              if not isinstance(item, dict) or set(item) != required:
+                  raise SystemExit(f"invalid finding: {item!r}")
+          print(f"relative executable / cwd findings: {len(findings)}")
+          for item in findings:
+              print(
+                  f"{item['path']}:{item['line']}: {item['program']!r} "
+                  f"with cwd {item['cwd']!r}"
+              )
+          PY
+
+      - name: Upload audit inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: relative-exec-cwd-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/findings.json
+          if-no-files-found: error
+          retention-days: 14
+
+  artifact-receipt:
+    needs: audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download and validate audit inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "relative-exec-cwd-audit-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --dir evidence >/dev/null
+          python3 - evidence/findings.json <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          findings = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if not isinstance(findings, list):
+              raise SystemExit("downloaded audit output must be a JSON list")
+          print(f"downloaded_findings={len(findings)}")
+          PY
