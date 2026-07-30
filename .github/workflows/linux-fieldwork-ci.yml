@@ -48,7 +48,8 @@ jobs:
           for script in \
             scripts/capture-linux-context.sh \
             scripts/preflight-mmdebstrap-investigation.sh \
-            scripts/reproduce-mmdebstrap-autopkgtest.sh; do
+            scripts/reproduce-mmdebstrap-autopkgtest.sh \
+            scripts/reproduce-mmdebstrap-autopkgtest-style-gate-control.sh; do
             if [[ -f "$script" ]]; then
               bash -n "$script"
             fi
@@ -66,7 +67,7 @@ jobs:
           fi
 
   capture-bug-report:
-    if: startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') || startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')
+    if: github.head_ref == 'investigation/mmdebstrap-autopkgtest-1141078' || github.ref_name == 'investigation/mmdebstrap-autopkgtest-1141078'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -87,7 +88,7 @@ jobs:
           retention-days: 14
 
   reproduce-mmdebstrap:
-    if: startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') || startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')
+    if: github.head_ref == 'investigation/mmdebstrap-autopkgtest-1141078' || github.ref_name == 'investigation/mmdebstrap-autopkgtest-1141078'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
