@@ -6,7 +6,7 @@ Tracking: PR #72, issues #53, #54, #119, #153, and PR #171.
 
 Run `30578966104` completed 77 package-test cases, then failed at `(125/284) cwd-directory-not-accessible-by-unshared-user` because the reduction carrier exported relative `./mmdebstrap` and the test changed directories before execution.
 
-The semantic repair at `7d78cf6d67a2b1b1c1e8fe409cab93bb36b408bd` keeps the source-tree proxy for `coverage.sh` preflight, installs an executable copy at `$AUTOPKGTEST_TMP/mmdebstrap`, and exports that absolute path. This record is synchronized on exact carrier head `9dc570be31c58b917632b1effcc64bb7e8ab3189`. A focused regression executes the installation step, verifies byte and mode identity, changes cwd, and proves the temporary proxy—not a source-tree decoy—receives the hook arguments.
+The semantic repair keeps the source-tree proxy for `coverage.sh` preflight, installs an executable copy at `$AUTOPKGTEST_TMP/mmdebstrap`, and exports that absolute path. A focused regression executes the installation step, verifies byte and mode identity, changes cwd, and proves the temporary proxy—not a source-tree decoy—receives the hook arguments. PR #72 carries the moving exact head and gate receipt.
 
 Next action: consume exact-head repository CI, then rerun the disposable Debian sid package test. Packet B remains unvalidated until its dedicated hook-free phase actually executes.
 
@@ -60,7 +60,6 @@ Can the investigation-only installed-package proxy remain executable after a tes
 - Focused scheduling candidate: PR #171
 - Failed carrier head: `ff89c85712ebcd888cba15ebb803bf7f7134c032`
 - Semantic repair commit: `7d78cf6d67a2b1b1c1e8fe409cab93bb36b408bd`
-- Exact carrier head: `9dc570be31c58b917632b1effcc64bb7e8ab3189`
 - Failed run: `30578966104`
 - Artifact: `mmdebstrap-reproduction-gha-30578966104-1`
 - Artifact digest: `sha256:c1c691504e6606b914862d5457313071e9b7db5d38490b872e30b10bdfa741be`
