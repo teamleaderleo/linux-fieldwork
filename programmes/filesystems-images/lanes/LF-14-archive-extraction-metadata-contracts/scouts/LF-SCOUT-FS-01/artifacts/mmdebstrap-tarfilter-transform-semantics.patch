@@ -1,0 +1,66 @@
+diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
+--- a/upstream/mmdebstrap/tarfilter
++++ b/upstream/mmdebstrap/tarfilter
+@@ -81,24 +81,36 @@ class TransformAction(argparse.Action):
+         if values.startswith(f"s{d}{d}"):
+             raise ValueError("empty regex")
+         values = values.removeprefix(f"s{d}")
+-        flags = 0
+-        if values.endswith(f"{d}i"):
+-            # trailing flags
+-            flags = re.IGNORECASE
+-            values = values.removesuffix(f"{d}i")
+-        # This regex only finds non-empty tokens.
+-        # Finding empty tokens would require a variable length look-behind
+-        # or \K in order to find escaped delimiters which is not supported by
+-        # the python re module.
+-        tokens = re.findall(rf"(?:\\[\\{d}]|[^{d}])+", values)
+-        match len(tokens):
+-            case 0:
+-                raise ValueError("invalid regex: not enough terms")
+-            case 1:
+-                repl = ""
+-            case 2:
+-                repl = tokens[1]
+-            case _:
+-                raise ValueError("invalid regex: too many terms: %s" % tokens)
+-        items.append((re.compile(tokens[0], flags), repl))
++        parts = []
++        token = []
++        escaped = False
++        for char in values:
++            if escaped:
++                if char == d:
++                    token.append(char)
++                else:
++                    token.extend(("\\", char))
++                escaped = False
++            elif char == "\\":
++                escaped = True
++            elif char == d:
++                parts.append("".join(token))
++                token = []
++            else:
++                token.append(char)
++        if escaped:
++            token.append("\\")
++        parts.append("".join(token))
++        if len(parts) != 3:
++            raise ValueError("invalid regex: expected pattern, replacement and flags")
++        pattern, repl, transform_flags = parts
++        if not pattern:
++            raise ValueError("empty regex")
++        if any(flag not in "gi" for flag in transform_flags):
++            raise ValueError("invalid transform flag: %s" % transform_flags)
++        if len(set(transform_flags)) != len(transform_flags):
++            raise ValueError("duplicate transform flag: %s" % transform_flags)
++        regex_flags = re.IGNORECASE if "i" in transform_flags else 0
++        count = 0 if "g" in transform_flags else 1
++        items.append((re.compile(pattern, regex_flags), repl, count))
+         setattr(namespace, "trans", items)
+@@ -293,3 +305,3 @@ def main():
+             if hasattr(args, "trans"):
+-                for r, s in args.trans:
+-                    member.name = r.sub(s, member.name)
++                for r, s, count in args.trans:
++                    member.name = r.sub(s, member.name, count=count)
