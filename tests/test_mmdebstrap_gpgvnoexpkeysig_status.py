@@ -10,6 +10,7 @@ import unittest
 
 EXPIRED = "[GNUPG:] EXPKEYSIG 0123456789ABCDEF expired key\n"
 BAD = "[GNUPG:] BADSIG 0123456789ABCDEF bad signature\n"
+NORMAL_STDOUT = "normal verifier stdout\n"
 
 
 class MmdebstrapGpgvStatusTest(unittest.TestCase):
@@ -25,17 +26,39 @@ class MmdebstrapGpgvStatusTest(unittest.TestCase):
         root = pathlib.Path(cls.work.name)
         cls.fake_bin = root / "bin"
         cls.fake_bin.mkdir()
-        fake_gpgv = cls.fake_bin / "gpgv"
-        fake_gpgv.write_text(
+        cls.fake_gpgv = cls.fake_bin / "gpgv"
+        cls.fake_gpgv.write_text(
             """#!/bin/sh
 set -eu
-printf '%s' "$FAKE_GPGV_STATUS_OUTPUT"
+status_fd=1
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --status-fd)
+      status_fd=$2
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+eval 'printf %s "$FAKE_GPGV_STATUS_OUTPUT" >&'"$status_fd"
+printf '%s' "${FAKE_GPGV_STDOUT-}"
 printf '%s' "${FAKE_GPGV_STDERR-}" >&2
 exit "$FAKE_GPGV_STATUS"
 """,
             encoding="utf-8",
         )
-        fake_gpgv.chmod(0o755)
+        cls.fake_gpgv.chmod(0o755)
+
+        cls.filter_fail_bin = root / "filter-fail-bin"
+        cls.filter_fail_bin.mkdir()
+        (cls.filter_fail_bin / "gpgv").symlink_to(cls.fake_gpgv)
+        fake_sed = cls.filter_fail_bin / "sed"
+        fake_sed.write_text(
+            "#!/bin/sh\ncat >/dev/null\nexit 9\n", encoding="utf-8"
+        )
+        fake_sed.chmod(0o755)
 
         cls.baseline = root / "baseline"
         cls.candidate_root = root / "candidate"
@@ -76,6 +99,29 @@ exit "$FAKE_GPGV_STATUS"
     def tearDownClass(cls) -> None:
         cls.work.cleanup()
 
+    def environment(
+        self,
+        case_tmp: pathlib.Path,
+        status: int,
+        status_output: str,
+        *,
+        stdout: str = "",
+        stderr: str = "",
+        bin_dir: pathlib.Path | None = None,
+    ) -> dict[str, str]:
+        env = os.environ.copy()
+        env.update(
+            {
+                "PATH": f"{bin_dir or self.fake_bin}:/usr/bin:/bin",
+                "TMPDIR": str(case_tmp),
+                "FAKE_GPGV_STATUS": str(status),
+                "FAKE_GPGV_STATUS_OUTPUT": status_output,
+                "FAKE_GPGV_STDOUT": stdout,
+                "FAKE_GPGV_STDERR": stderr,
+            }
+        )
+        return env
+
     def run_wrapper(
         self,
         wrapper: pathlib.Path,
@@ -83,29 +129,72 @@ exit "$FAKE_GPGV_STATUS"
         status: int,
         status_output: str,
         stderr: str = "",
+        *,
+        stdout: str = "",
+        bin_dir: pathlib.Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         case_tmp = pathlib.Path(self.work.name) / label
         case_tmp.mkdir()
-        env = os.environ.copy()
-        env.update(
-            {
-                "PATH": f"{self.fake_bin}:/usr/bin:/bin",
-                "TMPDIR": str(case_tmp),
-                "FAKE_GPGV_STATUS": str(status),
-                "FAKE_GPGV_STATUS_OUTPUT": status_output,
-                "FAKE_GPGV_STDERR": stderr,
-            }
-        )
         result = subprocess.run(
             ["/bin/sh", str(wrapper)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            env=env,
+            env=self.environment(
+                case_tmp,
+                status,
+                status_output,
+                stdout=stdout,
+                stderr=stderr,
+                bin_dir=bin_dir,
+            ),
             timeout=10,
         )
         self.assertEqual(list(case_tmp.iterdir()), [], f"leftovers for {label}")
         return result
+
+    def run_wrapper_with_status_fd(
+        self,
+        wrapper: pathlib.Path,
+        label: str,
+        status: int,
+        status_output: str,
+        *,
+        stdout: str,
+        stderr: str,
+    ) -> tuple[subprocess.CompletedProcess[str], str]:
+        case_tmp = pathlib.Path(self.work.name) / label
+        case_tmp.mkdir()
+        read_fd, write_fd = os.pipe()
+        try:
+            result = subprocess.run(
+                ["/bin/sh", str(wrapper), "--status-fd", str(write_fd)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=self.environment(
+                    case_tmp,
+                    status,
+                    status_output,
+                    stdout=stdout,
+                    stderr=stderr,
+                ),
+                pass_fds=(write_fd,),
+                timeout=10,
+            )
+        finally:
+            os.close(write_fd)
+        try:
+            with os.fdopen(read_fd, encoding="utf-8") as stream:
+                captured_status = stream.read()
+        finally:
+            if read_fd >= 0:
+                try:
+                    os.close(read_fd)
+                except OSError:
+                    pass
+        self.assertEqual(list(case_tmp.iterdir()), [], f"leftovers for {label}")
+        return result, captured_status
 
     def test_success_rewrites_only_expired_signature_status(self) -> None:
         output = EXPIRED + BAD
@@ -138,13 +227,52 @@ exit "$FAKE_GPGV_STATUS"
         self.assertEqual(baseline.stdout, expected)
         self.assertEqual(candidate.stdout, expected)
 
+    def test_explicit_status_fd_is_filtered_separately_from_normal_stdout(self) -> None:
+        baseline, baseline_status = self.run_wrapper_with_status_fd(
+            self.baseline,
+            "baseline-explicit-fd",
+            2,
+            EXPIRED,
+            stdout=NORMAL_STDOUT,
+            stderr="verifier-stderr\n",
+        )
+        candidate, candidate_status = self.run_wrapper_with_status_fd(
+            self.candidate,
+            "candidate-explicit-fd",
+            2,
+            EXPIRED,
+            stdout=NORMAL_STDOUT,
+            stderr="verifier-stderr\n",
+        )
+        expected_status = EXPIRED.replace("EXPKEYSIG", "GOODSIG")
+        self.assertEqual(baseline.returncode, 0)
+        self.assertEqual(candidate.returncode, 2)
+        for result, captured in (
+            (baseline, baseline_status),
+            (candidate, candidate_status),
+        ):
+            self.assertEqual(result.stdout, NORMAL_STDOUT)
+            self.assertIn("verifier-stderr", result.stderr)
+            self.assertEqual(captured, expected_status)
+
+    def test_filter_failure_is_returned_when_verifier_succeeds(self) -> None:
+        candidate = self.run_wrapper(
+            self.candidate,
+            "candidate-filter-failure",
+            0,
+            EXPIRED,
+            bin_dir=self.filter_fail_bin,
+        )
+        self.assertEqual(candidate.returncode, 9)
+
     def test_candidate_source_has_explicit_status_handoff(self) -> None:
         baseline = self.baseline.read_text(encoding="utf-8")
         candidate = self.candidate.read_text(encoding="utf-8")
-        self.assertIn("gpgv \"$@\"", baseline)
+        self.assertIn('gpgv "$@"', baseline)
         self.assertNotIn("GPGV_STATUS=$?", baseline)
         self.assertIn("GPGV_STATUS=$?", candidate)
         self.assertIn('exit "$GPGV_STATUS"', candidate)
+        self.assertIn('exit "$FILTER_STATUS"', candidate)
         self.assertIn("mkfifo", candidate)
 
 
