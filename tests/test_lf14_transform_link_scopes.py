@@ -117,10 +117,10 @@ class LF14TransformLinkScopesTest(unittest.TestCase):
                     input=source,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
                 )
-                self.assertEqual(reference.returncode, 0, reference.stderr)
-                listing = reference.stdout
+                reference_stderr = reference.stderr.decode("utf-8", errors="replace")
+                self.assertEqual(reference.returncode, 0, reference_stderr)
+                listing = reference.stdout.decode("utf-8", errors="replace")
                 for name, (kind, target) in expected.items():
                     self.assertIn(name, listing)
                     if kind == "sym":
