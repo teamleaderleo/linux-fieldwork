@@ -83,15 +83,17 @@ hostPkgs.writeShellApplication {
       fi
       exit "$status"
     }
-    trap cleanup EXIT INT TERM
+    trap cleanup EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
 
     mkdir -p "$efi_dir/EFI/BOOT" "$efi_dir/loader/entries"
     cp -- "$systemd_boot" "$efi_dir/EFI/BOOT/BOOTAA64.EFI"
-    cat >"$efi_dir/loader/loader.conf" <<'EOF'
-    timeout 5
-    editor no
-    console-mode keep
-    EOF
+    printf '%s\n' \
+      'timeout 5' \
+      'editor no' \
+      'console-mode keep' \
+      >"$efi_dir/loader/loader.conf"
     cp -- "$firmware_vars" "$vars_file"
     chmod u+w "$vars_file"
     : >"$log_file"
