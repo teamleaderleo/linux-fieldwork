@@ -163,7 +163,7 @@ run_case() {
   local mmdebstrap_path=$2
   local target="$runtime/$label-root"
   local wrapper_log="$result_dir/$label-dpkg-wrapper.log"
-  local source_spec="deb [trusted=yes] file://$repository test main"
+  local source_spec="deb [trusted=yes] copy://$repository test main"
   local status
 
   : >"$wrapper_log"
@@ -236,7 +236,7 @@ executed_candidate_copy=$candidate
 source_mode_before=$source_mode_before
 source_mode_after=$source_mode_after
 repository_source_unchanged=yes
-repository_type=local_unsigned_trusted_test_repository
+repository_type=local_unsigned_trusted_copy_transport
 variant=essential
 candidate_transaction_status=$candidate_status
 candidate_full_transaction_succeeded=yes
