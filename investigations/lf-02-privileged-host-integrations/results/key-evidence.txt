@@ -1,0 +1,52 @@
+## default-root marker before
+
+present=0
+
+## default-root marker after
+
+present=1 mode=644 uid=0 gid=0 size=0
+sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+path=/run/needrestart/unpacked
+
+## default-root system bus connection
+
+connect(..., {sa_family=AF_UNIX, sun_path="/run/dbus/system_bus_socket"}, 30) = 0
+
+## default-root logind request
+
+org.freedesktop.login1.Manager.Inhibit(
+  "shutdown",
+  "APT",
+  "APT is installing or removing packages",
+  "block"
+)
+
+## default-root inhibitor reply
+
+recvmsg(..., cmsg_type=SCM_RIGHTS, cmsg_data=[6</run/systemd/inhibit/3.ref>], ...) = 24
+
+## default-root needrestart actions
+
+execve("/usr/lib/needrestart/dpkg-status", ["/usr/lib/needrestart/dpkg-status"], ... /* 127 vars */) = 0
+execve("/usr/bin/touch", ["touch", "/run/needrestart/unpacked"], ... /* 127 vars */) = 0
+openat(..., "/run/needrestart/unpacked", O_WRONLY|O_CREAT|O_NOCTTY|O_NONBLOCK, 0666) = 1</run/needrestart/unpacked>
+utimensat(0</run/needrestart/unpacked>, NULL, NULL, 0) = 0
+
+## no-inhibit-root
+
+system-bus connection: absent
+logind request: absent
+needrestart execution: present
+/run/needrestart/unpacked creation: present
+
+## isolated-root
+
+system-bus connection: absent
+logind request: absent
+needrestart execution: absent
+/run/needrestart/unpacked creation: absent
+
+## target comparison
+
+normalized maintainer-script state: equal
+normalized update-alternatives state: equal
