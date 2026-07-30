@@ -23,6 +23,12 @@ jobs:
         run: |
           set -o pipefail
           python3 -m unittest -v tests.test_tarfilter_path_rewrite_metadata 2>&1 | tee pr-48-test.log
+      - name: Probe hard-link normalization boundaries
+        id: boundary
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          python3 investigations/tarfilter-path-rewrite-metadata/review_boundary_probe.py 2>&1 | tee pr-48-boundary.log
       - name: Record environment
         if: always()
         run: |
@@ -41,6 +47,8 @@ jobs:
             echo
             echo '```text'
             cat pr-48-test.log
+            echo '--- boundary probe ---'
+            cat pr-48-boundary.log
             echo '--- environment ---'
             cat pr-48-environment.log
             echo '```'
@@ -53,7 +61,8 @@ jobs:
           name: pr-48-path-rewrite-diagnostic
           path: |
             pr-48-test.log
+            pr-48-boundary.log
             pr-48-environment.log
       - name: Preserve focused test status
-        if: steps.focused.outcome != 'success'
+        if: steps.focused.outcome != 'success' || steps.boundary.outcome != 'success'
         run: exit 1
