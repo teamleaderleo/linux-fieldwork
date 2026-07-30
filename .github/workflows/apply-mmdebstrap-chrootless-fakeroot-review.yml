@@ -1,0 +1,221 @@
+name: Apply mmdebstrap chrootless fakeroot review fix
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: security/mmdebstrap-chrootless-env
+          fetch-depth: 0
+
+      - name: Preserve fakeroot execution state and extend regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('upstream/mmdebstrap/mmdebstrap')
+          source = source_path.read_text()
+          old = """sub chrootless_dpkg_environment() {
+              my @result = ('-i');
+              foreach my $name (qw(
+                  PATH
+                  DEBIAN_FRONTEND
+                  DEBCONF_NONINTERACTIVE_SEEN
+                  LC_ALL
+                  LANGUAGE
+                  LANG
+                  SOURCE_DATE_EPOCH
+                  QEMU_LD_PREFIX
+                  )
+              ) {
+                  next if !defined $ENV{$name};
+                  push @result, "$name=$ENV{$name}";
+              }
+              return @result;
+          }
+          """
+          new = """sub chrootless_dpkg_environment() {
+              my @names = qw(
+                PATH
+                DEBIAN_FRONTEND
+                DEBCONF_NONINTERACTIVE_SEEN
+                LC_ALL
+                LANGUAGE
+                LANG
+                TZ
+                SOURCE_DATE_EPOCH
+                QEMU_LD_PREFIX
+              );
+              if (defined $ENV{FAKEROOTKEY}) {
+                  push @names,
+                    qw(FAKEROOTKEY FAKED_MODE FAKEROOT_FD_BASE LD_PRELOAD
+                    LD_LIBRARY_PATH);
+              }
+              my @result = ('-i');
+              foreach my $name (@names) {
+                  next if !defined $ENV{$name};
+                  push @result, "$name=$ENV{$name}";
+              }
+              return @result;
+          }
+          """
+          if source.count(old) != 1:
+              raise SystemExit('unexpected chrootless environment helper count')
+          source_path.write_text(source.replace(old, new))
+
+          run_path = Path('investigations/mmdebstrap-chrootless-env/run.sh')
+          run = run_path.read_text()
+          run = run.replace(
+              """    LC_ALL \\
+              SOURCE_DATE_EPOCH \\
+              DPKG_ROOT \\
+          """,
+              """    LC_ALL \\
+              TZ \\
+              SOURCE_DATE_EPOCH \\
+              FAKEROOTKEY \\
+              LD_PRELOAD \\
+              DPKG_ROOT \\
+          """,
+          )
+          run = run.replace(
+              """  LC_ALL=C.UTF-8 \\
+            SOURCE_DATE_EPOCH=1700000000 \\
+            http_proxy=http://proxy.invalid:3128 \\
+          """,
+              """  LC_ALL=C.UTF-8 \\
+            TZ=UTC \\
+            SOURCE_DATE_EPOCH=1700000000 \\
+            http_proxy=http://proxy.invalid:3128 \\
+          """,
+          )
+          run = run.replace(
+              """grep -Fx 'LC_ALL=C.UTF-8' "$san_log"
+          grep -Fx 'SOURCE_DATE_EPOCH=1700000000' "$san_log"
+          """,
+              """grep -Fx 'LC_ALL=C.UTF-8' "$san_log"
+          grep -Fx 'TZ=UTC' "$san_log"
+          grep -Fx 'SOURCE_DATE_EPOCH=1700000000' "$san_log"
+          """,
+          )
+          run = run.replace(
+              """    LC_ALL=C.UTF-8 \\
+              SOURCE_DATE_EPOCH=1700000000 \\
+              "${command[@]}" \\
+          """,
+              """    LC_ALL=C.UTF-8 \\
+              TZ=UTC \\
+              SOURCE_DATE_EPOCH=1700000000 \\
+              "${command[@]}" \\
+          """,
+          )
+          marker = """cmp \\
+            "$runtime/safe-root/usr/lib/lf-chrootless-env-probe/payload" \\
+            "$runtime/safe-rerun-root/usr/lib/lf-chrootless-env-probe/payload"
+
+          cat >"$result_dir/summary.txt" <<EOF
+          """
+          addition = """cmp \\
+            "$runtime/safe-root/usr/lib/lf-chrootless-env-probe/payload" \\
+            "$runtime/safe-rerun-root/usr/lib/lf-chrootless-env-probe/payload"
+
+          # Chrootless mode explicitly supports fakeroot. Its IPC key and preload
+          # state must survive the dpkg boundary while unrelated variables remain
+          # absent.
+          fakeroot_target="$runtime/fakeroot-root"
+          make_command "$fakeroot_target" no
+          env -i \\
+            PATH=/usr/sbin:/usr/bin:/sbin:/bin \\
+            HOME="$runtime/home" \\
+            TMPDIR="$runtime" \\
+            LC_ALL=C.UTF-8 \\
+            TZ=UTC \\
+            SOURCE_DATE_EPOCH=1700000000 \\
+            fakeroot -- "${command[@]}" \\
+            >"$result_dir/fakeroot.stdout" \\
+            2>"$result_dir/fakeroot.stderr"
+          assert_installed "$fakeroot_target"
+          fakeroot_log="$fakeroot_target/var/lib/lf-chrootless-env-probe/environment.log"
+          cp "$fakeroot_log" "$result_dir/fakeroot-environment.log"
+          grep -E '^FAKEROOTKEY=.+$' "$fakeroot_log"
+          grep -E '^LD_PRELOAD=.*libfakeroot' "$fakeroot_log"
+          grep -Fx 'LF_SECRET_CANARY=<unset>' "$fakeroot_log"
+          grep -Fx 'TZ=UTC' "$fakeroot_log"
+
+          cat >"$result_dir/summary.txt" <<EOF
+          """
+          if run.count(marker) != 1:
+              raise SystemExit('unexpected regression summary marker count')
+          run = run.replace(marker, addition)
+          run = run.replace(
+              """required_dpkg_environment_preserved=yes
+          safe_launch_succeeded=yes
+          """,
+              """required_dpkg_environment_preserved=yes
+          fakeroot_environment_preserved=yes
+          safe_launch_succeeded=yes
+          """,
+          )
+          run_path.write_text(run)
+
+          plan_path = Path('investigations/mmdebstrap-chrootless-env/PLAN.md')
+          plan = plan_path.read_text()
+          plan = plan.replace(
+              """- `SOURCE_DATE_EPOCH` and `TZ` where needed for reproducibility.
+          """,
+              """- `SOURCE_DATE_EPOCH` and `TZ` where needed for reproducibility;
+          - fakeroot's `FAKEROOTKEY`, preload, and daemon state when fakeroot is active.
+          """,
+          )
+          plan = plan.replace(
+              """3. Require the explicit skip to restore the current behavior.
+          """,
+              """3. Require the explicit skip to bypass only the launch refusal while the dpkg environment remains sanitized.
+          """,
+          )
+          plan = plan.replace(
+              """14. Verify cleanup and a second clean run.
+          """,
+              """14. Verify a fakeroot chrootless run preserves fakeroot state without restoring unrelated variables.
+          15. Verify cleanup and a second clean run.
+          """,
+          )
+          plan_path.write_text(plan)
+          PY
+
+      - name: Format and validate
+        run: |
+          docker run --rm \
+            --volume "$PWD:/work" \
+            --workdir /work/upstream/mmdebstrap \
+            debian:sid-slim \
+            sh -euxc '
+              apt-get update
+              apt-get install --yes --no-install-recommends perltidy
+              perltidy < mmdebstrap > mmdebstrap.tdy
+              mv mmdebstrap.tdy mmdebstrap
+            '
+          perl -c upstream/mmdebstrap/mmdebstrap
+          pod2man upstream/mmdebstrap/mmdebstrap >/dev/null
+          bash -n investigations/mmdebstrap-chrootless-env/run.sh
+          git diff --check
+          test "$(sed -e '/^__END__$/,$d' upstream/mmdebstrap/mmdebstrap | wc --max-line-length)" -le 79
+
+      - name: Commit review fix
+        run: |
+          rm .github/workflows/apply-mmdebstrap-chrootless-fakeroot-review.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Preserve fakeroot state across chrootless dpkg'
+          git push origin HEAD:security/mmdebstrap-chrootless-env
