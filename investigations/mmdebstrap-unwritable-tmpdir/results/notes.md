@@ -2,47 +2,63 @@
 
 ## In simple words
 
-The original `mmdebstrap` revision silently ignored an explicitly configured but unwritable `TMPDIR` and used `/tmp`. The candidate now rejects that configuration before creating the temporary root. A writable explicit directory still works and is left empty after cleanup.
+The original `mmdebstrap` revision silently treated an unusable explicit `TMPDIR` as permission to choose `/tmp`. The reviewed implementation now uses a non-empty explicit value as the exact parent at the real `File::Temp::tempdir()` call. Unset and empty values keep the old default behavior.
 
 ## Environment
 
-- Verification run: `30510240339`
-- Job: `90768531961`
+- Deep verification run: `30512275538`
+- Job: `90774688348`
 - Runner: GitHub-hosted Ubuntu 24.04.4 LTS
 - Imported upstream revision: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
-- Candidate source commit: `927263e1a883e21573847da362456af637148868`
+- Reviewed Linux Fieldwork implementation: `c7f586470c34ca21a94a15ff340b3eca067f6ce5`
 - Mode: `chrootless`
 - Variant: `apt`
 - Operation: real `mmdebstrap` dry-run with null output
 
-## Unwritable case
+## Behavior cases
 
-- Requested `TMPDIR`: `/home/runner/work/_temp/linux-fieldwork-mmdebstrap-tmpdir/unwritable`
-- Command status: `25`
-- Selected temporary root: none
-- Diagnostic: `cannot use TMPDIR` followed by the exact requested path and `Permission denied`
-- Result: rejected before apt setup and temporary-root fallback
+| TMPDIR state | Status | Selected root | Result |
+| --- | ---: | --- | --- |
+| Unset | 0 | `/tmp/mmdebstrap.*` | Existing default preserved |
+| Empty | 0 | `/tmp/mmdebstrap.*` | Existing default preserved |
+| Writable directory | 0 | Below requested directory | Honored and cleaned |
+| Unwritable directory | 13 | None | Rejected with path-specific error |
+| Missing path | 2 | None | Rejected with path-specific error |
+| Regular file | 25 | None | Rejected with path-specific error |
 
-## Writable case
+The nonzero status varies with the underlying filesystem failure. The stable contract is that an unusable non-empty explicit path fails, names that path, and does not select a fallback root.
 
-- Requested `TMPDIR`: `/home/runner/work/_temp/linux-fieldwork-mmdebstrap-tmpdir/writable`
-- Command status: `0`
-- Selected temporary root: `/home/runner/work/_temp/linux-fieldwork-mmdebstrap-tmpdir/writable/mmdebstrap.fE8Jq8ztSf`
-- Cleanup: complete; no files remained below the requested directory
-- Result: explicit usable directory honored
-
-## Candidate
-
-The executable now validates a non-empty explicit `TMPDIR` by creating, closing, and removing a small temporary file in that exact directory. Failure produces a path-specific error. The imported upstream test registry includes `fail-with-unwritable-tmpdir` in `chrootless` mode.
-
-## Verification status
+## Static review
 
 - Perl syntax: passed
-- Upstream regression-script shell syntax: passed
-- Fieldwork runner shell syntax: passed
-- Focused runtime regression: passed
-- Full Debian test matrix: not run
+- Reviewed source block: exact expected form
+- Perl::Critic severity 4: passed
+- Maximum code line length: 79
+- POD rendering: passed
+- Rendered regression test ShellCheck: passed
+- Rendered regression test `shfmt`: passed
+- Runner perltidy: v20230309
+- Whole-file perltidy comparison: not treated as portable across formatter versions; the imported source marks sections for perltidy 20220613
+
+## Suite inventory
+
+- Test definitions: 120
+- Test files: 120
+- Test-script lines: 3,501
+- Expanded matrix cases: 283
+- Potentially runnable cases on amd64 after static skips: 274
+- Definitions needing root: 45
+- Definitions needing QEMU: 22
+- Definitions needing isolated apt configuration: 27
+
+The complete suite was not executed. See `suite-inventory.md` and `suite-inventory.json`.
+
+## Interpretation
+
+The reviewed implementation is smaller and more direct than the preliminary preflight helper. It uses the library's exact-directory interface at the operation that needs the directory, avoids a check-then-use interval, and keeps default behavior for callers who did not supply a non-empty value.
+
+The practical trigger is narrow and its frequency is unknown. The impact is meaningful for affected callers because the temporary directory contains the working Debian root filesystem. Silent fallback can consume an unexpected disk or a small RAM-backed `/tmp` and can lead to a later out-of-space failure.
 
 ## Authority
 
-No Debian issue, email, merge request, comment, or patch submission was created.
+No Debian issue, email, merge request, patch submission, comment, or review was created.
