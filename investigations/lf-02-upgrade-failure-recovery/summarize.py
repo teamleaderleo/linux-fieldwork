@@ -176,17 +176,23 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
         categories = record.get("categories")
         require(isinstance(categories, dict), f"{name}: categories must be an object")
         require(set(categories) == CATEGORY_IDS, f"{name}: category set mismatch")
+        for identifier, count in categories.items():
+            require(isinstance(count, int) and count >= 0, f"{name}: invalid {identifier} count")
+        computed_total = sum(categories.values())
         require(
             record.get("category_total_matches_events") is True,
             f"{name}: classifier category total flag is false",
         )
         require(
-            record.get("category_total") == record.get("outside_access_events"),
-            f"{name}: category total differs from outside access events",
+            record.get("category_total") == computed_total,
+            f"{name}: category total differs from category counts",
+        )
+        require(
+            record.get("outside_access_events") == computed_total,
+            f"{name}: outside access events differ from category counts",
         )
         classifications[name] = record
         for identifier, count in categories.items():
-            require(isinstance(count, int) and count >= 0, f"{name}: invalid {identifier} count")
             totals[identifier] += count
 
     host_diff = (results / "host-fingerprint.diff").read_text(encoding="utf-8")
