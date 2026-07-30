@@ -27,7 +27,7 @@ testsuite FAIL non-zero exit status 1
         self.assertEqual(result["phase"], "coverage-preflight")
         self.assertIsNone(result["first_failed_test"])
         self.assertFalse(result["saw_named_test"])
-        self.assertTrue(result["wrapper_failure_only"])
+        self.assertFalse(result["wrapper_failure_only"])
 
     def test_classifies_first_named_coverage_failure_with_dimensions(self):
         result = MODULE.classify_text(
@@ -57,6 +57,7 @@ testsuite FAIL non-zero exit status 1
                 "format": "auto",
             },
         )
+        self.assertFalse(result["wrapper_failure_only"])
 
     def test_success_result_is_a_negative_control_for_failure_detection(self):
         result = MODULE.classify_text(
@@ -79,12 +80,13 @@ testsuite PASS
             """
 creating local package cache
 ./make_mirror.sh failed
-testsuite SKIP neutral
+testsuite FAIL non-zero exit status 77
 """
         )
         self.assertEqual(result["phase"], "mirror")
         self.assertIsNone(result["first_failed_test"])
         self.assertIn("make_mirror.sh failed", result["signals"])
+        self.assertFalse(result["wrapper_failure_only"])
 
     def test_ansi_and_timestamp_prefixes_do_not_hide_named_failure(self):
         result = MODULE.classify_text(
