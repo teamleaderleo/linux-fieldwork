@@ -4,13 +4,35 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 source_root="$repo_root/upstream/mmdebstrap"
 result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/path-results"
-runtime_parent="$(realpath -m "${RUNNER_TEMP:-/tmp}")"
 
-if [[ "$runtime_parent" == / ]]; then
-  echo "refusing unsafe runtime parent: $runtime_parent" >&2
+validate_runtime_parent() {
+  local requested=$1 canonical
+  canonical="$(realpath -m "$requested")"
+  case "$canonical" in
+    /tmp | /tmp/* | /var/tmp | /var/tmp/* | /home/runner/work/_temp | /home/runner/work/_temp/*) ;;
+    *)
+      echo "refusing unsafe runtime parent: $canonical" >&2
+      return 2
+      ;;
+  esac
+  printf '%s\n' "$canonical"
+}
+
+if [[ ${1-} == --check-runtime-parent ]]; then
+  if [[ $# -ne 2 ]]; then
+    echo 'usage: path_precedence_probe.sh --check-runtime-parent PATH' >&2
+    exit 2
+  fi
+  validate_runtime_parent "$2" >/dev/null
+  exit
+fi
+
+runtime_parent="$(validate_runtime_parent "${RUNNER_TEMP:-/tmp}")"
+runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-path-precedence")"
+if [[ "$runtime" == "$runtime_parent" ]]; then
+  echo "refusing runtime equal to parent: $runtime" >&2
   exit 2
 fi
-runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-path-precedence")"
 case "$runtime" in
   "$runtime_parent"/*) ;;
   *)
@@ -34,7 +56,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for command_name in dpkg-deb dpkg-query realpath; do
+for command_name in cp dpkg-deb dpkg-query realpath stat; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "missing required command: $command_name" >&2
     exit 2
@@ -44,6 +66,11 @@ done
 rm -rf "$runtime" "$result_dir"
 mkdir -p "$runtime/fixture/DEBIAN" "$runtime/fake-bin" "$runtime/home"
 mkdir -p "$runtime/fixture/usr/share/lf-path-precedence" "$result_dir"
+source_mode_before="$(stat -c '%a' "$source_root/mmdebstrap")"
+candidate="$runtime/mmdebstrap-source"
+cp --preserve=mode "$source_root/mmdebstrap" "$candidate"
+cmp "$source_root/mmdebstrap" "$candidate"
+chmod 0755 "$candidate"
 
 cat >"$runtime/fixture/DEBIAN/control" <<'EOF'
 Package: lf-path-precedence-probe
@@ -86,7 +113,6 @@ printf 'source=caller-path\n' \
   >"$DPKG_ROOT/var/lib/lf-path-precedence-probe/command.txt"
 EOF
 chmod 0755 "$runtime/fake-bin/lf-path-probe"
-chmod 0755 "$source_root/mmdebstrap"
 
 run_case() {
   local label=$1
@@ -102,7 +128,7 @@ run_case() {
     HOME="$runtime/home" \
     TMPDIR="$runtime" \
     LC_ALL=C.UTF-8 \
-    "$source_root/mmdebstrap" \
+    "$candidate" \
       --mode=chrootless \
       --variant=custom \
       --format=directory \
@@ -138,8 +164,16 @@ test ! -e "$result_dir/clean-maintainer-script/command.txt"
 clean_path="$(cat "$result_dir/clean-maintainer-script/path.txt")"
 [[ "$clean_path" != *"$runtime/fake-bin"* ]]
 
+source_mode_after="$(stat -c '%a' "$source_root/mmdebstrap")"
+[[ "$source_mode_after" == "$source_mode_before" ]]
+git diff --exit-code -- upstream/mmdebstrap/mmdebstrap
+
 cat >"$result_dir/summary.txt" <<EOF
 product_source=upstream/mmdebstrap/mmdebstrap
+executed_copy=$candidate
+source_mode_before=$source_mode_before
+source_mode_after=$source_mode_after
+repository_source_unchanged=yes
 caller_path_directory=$runtime/fake-bin
 tainted_maintainer_script_path=$tainted_path
 tainted_caller_command_resolved=yes
