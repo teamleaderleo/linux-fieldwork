@@ -40,7 +40,7 @@ The focused test subclasses the existing edge-case suite. It therefore reapplies
 Focused command:
 
 ```text
-python3 -m unittest -v tests/test_tarfilter_transform_regex_python_group_controls.py
+python3 tests/test_tarfilter_transform_regex_python_group_controls.py
 ```
 
 Complete discovery and exact-head Linux Fieldwork CI remain required on this clean current-main carrier.
