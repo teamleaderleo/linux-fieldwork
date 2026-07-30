@@ -21,6 +21,7 @@ class FieldGuideTest(unittest.TestCase):
         required = (
             "## Do",
             "## Do not",
+            "## Relationship to the working rules",
             "## 🍩 Donuts",
             "## Areas that have been fruitful",
             "## Things to keep in mind during review",
@@ -31,6 +32,7 @@ class FieldGuideTest(unittest.TestCase):
             "cleanup",
             "first failure",
             "upstream contact",
+            "[`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md)",
         )
         for text in required:
             with self.subTest(text=text):
