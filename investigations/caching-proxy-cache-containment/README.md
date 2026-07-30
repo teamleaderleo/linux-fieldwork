@@ -2,7 +2,7 @@
 
 ## In simple words
 
-The cache proxy decodes the URL suffix and joins it directly to its cache directories. Encoded absolute paths, parent traversal, or existing symlinks can therefore leave the cache root before a read or write.
+The cache proxy decodes the URL suffix and joins it directly to its cache directories. Encoded absolute paths, parent traversal, existing symlinks, and normalized path aliases can therefore leave the cache root or make distinct request targets share one cache key.
 
 The proxy also listens on every interface even though `make_mirror.sh` configures only `127.0.0.1:8080` as its consumer.
 
@@ -33,12 +33,17 @@ The write is not a privilege escalation beyond that account. It is a filesystem-
 
 `cache_path()`:
 
-1. URL-decodes once into a `PurePosixPath`;
-2. rejects empty, absolute, and parent-traversing paths;
-3. resolves the cache root and candidate;
-4. requires the candidate to remain below the resolved root, catching existing symlink escapes.
+1. parses the complete absolute-form proxy target and the `Host` authority;
+2. compares normalized DNS hostnames and effective HTTP ports while rejecting credentials, query, and fragment data;
+3. rejects encoded path separators before decoding;
+4. splits the decoded path before pathname normalization and rejects empty, `.`, and `..` components, including doubled and trailing separators;
+5. constructs the relative path only after those checks;
+6. resolves the cache root and candidate;
+7. requires the candidate to remain below the resolved root, catching existing symlink escapes.
 
-The handler returns HTTP 400 before mkdir, open, cache lookup, or upstream contact when containment fails. The production server binds to `127.0.0.1` instead of all interfaces.
+The handler returns HTTP 400 before mkdir, open, cache lookup, or upstream contact when validation fails. The production server binds to `127.0.0.1` instead of all interfaces.
+
+Hostname comparison remains compatible with DNS case-insensitivity: `LOCALHOST:port` and `localhost:port` are accepted when their effective ports match.
 
 ## Regression matrix
 
@@ -47,7 +52,10 @@ The regression requires:
 - baseline encoded absolute read succeeds outside the cache;
 - baseline encoded absolute write creates outside bytes;
 - candidate absolute, plain `../`, encoded `../`, and symlink escapes return HTTP 400;
+- literal dot, encoded dot, doubled-separator, and trailing-separator aliases return HTTP 400;
+- rejected aliases make zero upstream requests and create no cache descendants;
 - invalid outside-write requests make zero upstream requests and create no file;
+- case-insensitive hostname authority preserves a valid fresh download and cache layout;
 - valid `.deb` cache hits still return their original bytes;
 - readonly mode applies the same containment check;
 - candidate source compiles and the production bind is loopback-only;
@@ -57,9 +65,9 @@ The regression requires:
 
 The reproducer proves the imported code's behavior locally. Network reachability varies by runner and namespace, so this record does not claim that an external client reached a historical CI instance.
 
-The candidate closes lexical, absolute, and existing-symlink escape paths. It does not claim descriptor-level protection against a same-user attacker racing symlink replacement between resolution and open.
+The candidate closes the demonstrated lexical, absolute, alias, and existing-symlink paths. It does not claim descriptor-level protection against a same-user attacker racing symlink replacement between resolution and open.
 
-Concurrent requests and atomic cache publication remain a separate audit boundary.
+Concurrent requests, atomic cache publication, response framing, and declared-length validation remain separate audit boundaries.
 
 ## Cleanup and safety
 
