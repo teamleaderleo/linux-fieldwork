@@ -23,5 +23,15 @@ jobs:
       - name: Record environment
         if: always()
         run: |
-          python3 --version
-          tar --version | head -n 1
+          {
+            python3 --version
+            tar --version | head -n 1
+          } | tee pr-48-environment.log
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-48-path-rewrite-diagnostic
+          path: |
+            pr-48-test.log
+            pr-48-environment.log
