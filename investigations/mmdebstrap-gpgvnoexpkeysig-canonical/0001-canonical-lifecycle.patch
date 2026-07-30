@@ -63,6 +63,7 @@ index 8337075..2ab2930 100755
 +STATUS_FILE="$FILTER_DIR/status"
 +GPGV_PID=
 +FILTER_PID=
++FILTER_STARTED=no
 +PENDING_STATUS=
 +PENDING_SIGNAL=
 +
@@ -134,7 +135,6 @@ index 8337075..2ab2930 100755
 +signal_exit() {
 +  signal_status=$1
 +  signal_number=$2
-+  filter_was_running=no
 +  trap - EXIT
 +  trap '' HUP INT TERM
 +  PENDING_STATUS=
@@ -144,7 +144,6 @@ index 8337075..2ab2930 100755
 +    kill -"$signal_number" "$GPGV_PID" 2>/dev/null || :
 +  fi
 +  if [ -n "$FILTER_PID" ] && kill -0 "$FILTER_PID" 2>/dev/null; then
-+    filter_was_running=yes
 +    kill -"$signal_number" "$FILTER_PID" 2>/dev/null || :
 +  fi
 +  if [ -n "$GPGV_PID" ]; then
@@ -156,7 +155,7 @@ index 8337075..2ab2930 100755
 +    FILTER_PID=
 +  fi
 +
-+  if [ "$filter_was_running" = no ] && [ -s "$STATUS_FILE" ]; then
++  if [ "$FILTER_STARTED" = no ] && [ -s "$STATUS_FILE" ]; then
 +    run_filter_child &
 +    FILTER_PID=$!
 +    wait "$FILTER_PID" 2>/dev/null || :
@@ -192,6 +191,7 @@ index 8337075..2ab2930 100755
 +  install_recording_traps
 +  run_filter_child &
 +  FILTER_PID=$!
++  FILTER_STARTED=yes
 +  install_forwarding_traps
 +  run_pending_signal
 +}
