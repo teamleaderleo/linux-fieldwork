@@ -5,7 +5,6 @@ import pathlib
 import re
 import shlex
 import shutil
-import stat
 import subprocess
 import tempfile
 import unittest
@@ -71,33 +70,24 @@ class MmdebstrapAutopkgtestProxyInstallationTest(unittest.TestCase):
             self.assertEqual(syntax.returncode, 0, syntax.stdout + syntax.stderr)
 
             install_line = 'install -m 0755 ./mmdebstrap "$AUTOPKGTEST_TMP/mmdebstrap"'
-            self.assertIn(install_line, patched)
+            self.assertNotIn(install_line, patched)
+            self.assertIn("chmod 0755 ./mmdebstrap", patched)
+            self.assertLess(
+                patched.index('cd "$AUTOPKGTEST_TMP"'),
+                patched.index("cat << 'END' > ./mmdebstrap"),
+            )
             command_match = re.search(r'env CMD="([^"]+)" DEFAULT_DIST=', patched)
             self.assertIsNotNone(command_match)
 
-            source_proxy = tree / "mmdebstrap"
-            source_proxy.write_text(extract_proxy(patched), encoding="utf-8")
-            source_proxy.chmod(0o755)
             autopkgtest_tmp = root / "autopkgtest-tmp"
             autopkgtest_tmp.mkdir()
-            env = dict(os.environ, AUTOPKGTEST_TMP=str(autopkgtest_tmp))
-            installed = subprocess.run(
-                ["/bin/sh", "-eu", "-c", install_line],
-                cwd=tree,
-                env=env,
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=30,
-            )
-            self.assertEqual(installed.returncode, 0, installed.stderr)
-
             installed_proxy = autopkgtest_tmp / "mmdebstrap"
-            self.assertEqual(installed_proxy.read_bytes(), source_proxy.read_bytes())
-            self.assertTrue(installed_proxy.stat().st_mode & stat.S_IXUSR)
+            installed_proxy.write_text(extract_proxy(patched), encoding="utf-8")
+            installed_proxy.chmod(0o755)
 
-            # Replace the copied Perl proxy with an observable stand-in after
-            # proving that the patch installs the real bytes at this path.
+            # The product creates ./mmdebstrap after changing into
+            # AUTOPKGTEST_TMP, so this already is the exported absolute path.
+            # A separate source-tree decoy proves the command identity.
             result_path = root / "proxy-result"
             installed_proxy.write_text(
                 "#!/bin/sh\n"
@@ -106,8 +96,9 @@ class MmdebstrapAutopkgtestProxyInstallationTest(unittest.TestCase):
                 encoding="utf-8",
             )
             installed_proxy.chmod(0o755)
-            source_proxy.write_text("#!/bin/sh\nexit 97\n", encoding="utf-8")
-            source_proxy.chmod(0o755)
+            source_tree_decoy = tree / "mmdebstrap"
+            source_tree_decoy.write_text("#!/bin/sh\nexit 97\n", encoding="utf-8")
+            source_tree_decoy.chmod(0o755)
 
             command = command_match.group(1)
             expanded_command = command.replace(
