@@ -1,0 +1,124 @@
+name: Probe LF-02 upgrade failure and recovery
+
+on:
+  pull_request:
+    paths:
+      - "investigations/lf-02-upgrade-failure-recovery/**"
+      - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/classify-strace.py"
+      - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/write-provenance.py"
+      - ".github/workflows/lf-02-upgrade-failure-recovery.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out investigation branch
+        uses: actions/checkout@v4
+
+      - name: Install trace dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes strace
+
+      - name: Check probe syntax
+        run: |
+          python3 -m py_compile \
+            investigations/lf-02-upgrade-failure-recovery/build-fixtures.py \
+            investigations/lf-02-upgrade-failure-recovery/summarize.py \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/classify-strace.py \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/write-provenance.py
+          bash -n investigations/lf-02-upgrade-failure-recovery/run.sh
+
+      - name: Run upgrade failure and recovery matrix
+        run: bash investigations/lf-02-upgrade-failure-recovery/run.sh
+
+      - name: Upload lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lf-02-upgrade-failure-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: investigations/lf-02-upgrade-failure-recovery/results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  artifact-receipt:
+    needs: lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Assert downloaded lifecycle contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "lf-02-upgrade-failure-recovery-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --dir evidence >/dev/null
+          python3 - evidence <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          summary_path = next(root.rglob("summary.json"))
+          results = summary_path.parent
+          summary = json.loads(summary_path.read_text())
+          provenance = summary["provenance"]
+          actions = provenance["github_actions"]
+          observations = summary["observations"]
+          inputs = summary["decision_inputs"]
+
+          print(f"schema_version={summary['schema_version']}")
+          print(f"disposition={summary['disposition']}")
+          print(
+              "failure_recovery: "
+              f"exit={observations['failed_configure_exit_status']} "
+              f"failed_status={observations['failed_configure_target_status']} "
+              f"recovery_status={observations['recovery_target_status']} "
+              f"payload={observations['recovery_payload_version']}"
+          )
+          print(
+              "containment: "
+              f"unexpected_mutations={inputs['unexpected_mutations']} "
+              f"service_actions={inputs['service_actions']} "
+              f"unresolved={inputs['unresolved']} "
+              f"host_fingerprint_unchanged={str(inputs['host_fingerprint_unchanged']).lower()}"
+          )
+
+          assert summary["schema_version"] == 1
+          assert actions["run_id"] == os.environ["GITHUB_RUN_ID"]
+          assert actions["run_attempt"] == os.environ["GITHUB_RUN_ATTEMPT"]
+          assert observations["separate_unpack_configure_v2"] is True
+          assert observations["modified_conffile_preserved_through_recovery"] is True
+          assert observations["failed_configure_exit_status"] != 0
+          assert observations["failed_configure_target_status"] == "half-configured"
+          assert observations["recovery_target_status"] == "installed"
+          assert observations["recovery_payload_version"] == "3.1"
+          assert observations["purge_principal_conffile_absent"] is True
+          assert inputs["lifecycle_contract_satisfied"] is True
+          expected_disposition = (
+              "promote-product-candidate"
+              if inputs["product_candidate"]
+              else "retain-mapped-behavior"
+          )
+          assert summary["disposition"] == expected_disposition
+
+          for name, classification in summary["classifications"].items():
+              assert classification["category_total_matches_events"] is True, name
+              assert classification["category_total"] == classification["outside_access_events"], name
+
+          failed = json.loads((results / "configure-v3-fail.snapshot.json").read_text())
+          recovered = json.loads((results / "configure-v3-recover.snapshot.json").read_text())
+          purged = json.loads((results / "purge.snapshot.json").read_text())
+          assert failed["conffiles"]["etc/lf-lifecycle.conf"]["content"] == "user=preserved\n"
+          assert recovered["conffiles"]["etc/lf-lifecycle.conf"]["content"] == "user=preserved\n"
+          assert "etc/lf-lifecycle.conf" not in purged["conffiles"]
+          PY
