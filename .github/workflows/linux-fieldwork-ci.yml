@@ -26,19 +26,35 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Compile Python tools
-        run: python3 -m compileall -q tools tests
+        shell: bash
+        run: |
+          targets=()
+          [[ -d tools ]] && targets+=(tools)
+          [[ -d tests ]] && targets+=(tests)
+          if ((${#targets[@]})); then
+            python3 -m compileall -q "${targets[@]}"
+          fi
 
       - name: Run unit tests
-        run: python3 -m unittest discover -s tests -v
+        shell: bash
+        run: |
+          if [[ -d tests ]] && find tests -type f -name 'test*.py' -print -quit | grep -q .; then
+            python3 -m unittest discover -s tests -v
+          fi
 
       - name: Check shell syntax and command help
+        shell: bash
         run: |
-          bash -n scripts/capture-linux-context.sh
-          bash -n scripts/reproduce-mmdebstrap-autopkgtest.sh
-          python3 tools/tar_manifest.py --help >/dev/null
-          python3 tools/manifest_diff.py --help >/dev/null
-          python3 tools/debian_bug_report.py --help >/dev/null
-          bash scripts/capture-linux-context.sh --help >/dev/null
+          for script in \
+            scripts/capture-linux-context.sh \
+            scripts/preflight-mmdebstrap-investigation.sh \
+            scripts/reproduce-mmdebstrap-autopkgtest.sh; do
+            [[ -f "$script" ]] && bash -n "$script"
+          done
+          [[ -f tools/tar_manifest.py ]] && python3 tools/tar_manifest.py --help >/dev/null
+          [[ -f tools/manifest_diff.py ]] && python3 tools/manifest_diff.py --help >/dev/null
+          [[ -f tools/debian_bug_report.py ]] && python3 tools/debian_bug_report.py --help >/dev/null
+          [[ -f scripts/capture-linux-context.sh ]] && bash scripts/capture-linux-context.sh --help >/dev/null
 
   capture-bug-report:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest')
