@@ -37,12 +37,17 @@ diff --git a/coverage.py b/coverage.py
 diff --git a/debian/tests/testsuite b/debian/tests/testsuite
 --- a/debian/tests/testsuite
 +++ b/debian/tests/testsuite
-@@ -205,6 +205,28 @@ if [ "$ret" -ne 0 ]; then
+@@ -205,6 +205,33 @@ if [ "$ret" -ne 0 ]; then
  # subtract 10 seconds to account for the inaccuracy in measuring time
  TIMEOUT=$((10000-$(date +%s)+$TIME_BEGIN-10))
  
 +# run hook-free tests whose failures remain authoritative for the package test
-+HOOK_FREE_HARD_TESTS=$(grep-dctrl --exact-match --field Needs-Hook-Free-APT-Config true --no-field-names --show-field=Test < coverage.txt)
++grep_status=0
++HOOK_FREE_HARD_TESTS=$(grep-dctrl --exact-match --field Needs-Hook-Free-APT-Config true --no-field-names --show-field=Test < coverage.txt) || grep_status=$?
++if [ "$grep_status" -gt 1 ]; then
++	echo "failed to select hook-free hard-failure tests: grep-dctrl status $grep_status" >&2
++	exit "$grep_status"
++fi
 +if [ -z "$HOOK_FREE_HARD_TESTS" ]; then
 +	echo "no hook-free hard-failure tests were selected" >&2
 +	exit 1
