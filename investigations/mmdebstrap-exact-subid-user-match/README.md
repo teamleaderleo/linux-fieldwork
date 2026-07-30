@@ -48,8 +48,8 @@ A username containing regex-significant punctuation can also change the match se
 Use field-aware fixed exact matching:
 
 ```sh
-cut -d: -f1 /etc/subuid | grep -Fxq -- "$AUTOPKGTEST_NORMAL_USER"
-cut -d: -f1 /etc/subgid | grep -Fxq -- "$AUTOPKGTEST_NORMAL_USER"
+cut -s -d: -f1 /etc/subuid | grep -Fxq -- "$AUTOPKGTEST_NORMAL_USER"
+cut -s -d: -f1 /etc/subgid | grep -Fxq -- "$AUTOPKGTEST_NORMAL_USER"
 ```
 
 Only the two conditions change. The existing records appended on absence remain:
@@ -68,12 +68,15 @@ It requires:
 - exactly two source lines to change;
 - exact account presence to avoid an append;
 - a substring-only account to require an append;
+- a delimiter-free malformed record to require an append;
 - regex-significant input to be treated literally;
 - empty and absent files to receive a record;
 - identical behavior for subuid and subgid;
 - an immediate rerun to remain idempotent.
 
-The substring collision is the negative control that fails under the original expression.
+The substring collision and delimiter-free record are negative controls. The
+`cut -s` option suppresses lines without the required field delimiter instead
+of accepting them as account names.
 
 ## Evidence boundary
 
@@ -89,7 +92,7 @@ Tests operate only in `TemporaryDirectory` paths, apply one text patch, invoke `
 
 - source and both matching blocks were read;
 - fixed-string, whole-field and option-terminator semantics are asserted;
-- absent, empty, exact, substring and literal-metacharacter cases are covered;
+- absent, empty, exact, substring, delimiter-free and literal-metacharacter cases are covered;
 - subuid and subgid remain symmetrical;
 - append behavior and setup ordering are unchanged;
 - rerun idempotency is proved;
