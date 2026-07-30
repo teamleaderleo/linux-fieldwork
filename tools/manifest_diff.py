@@ -42,6 +42,13 @@ def filtered(entry: dict[str, Any], ignored_fields: set[str]) -> dict[str, Any]:
     }
 
 
+def field_state(entry: dict[str, Any], field: str) -> dict[str, Any]:
+    """Represent field presence separately from its JSON value."""
+    if field in entry:
+        return {"present": True, "value": entry[field]}
+    return {"present": False}
+
+
 def compare(
     left: dict[str, dict[str, Any]],
     right: dict[str, dict[str, Any]],
@@ -61,17 +68,18 @@ def compare(
         fields = sorted(
             key
             for key in set(left_entry) | set(right_entry)
-            if left_entry.get(key) != right_entry.get(key)
+            if (key in left_entry) != (key in right_entry)
+            or left_entry.get(key) != right_entry.get(key)
         )
         changed.append(
             {
                 "path": path,
                 "fields": fields,
                 "left": {
-                    field: left_entry.get(field) for field in fields
+                    field: field_state(left_entry, field) for field in fields
                 },
                 "right": {
-                    field: right_entry.get(field) for field in fields
+                    field: field_state(right_entry, field) for field in fields
                 },
             }
         )
@@ -90,6 +98,12 @@ def compare(
     }
 
 
+def printable_state(state: dict[str, Any]) -> str:
+    if not state["present"]:
+        return "<missing>"
+    return repr(state.get("value"))
+
+
 def print_text(result: dict[str, Any]) -> None:
     summary = result["summary"]
     print(
@@ -106,7 +120,8 @@ def print_text(result: dict[str, Any]) -> None:
         for field in item["fields"]:
             print(
                 f"    {field}: "
-                f"{item['left'][field]!r} -> {item['right'][field]!r}"
+                f"{printable_state(item['left'][field])} -> "
+                f"{printable_state(item['right'][field])}"
             )
 
 
