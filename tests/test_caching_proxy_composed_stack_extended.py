@@ -285,7 +285,7 @@ class CachingProxyComposedStackExtendedTest(unittest.TestCase):
                     response = raw_proxy_request(proxy, target, host)
 
             self.assertTrue(response.startswith(b"HTTP/1.0 502"), response[:80])
-            self.assertEqual(response.count(b"HTTP/"), 1, response)
+            self.assertEqual(response.count(b"\r\nHTTP/"), 0, response)
             final = new_cache / "pool/negative.deb"
             self.assertFalse(final.exists())
             self.assertEqual(origin.request_count, 1)
