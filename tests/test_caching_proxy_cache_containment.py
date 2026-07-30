@@ -137,6 +137,60 @@ class CachingProxyCacheContainmentTest(unittest.TestCase):
         self.assertEqual(QuietUpstream.requests, 0)
         self.assertFalse(outside_write.exists())
 
+    def test_candidate_rejects_cache_key_aliases_before_origin_or_mutation(self) -> None:
+        module = self.load_module(self.candidate_source)
+        oldcache = self.work / "alias-old"
+        newcache = self.work / "alias-new"
+        oldcache.mkdir()
+        newcache.mkdir()
+
+        QuietUpstream.requests = 0
+        with self.upstream_server() as upstream_port, self.proxy_server(
+            module, oldcache, newcache
+        ) as proxy_port:
+            host = f"127.0.0.1:{upstream_port}"
+            for suffix in (
+                "debian/pool/./pkg.deb",
+                "debian/pool/%2e/pkg.deb",
+                "debian//pool/pkg.deb",
+                "debian/pool/pkg.deb/",
+            ):
+                with self.subTest(suffix=suffix):
+                    status, _ = self.proxy_get(proxy_port, host, suffix)
+                    self.assertEqual(status, 400)
+
+        self.assertEqual(QuietUpstream.requests, 0)
+        self.assertEqual(list(oldcache.rglob("*")), [])
+        self.assertEqual(list(newcache.rglob("*")), [])
+
+    def test_candidate_accepts_case_insensitive_hostname_authority(self) -> None:
+        module = self.load_module(self.candidate_source)
+        oldcache = self.work / "case-old"
+        newcache = self.work / "case-new"
+        oldcache.mkdir()
+        newcache.mkdir()
+
+        QuietUpstream.requests = 0
+        with self.upstream_server() as upstream_port, self.proxy_server(
+            module, oldcache, newcache
+        ) as proxy_port:
+            host = f"LOCALHOST:{upstream_port}"
+            target_host = f"localhost:{upstream_port}"
+            status, body = self.proxy_get(
+                proxy_port,
+                host,
+                "debian/pool/main/p/pkg.deb",
+                target_host=target_host,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, QuietUpstream.body)
+        self.assertEqual(QuietUpstream.requests, 1)
+        self.assertEqual(
+            (newcache / "debian/pool/main/p/pkg.deb").read_bytes(),
+            QuietUpstream.body,
+        )
+
     def test_candidate_preserves_valid_cache_hits_and_readonly_rejection(self) -> None:
         module = self.load_module(self.candidate_source)
         oldcache = self.work / "valid-old"
@@ -179,8 +233,11 @@ class CachingProxyCacheContainmentTest(unittest.TestCase):
         candidate = self.candidate_source.read_text(encoding="utf-8")
         self.assertIn('server_address=("127.0.0.1", 8080)', candidate)
         self.assertNotIn('server_address=("", 8080)', candidate)
+        self.assertIn('components = decoded.split("/")', candidate)
+        self.assertIn('part in ("", ".", "..")', candidate)
+        self.assertIn("parsed.hostname.lower()", candidate)
         self.assertIn("candidate.is_relative_to(root)", candidate)
-        self.assertIn('self.send_error(400, "invalid cache path")', candidate)
+        self.assertIn('self.send_error(400, "unsafe proxy request target")', candidate)
 
     def load_module(self, path: pathlib.Path):
         name = f"caching_proxy_{uuid.uuid4().hex}"
@@ -221,8 +278,14 @@ class CachingProxyCacheContainmentTest(unittest.TestCase):
         return RunningServer(server, thread)
 
     @staticmethod
-    def proxy_get(proxy_port: int, host: str, suffix: str) -> tuple[int, bytes]:
-        target = f"http://{host}/{suffix}"
+    def proxy_get(
+        proxy_port: int,
+        host: str,
+        suffix: str,
+        *,
+        target_host: str | None = None,
+    ) -> tuple[int, bytes]:
+        target = f"http://{target_host or host}/{suffix}"
         connection = http.client.HTTPConnection("127.0.0.1", proxy_port, timeout=5)
         connection.putrequest("GET", target, skip_host=True)
         connection.putheader("Host", host)
