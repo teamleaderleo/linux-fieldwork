@@ -24,8 +24,8 @@ SOURCESFILTER_PATCH = (
 )
 CAPABILITY_PATCH = (
     REPOSITORY_ROOT
-    / "investigations/mmdebstrap-root-without-cap-sys-admin-scheduling"
-    / "0001-run-capability-case-without-host-apt-hooks.patch"
+    / "investigations/mmdebstrap-root-without-cap-sys-admin-hard-failure"
+    / "0001-run-hook-free-capability-case-as-hard-failure.patch"
 )
 
 
@@ -63,7 +63,7 @@ class ReproductionHarnessTest(unittest.TestCase):
 
     def test_shell_files_do_not_depend_on_executable_mode(self) -> None:
         self.assertIn(
-            'bash scripts/reproduce-mmdebstrap-autopkgtest.sh',
+            "bash scripts/reproduce-mmdebstrap-autopkgtest.sh",
             self.workflow,
         )
         self.assertIn(
@@ -148,12 +148,12 @@ class ReproductionHarnessTest(unittest.TestCase):
             self.script,
         )
 
-    def test_capability_scheduling_patch_is_applied_and_hashed(self) -> None:
+    def test_capability_hard_failure_patch_is_applied_and_hashed(self) -> None:
         self.assertTrue(CAPABILITY_PATCH.is_file())
         self.assertIn(
             'capability_patch="$repo_root/investigations/'
-            'mmdebstrap-root-without-cap-sys-admin-scheduling/'
-            '0001-run-capability-case-without-host-apt-hooks.patch"',
+            'mmdebstrap-root-without-cap-sys-admin-hard-failure/'
+            '0001-run-hook-free-capability-case-as-hard-failure.patch"',
             self.script,
         )
         self.assertIn('if [[ ! -f $capability_patch ]]', self.script)
@@ -161,9 +161,12 @@ class ReproductionHarnessTest(unittest.TestCase):
             'patch --batch --forward -p1 -d "$source_tree" -i "$capability_patch"',
             self.script,
         )
+        self.assertIn('"$source_tree/debian/tests/testsuite"', self.script)
+        self.assertIn('"$source_tree/coverage.py"', self.script)
         self.assertIn('"$source_tree/coverage.txt"', self.script)
         self.assertIn(
-            'Test scheduling override: `0001-run-capability-case-without-host-apt-hooks.patch`',
+            'Test scheduling override: '
+            '`0001-run-hook-free-capability-case-as-hard-failure.patch`',
             self.script,
         )
 
