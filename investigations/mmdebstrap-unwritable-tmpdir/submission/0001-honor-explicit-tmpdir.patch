@@ -3,8 +3,10 @@ diff --git a/mmdebstrap b/mmdebstrap
 +++ b/mmdebstrap
 @@ -6868,7 +6868,12 @@
          }
-         # since the output is a tarball, we create the rootfs in a temporary
-         # directory
+-        # since the output is a tarball, we create the rootfs in a temporary
+-        # directory
++        # create the rootfs in a temporary directory before creating or
++        # discarding the requested output
 -        $options->{root} = tempdir('mmdebstrap.XXXXXXXXXX', TMPDIR => 1);
 +        my @tempdir_options = (TMPDIR => 1);
 +        if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne '') {
