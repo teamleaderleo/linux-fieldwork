@@ -12,7 +12,15 @@ diff --git a/coverage.txt b/coverage.txt
 diff --git a/coverage.py b/coverage.py
 --- a/coverage.py
 +++ b/coverage.py
-@@ -270,10 +270,14 @@ def main():
+@@ -96,6 +96,7 @@ def parse_config(confname):
+                     "Needs-QEMU",
+                     "Needs-Root",
+                     "Needs-APT-Config",
++                    "Needs-Hook-Free-APT-Config",
+                 ]:
+                     print(f"Unknown field name {k} in test {name}")
+                     exit(1)
+@@ -270,10 +271,14 @@ def main():
              skipreason = skip(test.get("Skip-If"), dist, mode, variant, fmt)
              if skipreason:
                  tt = ("skip", skipreason)
