@@ -24,7 +24,7 @@ set +e
 TMPDIR="$unwritable_tmp" timeout 240 \
   "$source_root/mmdebstrap" \
   --dry-run \
-  --mode=unshare \
+  --mode=chrootless \
   --variant=apt \
   sid \
   /dev/null \
@@ -47,6 +47,7 @@ import sys
 path, status, requested, selected, warned = sys.argv[1:]
 data = {
     "source_revision": "6fde999741f4fe1e7bf38079acf29432ef87a35e",
+    "mode": "chrootless",
     "requested_tmpdir": requested,
     "requested_tmpdir_writable": False,
     "selected_tmpdir": selected or None,
