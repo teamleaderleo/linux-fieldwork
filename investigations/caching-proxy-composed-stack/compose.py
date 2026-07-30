@@ -13,6 +13,24 @@ REQUIRED_REPAIRS = (
     "investigations/caching-proxy-content-length/0001-reject-short-upstream-responses.patch",
 )
 
+REQUIRED_PATCH_MARKERS = {
+    REQUIRED_REPAIRS[0]: (
+        "def cache_destination(path):",
+        "os.O_WRONLY | os.O_CREAT | os.O_EXCL",
+        "0o666",
+    ),
+    REQUIRED_REPAIRS[1]: (
+        "def downstream_headers(response):",
+        'self.send_header("Connection", "close")',
+        'blocked = blocked | {"content-length"}',
+    ),
+    REQUIRED_REPAIRS[2]: (
+        'expected_length = res.getheader("Content-Length")',
+        "received != expected_length",
+        "http.client.IncompleteRead",
+    ),
+}
+
 HEADER_HELPERS = '''HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -54,12 +72,23 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def verify_repair_artifacts(repo_root: pathlib.Path) -> None:
+    for relative in REQUIRED_REPAIRS:
+        patch = repo_root / relative
+        if not patch.is_file():
+            raise RuntimeError(f"missing canonical repair: {relative}")
+        content = patch.read_text(encoding="utf-8")
+        for marker in REQUIRED_PATCH_MARKERS[relative]:
+            if marker not in content:
+                raise RuntimeError(
+                    f"canonical repair contract drifted: {relative}: {marker}"
+                )
+
+
 def compose(repo_root: pathlib.Path, destination: pathlib.Path) -> pathlib.Path:
     repo_root = repo_root.resolve()
     source = repo_root / "upstream/mmdebstrap/caching_proxy.py"
-    for relative in REQUIRED_REPAIRS:
-        if not (repo_root / relative).is_file():
-            raise RuntimeError(f"missing canonical repair: {relative}")
+    verify_repair_artifacts(repo_root)
 
     candidate_root = destination.resolve()
     candidate = candidate_root / "upstream/mmdebstrap/caching_proxy.py"
