@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the imported mmdebstrap Debian autopkgtest and retain a compact evidence set.
-set -uo pipefail
+set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source_tree="$repo_root/upstream/mmdebstrap"
