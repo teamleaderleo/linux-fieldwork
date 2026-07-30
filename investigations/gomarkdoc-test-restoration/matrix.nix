@@ -5,7 +5,7 @@ assert builtins.elem mode [
   "unset-goflags"
   "filter-goflags"
   "add-fixture"
-  "add-fixture-unset-goflags"
+  "add-fixture-filter-goflags"
 ];
 
 let
@@ -16,13 +16,13 @@ let
   lib = pkgs.lib;
   addFixture = builtins.elem mode [
     "add-fixture"
-    "add-fixture-unset-goflags"
+    "add-fixture-filter-goflags"
   ];
-  unsetGoFlags = builtins.elem mode [
-    "unset-goflags"
-    "add-fixture-unset-goflags"
+  unsetGoFlags = mode == "unset-goflags";
+  filterGoFlags = builtins.elem mode [
+    "filter-goflags"
+    "add-fixture-filter-goflags"
   ];
-  filterGoFlags = mode == "filter-goflags";
 in
 pkgs.gomarkdoc.overrideAttrs (old: {
   doCheck = true;
