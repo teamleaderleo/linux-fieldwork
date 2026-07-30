@@ -1,101 +1,158 @@
-# make_mirror signal exit semantics
+# make_mirror signal and proxy ownership
 
-## In simple words
+Tracking: issues #157 and #221; parent repair PR #205; current carrier PR #224.
 
-`make_mirror.sh` used cleanup-only traps for ordinary exit and for `INT`/`TERM`. A parent-only termination signal could therefore run cleanup and then resume the long mirror workflow instead of exiting with the signal-derived status.
+## TL;DR
 
-This candidate separates normal exit cleanup from signal handling, closes both proxy launch/PID-registration intervals, stops and waits for either proxy child, tracks QEMU temporary cleanup separately, preserves a cache that has already become the active published cache, and exits with 130, 131, or 143 after cleanup.
+`make_mirror.sh` used cleanup-only signal traps and started each proxy in two shell steps: launch the child, then save `$!`. A signal accepted between those steps could run cleanup before the new child had an owner.
 
-## Canonical records
+The candidate records the first INT/QUIT/TERM during each launch interval, registers the child PID, restores terminating traps, then dispatches the recorded status through one owner-cleanup path. Independent review also repaired the proof boundary: launch one has no cache-deletion authority before readiness, while launch two owns a private cache and temporary QEMU state.
 
-- Issues: #157 and launch-window follow-up #221
-- Imported source: `upstream/mmdebstrap/make_mirror.sh`
-- Candidate patch: `0001-preserve-signal-exit-status.patch`
-- Regression: `tests/test_make_mirror_signal_exit.py`
+The exact head must pass repository CI after the ownership-state regression. Full mirror execution, proxy escalation, and the subshell-local `update_cache()` trap remain separate.
+
+## Explain like I'm five
+
+The script starts a helper and writes down its number. A stop signal could arrive after the helper starts but before the number is written down.
+
+The repair temporarily writes “stop requested,” records the helper's number, then stops and waits for that exact helper.
+
+There are also two different cleanup moments:
+
+```text
+launch one, before readiness:
+  proxy exists
+  new cache marker does not exist
+  stop owner + proxy
+  do not claim cache deletion
+
+launch two, during QEMU work:
+  proxy exists
+  private cache is already owned
+  stop owner + proxy
+  delete private cache and active temporary state
+```
+
+## Why care
+
+An unowned proxy can retain port 8080, interfere with an immediate rerun, and leave a mirror command reporting cancellation while its child survives.
+
+Cleanup overclaims are also dangerous. Calling cache deletion before the marker exists can fail or hide retained state. A test that forces post-readiness ownership into the first launch can pass while proving a lifecycle the product never has.
+
+## Intent and precedent
+
+The source comment promises that cancellation must never leave the active cache unusable. The existing two-cache design distinguishes an active published cache from a private candidate cache.
+
+The candidate therefore separates:
+
+- child ownership and reaping;
+- private cache deletion;
+- QEMU temporary-directory cleanup;
+- active published-cache preservation;
+- signal-derived exit status.
+
+This is a design choice inferred from the source lifecycle and existing cache marker, not a claim about external upstream intent.
 
 ## Source boundary
 
-The source starts `caching_proxy.py`, stores its PID, and installs:
+- imported source: `upstream/mmdebstrap/make_mirror.sh`
+- candidate patch: `0001-preserve-signal-exit-status.patch`
+- original regression: `tests/test_make_mirror_signal_exit.py`
+- ownership-state regression: `tests/test_make_mirror_proxy_launch_ownership.py`
+
+The original source starts each proxy with:
 
 ```sh
-trap 'kill "$PROXYPID" || :' EXIT INT TERM
+./caching_proxy.py ... &
+PROXYPID=$!
 ```
 
-After readiness it changes that to:
-
-```sh
-trap 'kill "$PROXYPID" || :;cleanup_newcachedir' EXIT INT TERM
-```
-
-The QEMU path installs a third cleanup-only signal trap that also removes its temporary directory, then a fourth cleanup-only trap after normal QEMU completion. None of those signal actions exits or re-raises. Normal proxy stops also use raw `kill` without `wait` or clearing the stored PID.
+Before first readiness, no `mmdebstrapcache` marker exists. After readiness the script creates that marker and owns cleanup of the private new cache. The QEMU relaunch occurs later under that owned state.
 
 ## Candidate
 
-The candidate introduces:
+The patch introduces:
 
-- `stop_proxy()`: signal the child if alive, `wait` for it even if already exited, and clear the PID;
-- `cleanup_owner()`: call `stop_proxy()`, remove an active QEMU temporary directory when flagged, and remove the incomplete new cache only while it is still private;
-- active-symlink inspection before cache deletion, so a cache already published through `shared/cache` survives a late signal;
-- `signal_exit STATUS`: disable all traps, call `cleanup_owner()` once, and exit with the conventional signal-derived status;
-- `launch_proxy()`: install temporary signal-recording traps, start the child, register `$!`, restore the terminating traps, and dispatch any signal recorded during registration;
-- separate traps for `EXIT`, `INT`, `QUIT`, and `TERM`;
-- reuse of `stop_proxy()` at both normal proxy-stop points;
-- state flags that keep ordinary proxy shutdown and completed-QEMU cleanup separate from failed-cache deletion.
+- `record_signal STATUS`: retain the first signal accepted during launch registration;
+- `launch_proxy`: install recording traps, launch, save `$!`, restore terminating traps, dispatch any recorded status;
+- `stop_proxy`: signal if alive, always wait, and clear the PID;
+- `cleanup_owner`: stop the proxy, remove active QEMU temporary state when owned, and delete only a private unpublished cache when owned;
+- `signal_exit STATUS`: clear traps, clean once, and exit 130, 131, or 143;
+- active-symlink inspection so a cache already published through `shared/cache` survives late cleanup.
 
-Separating child shutdown from cache cleanup is essential: normal successful mirror completion stops the first proxy before atomically switching the finished cache into place. Calling failure cleanup from that normal stop point would delete the result. Clearing `PROXYPID` is also required so a later EXIT path cannot act on a reused PID.
+Normal successful proxy stops use `stop_proxy()` without invoking failed-cache cleanup.
 
-After publication, `readlink ./shared/cache` equals `$newcache`. Cleanup then clears its private-cache ownership flag and leaves the active cache intact. Before publication the symlink still identifies the old cache, so signal cleanup removes the incomplete new cache.
+## Reproduction
 
-Cleanup errors are contained with `|| :` inside `cleanup_owner()`. This protects a signal-derived status, and it also deliberately preserves the primary command failure on ordinary EXIT paths instead of allowing a later cleanup failure to replace it. The tradeoff is that a failed cleanup can leave retained cache or temporary state while the original status is reported; retained cleanup evidence therefore remains part of review.
+Focused commands:
 
-## Negative control and candidate matrix
+```sh
+python3 -m unittest -v tests/test_make_mirror_signal_exit.py
+python3 -m unittest -v tests/test_make_mirror_proxy_launch_ownership.py
+```
 
-The regression applies the patch to an exact temporary source copy and checks shell syntax. It then extracts the exact top-level trap/function block into reduced real `/bin/sh` harnesses.
+Both tests apply the exact patch to a disposable source copy and check `/bin/sh -n`.
 
-A parent-PID-only `SIGTERM` is delivered while the shell waits for a foreground child:
+### Original matrix
 
-- baseline post-readiness trap: cleanup runs, later work executes, EXIT cleanup runs a second time, and the owner exits 0;
-- candidate: cleanup runs once, later work is absent, the owner exits 143, and the proxy child is reaped.
+The original regression proves:
 
-An unsignaled candidate rerun must finish 0, execute the later marker, stop and reap the proxy, and clean exactly once through the ordinary EXIT path.
+- cleanup-only baseline resumes and exits 0 after parent-only TERM;
+- candidate exits 143, omits later work, stops and reaps the proxy;
+- ordinary rerun exits 0 and cleans through EXIT once;
+- a cache already published through `shared/cache` is preserved;
+- both PID-registration intervals record owner-only TERM and later dispatch it.
 
-A late-cleanup harness creates `shared/cache -> cache.B`, marks `cache.B` as the candidate's published cache, and invokes the exact cleanup function. The published directory must remain, failed-cache cleanup must stay uncalled, and ownership must transition to `CLEANUP_PROXY_CACHE=no`.
+### Ownership-state repair
 
-The source assertion requires all four top-level cleanup-only signal traps and all raw top-level `kill $PROXYPID` stops to disappear while leaving the unrelated subshell-local `update_cache()` trap outside this patch. It also requires QEMU temporary cleanup state and active-cache inspection.
+The additional regression instruments the exact candidate functions but preserves the real states:
 
-Two deterministic launch-window controls instrument the exact `launch_proxy()` seam without changing its signal logic. Each control:
+- launch one: `CLEANUP_PROXY_CACHE=no`, no cache marker, one owner cleanup, one proxy stop, zero cache-deletion calls;
+- launch two: `CLEANUP_PROXY_CACHE=yes`, private cache state present, one owner cleanup, two proxy stops including the completed first proxy, one cache-deletion call;
+- both signaled cases exit 143, omit later work, and leave no proxy;
+- both immediate unsignaled reruns exit 0 and preserve the same ownership-specific cleanup counts;
+- source-order assertions require cache ownership to change only after first launch/readiness and before the QEMU relaunch.
 
-1. stops the owner after child creation and before `PROXYPID=$!`;
-2. waits for the child executable to become ready;
-3. sends TERM only to the stopped owner;
-4. resumes the owner so the temporary trap records TERM;
-5. requires PID registration, trap restoration, one cleanup, status 143, no later marker, and no surviving child;
-6. immediately reruns the one-launch or two-launch path without a signal and requires status 0.
+The test counts owner cleanup and proxy stop separately from cache deletion. “Cleanup once” now means one `cleanup_owner()` dispatch, not that every lifecycle owns the same resources.
 
-The second control completes and clears a first proxy before stopping at the second launch, reproducing the QEMU relaunch ownership state.
+## Results
 
-## Execution record
+Earlier exact heads established the parent repair and active-cache preservation:
 
-The first exact-head CI run `30557147115` exposed two regression-carrier defects: the candidate source tree collided with a runtime harness directory, and the source assertion exposed retained top-level QEMU trap text. A second run `30577299080` proved that malformed unified-diff hunk counts had caused GNU `patch` to accept an initial prefix while ignoring trailing hunks as garbage.
+- Linux Fieldwork CI `30577821799`: repaired patch carrier;
+- Linux Fieldwork CI `30578032937`: code/test head with published-cache ownership repair.
 
-Helper G corrected every retained hunk count, separated source-tree and runtime paths, restored strong assertions for every top-level cleanup-only trap, and reran the exact patch. Linux Fieldwork CI run `30577821799` passed that repaired carrier.
+Issue #221 identified the remaining launch-to-PID intervals. The first current carrier head added deterministic stopped-owner controls but modeled cache-deletion ownership as `yes` for both launches. Independent review classified that as a test-fidelity overclaim and added the ownership-specific regression on the successor head.
 
-Complete-diff review then found a product lifecycle gap after atomic cache publication: the cleanup flag still owned the new cache until final trap removal. The candidate now checks the active cache symlink before deletion and includes a focused post-publication preservation test.
+Exact-head hosted CI after that repair remains authoritative.
 
-Code-and-test head `113558f6a211196aff0973e941013ec034079bad` passed Linux Fieldwork CI run `30578032937`. The gate covers exact patch application, complete shell syntax, parent-only SIGTERM status 143, one cleanup, proxy reaping, omitted later work, unsignaled status-0 rerun, removal of every top-level cleanup-only trap, and published-cache preservation.
+## Interpretation
 
-Follow-up #221 found that both launches still used a raw asynchronous command followed by a separate `PROXYPID=$!` assignment. A signal accepted between those commands could run cleanup before the new child was owned. The retained patch now routes both launches through `launch_proxy()` and the focused suite includes the two stopped-owner controls above. The current exact-head hosted receipt is pending.
+**Demonstrated by existing tests:** cleanup-only traps can resume later work and report false success; the candidate terminates with signal-derived status and reaps the proxy.
 
-## Cleanup and safety
+**Product repair:** first-signal recording closes both child-launch/PID-registration intervals.
 
-The dynamic harnesses use only disposable directories, symlinks, and `sleep` children. They send signals only to subprocesses they created, wait for every owner, and check that the candidate proxy PID no longer exists. No mirror, APT operation, network, root privilege, package mutation, or persistent cache is used.
+**Test repair:** owner cleanup is common to both launches; cache deletion belongs only to the later owned state.
+
+**Open question:** full mirror execution may expose additional timing or retained-state behavior not represented by reduced shell harnesses.
 
 ## Evidence boundary
 
-The reduced harness proves top-level shell semantics, proxy ownership, private-cache deletion, and active-cache preservation without running the multi-hour mirror build. The full script has an additional subshell-local trap inside `update_cache()`; that remains separate because it runs in pipeline/subshell scope and needs its own process-map review.
+The regressions use disposable directories, symlinks, logs, and `sleep` children. They do not run a mirror, APT, QEMU, network listener, package operation, or privileged mount.
 
-Signal-derived exit codes follow the conventional `128 + signal` mapping. This candidate does not attempt to re-raise the original signal at the kernel level. Parent-only delivery can remain deferred while the shell waits for an unrelated foreground command, and no escalation policy is added for a proxy that ignores TERM.
+The patch does not add escalation for a proxy that ignores TERM. Parent-only delivery may still be deferred while the shell waits for an unrelated foreground command. Signal termination is represented as conventional `128 + signal` exit status rather than kernel-level re-raising.
 
-## Disposition
+The subshell-local trap inside `update_cache()` remains outside this top-level owner repair.
 
-HOLD for complete current-main review and the exact-head hosted receipt. No Debian or external upstream contact is included or authorized.
+## Next step
+
+The reviewer is deciding whether the five-file current candidate is sufficiently proved to merge locally after:
+
+- exact-head repository CI;
+- both focused regressions;
+- complete patch/source review;
+- confirmation that launch-one claims do not imply cache deletion;
+- cleanup/rerun receipt and external-contact state.
+
+## Authority
+
+Internal Linux Fieldwork work only. No Debian or other external issue, email, patch, merge request, comment, or review is authorized or included.
