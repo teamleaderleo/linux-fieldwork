@@ -24,7 +24,6 @@ SERVICE_NAMES = {
     "deb-systemd-helper", "start-stop-daemon", "initctl",
 }
 OPEN_NAMES = {"open", "openat", "openat2"}
-TWO_PATH = {"rename", "renameat", "renameat2", "link", "linkat"}
 SINGLE_AT_PATH = {
     "openat", "openat2", "mkdirat", "unlinkat", "mknodat", "fchownat",
     "fchmodat", "fchmodat2", "faccessat", "faccessat2", "newfstatat",
@@ -44,7 +43,7 @@ def quoted(line: str) -> list[str]:
 
 
 def result_state(line: str) -> tuple[bool, str]:
-    match = re.search(r"=\s+([^\s]+)(?:\s|$)", line)
+    match = re.search(r"=\s+(.+?)\s*$", line)
     if not match:
         return False, "unknown"
     value = match.group(1)
