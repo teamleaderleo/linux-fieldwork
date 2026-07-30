@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirror.sh
 --- a/upstream/mmdebstrap/make_mirror.sh
 +++ b/upstream/mmdebstrap/make_mirror.sh
-@@ -335,5 +335,39 @@ if [ "$FORCE_UPDATE" != "yes" ] && [ -e "$oldmirrordir/dists/$DEFAULT_DIST/InRelease" ]; then
+@@ -335,5 +335,43 @@ if [ "$FORCE_UPDATE" != "yes" ] && [ -e "$oldmirrordir/dists/$DEFAULT_DIST/InRelease" ]; then
  fi
  
 +PROXYPID=
@@ -24,7 +24,11 @@ diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirro
 +    cleanuptmpdir || :
 +  fi
 +  if [ "${CLEANUP_PROXY_CACHE:-no}" = yes ]; then
-+    cleanup_newcachedir || :
++    if [ -L ./shared/cache ] && [ "$(readlink ./shared/cache)" = "$newcache" ]; then
++      CLEANUP_PROXY_CACHE=no
++    else
++      cleanup_newcachedir || :
++    fi
 +  fi
 +}
 +
@@ -42,7 +46,7 @@ diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirro
 +trap 'signal_exit 130' INT
 +trap 'signal_exit 131' QUIT
 +trap 'signal_exit 143' TERM
-@@ -345,10 +379,9 @@ for i in $(seq 10); do
+@@ -345,10 +383,9 @@ for i in $(seq 10); do
  done
  if [ ! -s "$newmirrordir/dists/$DEFAULT_DIST/InRelease" ]; then
    echo "failed to start proxy" >&2
@@ -54,14 +58,14 @@ diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirro
 +CLEANUP_PROXY_CACHE=yes
  
  mkdir -p "$newcachedir"
-@@ -406,5 +439,5 @@ for dist in oldstable stable testing unstable; do
+@@ -406,5 +443,5 @@ for dist in oldstable stable testing unstable; do
  done
  
 -kill $PROXYPID
 +stop_proxy
  
  # Create some symlinks so that we can trick apt into accepting multiple apt
-@@ -454,11 +487,10 @@ if [ "$HAVE_QEMU" = "yes" ]; then
+@@ -454,11 +491,10 @@ if [ "$HAVE_QEMU" = "yes" ]; then
    done
    if [ ! -s "$newmirrordir/dists/$DEFAULT_DIST/InRelease" ]; then
      echo "failed to start proxy" >&2
@@ -74,7 +78,7 @@ diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirro
 +  CLEANUP_TMPDIR=yes
  
    pkgs=perl-doc,systemd-sysv,perl,arch-test,fakechroot,fakeroot,mount,uidmap,qemu-user-binfmt,dpkg-dev,mini-httpd,libdevel-cover-perl,libtemplate-perl,debootstrap,procps,apt-cudf,aspcud,python3,libcap2-bin,gpg-from-sq,debootstrap,distro-info-data,iproute2,ubuntu-keyring,apt-utils,squashfs-tools-ng,genext2fs,linux-image-generic,passwd,e2fsprogs,uuid-runtime
-@@ -561,6 +593,6 @@ if [ "$HAVE_QEMU" = "yes" ]; then
+@@ -561,6 +597,6 @@ if [ "$HAVE_QEMU" = "yes" ]; then
      "$mirror"
  
 -  kill $PROXYPID
