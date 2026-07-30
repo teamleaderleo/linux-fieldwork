@@ -1,12 +1,15 @@
 diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh candidate/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh
 --- base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh	2026-07-30 15:29:41.261301911 +0000
 +++ candidate/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh	2026-07-30 15:31:59.065305058 +0000
-@@ -8,13 +8,38 @@
+@@ -8,13 +8,41 @@
  	set -x
  fi
  
 -rootdir="$1"
 +rootdir="$(realpath -e -- "$1")"
++case "$rootdir" in
++	/) echo "E: refusing filesystem root as generated root" >&2; exit 1 ;;
++esac
 +marker="$rootdir/run/mmdebstrap/file-mirror-automount"
  
 -if [ ! -e "$rootdir/run/mmdebstrap/file-mirror-automount" ]; then
@@ -43,7 +46,7 @@ diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh ca
  
  case $MMDEBSTRAP_MODE in
  	root|unshare)
-@@ -23,19 +48,8 @@
+@@ -23,19 +51,8 @@
  		echo "removing the following directories:" >&2 ;;
  esac
  
@@ -69,12 +72,15 @@ diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh ca
 diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh candidate/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh
 --- base/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh	2026-07-30 15:31:59.065305058 +0000
 +++ candidate/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh	2026-07-30 15:31:59.065305058 +0000
-@@ -6,31 +6,73 @@
+@@ -6,31 +6,76 @@
  	set -x
  fi
  
 -rootdir="$1"
 +rootdir="$(realpath -e -- "$1")"
++case "$rootdir" in
++	/) echo "E: refusing filesystem root as generated root" >&2; exit 1 ;;
++esac
 +
 +resolve_contained_target() {
 +	canonical_source="$(realpath -e -- "$1")" || return 1
@@ -155,7 +161,7 @@ diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh candid
  	done
  
  # process all files given via --include
-@@ -44,30 +86,26 @@
+@@ -44,30 +89,26 @@
  	esac
  	# undo escaping
  	pkg="$(printf '%s' "$pkg" | sed 's/%2C/,/g; s/%25/%/g')"
