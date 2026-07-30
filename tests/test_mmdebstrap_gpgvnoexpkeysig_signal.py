@@ -254,7 +254,8 @@ raise SystemExit(int(os.environ["FAKE_GPGV_STATUS"]))
             self.assertIn("GPGV_PID=", new)
             self.assertIn('if wait "$GPGV_PID"; then', new)
             self.assertIn('kill -"$signum" "$GPGV_PID"', new)
-            self.assertIn("trap - EXIT HUP INT TERM", new)
+            self.assertIn("trap - EXIT", new)
+            self.assertIn("trap '' HUP INT TERM", new)
             self.assertIn("FILTER_PID=", new)
 
 
