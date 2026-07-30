@@ -6,6 +6,7 @@ import http.server
 import importlib.util
 import pathlib
 import shutil
+import stat
 import subprocess
 import tempfile
 import threading
@@ -69,6 +70,15 @@ class CachingProxyAtomicPublicationTest(unittest.TestCase):
         )
         self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
 
+    @staticmethod
+    def baseline_creation_mode(directory: pathlib.Path) -> int:
+        reference = directory / "mode-reference"
+        with reference.open(mode="wb"):
+            pass
+        mode = stat.S_IMODE(reference.stat().st_mode)
+        reference.unlink()
+        return mode
+
     def test_baseline_serves_a_partially_published_cache_file(self) -> None:
         module = self.load_module(self.baseline_source)
         oldcache = self.work / "baseline-old"
@@ -108,6 +118,7 @@ class CachingProxyAtomicPublicationTest(unittest.TestCase):
         newcache = self.work / "candidate-new"
         oldcache.mkdir()
         newcache.mkdir()
+        expected_mode = self.baseline_creation_mode(newcache)
         final_path = newcache / "pool/pkg.deb"
 
         with self.upstream_server() as upstream, self.proxy_server(
@@ -134,6 +145,27 @@ class CachingProxyAtomicPublicationTest(unittest.TestCase):
             self.assertEqual(body, FULL_BODY)
         self.assertEqual(upstream.request_count, 2)
         self.assertEqual(final_path.read_bytes(), FULL_BODY)
+        self.assertEqual(stat.S_IMODE(final_path.stat().st_mode), expected_mode)
+        self.assertEqual(list(final_path.parent.glob(".pkg.deb.*")), [])
+
+    def test_candidate_preserves_mode_for_old_cache_copy(self) -> None:
+        module = self.load_module(self.candidate_source)
+        oldcache = self.work / "copy-old"
+        newcache = self.work / "copy-new"
+        (oldcache / "pool").mkdir(parents=True)
+        newcache.mkdir()
+        (oldcache / "pool/pkg.deb").write_bytes(FULL_BODY)
+        expected_mode = self.baseline_creation_mode(newcache)
+        final_path = newcache / "pool/pkg.deb"
+
+        with self.proxy_server(module, oldcache, newcache) as proxy_port:
+            status, content_length, body = self.proxy_get(proxy_port, 1)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(content_length, len(FULL_BODY))
+        self.assertEqual(body, FULL_BODY)
+        self.assertEqual(final_path.read_bytes(), FULL_BODY)
+        self.assertEqual(stat.S_IMODE(final_path.stat().st_mode), expected_mode)
         self.assertEqual(list(final_path.parent.glob(".pkg.deb.*")), [])
 
     def test_candidate_removes_temporary_file_after_writer_failure(self) -> None:
@@ -155,6 +187,9 @@ class CachingProxyAtomicPublicationTest(unittest.TestCase):
         self.assertEqual(baseline.count('newpath.open(mode="wb")'), 2)
         self.assertNotIn('newpath.open(mode="wb")', candidate)
         self.assertEqual(candidate.count("cache_destination(newpath)"), 2)
+        self.assertIn("os.O_WRONLY | os.O_CREAT | os.O_EXCL", candidate)
+        self.assertIn("0o666", candidate)
+        self.assertNotIn("tempfile.mkstemp", candidate)
         self.assertIn("os.replace(temporary, path)", candidate)
         self.assertIn("temporary.unlink(missing_ok=True)", candidate)
 
