@@ -124,9 +124,21 @@ fi
 perlcritic --severity 4 --verbose 8 "$source_root/mmdebstrap"
 pod2man "$source_root/mmdebstrap" >/dev/null
 sh -n "$source_root/tests/fail-with-unwritable-tmpdir"
-shellcheck --exclude=SC2016 "$source_root/tests/fail-with-unwritable-tmpdir"
+
+# Upstream tests are templates. coverage.py substitutes these placeholders before
+# ShellCheck and shfmt, so reproduce that step here.
+rendered_test="$runtime_root/fail-with-unwritable-tmpdir.rendered.sh"
+sed \
+  -e "s|{{ CMD }}|$source_root/mmdebstrap|g" \
+  -e 's|{{ MODE }}|chrootless|g' \
+  -e 's|{{ VARIANT }}|apt|g' \
+  -e 's|{{ DIST }}|sid|g' \
+  -e 's|{{ MIRROR }}|http://127.0.0.1/debian|g' \
+  "$source_root/tests/fail-with-unwritable-tmpdir" >"$rendered_test"
+sh -n "$rendered_test"
+shellcheck --exclude=SC2050,SC2194,SC2016 "$rendered_test"
 shfmt --posix --binary-next-line --case-indent --indent 2 --simplify -d \
-  "$source_root/tests/fail-with-unwritable-tmpdir"
+  "$rendered_test"
 
 # Confirm the reviewed block is exactly the small, readable form under review.
 python3 - "$source_root/mmdebstrap" <<'PY'
@@ -195,8 +207,8 @@ data = {
         "reviewed_block_exact_form": "passed",
         "perlcritic_severity_4": "passed",
         "pod": "passed",
-        "regression_test_shellcheck": "passed",
-        "regression_test_shfmt": "passed",
+        "rendered_regression_test_shellcheck": "passed",
+        "rendered_regression_test_shfmt": "passed",
         "maximum_code_line_length": int(max_line_length),
         "perltidy_version_recorded": perltidy_version,
         "whole_file_perltidy": "not compared across formatter versions",
