@@ -32,18 +32,21 @@ jobs:
           path.write_text(text.replace(old, new, 1))
           PY
 
-      - name: Validate source and focused contract
+      - name: Capture source and focused validation
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
           {
             perl -c upstream/mmdebstrap/mmdebstrap
             bash -n investigations/mmdebstrap-chrootless-env/run.sh
             python3 -m unittest tests.test_mmdebstrap_chrootless_tmpdir -v
-          } |& tee investigations/mmdebstrap-chrootless-target-tmpdir/focused-test.log
-          printf '0\n' > investigations/mmdebstrap-chrootless-target-tmpdir/focused-test.status
+          } > investigations/mmdebstrap-chrootless-target-tmpdir/focused-test.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > investigations/mmdebstrap-chrootless-target-tmpdir/focused-test.status
+          cat investigations/mmdebstrap-chrootless-target-tmpdir/focused-test.log
 
-      - name: Commit corrected candidate
+      - name: Commit corrected candidate and diagnostics
         shell: bash
         run: |
           set -euo pipefail
