@@ -28,13 +28,25 @@ jobs:
         run: |
           perl -c upstream/mmdebstrap/mmdebstrap
           bash -n investigations/mmdebstrap-chrootless-env/run.sh
-      - name: Run focused regression
+          bash -n investigations/mmdebstrap-chrootless-env/review-tmpdir-probe.sh
+      - name: Run candidate regression
+        id: candidate
+        continue-on-error: true
         run: bash investigations/mmdebstrap-chrootless-env/run.sh
+      - name: Probe target temporary-directory containment
+        id: tmpdir
+        continue-on-error: true
+        run: bash investigations/mmdebstrap-chrootless-env/review-tmpdir-probe.sh
       - name: Upload compact evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pr-57-chrootless-env-diagnostic
-          path: investigations/mmdebstrap-chrootless-env/results/
+          path: |
+            investigations/mmdebstrap-chrootless-env/results/
+            investigations/mmdebstrap-chrootless-env/tmpdir-review-results/
           if-no-files-found: warn
           retention-days: 14
+      - name: Preserve diagnostic status
+        if: steps.candidate.outcome != 'success' || steps.tmpdir.outcome != 'success'
+        run: exit 1
