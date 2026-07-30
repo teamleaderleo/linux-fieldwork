@@ -23,7 +23,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +    return "?"
 +
 +
-@@ -189,6 +208,12 @@ def _translate_pattern(pattern, extended):
+@@ -189,5 +208,11 @@ def _translate_pattern(pattern, extended):
  
              escaped = pattern[index + 1]
 +            if escaped == "0":
