@@ -54,7 +54,7 @@ git diff --check main...2459b2013d48560e446bb4c90b8658e93d559e10
 clean
 ```
 
-GitHub Actions run `30578703913` passed the repository CI on PR head `0393c4337e5565d949af4e2d229d30b7f7848319`. Live `main` advanced afterward; this cross-review record update triggers a fresh pull-request merge-ref run against the newer base.
+GitHub Actions run `30578703913` passed the repository CI on PR head `0393c4337e5565d949af4e2d229d30b7f7848319`. Helper B's cross-review record update produced exact head `966313f5b176f96bc96d3416520a2e3c024d0701`; current-main merge-ref run `30579774144` passed compilation, the complete repository test suite, and shell/help gates.
 
 The optimized run independently launches both normal and `python -O` subprocess validation for malformed typed input. Missing phase/classification inventories, missing artifacts, leftover phase-start records, boolean and string numerics, negative values, NaN, infinity, unresolved evidence, and comparison drift have focused controls.
 
@@ -71,7 +71,7 @@ No workflow, package fixture, imported source, hosted result, or external-contac
 
 ## Cleanup and rerun
 
-Test-created Python cache directories were removed. Both focused suites were rerun from the extracted current-main candidate under normal and optimized Python with the same 15 passing tests.
+Test-created Python cache directories were removed. Both focused suites were rerun from the extracted current-main candidate under normal and optimized Python with the same 15 passing tests. The later merge-ref CI ran from a fresh checkout against live `main` and passed.
 
 ## Composition and overlap
 
@@ -90,16 +90,16 @@ PR #115 and PR #129 become redundant carriers only after the current-main candid
 
 ## Disposition
 
-`HOLD` pending the fresh live-main merge-ref run triggered by this review update.
+`MERGE LOCALLY`
 
-The evidence-contract slice remains internally coherent, has a complete reviewed diff, passes focused normal and optimized gates, and changes internal evidence tooling only. GitHub reports the draft mergeable while live `main` is seven commits ahead of the composed parent.
+The evidence-contract slice is internally coherent, has a complete reviewed diff, passes focused normal and optimized gates, passes a fresh live-main merge-ref run, and changes internal evidence tooling only.
 
 ## Remaining caveats
 
 - Schema version 4 still needs a hosted full-matrix receipt before replacing the retained schema-3 artifact.
 - This slice deliberately omits the historical runner and package fixture.
 - The lifecycle, D-Bus, target-manifest, maintainer-script PATH, and broad scout carriers keep the dispositions above.
-- The Packet I issue receipt named merge commit `c18832005ee4c43e9bfd1516648e1fa038542309`; the live PR head later advanced to `0393c4337e5565d949af4e2d229d30b7f7848319` before this cross-review update.
+- The Packet I issue receipt named merge commit `c18832005ee4c43e9bfd1516648e1fa038542309`; the live PR head later advanced to `0393c4337e5565d949af4e2d229d30b7f7848319` before the cross-review head `966313f5b176f96bc96d3416520a2e3c024d0701`.
 
 ## External-contact state
 
@@ -107,4 +107,4 @@ No upstream issue, email, patch, merge request, comment, or review was sent or a
 
 ## Next human decision
 
-Inspect the fresh current-main merge-ref run. If it passes, restore `MERGE LOCALLY`, merge the evidence-contract slice, then retire PRs #115 and #129. Keep the other LF-02 carriers at their recorded repair or hold boundaries.
+Merge the evidence-contract slice locally, then retire PRs #115 and #129. Keep the other LF-02 carriers at their recorded repair or hold boundaries.
