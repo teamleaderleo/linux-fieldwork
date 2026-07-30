@@ -1,0 +1,24 @@
+diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
+--- a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
++++ b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
+@@ -321,9 +321,22 @@ WORKDIR=
+ 
+ cleanup() {
+-  test -n "$WORKDIR" && rm -Rf "$WORKDIR"
++  test -z "$WORKDIR" || rm -Rf "$WORKDIR" || :
+ }
+ 
+-trap cleanup EXIT INT TERM QUIT
++signal_exit() {
++  status=$1
++  trap - EXIT INT TERM QUIT
++  cleanup
++  exit "$status"
++}
++
++trap cleanup EXIT
++trap 'signal_exit 130' INT
++trap 'signal_exit 131' QUIT
++trap 'signal_exit 143' TERM
+ 
+ WORKDIR=$(mktemp -d)
