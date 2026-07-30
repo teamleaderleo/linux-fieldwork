@@ -5,6 +5,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 source_root="$repo_root/upstream/mmdebstrap"
 fixture_src="$repo_root/programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture"
 result_dir="$repo_root/investigations/lf-02-privileged-host-integrations/results"
+summary_script="$repo_root/investigations/lf-02-privileged-host-integrations/summarize_results.py"
 runtime="${RUNNER_TEMP:-/tmp}/lf-02-privileged-host-integrations"
 fixture_work="$runtime/fixture"
 package="$runtime/lf-fieldwork-probe_1.0_all.deb"
@@ -202,86 +203,15 @@ trace_case() {
         > "$result_dir/$label-dbus-connect.txt" || true
     grep -hF 'org.freedesktop.login1' "$result_dir/$label.trace"* \
         > "$result_dir/$label-logind-messages.txt" || true
-    grep -hE 'SCM_RIGHTS|AccessDenied|Permission denied' "$result_dir/$label.trace"* \
+    grep -hE 'SCM_RIGHTS|org\.freedesktop\.DBus\.Error\.AccessDenied|AccessDenied' \
+        "$result_dir/$label.trace"* \
         > "$result_dir/$label-dbus-result.txt" || true
     grep -hE 'execve\("/usr/lib/needrestart/dpkg-status"|/run/needrestart/unpacked' "$result_dir/$label.trace"* \
         > "$result_dir/$label-needrestart.txt" || true
 }
 
 write_summary() {
-    python3 - "$result_dir" <<'PY'
-import hashlib
-import json
-import pathlib
-import re
-import sys
-
-root = pathlib.Path(sys.argv[1])
-labels = ["default-root", "no-inhibit-root", "isolated-root"]
-
-def text(name: str) -> str:
-    path = root / name
-    return path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
-
-def marker_state(label: str, when: str) -> dict[str, object]:
-    value = text(f"{label}-marker-{when}.txt")
-    present = "present=1" in value
-    digest = None
-    for line in value.splitlines():
-        if re.fullmatch(r"[0-9a-f]{64}  .*", line):
-            digest = line.split()[0]
-            break
-    return {"present": present, "sha256": digest, "raw": value.splitlines()[:4]}
-
-cases = {}
-for label in labels:
-    before = marker_state(label, "before")
-    after = marker_state(label, "after")
-    dbus_connect = text(f"{label}-dbus-connect.txt")
-    logind = text(f"{label}-logind-messages.txt")
-    dbus_result = text(f"{label}-dbus-result.txt")
-    needrestart = text(f"{label}-needrestart.txt")
-    cases[label] = {
-        "exit": int(text(f"{label}.status").strip()),
-        "marker_before": before,
-        "marker_after": after,
-        "marker_changed": before != after,
-        "system_bus_connect": "/dbus/system_bus_socket" in dbus_connect,
-        "logind_inhibit_message": "Inhibit" in logind and "org.freedesktop.login1" in logind,
-        "inhibitor_fd_received": "SCM_RIGHTS" in dbus_result,
-        "logind_access_denied": "AccessDenied" in dbus_result or "Permission denied" in dbus_result,
-        "needrestart_exec": "/usr/lib/needrestart/dpkg-status" in needrestart,
-        "needrestart_marker_syscall": "/run/needrestart/unpacked" in needrestart,
-    }
-
-script_equal = text("default-root-script.normalized") == text("no-inhibit-root-script.normalized") == text("isolated-root-script.normalized")
-alternative_equal = text("default-root-alternative.normalized") == text("no-inhibit-root-alternative.normalized") == text("isolated-root-alternative.normalized")
-
-summary = {
-    "cases": cases,
-    "target_script_state_equal": script_equal,
-    "target_alternatives_state_equal": alternative_equal,
-    "findings": {
-        "privileged_needrestart_host_mutation": cases["default-root"]["marker_changed"] and cases["default-root"]["needrestart_exec"],
-        "inhibit_option_removes_system_bus_call": cases["default-root"]["system_bus_connect"] and not cases["no-inhibit-root"]["system_bus_connect"],
-        "disabling_host_dpkg_logger_removes_needrestart": cases["no-inhibit-root"]["needrestart_exec"] and not cases["isolated-root"]["needrestart_exec"],
-        "isolated_control_has_no_observed_host_service_action": not cases["isolated-root"]["system_bus_connect"] and not cases["isolated-root"]["needrestart_exec"],
-    },
-}
-(root / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-print(json.dumps(summary, indent=2))
-
-ok = (
-    all(case["exit"] == 0 for case in cases.values())
-    and script_equal
-    and alternative_equal
-    and summary["findings"]["privileged_needrestart_host_mutation"]
-    and summary["findings"]["inhibit_option_removes_system_bus_call"]
-    and summary["findings"]["disabling_host_dpkg_logger_removes_needrestart"]
-    and summary["findings"]["isolated_control_has_no_observed_host_service_action"]
-)
-raise SystemExit(0 if ok else 1)
-PY
+    python3 "$summary_script" "$result_dir"
 }
 
 capture_environment
