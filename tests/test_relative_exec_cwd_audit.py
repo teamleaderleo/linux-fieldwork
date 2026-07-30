@@ -101,6 +101,28 @@ let output = Command::new(
         self.assertEqual(findings[0].program, "./tools/renderer")
         self.assertEqual(findings[0].line, 1)
 
+    def test_rust_adjacent_command_does_not_lend_current_dir(self) -> None:
+        source = """\
+let pair = (
+    Command::new("./first"),
+    Command::new("second").current_dir(work),
+);
+"""
+        self.assertEqual(audit_text("build.rs", source, language="rust"), [])
+
+    def test_rust_adjacent_owned_chains_are_reported_separately(self) -> None:
+        source = """\
+let pair = (
+    Command::new("./first").current_dir(first_work),
+    Command::new("../second").current_dir(second_work),
+);
+"""
+        findings = audit_text("build.rs", source, language="rust")
+        self.assertEqual(
+            [(item.program, item.cwd) for item in findings],
+            [("./first", "first_work"), ("../second", "second_work")],
+        )
+
     def test_rust_absolute_and_simple_programs_are_controls(self) -> None:
         source = """\
 Command::new("/usr/bin/tool").current_dir(work).output()?;
@@ -152,6 +174,13 @@ env --chdir=/tmp/target --split-string='./proxy --check'
         source = """\
 printf '%s\\n' env --chdir=/tmp/target ./proxy
 logger env -C /tmp/target ../proxy
+"""
+        self.assertEqual(audit_text("probe.sh", source), [])
+
+    def test_shell_relative_env_binary_is_not_assumed_coreutils(self) -> None:
+        source = """\
+./env -C /tmp/target ../proxy
+tools/env --chdir=/tmp/target ./proxy
 """
         self.assertEqual(audit_text("probe.sh", source), [])
 
