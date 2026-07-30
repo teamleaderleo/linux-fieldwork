@@ -76,9 +76,11 @@ run_case() {
   local target="$runtime/$label-root"
   local wrapper_log="$result_dir/$label-dpkg-wrapper.log"
   local source_spec='deb [trusted=yes] https://deb.debian.org/debian sid main'
+  local status
 
   : >"$wrapper_log"
   write_wrapper "$wrapper_log"
+  set +e
   timeout 900 env -i \
     PATH="$runtime/fake-bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     HOME="$runtime/home" \
@@ -91,12 +93,21 @@ run_case() {
       sid "$target" "$source_spec" \
       >"$result_dir/$label.stdout" \
       2>"$result_dir/$label.stderr"
+  status=$?
+  set -e
+  printf '%s\n' "$status" >"$result_dir/$label.status"
 
+  if [[ "$status" -eq 124 ]]; then
+    echo "$label transaction timed out" >&2
+    exit 1
+  fi
+  grep -F 'I: installing essential packages...' "$result_dir/$label.stderr"
   test -s "$target/var/lib/dpkg/status"
   dpkg-query --admindir="$target/var/lib/dpkg" \
     -W -f='${binary:Package}\n' \
     | sort >"$result_dir/$label-packages.txt"
   test -s "$result_dir/$label-packages.txt"
+  grep -Fx -- '--print-architecture' "$wrapper_log"
 }
 
 run_case candidate "$source_root/mmdebstrap"
@@ -110,17 +121,28 @@ run_case mutation "$mutation"
 grep -F -- '--force-script-chrootless' \
   "$result_dir/mutation-dpkg-wrapper.log"
 
+candidate_status="$(cat "$result_dir/candidate.status")"
+mutation_status="$(cat "$result_dir/mutation.status")"
+[[ "$candidate_status" == "$mutation_status" ]]
 cmp "$result_dir/candidate-packages.txt" "$result_dir/mutation-packages.txt"
+
+candidate_succeeded=no
+if [[ "$candidate_status" -eq 0 ]]; then
+  candidate_succeeded=yes
+fi
 
 cat >"$result_dir/summary.txt" <<EOF
 product_source=upstream/mmdebstrap/mmdebstrap
 variant=essential
-candidate_transaction_succeeded=yes
+candidate_transaction_status=$candidate_status
+candidate_full_transaction_succeeded=$candidate_succeeded
+candidate_direct_run_essential_reached=yes
 candidate_caller_dpkg_received_chrootless_args=no
-mutation_transaction_succeeded=yes
+mutation_transaction_status=$mutation_status
+mutation_direct_run_essential_reached=yes
 mutation_caller_dpkg_received_chrootless_args=yes
 candidate_mutation_package_sets_equal=yes
-interpretation=direct run_essential uses canonical DPkg::Path
+interpretation=direct run_essential uses canonical DPkg::Path independently of later package outcome
 EOF
 
 cat "$result_dir/summary.txt"
