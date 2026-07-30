@@ -1,0 +1,16 @@
+# Generated Python files
+__pycache__/
+*.py[cod]
+
+# Local investigation artifacts
+investigations/**/runs/**/*.tar
+investigations/**/runs/**/*.tar.*
+investigations/**/runs/**/*.img
+investigations/**/runs/**/*.raw
+investigations/**/runs/**/*.qcow2
+investigations/**/runs/**/*.squashfs
+investigations/**/runs/**/rootfs/
+
+# Common local scratch
+.tmp/
+tmp/
