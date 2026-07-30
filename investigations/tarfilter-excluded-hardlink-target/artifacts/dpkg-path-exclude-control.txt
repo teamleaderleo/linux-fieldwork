@@ -1,0 +1,70 @@
+Direct dpkg path-exclude hard-link control
+==========================================
+
+Execution boundary
+------------------
+
+Date: 2026-07-31
+Environment: disposable Linux container, uid 0
+Tool: Debian dpkg 1.22.22 (amd64)
+Network: unused
+Persistent output: none
+
+Fixture
+-------
+
+A disposable binary package contained two paths with one inode:
+
+  /usr/share/hardlink-filter-probe/base
+  /usr/share/hardlink-filter-probe/peer
+
+`base` contained `payload\n`; `peer` was created with `os.link(base, peer)`.
+The package control file used Package `hardlink-filter-probe`, Version `1.0`,
+Architecture `all`.
+
+Negative control
+----------------
+
+Command:
+
+  dpkg-deb -x probe.deb control-extract
+
+Observed:
+
+  status 0
+  base inode == peer inode
+
+Path exclusion
+--------------
+
+Command form:
+
+  dpkg \
+    --root=ROOT \
+    --admindir=ROOT/var/lib/dpkg \
+    --path-exclude=/usr/share/hardlink-filter-probe/base \
+    --unpack probe.deb
+
+Observed status: 1
+
+Observed diagnostic:
+
+  dpkg: error processing archive .../probe.deb (--unpack):
+   error creating hard link './usr/share/hardlink-filter-probe/peer': No such file or directory
+  Errors were encountered while processing:
+   .../probe.deb
+
+Interpretation
+--------------
+
+Direct dpkg reproduces the target-excluded / dependent-hard-link-retained
+failure. This supports current-object path filtering as a compatibility
+baseline for issue #240. It does not authorize a tarfilter defect claim for the
+same path rule. A useful tarfilter follow-up may still improve diagnostic
+ownership in the `dpkg-deb | tarfilter | tar` pipeline.
+
+Cleanup
+-------
+
+The package tree, .deb, extraction roots, and temporary dpkg database lived
+below one TemporaryDirectory and were removed when the probe exited.
