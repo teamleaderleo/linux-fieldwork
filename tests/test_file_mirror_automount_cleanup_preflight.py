@@ -49,13 +49,23 @@ class FileMirrorAutomountCleanupPreflightTest(unittest.TestCase):
         self.fakebin = self.work / "fakebin"
         self.fakebin.mkdir()
         self.action_log = self.work / "actions.log"
-        for command in ("umount", "rm"):
-            path = self.fakebin / command
-            path.write_text(
-                "#!/bin/sh\nprintf '%s\\0' \"$0\" \"$@\" >>\"$ACTION_LOG\"\n",
-                encoding="utf-8",
-            )
-            path.chmod(0o755)
+        umount = self.fakebin / "umount"
+        umount.write_text(
+            "#!/bin/sh\nprintf '%s\\0' \"$0\" \"$@\" >>\"$ACTION_LOG\"\n",
+            encoding="utf-8",
+        )
+        umount.chmod(0o755)
+        rm = self.fakebin / "rm"
+        rm.write_text(
+            "#!/bin/sh\n"
+            "if [ \"${1:-}\" = -r ]; then\n"
+            "    printf '%s\\0' \"$0\" \"$@\" >>\"$ACTION_LOG\"\n"
+            "    exit 0\n"
+            "fi\n"
+            "exec /bin/rm \"$@\"\n",
+            encoding="utf-8",
+        )
+        rm.chmod(0o755)
 
     def environment(self, mode: str) -> dict[str, str]:
         env = os.environ.copy()
