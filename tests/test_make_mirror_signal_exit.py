@@ -43,13 +43,14 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
 
     @staticmethod
     def candidate_blocks(source: str) -> tuple[str, str]:
-        function_start = source.index("stop_proxy() {\n")
-        function_end = source.index(
-            './caching_proxy.py "$oldcachedir" "$newcachedir" &', function_start
-        )
+        function_start = source.index("record_signal() {\n")
+        function_end = source.index("trap 'cleanup_owner' EXIT", function_start)
         functions = source[function_start:function_end]
-        trap_start = source.index("trap 'cleanup_owner' EXIT", function_end)
-        trap_end = source.index("\n\nfor i in", trap_start)
+        trap_start = function_end
+        trap_end = source.index(
+            'launch_proxy ./caching_proxy.py "$oldcachedir" "$newcachedir"',
+            trap_start,
+        )
         traps = source[trap_start:trap_end] + "\n"
         return functions, traps
 
@@ -95,6 +96,69 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
         return script
 
     @staticmethod
+    def instrument_launch_window(functions: str) -> str:
+        launch = '  "$@" &\n  PROXYPID=$!\n'
+        instrumented = (
+            '  "$@" &\n'
+            "  launch_count=$((launch_count + 1))\n"
+            '  if [ "$launch_count" -eq "$window_at" ]; then\n'
+            "    printf '%s\\n' \"$!\" >\"$runtime/window-proxy.pid\"\n"
+            "    printf 'window\\n' >\"$runtime/window\"\n"
+            '    kill -STOP "$$"\n'
+            "  fi\n"
+            "  PROXYPID=$!\n"
+        )
+        if functions.count(launch) != 1:
+            raise AssertionError("launch_proxy registration seam changed")
+        return functions.replace(launch, instrumented)
+
+    def write_launch_window_harness(
+        self,
+        root: pathlib.Path,
+        label: str,
+        source: str,
+    ) -> pathlib.Path:
+        functions, _traps = self.candidate_blocks(source)
+        functions = self.instrument_launch_window(functions)
+        runtime = root / label
+        runtime.mkdir()
+        script = runtime / "launch-window.sh"
+        script.write_text(
+            "#!/bin/sh\n"
+            "set -eu\n"
+            f"runtime={self.shell_quote(str(runtime))}\n"
+            'window_at=${WINDOW_AT:-0}\n'
+            'launch_total=${LAUNCH_TOTAL:-1}\n'
+            "launch_count=0\n"
+            "cleanup_newcachedir() {\n"
+            "  printf 'cleanup\\n' >>\"$runtime/cleanup.log\"\n"
+            "  rm -f \"$runtime/cache-state\"\n"
+            "}\n"
+            "newcache=cache.B\n"
+            "PROXYPID=\n"
+            "PENDING_SIGNAL=\n"
+            "CLEANUP_PROXY_CACHE=yes\n"
+            "CLEANUP_TMPDIR=no\n"
+            + functions
+            + "touch \"$runtime/cache-state\"\n"
+            "trap 'cleanup_owner' EXIT\n"
+            "install_signal_traps\n"
+            'if [ "$launch_total" -eq 2 ]; then\n'
+            "  launch_proxy true\n"
+            "  stop_proxy\n"
+            "  launch_proxy sh -c 'printf ready >\"$1\"; exec sleep 60' "
+            "proxy \"$runtime/proxy-ready-2\"\n"
+            "else\n"
+            "  launch_proxy sh -c 'printf ready >\"$1\"; exec sleep 60' "
+            "proxy \"$runtime/proxy-ready-1\"\n"
+            "fi\n"
+            'while [ ! -e "$runtime/proxy-ready-$launch_total" ]; do sleep 0.01; done\n'
+            "printf 'after\\n' >\"$runtime/after\"\n",
+            encoding="utf-8",
+        )
+        return script
+
+    @staticmethod
     def shell_quote(value: str) -> str:
         return "'" + value.replace("'", "'\\''") + "'"
 
@@ -123,6 +187,100 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
         os.kill(process.pid, signal.SIGTERM)
         stdout, stderr = process.communicate(timeout=10)
         return process, runtime, proxy_pid, stdout, stderr
+
+    def run_launch_window_control(
+        self,
+        root: pathlib.Path,
+        source: str,
+        launch_index: int,
+    ) -> None:
+        signaled_script = self.write_launch_window_harness(
+            root, f"launch-{launch_index}-signaled", source
+        )
+        environment = os.environ.copy()
+        environment.update(
+            WINDOW_AT=str(launch_index),
+            LAUNCH_TOTAL=str(launch_index),
+        )
+        process = subprocess.Popen(
+            ["sh", str(signaled_script)],
+            cwd=signaled_script.parent,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        runtime = signaled_script.parent
+        deadline = time.monotonic() + 5
+        proxy_ready = runtime / f"proxy-ready-{launch_index}"
+        while time.monotonic() < deadline and (
+            not (runtime / "window").exists() or not proxy_ready.exists()
+        ):
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                self.fail(
+                    "launch harness exited before registration window: "
+                    f"{process.returncode}: {stdout}{stderr}"
+                )
+            time.sleep(0.01)
+        self.assertTrue((runtime / "window").exists(), "launch window was not reached")
+        self.assertTrue(proxy_ready.exists(), "proxy did not become ready in window")
+
+        stopped = False
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            waited_pid, status = os.waitpid(
+                process.pid, os.WUNTRACED | os.WNOHANG
+            )
+            if waited_pid == process.pid and os.WIFSTOPPED(status):
+                stopped = True
+                break
+            if process.poll() is not None:
+                break
+            time.sleep(0.01)
+        self.assertTrue(stopped, "owner did not stop inside the registration window")
+
+        proxy_pid = int((runtime / "window-proxy.pid").read_text().strip())
+        os.kill(process.pid, signal.SIGTERM)
+        os.kill(process.pid, signal.SIGCONT)
+        stdout, stderr = process.communicate(timeout=10)
+        self.assertEqual(process.returncode, 143, stdout + stderr)
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr, "")
+        self.assertFalse((runtime / "after").exists())
+        self.assertFalse((runtime / "cache-state").exists())
+        self.assertEqual(
+            (runtime / "cleanup.log").read_text().splitlines(),
+            ["cleanup"],
+        )
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and self.process_exists(proxy_pid):
+            time.sleep(0.02)
+        self.assertFalse(self.process_exists(proxy_pid))
+
+        rerun_script = self.write_launch_window_harness(
+            root, f"launch-{launch_index}-rerun", source
+        )
+        rerun_environment = os.environ.copy()
+        rerun_environment.update(WINDOW_AT="0", LAUNCH_TOTAL=str(launch_index))
+        rerun = subprocess.run(
+            ["sh", str(rerun_script)],
+            cwd=rerun_script.parent,
+            env=rerun_environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
+        rerun_runtime = rerun_script.parent
+        self.assertTrue((rerun_runtime / "after").exists())
+        self.assertFalse((rerun_runtime / "cache-state").exists())
+        self.assertEqual(
+            (rerun_runtime / "cleanup.log").read_text().splitlines(),
+            ["cleanup"],
+        )
 
     @staticmethod
     def process_exists(pid: int) -> bool:
@@ -251,6 +409,18 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             self.assertTrue(published.is_dir())
 
+    def test_first_proxy_launch_closes_pid_registration_window(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="make-mirror-launch-one-") as tmp:
+            root = pathlib.Path(tmp)
+            candidate_source = self.prepare_candidate(root)
+            self.run_launch_window_control(root, candidate_source, launch_index=1)
+
+    def test_second_proxy_launch_closes_pid_registration_window(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="make-mirror-launch-two-") as tmp:
+            root = pathlib.Path(tmp)
+            candidate_source = self.prepare_candidate(root)
+            self.run_launch_window_control(root, candidate_source, launch_index=2)
+
     def test_candidate_replaces_top_level_cleanup_only_signal_traps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="make-mirror-source-") as tmp:
             candidate = self.prepare_candidate(pathlib.Path(tmp))
@@ -281,6 +451,18 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             self.assertIn("CLEANUP_TMPDIR=yes", candidate)
             self.assertIn("CLEANUP_TMPDIR=no", candidate)
             self.assertIn('readlink ./shared/cache', candidate)
+            self.assertEqual(candidate.count("launch_proxy"), 3)
+            self.assertNotIn(
+                './caching_proxy.py "$oldcachedir" "$newcachedir" &', candidate
+            )
+            self.assertNotIn(
+                './caching_proxy.py --readonly "$oldcachedir" "$newcachedir" &',
+                candidate,
+            )
+            self.assertIn("trap 'record_signal 130' INT", candidate)
+            self.assertIn("trap 'record_signal 131' QUIT", candidate)
+            self.assertIn("trap 'record_signal 143' TERM", candidate)
+            self.assertIn('if [ -n "$PENDING_SIGNAL" ]; then', candidate)
 
 
 if __name__ == "__main__":
