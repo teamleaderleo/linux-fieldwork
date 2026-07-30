@@ -63,7 +63,9 @@ jobs:
           perl -c upstream/mmdebstrap/mmdebstrap
           work=$(mktemp -d)
           trap 'rm -rf "$work"' EXIT
-          cp -a investigations/mmdebstrap-unwritable-tmpdir/pristine/. "$work"/
+          mkdir -p "$work/tests"
+          git show 6fde999741f4fe1e7bf38079acf29432ef87a35e:upstream/mmdebstrap/mmdebstrap > "$work/mmdebstrap"
+          git show 6fde999741f4fe1e7bf38079acf29432ef87a35e:upstream/mmdebstrap/coverage.txt > "$work/coverage.txt"
           patch -d "$work" -p1 --dry-run < investigations/mmdebstrap-unwritable-tmpdir/submission/0001-honor-explicit-tmpdir.patch
           patch -d "$work" -p1 < investigations/mmdebstrap-unwritable-tmpdir/submission/0001-honor-explicit-tmpdir.patch
           cmp "$work/mmdebstrap" upstream/mmdebstrap/mmdebstrap
