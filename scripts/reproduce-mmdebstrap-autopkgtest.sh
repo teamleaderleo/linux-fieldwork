@@ -51,8 +51,9 @@ fi
     "$source_tree/make_mirror.sh"
   printf '```\n'
   printf '\n## Tool versions\n\n```text\n'
-  autopkgtest --version
-  dpkg-query -W autopkgtest mmdebstrap apt dpkg 2>&1 || true
+  dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
+    autopkgtest mmdebstrap apt dpkg 2>&1 || true
+  printf 'autopkgtest executable\t%s\n' "$(command -v autopkgtest)"
   printf '```\n'
   printf '\n## APT policy\n\n```text\n'
   apt-cache policy base-files mmdebstrap apt dpkg 2>&1 || true
