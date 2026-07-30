@@ -8,7 +8,7 @@ Read [`FIELD_GUIDE.md`](FIELD_GUIDE.md) alongside this runbook for practical do,
 
 Choose the smallest useful record. Write a note for reusable understanding. Use the programme registry for a plausible formal direction. Give a lane its own directory when its bounded question and first probe are clear. Open an investigation when exact source work and repeatable evidence begin.
 
-A reader should understand the defect or question before meeting the test matrix. Lead with the thing that goes wrong, who or what it can affect, and the proposed correction. Technical detail then proves the explanation.
+A reader should understand the question, consequence, and proposed answer before meeting the test matrix.
 
 ## 1. Check existing work
 
@@ -56,35 +56,24 @@ Start notes and investigations from [`templates/`](templates/). Follow [`program
 
 ## 3. Explain it for a human reader
 
-Near the top, add `## In simple words`. For a defect, candidate, or surprising behavior, answer these questions before presenting the implementation details:
+Near the top, add these reader-facing fields:
 
-1. **What is this component?** Say where it sits in the larger workflow.
-2. **What goes wrong?** Give one concrete input → action → bad result example.
-3. **Why should someone care?** Name the affected bytes, files, processes, privileges, users, packages, or decisions.
-4. **What happens if the behavior remains?** Describe the repeatable consequence instead of using a severity adjective alone.
-5. **Was it intentional?** Separate evidence of an intended tradeoff from evidence of a shortcut, stale assumption, or accidental interaction.
-6. **What is the proposed fix?** Describe the before/after behavior in ordinary language.
-7. **Why this fix?** Explain the narrower and broader alternatives and the compatibility cost of the chosen boundary.
-8. **What precedent applies?** Link relevant standards, manuals, prior bugs, release notes, or well-established design practice.
-9. **What remains open?** State the evidence limit and next decision.
+- `## TL;DR` — the current answer and next action in a few sentences;
+- `## Explain like I'm five` — a concrete, low-jargon explanation;
+- `## Why care` — the practical failure, risk, or opportunity.
 
-Use an analogy when it genuinely clarifies the authority or lifecycle involved. Pair the analogy with a literal example. A metaphor helps the reader; commands and observations carry the proof.
+Existing lightweight notes may keep the combined `## In simple words` heading.
+For a defect, candidate, or surprising behavior, answer:
 
-Prefer concrete language:
+- What does the component do, and where does it sit?
+- What exact input and action produce the wrong result?
+- Who or what receives the consequence?
+- What does source or history show about intent?
+- What changes, why is that boundary appropriate, and what remains open?
 
-```text
-origin promises 100 bytes → sends 40 → candidate deletes the temporary
-```
+Prefer a literal example such as `origin promises 100 bytes → sends 40 → candidate removes the temporary file` over a phrase such as “response handling is hardened.” Define specialized terms at first use.
 
-instead of:
-
-```text
-response handling is hardened
-```
-
-Define specialized terms at first use. Expand phrases such as “post-commit failure,” “hop-by-hop header,” or “canonical path” into the actual event they describe.
-
-Keep established behavior separate from interpretation, intent hypotheses, and future work.
+Keep observed behavior, intent evidence, interpretation, design choice, and future work distinct.
 
 ## 4. Record the source boundary
 
@@ -100,38 +89,15 @@ Prefer a command or test that preserves the important behavior while remaining e
 
 For a candidate change, compare baseline and candidate behavior under the same conditions. Use the donut checks in [`FIELD_GUIDE.md`](FIELD_GUIDE.md) to look for missing permission, path, metadata, lifecycle, compatibility, and evidence boundaries around the headline result.
 
-The smallest useful demonstration should support the plain-language claim directly. A reader should be able to map each important sentence near the top to a command, fixture, source line, or observed result later in the record.
+Each important plain-language claim should map to a command, fixture, source line, or observed result.
 
-## 6. Cite precedent with care
-
-Use primary sources when a claim depends on a protocol, API, command contract, package policy, or language behavior:
-
-- RFCs and standards for protocol rules;
-- official language or library documentation for runtime behavior;
-- project manuals and source for command semantics;
-- upstream issue, commit, or release history for project intent;
-- established weakness catalogues for recurring defect classes.
-
-Explain how the source applies. A link alone does not establish that the current case is identical.
-
-Historical precedent can support three different conclusions; say which one applies:
-
-- the behavior conflicts with a long-standing contract;
-- the behavior reflects an old compatibility tradeoff that still has value;
-- the behavior began as a reasonable shortcut whose assumptions no longer hold.
-
-## 7. State the evidence boundary
+## 6. State the evidence boundary
 
 Say exactly what the work establishes and where the conclusion ends. Mention skipped test suites, untested platforms, privilege assumptions, mocked components, reduced fixtures, and environment-specific behavior.
 
-Distinguish:
+When the distinction could be unclear, label a conclusion as demonstrated behavior, plausible consequence, design choice, or open question.
 
-- **demonstrated defect** — reproduced against the stated baseline;
-- **plausible consequence** — follows from the demonstrated authority but was kept out of the safe fixture;
-- **design judgment** — the proposed policy and its compatibility tradeoff;
-- **open question** — requires another source, environment, or decision.
-
-## 8. Decide the next step
+## 7. Decide the next step
 
 Choose one:
 
@@ -143,7 +109,7 @@ Choose one:
 - prepare an upstream packet after explicit authorization;
 - close with a negative result.
 
-For a merge or upstream decision, state the human choice in ordinary language. “READY FOR FINAL HUMAN CHECK” should be followed by what the reviewer is deciding and which exact evidence supports that decision.
+For a merge or upstream decision, say what the reviewer is choosing and which exact evidence supports that choice.
 
 ## Upstream contact
 
