@@ -1,0 +1,15 @@
+diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
+--- a/upstream/mmdebstrap/tarfilter
++++ b/upstream/mmdebstrap/tarfilter
+@@ -288,7 +288,13 @@ def main():
+                     continue
+                 prefix = glob_literal_prefix(pattern).rstrip("/")
+-                if prefix == parent or prefix.startswith(parent + "/"):
++                if (
++                    not prefix
++                    or prefix == parent
++                    or prefix.startswith(parent + "/")
++                    or parent.startswith(prefix + "/")
++                ):
+                     return False
+         return skip
