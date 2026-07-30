@@ -164,7 +164,7 @@ class CachingProxyTransferCodingRejectionTest(unittest.TestCase):
                         response = raw_proxy_request(proxy, target, host)
 
                 self.assertTrue(response.startswith(b"HTTP/1.0 502"), response[:100])
-                self.assertEqual(response.count(b"HTTP/"), 1)
+                self.assertEqual(response.count(b"HTTP/"), 1, response)
                 self.assertNotIn(UNSUPPORTED_BODY, response)
                 self.assertEqual(origin.request_count, 1)
                 final = new_cache / f"pool/{label}.deb"
@@ -180,10 +180,10 @@ class CachingProxyTransferCodingRejectionTest(unittest.TestCase):
         self.assertIn('values = response.headers.get_all("Transfer-Encoding", [])', source)
         self.assertIn('if tokens != ["chunked"] or not response.chunked:', source)
         self.assertIn("unsupported upstream Transfer-Encoding", source)
-        self.assertLess(
-            source.index("validate_transfer_encoding(res)"),
-            source.index('self.wfile.write(b"HTTP/1.1 200 OK'),
-        )
+        fresh = source.index("res = conn.getresponse()")
+        validation = source.index("validate_transfer_encoding(res)", fresh)
+        commitment = source.index('self.wfile.write(b"HTTP/1.1 200 OK', fresh)
+        self.assertLess(validation, commitment)
 
 
 if __name__ == "__main__":
