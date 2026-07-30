@@ -6,11 +6,15 @@ State the current answer and next action in a few sentences.
 
 ## Explain like I'm five
 
-Explain what component or workflow is involved and where it sits using a concrete, low-jargon example.
+Explain the component and its job with ordinary words. Include one literal input → action → result example.
 
 ## Why care
 
-State the practical failure, risk, or opportunity.
+Name the affected file, bytes, process, privilege, package, user, or decision and describe the concrete consequence.
+
+## Intent and precedent
+
+State what source or history shows about intent. Separate evidence from interpretation, and link the primary sources that govern the behavior.
 
 ## Question
 
@@ -36,11 +40,13 @@ State one bounded technical question.
 
 ## Baseline behavior
 
-Describe what the unmodified source or current system does.
+Describe what the unmodified source or current system does. Include the concrete example promised near the top.
 
 ## Hypothesis or candidate
 
 Describe the behavior that would distinguish the likely explanations, or describe the candidate change being tested.
+
+State what the candidate accepts, rejects, preserves, and deliberately leaves for later work.
 
 ## Reproduction
 
@@ -54,9 +60,11 @@ Record exact commands and setup steps.
 
 Record observed output, exit status, files created or changed, cleanup behavior, timings, logs, and other distinguishing outcomes.
 
+For a candidate, show baseline and candidate under comparable conditions.
+
 ## Interpretation
 
-Explain what the results establish and how they answer the question.
+Explain what the results establish and how they answer the question. Distinguish demonstrated behavior, plausible consequence, design choice, and open question where relevant.
 
 ## Evidence boundary
 
@@ -65,6 +73,8 @@ State the exact limits: skipped test suites, untested platforms, reduced fixture
 ## Next step
 
 Choose a concrete next action or close with a retained negative result.
+
+For a human decision, say what the reviewer is choosing and name the exact supporting evidence.
 
 ## Authority
 

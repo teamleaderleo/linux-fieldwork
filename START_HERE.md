@@ -8,6 +8,8 @@ Read [`FIELD_GUIDE.md`](FIELD_GUIDE.md) alongside this runbook for practical do,
 
 Choose the smallest useful record. Write a note for reusable understanding. Use the programme registry for a plausible formal direction. Give a lane its own directory when its bounded question and first probe are clear. Open an investigation when exact source work and repeatable evidence begin.
 
+A reader should understand the question, consequence, and proposed answer before meeting the test matrix.
+
 ## 1. Check existing work
 
 Search, in order:
@@ -52,7 +54,7 @@ Use an **investigation** for:
 
 Start notes and investigations from [`templates/`](templates/). Follow [`programmes/README.md`](programmes/README.md) for formal lane promotion.
 
-## 3. Explain it simply
+## 3. Explain it for a human reader
 
 Near the top, add these reader-facing fields:
 
@@ -61,15 +63,17 @@ Near the top, add these reader-facing fields:
 - `## Why care` — the practical failure, risk, or opportunity.
 
 Existing lightweight notes may keep the combined `## In simple words` heading.
-Whichever form is used, answer:
+For a defect, candidate, or surprising behavior, answer:
 
-- What is this?
-- Where does it sit in the system?
-- What is being learned, tested, or changed?
-- Why could someone care?
-- What is the current answer or next step?
+- What does the component do, and where does it sit?
+- What exact input and action produce the wrong result?
+- Who or what receives the consequence?
+- What does source or history show about intent?
+- What changes, why is that boundary appropriate, and what remains open?
 
-Keep established behavior separate from guesses and future work.
+Prefer a literal example such as `origin promises 100 bytes → sends 40 → candidate removes the temporary file` over a phrase such as “response handling is hardened.” Define specialized terms at first use.
+
+Keep observed behavior, intent evidence, interpretation, design choice, and future work distinct.
 
 ## 4. Record the source boundary
 
@@ -85,9 +89,13 @@ Prefer a command or test that preserves the important behavior while remaining e
 
 For a candidate change, compare baseline and candidate behavior under the same conditions. Use the donut checks in [`FIELD_GUIDE.md`](FIELD_GUIDE.md) to look for missing permission, path, metadata, lifecycle, compatibility, and evidence boundaries around the headline result.
 
+Each important plain-language claim should map to a command, fixture, source line, or observed result.
+
 ## 6. State the evidence boundary
 
 Say exactly what the work establishes and where the conclusion ends. Mention skipped test suites, untested platforms, privilege assumptions, mocked components, reduced fixtures, and environment-specific behavior.
+
+When the distinction could be unclear, label a conclusion as demonstrated behavior, plausible consequence, design choice, or open question.
 
 ## 7. Decide the next step
 
@@ -100,6 +108,8 @@ Choose one:
 - keep a local candidate change;
 - prepare an upstream packet after explicit authorization;
 - close with a negative result.
+
+For a merge or upstream decision, say what the reviewer is choosing and which exact evidence supports that choice.
 
 ## Upstream contact
 
