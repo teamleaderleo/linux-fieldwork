@@ -1,0 +1,64 @@
+name: Apply reviewed mmdebstrap TMPDIR manual wording
+
+on:
+  pull_request:
+    paths:
+      - "upstream/mmdebstrap/mmdebstrap"
+      - ".github/workflows/apply-mmdebstrap-tmpdir-doc-review.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out review branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Update TMPDIR documentation
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("upstream/mmdebstrap/mmdebstrap")
+          source = path.read_text(encoding="utf-8")
+          old = """When creating a tarball, a temporary directory is populated with the rootfs
+          before the tarball is packed. The location of that temporary directory will be
+          in F</tmp> or the location pointed to by C<TMPDIR> if that environment variable
+          is set. Setting C<TMPDIR> to a different directory than F</tmp> is useful if
+          you have F</tmp> on a tmpfs that is too small for your rootfs.
+          """
+          new = """For the C<tar>, C<squashfs>, C<ext2>, C<ext4>, and C<null> formats,
+          B<mmdebstrap> populates a temporary directory with the root filesystem before
+          creating or discarding the requested output.
+
+          If C<TMPDIR> is unset or empty, the directory is created in the system
+          temporary location, usually F</tmp>. If C<TMPDIR> is set to a non-empty value,
+          B<mmdebstrap> creates the temporary root below that directory and exits with an
+          error if it cannot do so. Setting C<TMPDIR> to a different directory than
+          F</tmp> is useful if F</tmp> is on a tmpfs that is too small for the root
+          filesystem.
+          """
+          if source.count(old) != 1:
+              raise SystemExit("expected exactly one TMPDIR documentation block")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          rm .github/workflows/apply-mmdebstrap-tmpdir-doc-review.yml
+          perl -c upstream/mmdebstrap/mmdebstrap
+          pod2man upstream/mmdebstrap/mmdebstrap >/dev/null
+
+      - name: Commit reviewed documentation
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Document strict explicit TMPDIR handling"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
