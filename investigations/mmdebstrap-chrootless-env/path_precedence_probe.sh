@@ -135,15 +135,20 @@ Path(sys.argv[2]).write_text(source.replace(old, new), encoding="utf-8")
 PY
 chmod 0755 "$mutation"
 
+make_hook() {
+  local package_dir
+  package_dir="$(dirname "$package")"
+  printf 'mkdir -p "$1%s"; cp "%s" "$1%s"' \
+    "$package_dir" "$package" "$package"
+}
+
 run_case() {
   local label=$1
   local path_value=$2
   local mmdebstrap_path=$3
   local target="$runtime/$label-root"
-  local package_dir hook
-  package_dir="$(dirname "$package")"
-  printf -v hook 'mkdir -p "$1%s"; cp "%s" "$1%s"' \
-    "$package_dir" "$package" "$package"
+  local hook
+  hook="$(make_hook)"
 
   env -i \
     PATH="$path_value" \
@@ -196,6 +201,34 @@ grep -Fx 'source=caller-path' \
 mutation_path="$(cat "$result_dir/mutation-tainted-maintainer-script/path.txt")"
 [[ "$mutation_path" == "$runtime/fake-bin:"* ]]
 
+empty_config="$runtime/apt-empty-dpkg-path.conf"
+printf 'DPkg::Path "";\n' >"$empty_config"
+empty_target="$runtime/empty-dpkg-path-root"
+empty_hook="$(make_hook)"
+set +e
+env -i \
+  PATH="$system_path" \
+  HOME="$runtime/home" \
+  TMPDIR="$runtime" \
+  LC_ALL=C.UTF-8 \
+  APT_CONFIG="$empty_config" \
+  "$candidate" \
+    --mode=chrootless \
+    --variant=custom \
+    --format=directory \
+    --skip=update \
+    --include="$package" \
+    --setup-hook="$empty_hook" \
+    '' "$empty_target" \
+    >"$result_dir/empty-dpkg-path.stdout" \
+    2>"$result_dir/empty-dpkg-path.stderr"
+empty_dpkg_path_status=$?
+set -e
+[[ "$empty_dpkg_path_status" -ne 0 ]]
+grep -F 'cannot determine chrootless maintainer-script PATH' \
+  "$result_dir/empty-dpkg-path.stderr"
+test ! -f "$empty_target/usr/share/lf-path-precedence/payload"
+
 source_mode_after="$(stat -c '%a' "$source_root/mmdebstrap")"
 [[ "$source_mode_after" == "$source_mode_before" ]]
 git diff --exit-code -- upstream/mmdebstrap/mmdebstrap
@@ -214,7 +247,9 @@ candidate_clean_caller_command_resolved=no
 mutation_tainted_maintainer_script_path=$mutation_path
 mutation_tainted_caller_command_resolved=yes
 expected_tools_resolved=yes
-interpretation=canonical DPkg::Path blocks caller-prefix command resolution
+empty_dpkg_path_status=$empty_dpkg_path_status
+empty_dpkg_path_failed_closed=yes
+interpretation=canonical DPkg::Path blocks caller-prefix command resolution and rejects an explicit empty apt path
 EOF
 
 cat "$result_dir/summary.txt"
