@@ -1,0 +1,12 @@
+debci_run=72574145
+trigger=migration-reference%2F0
+package=mmdebstrap 1.5.7-3
+testbed=Debian testing amd64
+case_index=252/283
+case_name=dev-ptmx --mode=root
+root_include=gcc,libc6-dev,python3,passwd
+missing_command=script
+error=chroot: failed to run command 'script': No such file or directory
+bsdutils_version=1:2.42.2-1
+passed_cases=158
+skipped_cases=93
