@@ -198,11 +198,12 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
             self.assertIn('of="$IMAGE_TMP"', source)
             self.assertEqual(source.count("publish_image\n"), 1)
             self.assertLess(source.index("publish_image\n"), source.index("I: SUCCESS!"))
-            self.assertIn('mv --no-target-directory -- "$IMAGE_TMP" "$IMAGE"', source)
-            self.assertLess(
-                source.index('mv --no-target-directory -- "$IMAGE_TMP" "$IMAGE"'),
-                source.index("IMAGE_TMP=\n"),
-            )
+            publication_start = source.index("publish_image() {")
+            publication_end = source.index("\n}\n", publication_start)
+            publication = source[publication_start:publication_end]
+            rename = 'mv --no-target-directory -- "$IMAGE_TMP" "$IMAGE"'
+            self.assertIn(rename, publication)
+            self.assertLess(publication.index(rename), publication.index("IMAGE_TMP=\n"))
 
 
 if __name__ == "__main__":
