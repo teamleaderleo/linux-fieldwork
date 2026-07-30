@@ -1,0 +1,7 @@
+Package: lf-fieldwork-probe
+Version: 1.0
+Section: misc
+Priority: optional
+Architecture: all
+Maintainer: Linux Fieldwork <noreply@example.invalid>
+Description: minimal DPKG_ROOT containment probe
