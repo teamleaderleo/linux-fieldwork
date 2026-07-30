@@ -1,14 +1,6 @@
 name: Probe LF-02 privileged host integrations
 
 on:
-  push:
-    branches:
-      - investigation/lf-02-privileged-host-integrations
-    paths:
-      - "investigations/lf-02-privileged-host-integrations/**"
-      - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/**"
-      - "upstream/mmdebstrap/**"
-      - ".github/workflows/lf-02-privileged-host-integrations.yml"
   pull_request:
     paths:
       - "investigations/lf-02-privileged-host-integrations/**"
