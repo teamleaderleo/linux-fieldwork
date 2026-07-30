@@ -12,6 +12,7 @@ This branch records that mismatch as executable characterization. It contains no
 
 - Parent transform record: #36.
 - Bounded regex-dialect issue: #108.
+- Characterization pull request: #113.
 - Numeric occurrence predecessor: #98 / PR #102; its patch changes match selection and leaves regex compilation unchanged.
 - Characterization branch: `investigation/tarfilter-transform-regex-dialects`.
 - Imported source remains unchanged.
@@ -39,6 +40,10 @@ Representative results:
 | --- | --- | --- | --- |
 | `aaa` | `s/a+/b/` | `b` | `aaa` |
 | `aaa` | `s/a\+/b/` | `aaa` | `b` |
+| `aa` | `s/a?/b/` | `ba` | `aa` |
+| `aa` | `s/a\?/b/` | `aa` | `ba` |
+| `ab` | `s/a|b/c/` | `cb` | `ab` |
+| `ab` | `s/a\|b/c/` | `ab` | `cb` |
 | `aaa` | `s/(aa)/[&]/` | `[aa]a` | `aaa` |
 | `aaa` | `s/\(aa\)/[&]/` | `aaa` | `[aa]a` |
 | `aaa` | `s/a{2}/b/` | `ba` | `aaa` |
@@ -46,13 +51,13 @@ Representative results:
 | `a^b` | `s/a^b/x/` | `a^b` | `x` |
 | `a$b` | `s/a$b/x/` | `a$b` | `x` |
 
-The predecessor rejects every tested explicit `x` expression, while GNU tar executes extended `+`, grouping, interval, and alternation forms.
+The predecessor rejects every tested explicit `x` expression. GNU tar executes active and escaped forms for `+`, `?`, `|`, grouping, and intervals according to extended syntax.
 
 ## Captures and backreferences
 
 The selected dialect determines whether parentheses create capture groups. `\1` can only refer to a group created by that dialect.
 
-- basic `s/\(a\)\1/b/` transforms `aa` to `b` in GNU tar; the Python predecessor rejects or misses it because escaped parentheses are literals to Python;
+- basic `s/\(a\)\1/b/` transforms `aa` to `b` in GNU tar; the Python predecessor rejects it because escaped parentheses are literals to Python and no capture group exists;
 - basic `s/(a)\1/b/` is invalid in GNU tar because unescaped parentheses do not create a group; the Python predecessor transforms it to `b`;
 - extended `s/(a)\1/b/x` transforms to `b` in GNU tar and is rejected by the predecessor because `x` is unsupported;
 - extended `s/\(a\)\1/b/x` is invalid in GNU tar because escaped parentheses are literals.
@@ -91,11 +96,19 @@ python3 -m unittest discover -s tests -v
 
 The characterization requires:
 
-- eight default-dialect divergences;
-- four explicit-`x` predecessor rejections paired with successful GNU results;
-- basic/extended capture and backreference reversal;
-- four shared-subset controls;
+- 12 default-dialect divergences covering active and literal `+`, `?`, `|`, grouping, intervals, and contextual anchors;
+- 7 explicit-`x` predecessor rejections paired with successful GNU results;
+- 4 basic/extended capture and backreference cases, including inverse validity;
+- 4 shared-subset controls;
 - exact patch application against the imported source.
+
+## Validation
+
+Initial characterization head `faf135a5b6525c63f36f6e649e2ec33b10824717` passed Linux Fieldwork CI run `30543947343`, job `90875235407`. Repository discovery ran 42 tests in 5.464 seconds; all four dialect test methods passed.
+
+Complete-diff review found that `?` and default alternation were present in the raw observation file and PR prose but absent from the executable default-dialect matrix. Head `0e929b67d15e936af229afe0f9246a1cd8b9b956` adds active/literal `?` and `|` cases in both default and explicit-`x` matrices. Linux Fieldwork CI run `30544085794`, job `90875709615`, passed.
+
+This validation-record commit requires one final exact-head CI receipt before independent review.
 
 ## Cleanup and evidence limits
 
