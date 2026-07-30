@@ -71,8 +71,19 @@ def python_program(call: ast.Call) -> str | None:
         if isinstance(executable, ast.Constant) and executable.value is None:
             pass
         else:
-            # A dynamic executable overrides argv[0], so its identity is unknown.
+            # A literal override is the executable identity. A dynamic override
+            # makes that identity unknown, so do not report the decoy argv[0].
             return string_literal(executable)
+
+    shell = keyword_value(call, "shell")
+    if shell is not None:
+        if isinstance(shell, ast.Constant) and shell.value in (False, None):
+            pass
+        else:
+            # With shell=True, the command string is input to the shell rather
+            # than the selected executable. Dynamic shell selection is also not
+            # a high-confidence literal identity.
+            return None
 
     if call.args:
         command = call.args[0]
@@ -201,6 +212,10 @@ def env_token_index(tokens: Sequence[str]) -> int | None:
     return None
 
 
+def is_environment_assignment(token: str) -> bool:
+    return re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", token) is not None
+
+
 def shell_program_after_env(tokens: Sequence[str]) -> tuple[str, str] | None:
     env_index = env_token_index(tokens)
     if env_index is None:
@@ -208,44 +223,46 @@ def shell_program_after_env(tokens: Sequence[str]) -> tuple[str, str] | None:
 
     saw_chdir = False
     cwd = "<dynamic cwd>"
+    options_ended = False
     index = env_index + 1
     while index < len(tokens):
         token = tokens[index]
-        if token == "--":
+        if not options_ended and token == "--":
+            options_ended = True
             index += 1
-            break
-        if token in {"--chdir", "-C"}:
+            continue
+        if not options_ended and token in {"--chdir", "-C"}:
             if index + 1 >= len(tokens):
                 return None
             saw_chdir = True
             cwd = tokens[index + 1]
             index += 2
             continue
-        if token.startswith("--chdir="):
+        if not options_ended and token.startswith("--chdir="):
             saw_chdir = True
             cwd = token.split("=", 1)[1]
             index += 1
             continue
-        if token.startswith("-C") and token != "-C":
+        if not options_ended and token.startswith("-C") and token != "-C":
             saw_chdir = True
             cwd = token[2:]
             index += 1
             continue
-        if token in ENV_OPTIONS_WITH_VALUE:
+        if not options_ended and token in ENV_OPTIONS_WITH_VALUE:
             if index + 1 >= len(tokens):
                 return None
             index += 2
             continue
-        if any(
+        if not options_ended and any(
             token.startswith(prefix) and token != prefix
             for prefix in ENV_SHORT_OPTIONS_WITH_ATTACHED_VALUE
         ):
             index += 1
             continue
-        if token.startswith("-"):
+        if not options_ended and token.startswith("-"):
             index += 1
             continue
-        if "=" in token and not token.startswith(("./", "../", "/")):
+        if is_environment_assignment(token):
             index += 1
             continue
         break
