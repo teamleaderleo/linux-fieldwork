@@ -1,10 +1,29 @@
 # Archive transform regex dialects need an explicit parser
 
-## In simple words
+## TL;DR
+
+GNU tar uses basic regular expressions by default and extended expressions
+with the `x` flag. A wrapper that feeds both forms directly to Python `re`
+silently changes operators, anchors, groups, intervals, and error behavior.
+Translate a characterized subset with an explicit scanner and reject every
+unresolved construct before processing archive data.
+
+## Explain like I'm five
 
 A regex engine choice is part of a transform's public behavior. Passing a sed-style pattern directly to another language's regex compiler can silently change which characters are operators.
 
 GNU tar uses basic regular expressions by default and extended expressions with the `x` flag. Python's `re` syntax resembles the extended form. Direct compilation therefore behaves as though `x` were always active while still rejecting the flag itself.
+
+Think of the two regex dialects as two sets of road signs that reuse the same
+punctuation. Reading one set with the other set's rulebook can produce a valid
+route to the wrong filename.
+
+## Why care
+
+An archive filter can exit successfully while renaming members or link targets
+differently from GNU tar. That produces plausible archives whose paths no
+longer follow the command the user supplied. Early rejection is safer than a
+successful wrong rewrite.
 
 ## Operator mapping
 
@@ -81,6 +100,10 @@ Add:
 - malformed-pattern parity;
 - a predecessor negative control that demonstrates direct Python compilation;
 - archive member and link-target cases once the translator is integrated with transform scopes.
+- Python-only group extensions such as `(?=...)`, `(?:...)`, inline flags, and
+  named groups, which GNU tar rejects;
+- malformed active intervals and unmatched closing groups, whose GNU/Python
+  error behavior still needs an explicit policy.
 
 Compare actual archive metadata with GNU tar under a recorded locale. Exit status alone cannot detect a successful wrong rename.
 
@@ -88,7 +111,19 @@ Compare actual archive metadata with GNU tar under a recorded locale. Exit statu
 
 - Parent issue: #36.
 - Regex-dialect issue: #108.
-- Investigation: `investigations/tarfilter-transform-regex-dialects/`.
+- Investigation: `investigations/tarfilter-transform-regex-candidate/`.
 - Imported source: `upstream/mmdebstrap/tarfilter`, blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`.
 
-This note covers the basic/extended dialect switch and translator design. Persistent `flags=` statements, multiple substitutions, replacement case conversion, and complete locale-aware POSIX regex compatibility remain separate work.
+The retained candidate passed 21 focused GNU tar 1.35 differential tests twice
+on a synthetic merge with current `main` at reviewed head
+`4555c5c250c1afedb3947fd1a7b5a0323bd9d262`. A follow-up malformed-grammar
+probe found two remaining success-versus-error mismatches: GNU rejects active
+`{` sequences such as `a{}` and `a{2`, while Python treats them as literals;
+GNU extended regex treats an unmatched closing `)` as a literal, while Python
+rejects it. These are bounded follow-up work and should stay visible in any
+upstream draft.
+
+This note covers the basic/extended dialect switch and translator design.
+Persistent `flags=` statements, multiple substitutions, replacement case
+conversion, malformed-grammar parity, and complete locale-aware POSIX regex
+compatibility remain separate work.
