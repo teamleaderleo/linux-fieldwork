@@ -95,7 +95,7 @@ def classify_lines(lines: Iterable[str]) -> dict[str, Any]:
         matched_preflight = next(
             (marker for marker in PREFLIGHT_MARKERS if marker in lower), None
         )
-        if matched_preflight is not None:
+        if matched_preflight is not None and not saw_named_test:
             if not saw_preflight_failure:
                 failure_events.append(
                     {
@@ -119,7 +119,7 @@ def classify_lines(lines: Iterable[str]) -> dict[str, Any]:
         phase = first_failure["phase"]
     else:
         first_failure = None
-        phase = "pass" if saw_pass else "unknown"
+        phase = "pass" if saw_pass and not saw_wrapper_failure else "unknown"
 
     return {
         "phase": phase,
