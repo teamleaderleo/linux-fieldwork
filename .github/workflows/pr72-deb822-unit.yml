@@ -16,36 +16,25 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Download exact failed reproduction artifact
+      - name: Print exact terminal failure only
         shell: bash
         run: |
           set -euo pipefail
           gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8762098688/zip" > /tmp/a.zip
-
-      - name: Print first terminal case and exact failure context
-        shell: bash
-        run: |
           python3 - <<'PY'
-          import re
-          import zipfile
-
+          import re, zipfile
           with zipfile.ZipFile('/tmp/a.zip') as archive:
-              names = set(archive.namelist())
-              for name in ('exit-status', 'result.md', 'autopkgtest-output/summary'):
-                  if name in names:
-                      print(f'===== {name} =====')
-                      print(archive.read(name).decode('utf-8', 'replace'))
-
               stderr = archive.read('autopkgtest-output/testsuite-stderr').decode('utf-8', 'replace').splitlines()
               stdout = archive.read('autopkgtest-output/testsuite-stdout').decode('utf-8', 'replace').splitlines()
-              case_re = re.compile(r'\(\d+/\d+\) ')
-              cases = [index for index, line in enumerate(stderr) if case_re.search(line)]
-              print('===== terminal stderr case =====')
-              if cases:
-                  pos = cases[-1]
-                  for index in range(max(0, pos - 10), min(len(stderr), pos + 80)):
-                      print(f'{index + 1}: {stderr[index]}')
-              print('===== final stdout =====')
-              for index, line in enumerate(stdout[-80:], start=max(1, len(stdout) - 79)):
-                  print(f'{index}: {line}')
+          cases = [i for i, line in enumerate(stderr) if re.search(r'\(\d+/\d+\) ', line)]
+          print('===== terminal case =====')
+          pos = cases[-1]
+          print('\n'.join(stderr[max(0, pos - 8):pos + 8]))
+          print('===== terminal stdout =====')
+          print('\n'.join(stdout[-40:]))
+          print('===== failure signatures =====')
+          for source, lines in (('stderr', stderr[-250:]), ('stdout', stdout[-250:])):
+              for line in lines:
+                  if re.search(r'(E: |error|failed|mount|permission|not permitted|cap_sys_admin)', line, re.I):
+                      print(f'{source}: {line}')
           PY
