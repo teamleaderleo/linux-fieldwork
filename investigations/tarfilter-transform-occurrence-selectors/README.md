@@ -48,7 +48,7 @@ The local GNU tar 1.35 differential probe also established these parser details:
 | `s/a/b/2g3` | last decimal run selects third | `a/a/b/b` |
 | `s/A/b/2gi3` | case-insensitive, third onward | `a/a/b/b` |
 
-A contiguous decimal string is one selector. When several decimal runs occur, the last completed run controls the start point. The wider exploratory output is retained in `observations.md`.
+A contiguous ASCII decimal string is one selector. When several decimal runs occur, the last completed run controls the start point. GNU tar rejects explored Unicode numeral characters, so the candidate accepts only ASCII `0` through `9`. The wider exploratory output is retained in `observations.md`.
 
 ## Candidate mechanism
 
@@ -80,7 +80,8 @@ The counter resets independently for every member name, hard-link target, and sy
 - ordinary first/global behavior to remain unchanged;
 - numeric-only, numeric-plus-global, zero, flag-order, large selector, case-insensitive, and repeated-decimal-run cases to equal GNU tar;
 - `s/a/b/2g` to apply independently to a regular member name, hard-link target, and symlink target;
-- the candidate archive metadata to equal a GNU tar archive created from the same file/link fixture.
+- the candidate archive metadata to equal a GNU tar archive created from the same file/link fixture;
+- Arabic-Indic, superscript, and full-width numerals to remain unsupported by both candidate and GNU tar.
 
 Focused and complete commands:
 
@@ -93,16 +94,13 @@ Repository discovery runs this alongside the existing substitution, scope, path,
 
 ## Validation result
 
-Candidate code head `8c3ba696310fe0a631c74749df08055677fd109e` passed Linux Fieldwork CI run `30542362599`, job `90869929455`.
+Initial candidate code head `8c3ba696310fe0a631c74749df08055677fd109e` passed Linux Fieldwork CI run `30542362599`, job `90869929455`, with 41 repository tests in 4.853 seconds.
 
-- 41 repository tests passed in 4.853 seconds.
-- all three focused occurrence-selector tests passed;
-- patch composition passed;
-- the predecessor rejection passed;
-- the GNU tar name and link-target matrix passed;
-- adjacent LF-14 and repository safety tests passed.
+Complete-diff review then found that Python `str.isdigit()` accepts numeral characters outside GNU tar's ASCII grammar. Head `2e03fcecad2aee123095ee11992e47d883af5bb3` added the correct rejection cases. Run `30542931175` exposed a test-harness decoding failure because GNU tar echoed raw invalid bytes in its rejection diagnostic. The candidate and GNU tar had both rejected the expressions.
 
-`RESULTS.md` retains the exact run and merge-ref receipt. Documentation-only consolidation commits follow the validated code head, so the final complete head needs one more CI receipt before merge.
+Corrected code head `b1e5df6b3fb2b77d6e54fc57f27f83a5df3c7113` uses ASCII-only selector parsing and replacement decoding for GNU tar rejection output. Linux Fieldwork CI run `30543032983`, job `90872143092`, passed.
+
+`RESULTS.md` retains the full successful and failed-run receipts. The current documentation-complete head needs its own final CI receipt for exact-head peer review.
 
 ## Evidence limits
 
@@ -122,6 +120,8 @@ Every copied source tree, patched candidate, input fixture, GNU reference archiv
 - retained the predecessor failure as an executable negative control;
 - compared supported results directly with GNU tar;
 - checked member and link-target state, not only command exit codes;
+- corrected Unicode numeral over-acceptance before review;
+- retained the failed diagnostic-decoding run as reusable harness evidence;
 - consolidated the durable record to avoid a directory of tiny overlapping files;
 - recorded unsupported grammar separately instead of presenting full GNU transform compatibility;
 - retained a reusable note for later transform parsers.
