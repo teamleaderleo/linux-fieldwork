@@ -13,10 +13,12 @@ At the actual rootfs `tempdir()` call:
 
 `File::Temp` documents `DIR` as the exact parent directory and `TMPDIR => 1` as using `File::Spec->tmpdir`. `File::Spec->tmpdir` intentionally selects the first writable candidate, which explains the original silent fallback.
 
+This removes the separate probe, avoids a check-then-use interval, and limits the change to the tarball/image/null-output path that actually creates the temporary rootfs.
+
 ## Test expectations
 
 - an unusable explicit directory produces an error naming that path and no `/tmp/mmdebstrap.*` fallback;
 - a usable explicit directory remains honored and is cleaned up;
-- Perl syntax checks pass.
+- Perl and shell syntax checks pass.
 
 No Debian upstream interaction is part of this review.
