@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+: "${DPKG_ROOT:?DPKG_ROOT missing}"
+mkdir -p "$DPKG_ROOT/var/lib/lf-fieldwork-probe"
+printf 'phase=postrm arg1=%s\n' "${1-}" >> "$DPKG_ROOT/var/lib/lf-fieldwork-probe/script.log"
