@@ -1,10 +1,72 @@
 # file-mirror-automount target containment
 
-## In simple words
+## Explain it like I am five
 
-The `file-mirror-automount` hook turns local APT repository and package-file paths into destinations below a generated root. The imported setup hook concatenates those paths directly, and the cleanup hook later trusts the same marker text. Parent traversal or an existing symlink below the generated root can therefore redirect setup or cleanup outside that root.
+Imagine building a tiny model house inside a cardboard box. A helper receives a label such as `kitchen/packages` and copies or mounts the matching real folder into that place inside the box.
 
-This candidate canonicalizes sources, keeps safe configured repository spellings reachable inside the generated root, resolves every generated destination, requires the destination to remain below the canonical root, and records only canonical root-relative marker entries. Cleanup validates the complete marker stream before any action, then repeats validation while acting on each entry.
+The old helper joined the box name and the label as plain text. A label containing `..` could say, in effect, “walk out of the box and use the real house.” A symlink inside the box could redirect the destination the same way. Cleanup later trusted a saved list of those labels and could unmount or delete the redirected location.
+
+This candidate checks the real source, the real box, and the resolved destination. It allows the action only when the destination stays inside the box. Cleanup reads and validates the entire saved list before it removes anything.
+
+## Why should anyone care?
+
+This hook constructs commands for `mount`, copy/upload helpers, `umount`, and `rm -r`. A destination error therefore reaches beyond a wrong filename: it can operate on a host path outside the generated mmdebstrap root.
+
+The executable tests use disposable directories and fake destructive commands, so they demonstrate command selection without touching real mounts. The underlying defect still concerns host-path authority. A malformed repository URI, a redirected target parent, a generated root resolving to `/`, or a corrupted cleanup marker can select the wrong host location.
+
+## What happens if we leave it alone?
+
+Several bad outcomes remain possible:
+
+1. `file:///../../etc` can derive a target outside the generated root;
+2. an existing symlink below the generated root can redirect a mount or copy destination outside it;
+3. a generated-root argument of `/` makes ordinary host paths appear “inside” the root;
+4. cleanup can act on an early valid entry before discovering a later malicious entry;
+5. a source symlink can be mounted correctly on the host while becoming unreachable at the configured `file:` URI inside the generated root;
+6. a path containing `..` can normalize to one destination while APT still resolves the original spelling through a missing parent component.
+
+The result can be an out-of-root mount/copy/delete, partial cleanup, or a setup that reports success while APT still cannot reach the configured repository.
+
+## Was the old behavior intentional?
+
+The original hook appears to assume that APT emits ordinary canonical `file:` paths and that its own cleanup marker remains trustworthy. Direct string concatenation is compact and preserves the configured path in the common case.
+
+That assumption breaks once path text can contain traversal components, once destination parents can be symlinks, or once persisted marker contents are stale or altered. The unsafe behavior does not look like a desired feature.
+
+Some choices in the final candidate are deliberate:
+
+- harmless `.` and repeated separators can be normalized while preserving a reachable configured URI;
+- every `..` component is rejected because normalization alone can create a destination that the original URI cannot traverse to;
+- a terminal source symlink keeps its configured destination spelling inside the generated root while the host action uses the canonical source;
+- cleanup rejects the older leading-slash marker format during an active run instead of guessing whether historical text is safe.
+
+## The proposed fix in plain terms
+
+Setup performs this checklist:
+
+1. resolve the generated root and refuse `/`;
+2. parse the configured repository path and reject parent components;
+3. resolve the actual host source;
+4. preserve the safe configured URI spelling for the destination when APT needs that spelling;
+5. resolve the destination, including existing symlinks;
+6. require the destination to be a strict child of the generated root;
+7. mount, copy, or upload using the checked source and destination;
+8. record one canonical root-relative cleanup entry.
+
+Cleanup performs two passes:
+
+1. validate every saved entry and current resolved target with zero destructive actions;
+2. after the full list passes, revalidate each target immediately before `umount` or `rm -r`.
+
+The first pass prevents “remove three safe things, then discover the fourth entry escapes the root.” The second pass reduces the gap between checking and acting.
+
+## Historical and technical precedent
+
+- CWE-22 describes the recurring pathname-traversal weakness and recommends canonicalization followed by validation against the permitted directory: https://cwe.mitre.org/data/definitions/22.html
+- GNU `realpath` produces absolute canonical names without `.` or `..`, resolves symbolic links, and provides separate modes for existing and missing components: https://www.gnu.org/software/coreutils/manual/html_node/realpath-invocation.html
+- The broader Unix lesson predates this hook: a pathname is a request to traverse filesystem components, and symlinks plus parent components can change the object reached. A textual prefix alone does not grant containment.
+
+The candidate follows that precedent while documenting its remaining pathname race. A process with enough access can still replace a component after validation and before the mount, copy, unmount, or removal call. Descriptor-relative hardening would be a separate, larger design.
 
 ## Canonical records
 
@@ -17,82 +79,51 @@ This candidate canonicalizes sources, keeps safe configured repository spellings
 - containment patch: `0001-contain-file-mirror-targets.patch`
 - URI-path compatibility patch: `0002-preserve-file-uri-target-path.patch`
 - parent-component reachability patch: `0003-reject-parent-uri-components.patch`
-- containment regression: `tests/test_file_mirror_automount_containment.py`
-- generated-root regression: `tests/test_file_mirror_automount_root_guard.py`
-- cleanup preflight regression: `tests/test_file_mirror_automount_cleanup_preflight.py`
-- source-normalization regression: `tests/test_file_mirror_automount_source_normalization.py`
-- parent-component differential: `tests/test_file_mirror_automount_parent_component_reachability.py`
 - reusable note: `notes/filesystems/cleanup-markers-must-carry-contained-relative-paths.md`
 
-## Source boundary
+## Concrete examples
 
-The setup hook strips the `file:` prefix and leading slashes, then uses the remaining text in both source and target paths:
+### Escape spelling
 
-```sh
-mkdir -p "$rootdir/$path"
-mount -o ro,bind "/$path" "$rootdir/$path"
-printf '/%s\0' "$path" >> "$rootdir/run/mmdebstrap/file-mirror-automount"
+```text
+configured URI: file:///../../etc
+old derived target: $root/../../etc
+resolved target: outside $root
+candidate result: reject before mkdir, mount, copy, or marker write
 ```
 
-For `file:///../../etc`, the source resolves to `/etc` while the target resolves outside the generated root. The marker retains the traversing spelling. The cleanup hook later runs `umount "$rootdir/{}"` or `rm -r "$rootdir/{}"` from that marker.
+### Terminal source symlink
 
-Local package files use a canonical source path, but their target also relies on direct string concatenation and can follow an existing target-parent symlink outside the root.
+```text
+configured URI: file:///tmp/repository-link
+host symlink target: /srv/repository
+host bind source: /srv/repository
+generated destination: $root/tmp/repository-link
+marker entry: tmp/repository-link
+```
 
-## Candidate
+The source uses the real host directory. The destination preserves the path APT requests inside the generated root.
 
-The setup hook now:
+### Parent-component reachability
 
-1. canonicalizes the generated root with `realpath -e` and refuses `/`;
-2. rejects empty, absolute-after-prefix, leading-parent, and embedded-parent repository spellings;
-3. canonicalizes each existing host source;
-4. normalizes accepted configured repository URI paths with GNU `realpath -m -s`, preserving terminal source-symlink spelling while removing harmless lexical `.` and repeated-separator components;
-5. derives repository destinations from that normalized URI path, while local package destinations retain the existing canonical-source mapping;
-6. resolves the generated destination with `realpath -m` so existing target symlinks are visible;
-7. requires the destination to be a strict descendant of the generated root;
-8. uses the canonical host source and contained generated destination for bind/copy operations;
-9. records only the contained relative destination without a leading slash or parent component.
+```text
+configured URI: file:///sources/spelling/../repository
+```
 
-Separating source and destination identities preserves a terminal symlink configured in APT. For `file:///tmp/repository-link` where the host link resolves to `/srv/repository`, the bind source is `/srv/repository`, while the generated destination and marker remain `tmp/repository-link`. APT inside the generated root can still open the configured URI path.
-
-A parent component cannot be handled by lexical normalization alone. For `file:///sources/spelling/../repository`, the two-patch predecessor created only `/sources/repository` below the generated root. The configured path still had to resolve `/sources/spelling` before `..`, so it remained unreachable. The final candidate rejects every `..` component before mount, copy, or marker creation. A harmless `.` component remains accepted because its retained parent is created and the configured path stays reachable.
-
-The cleanup hook canonicalizes the root, refuses `/`, and treats the marker as untrusted persisted input. Its first NUL-delimited pass validates every entry and current target without invoking `umount` or `rm -r`. Only after that complete preflight succeeds does a second pass repeat lexical and canonical containment checks immediately before each cleanup action. Any rejected entry leaves the marker present for diagnosis.
-
-The complete preflight prevents a valid early entry from being removed or unmounted when a later entry is invalid. Action failures can still leave partial cleanup; the retained marker and command diagnostics expose that ordinary operational boundary.
+Creating only `$root/sources/repository` is insufficient because pathname traversal still attempts to enter `$root/sources/spelling` before processing `..`. The final candidate rejects the spelling before action.
 
 ## Executable regression
 
-The disposable regressions use fake `apt-get`, `mount`, `umount`, and destructive `rm -r` commands. They perform no real mount or package operation. They require:
+The disposable matrix uses fake `apt-get`, `mount`, `umount`, and destructive `rm -r` commands. It covers baseline traversal, root refusal, destination-symlink escape, complete cleanup preflight, corrected rerun, ordinary repositories and package files, source-symlink reachability, harmless dot normalization, parent-component rejection, exact patch application, and POSIX shell syntax.
 
-- the imported baseline to derive an out-of-root target from `file:///../../etc`;
-- the candidate to reject leading and embedded parent components before target creation, mount, copy, or marker write;
-- the two-patch predecessor to demonstrate the embedded-parent reachability failure;
-- a harmless dot component to normalize to a reachable configured path, contained target, and canonical marker;
-- a valid local repository to map below the root and create one canonical relative marker entry;
-- a symlinked repository URI to use the canonical host source while preserving the configured URI path as target and marker;
-- cleanup of that symlinked URI target followed by an immediate successful rerun;
-- an existing target-parent symlink that resolves outside the root to be rejected before mount;
-- a local package file to use the same contained target contract;
-- valid cleanup to pass one canonical contained target to the selected action and remove the marker;
-- literal `/` and a symlink resolving to `/` to fail before repository or marker processing;
-- a valid marker followed by traversal, absolute, doubled-separator, dot, trailing-separator, or symlink-escaping entries to cause zero cleanup actions;
-- the rejected marker and target to remain available for diagnosis;
-- immediate rerun with a corrected marker to succeed in root and non-root modes;
-- all retained patches to apply exactly to temporary source copies;
-- both candidate scripts to pass POSIX shell syntax validation.
+No real mount, unmount, package mutation, external network access, privilege expansion, or upstream contact occurs.
 
 ## Evidence boundary
 
-The candidate closes the demonstrated lexical traversal, pre-existing target-symlink, generated-root `/`, static mixed-marker partial-cleanup, terminal source-symlink reachability, and parent-component reachability paths under GNU `realpath` and GNU `xargs` on Linux. It uses pathname validation followed by pathname operations; a process able to replace components or marker contents between validation and action remains outside this candidate. Descriptor-relative or mount-namespace-specific hardening would be a separate investigation.
+The candidate closes the demonstrated lexical traversal, generated-root `/`, pre-existing destination-symlink, static mixed-marker partial-cleanup, terminal source-symlink reachability, and parent-component reachability cases under GNU `realpath` and GNU `xargs` on Linux.
 
-The executable matrix exercises root-mode bind and unmount command construction with fake commands. The non-root helper calls share the same resolved destination helper and receive source/destination arguments checked by source assertions; a real hook-socket transfer is outside this focused regression.
-
-The setup and cleanup candidates are intended to run as one set. The cleanup candidate rejects the older leading-slash marker format instead of accepting ambiguous historical state during an active run.
-
-## Cleanup and authority
-
-All files and symlinks live below `TemporaryDirectory`. The only real filesystem operations are disposable directory, file, and symlink creation. No real mount, unmount, package mutation, external network, privilege expansion, or upstream contact occurs.
+The remaining boundaries are pathname or marker replacement between validation and action, real mount-namespace behavior, and a real non-root hook-socket transfer.
 
 ## Disposition
 
-The three-patch candidate carries setup containment, complete cleanup preflight, generated-root refusal, safe URI-path preservation, parent-component rejection, and terminal-symlink reachability as one contract. Exact-head CI and complete-diff review are the acceptance gates. No Debian or external upstream issue, patch, email, merge request, comment, or review is authorized or created by this record.
+The three-patch setup/cleanup candidate is one contract. Exact-head CI, a current-main comparison, complete-diff review, and cleanup/rerun confirmation remain the acceptance gates. No Debian or external upstream issue, patch, email, merge request, comment, or review is authorized or created by this record.
