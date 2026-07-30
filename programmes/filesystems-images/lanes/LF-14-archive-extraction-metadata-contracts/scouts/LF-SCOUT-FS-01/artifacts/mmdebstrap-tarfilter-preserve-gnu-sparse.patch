@@ -60,7 +60,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
  def main():
      parser = argparse.ArgumentParser(
          formatter_class=argparse.RawDescriptionHelpFormatter,
-@@ -295,7 +347,48 @@ def main():
+@@ -295,7 +347,51 @@ def main():
                  for r, s in args.trans:
                      member.name = r.sub(s, member.name)
              if member.isfile():
@@ -69,6 +69,9 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +                    if member.sparse is None:
 +                        out_tar.addfile(member, file)
 +                        continue
++                    # Parsed old GNU sparse members retain the type flag "S".
++                    # PAX sparse 1.0 and dense fallback are regular files.
++                    member.type = tarfile.REGTYPE
 +                    sparse_headers = (
 +                        "GNU.sparse.major",
 +                        "GNU.sparse.minor",
