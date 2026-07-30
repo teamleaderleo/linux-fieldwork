@@ -319,7 +319,7 @@ class MmdebstrapCachingProxyContainmentTest(unittest.TestCase):
         candidate = self.candidate_source.read_text(encoding="utf-8")
         self.assertIn('server_address=("", 8080)', baseline)
         self.assertIn('server_address=("127.0.0.1", 8080)', candidate)
-        self.assertIn('components = decoded.split("/")', candidate)
+        self.assertIn('components = raw_path.split("/")', candidate)
         self.assertIn('part in ("", ".", "..")', candidate)
         self.assertIn("parsed.hostname.lower()", candidate)
         self.assertIn("candidate.is_relative_to(root)", candidate)
