@@ -22,12 +22,13 @@ permissions:
 
 jobs:
   apply-candidate:
-    if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+    if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     steps:
       - name: Check out investigation branch
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Apply candidate patch
@@ -46,10 +47,10 @@ jobs:
             upstream/mmdebstrap/coverage.txt \
             upstream/mmdebstrap/tests/fail-with-unwritable-tmpdir
           git commit -m "Fail when an explicit TMPDIR is unusable"
-          git push origin HEAD:${GITHUB_REF_NAME}
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
 
   verify:
-    if: github.event_name != 'push' || github.actor == 'github-actions[bot]'
+    if: github.event_name == 'workflow_dispatch' || github.actor == 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
