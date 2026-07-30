@@ -1,0 +1,36 @@
+diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirror.sh
+--- a/upstream/mmdebstrap/make_mirror.sh
++++ b/upstream/mmdebstrap/make_mirror.sh
+@@ -153,10 +153,27 @@ update_cache() (
+   rootdir="$newcachedir/apt"
+   mkdir -p "$rootdir"
+ 
++  update_cache_exit_cleanup() {
++    status=$?
++    trap - EXIT INT QUIT TERM
++    cleanupapt || :
++    exit "$status"
++  }
++
++  update_cache_signal_exit() {
++    status=$1
++    trap - EXIT INT QUIT TERM
++    cleanupapt || :
++    exit "$status"
++  }
++
+   # we only set this trap here and overwrite the previous trap, because
+   # the update_cache function is run as part of a pipe and thus in its
+   # own process which will EXIT after it finished
+-  trap 'kill "$PROXYPID" || :;cleanupapt' EXIT INT TERM
++  trap 'update_cache_exit_cleanup' EXIT
++  trap 'update_cache_signal_exit 130' INT
++  trap 'update_cache_signal_exit 131' QUIT
++  trap 'update_cache_signal_exit 143' TERM
+@@ -254,5 +271,5 @@ update_cache() (
+ 
+   # this function is run in its own process, so we unset all traps before
+   # returning
+-  trap "-" EXIT INT TERM
++  trap "-" EXIT INT QUIT TERM
+ )
