@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -273,12 +273,32 @@ def main():
+@@ -275,23 +275,40 @@ def main():
                  if len(comps) <= args.strip_components:
                      continue
                  member.name = "/".join(comps[args.strip_components :])
@@ -19,7 +19,14 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
                  for k, v in member.pax_headers.items()
                  if not pax_filter_should_skip(k)
              }
-@@ -294,8 +314,18 @@ def main():
+             if args.idshift:
+                 if args.idshift < 0 and -args.idshift > member.uid:
+                     print("uid cannot be negative", file=sys.stderr)
+                     exit(1)
+                 if args.idshift < 0 and -args.idshift > member.gid:
+                     print("gid cannot be negative", file=sys.stderr)
+                     exit(1)
+                 member.uid += args.idshift
                  member.gid += args.idshift
              if hasattr(args, "trans"):
 +                original_name = member.name
