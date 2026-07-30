@@ -93,6 +93,20 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
             '("skip", "test cannot use host apt config")', self.candidate_driver
         )
 
+    def test_host_apt_skip_uses_black_compatible_parenthesization(self) -> None:
+        expected = (
+            '            elif (\n'
+            '                test.get("Needs-APT-Config", "false") == "true"\n'
+            '                or test.get("Needs-Hook-Free-APT-Config", "false") == "true"\n'
+            '            ) and use_host_apt_config:\n'
+        )
+        self.assertIn(expected, self.candidate_driver)
+        self.assertNotIn(
+            "                (\n"
+            '                    test.get("Needs-APT-Config", "false") == "true"',
+            self.candidate_driver,
+        )
+
     def test_candidate_metadata_is_accepted_by_the_config_parser(self) -> None:
         baseline_constants = string_constants(self.baseline_driver)
         candidate_constants = string_constants(self.candidate_driver)
