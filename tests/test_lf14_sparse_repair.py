@@ -12,21 +12,24 @@ import unittest
 class LF14SparseRepairTest(unittest.TestCase):
     def test_candidate_preserves_gnu_sparse_member(self) -> None:
         repo = pathlib.Path(__file__).resolve().parents[1]
-        lane = repo / (
+        lane_relative = pathlib.Path(
             "programmes/filesystems-images/lanes/"
             "LF-14-archive-extraction-metadata-contracts/scouts/"
             "LF-SCOUT-FS-01/artifacts"
         )
-        patch = lane / "mmdebstrap-tarfilter-preserve-gnu-sparse.patch"
-        runner = lane / "run-probes.py"
+        lane = repo / lane_relative
 
         with tempfile.TemporaryDirectory(prefix="lf14-sparse-repair-") as td:
             work = pathlib.Path(td)
             candidate_repo = work / "candidate"
             upstream = candidate_repo / "upstream/mmdebstrap"
+            candidate_lane = candidate_repo / lane_relative
             upstream.mkdir(parents=True)
             shutil.copy2(repo / "upstream/mmdebstrap/tarfilter", upstream / "tarfilter")
+            shutil.copytree(lane, candidate_lane)
 
+            patch = candidate_lane / "mmdebstrap-tarfilter-preserve-gnu-sparse.patch"
+            runner = candidate_lane / "run-probes.py"
             applied = subprocess.run(
                 ["patch", "-p1", "-d", str(candidate_repo), "-i", str(patch)],
                 stdout=subprocess.PIPE,
