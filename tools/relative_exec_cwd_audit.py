@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import ntpath
 import os
 import re
 import shlex
@@ -21,9 +22,18 @@ from typing import Iterable, Iterator, Sequence
 
 PYTHON_CALLS = {"run", "Popen", "call", "check_call", "check_output"}
 RUST_COMMAND = re.compile(
-    r"(?:std::process::|tokio::process::)?Command::new\(\s*\"([^\"]+)\"\s*\)"
+    r'(?:std::process::|tokio::process::)?Command::new\(\s*"([^"]+)"\s*,?\s*\)'
 )
 SUPPORTED_SUFFIXES = {".py", ".rs", ".sh", ".bash"}
+ENV_OPTIONS_WITH_VALUE = {
+    "-a",
+    "--argv0",
+    "-S",
+    "--split-string",
+    "-u",
+    "--unset",
+}
+ENV_SHORT_OPTIONS_WITH_ATTACHED_VALUE = ("-a", "-S", "-u")
 
 
 @dataclass(frozen=True)
@@ -38,11 +48,9 @@ class Finding:
 
 
 def is_relative_program_with_separator(program: str) -> bool:
-    """Return true for a non-absolute program whose spelling contains a path separator."""
+    """Return true for a cross-platform relative program containing a separator."""
 
-    if not program or os.path.isabs(program):
-        return False
-    if re.match(r"^[A-Za-z]:[\\/]", program):
+    if not program or os.path.isabs(program) or ntpath.isabs(program):
         return False
     return "/" in program or "\\" in program
 
@@ -53,10 +61,26 @@ def string_literal(node: ast.AST) -> str | None:
     return None
 
 
+def keyword_value(call: ast.Call, name: str) -> ast.AST | None:
+    return next((kw.value for kw in call.keywords if kw.arg == name), None)
+
+
 def python_program(call: ast.Call) -> str | None:
-    if not call.args:
-        return None
-    command = call.args[0]
+    executable = keyword_value(call, "executable")
+    if executable is not None:
+        if isinstance(executable, ast.Constant) and executable.value is None:
+            pass
+        else:
+            # A dynamic executable overrides argv[0], so its identity is unknown.
+            return string_literal(executable)
+
+    if call.args:
+        command = call.args[0]
+    else:
+        command = keyword_value(call, "args")
+        if command is None:
+            return None
+
     if isinstance(command, (ast.List, ast.Tuple)) and command.elts:
         return string_literal(command.elts[0])
     return string_literal(command)
@@ -87,7 +111,7 @@ def audit_python(path: str, source: str) -> list[Finding]:
             continue
         if python_call_name(node) not in PYTHON_CALLS:
             continue
-        cwd_node = next((kw.value for kw in node.keywords if kw.arg == "cwd"), None)
+        cwd_node = keyword_value(node, "cwd")
         if cwd_node is None:
             continue
         program = python_program(node)
@@ -102,7 +126,7 @@ def audit_python(path: str, source: str) -> list[Finding]:
                 program=program,
                 cwd=source_segment(source, cwd_node, "<dynamic cwd>"),
                 explanation=(
-                    "The child changes cwd while argv[0] contains a relative path. "
+                    "The child changes cwd while the selected executable contains a relative path. "
                     "Confirm that the program is intentionally resolved inside the child cwd; "
                     "otherwise canonicalize it before launch."
                 ),
@@ -126,30 +150,30 @@ def rust_statement(lines: Sequence[str], start: int, limit: int = 50) -> str:
 def audit_rust(path: str, source: str) -> list[Finding]:
     lines = source.splitlines(keepends=True)
     findings: list[Finding] = []
-    for index, line in enumerate(lines):
-        for match in RUST_COMMAND.finditer(line):
-            program = match.group(1)
-            if not is_relative_program_with_separator(program):
-                continue
-            statement = rust_statement(lines, index)
-            cwd_match = re.search(r"\.current_dir\((.*?)\)", statement, re.DOTALL)
-            if cwd_match is None:
-                continue
-            findings.append(
-                Finding(
-                    path=path,
-                    line=index + 1,
-                    language="rust",
-                    kind="relative-program-with-current-dir",
-                    program=program,
-                    cwd=" ".join(cwd_match.group(1).split()),
-                    explanation=(
-                        "Rust documents relative program resolution combined with current_dir as "
-                        "platform-specific. Canonicalize the executable first or use a simple name "
-                        "whose PATH lookup is the intended contract."
-                    ),
-                )
+    for match in RUST_COMMAND.finditer(source):
+        program = match.group(1)
+        if not is_relative_program_with_separator(program):
+            continue
+        line_number = source.count("\n", 0, match.start()) + 1
+        statement = rust_statement(lines, line_number - 1)
+        cwd_match = re.search(r"\.current_dir\((.*?)\)", statement, re.DOTALL)
+        if cwd_match is None:
+            continue
+        findings.append(
+            Finding(
+                path=path,
+                line=line_number,
+                language="rust",
+                kind="relative-program-with-current-dir",
+                program=program,
+                cwd=" ".join(cwd_match.group(1).split()),
+                explanation=(
+                    "Rust documents relative program resolution combined with current_dir as "
+                    "platform-specific. Canonicalize the executable first or use a simple name "
+                    "whose PATH lookup is the intended contract."
+                ),
             )
+        )
     return findings
 
 
@@ -170,10 +194,16 @@ def shell_logical_lines(source: str) -> Iterator[tuple[int, str]]:
         yield start_line, " ".join(parts)
 
 
+def env_token_index(tokens: Sequence[str]) -> int | None:
+    for index, token in enumerate(tokens):
+        if token == "env" or token.endswith("/env"):
+            return index
+    return None
+
+
 def shell_program_after_env(tokens: Sequence[str]) -> tuple[str, str] | None:
-    try:
-        env_index = tokens.index("env")
-    except ValueError:
+    env_index = env_token_index(tokens)
+    if env_index is None:
         return None
 
     saw_chdir = False
@@ -184,7 +214,7 @@ def shell_program_after_env(tokens: Sequence[str]) -> tuple[str, str] | None:
         if token == "--":
             index += 1
             break
-        if token == "--chdir":
+        if token in {"--chdir", "-C"}:
             if index + 1 >= len(tokens):
                 return None
             saw_chdir = True
@@ -194,6 +224,22 @@ def shell_program_after_env(tokens: Sequence[str]) -> tuple[str, str] | None:
         if token.startswith("--chdir="):
             saw_chdir = True
             cwd = token.split("=", 1)[1]
+            index += 1
+            continue
+        if token.startswith("-C") and token != "-C":
+            saw_chdir = True
+            cwd = token[2:]
+            index += 1
+            continue
+        if token in ENV_OPTIONS_WITH_VALUE:
+            if index + 1 >= len(tokens):
+                return None
+            index += 2
+            continue
+        if any(
+            token.startswith(prefix) and token != prefix
+            for prefix in ENV_SHORT_OPTIONS_WITH_ATTACHED_VALUE
+        ):
             index += 1
             continue
         if token.startswith("-"):
