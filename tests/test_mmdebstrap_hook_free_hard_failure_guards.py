@@ -58,13 +58,15 @@ class HookFreeHardFailureGuardsTest(unittest.TestCase):
         selection: str,
         timeout_value: int,
         timeout_status: int,
+        grep_status: int = 0,
     ) -> tuple[subprocess.CompletedProcess[str], pathlib.Path]:
         fakebin = root / "fakebin"
         fakebin.mkdir(parents=True)
         call_log = root / "timeout-called"
         self.write_fake(
             fakebin / "grep-dctrl",
-            "#!/bin/sh\nprintf '%s' \"$FAKE_SELECTION\"\n",
+            "#!/bin/sh\nprintf '%s' \"$FAKE_SELECTION\"\n"
+            "exit \"$FAKE_GREP_STATUS\"\n",
         )
         self.write_fake(
             fakebin / "timeout",
@@ -90,6 +92,7 @@ class HookFreeHardFailureGuardsTest(unittest.TestCase):
             {
                 "PATH": f"{fakebin}:/usr/bin:/bin",
                 "FAKE_SELECTION": selection,
+                "FAKE_GREP_STATUS": str(grep_status),
                 "FAKE_TIMEOUT_LOG": str(call_log),
                 "FAKE_TIMEOUT_STATUS": str(timeout_status),
             }
@@ -110,10 +113,31 @@ class HookFreeHardFailureGuardsTest(unittest.TestCase):
             root = pathlib.Path(tmp)
             block = self.hard_block(self.candidate_testsuite(root))
             result, call_log = self.execute(
-                root / "run", block, selection="", timeout_value=100, timeout_status=0
+                root / "run",
+                block,
+                selection="",
+                timeout_value=100,
+                timeout_status=0,
+                grep_status=1,
             )
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertIn("no hook-free hard-failure tests", result.stderr)
+            self.assertFalse(call_log.exists())
+
+    def test_selection_command_error_is_preserved_before_timeout(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="hook-free-grep-error-") as tmp:
+            root = pathlib.Path(tmp)
+            block = self.hard_block(self.candidate_testsuite(root))
+            result, call_log = self.execute(
+                root / "run",
+                block,
+                selection="",
+                timeout_value=100,
+                timeout_status=0,
+                grep_status=2,
+            )
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("grep-dctrl status 2", result.stderr)
             self.assertFalse(call_log.exists())
 
     def test_exhausted_time_is_neutral_before_timeout(self) -> None:
