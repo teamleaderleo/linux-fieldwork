@@ -39,7 +39,8 @@ def decode_quoted(token: str) -> str:
 
 
 def quoted(line: str) -> list[str]:
-    return [decode_quoted(value) for value in re.findall(r'"((?:[^"\\]|\\.)*)"', line)]
+    pattern = r'"((?:[^"\\]|\\.)*)"'
+    return [decode_quoted(value) for value in re.findall(pattern, line)]
 
 
 def result_state(line: str) -> tuple[bool, str]:
@@ -67,13 +68,12 @@ def operation(name: str, line: str) -> str:
 
 def dirfd_base(token: str, cwd: str) -> str | None:
     token = token.strip()
-    if token == "AT_FDCWD":
-        return cwd
+    if token.startswith("AT_FDCWD"):
+        match = re.search(r"<([^>]+)>", token)
+        return os.path.normpath(match.group(1)) if match else cwd
     match = re.search(r"<([^>]+)>", token)
-    if match:
-        value = match.group(1)
-        if value.startswith("/"):
-            return os.path.normpath(value)
+    if match and match.group(1).startswith("/"):
+        return os.path.normpath(match.group(1))
     return None
 
 
@@ -95,17 +95,17 @@ def single_at_base(line: str, cwd: str) -> str | None:
 
 
 def two_at_refs(line: str, cwd: str) -> list[tuple[str, str]] | None:
-    match = re.match(
-        r'(?:\d+\s+)?(?:renameat2?|linkat)\(([^,]+),\s*"((?:[^"\\]|\\.)*)",\s*([^,]+),\s*"((?:[^"\\]|\\.)*)"',
-        line,
+    pattern = (
+        r'(?:\d+\s+)?(?:renameat2?|linkat)\(([^,]+),\s*'
+        r'"((?:[^"\\]|\\.)*)",\s*([^,]+),\s*'
+        r'"((?:[^"\\]|\\.)*)"'
     )
+    match = re.match(pattern, line)
     if not match:
         return None
-    old_base = dirfd_base(match.group(1), cwd)
-    new_base = dirfd_base(match.group(3), cwd)
     return [
-        ("old", normalize(decode_quoted(match.group(2)), old_base)),
-        ("new", normalize(decode_quoted(match.group(4)), new_base)),
+        ("old", normalize(decode_quoted(match.group(2)), dirfd_base(match.group(1), cwd))),
+        ("new", normalize(decode_quoted(match.group(4)), dirfd_base(match.group(3), cwd))),
     ]
 
 
@@ -124,12 +124,14 @@ def path_refs(name: str, line: str, values: list[str], cwd: str) -> list[tuple[s
     if name == "symlink":
         return [("link", normalize(values[1], cwd))] if len(values) > 1 else []
     if name == "symlinkat":
-        match = re.match(
-            r'(?:\d+\s+)?symlinkat\("(?:[^"\\]|\\.)*",\s*([^,]+),\s*"((?:[^"\\]|\\.)*)"',
-            line,
+        pattern = (
+            r'(?:\d+\s+)?symlinkat\("(?:[^"\\]|\\.)*",\s*'
+            r'([^,]+),\s*"((?:[^"\\]|\\.)*)"'
         )
+        match = re.match(pattern, line)
         if match:
-            return [("link", normalize(decode_quoted(match.group(2)), dirfd_base(match.group(1), cwd)))]
+            base = dirfd_base(match.group(1), cwd)
+            return [("link", normalize(decode_quoted(match.group(2)), base))]
         return []
     if name == "mount":
         refs = [("source", normalize(values[0], cwd))]
@@ -151,14 +153,14 @@ def is_outside(path: str, target: str) -> bool:
     return path != target and not path.startswith(target + os.sep)
 
 
+def beneath(path: str, root: str) -> bool:
+    return path == root or path.startswith(root + os.sep)
+
+
 def is_needrestart(path: str) -> bool:
-    return (
-        path == "/usr/lib/needrestart"
-        or path.startswith("/usr/lib/needrestart/")
-        or path == "/run/needrestart"
-        or path.startswith("/run/needrestart/")
-        or path == "/var/run/needrestart"
-        or path.startswith("/var/run/needrestart/")
+    return any(
+        beneath(path, root)
+        for root in ("/usr/lib/needrestart", "/run/needrestart", "/var/run/needrestart")
     )
 
 
@@ -182,17 +184,19 @@ def classify(
         return "harmless runtime interaction", "Unix-domain runtime socket"
     if path.startswith("<"):
         return "unresolved", "relative pathname lacked a traceable cwd or dirfd base"
-    if path == "/dev" or path.startswith("/dev/") or path == "/proc" or path.startswith("/proc/") or path == "/sys" or path.startswith("/sys/"):
+    if any(beneath(path, root) for root in ("/dev", "/proc", "/sys")):
         return "harmless runtime interaction", "device, process, or kernel runtime path"
     if op == "mutation":
+        if beneath(path, runtime):
+            return "harmless runtime interaction", "probe-owned temporary runtime path"
         if not success and "EEXIST" in result:
             return "harmless runtime interaction", "idempotent path-preparation call found an existing path"
         if not success and (target.startswith(path.rstrip("/") + "/") or runtime.startswith(path.rstrip("/") + "/")):
-            return "harmless runtime interaction", "failed path-preparation call on a target or probe ancestor"
+            return "harmless runtime interaction", "target or probe ancestor path-preparation call"
         if success:
             return "unexpected mutation", "successful filesystem mutation outside target"
         return "unresolved", "failed mutation attempt outside target"
-    if target.startswith(path.rstrip("/") + "/") or path.startswith(runtime + "/"):
+    if target.startswith(path.rstrip("/") + "/") or beneath(path, runtime):
         return "required host read", "target traversal or probe input"
     return "required host read", "host executable, library, configuration, locale, identity, or metadata read"
 
@@ -245,7 +249,10 @@ def main() -> int:
                 if name == "chdir" and success and values:
                     cwd = normalize(values[0], cwd)
 
-    columns = ["phase", "trace", "line", "syscall", "operation", "role", "path", "result", "category", "rationale"]
+    columns = [
+        "phase", "trace", "line", "syscall", "operation", "role",
+        "path", "result", "category", "rationale",
+    ]
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8") as handle:
@@ -255,11 +262,15 @@ def main() -> int:
 
     counts = collections.Counter(row["category"] for row in rows)
     summary = output.with_suffix(".summary.txt")
+    categories = (
+        "required host read", "harmless runtime interaction",
+        "unexpected mutation", "service action", "unresolved",
+    )
     with summary.open("w", encoding="utf-8") as handle:
         handle.write(f"target={target}\n")
         handle.write(f"trace_files={len(files)}\n")
         handle.write(f"outside_access_events={len(rows)}\n")
-        for category in ("required host read", "harmless runtime interaction", "unexpected mutation", "service action", "unresolved"):
+        for category in categories:
             handle.write(f"category[{category}]={counts.get(category, 0)}\n")
 
     bad = [row for row in rows if row["category"] == "unexpected mutation"]
