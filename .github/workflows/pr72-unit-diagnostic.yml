@@ -18,14 +18,21 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8758712312/zip" > /tmp/a.zip
-      - name: Print terminal testsuite stderr
+        run: gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8758712312/zip" > /tmp/a.zip
+      - name: Print create-directory case
         shell: bash
         run: |
           python3 - <<'PY'
           import zipfile
+          marker = '(30/284) create-directory'
           with zipfile.ZipFile('/tmp/a.zip') as archive:
-              lines = archive.read('autopkgtest-output/testsuite-stderr').decode('utf-8', 'replace').splitlines()
-          print('\n'.join(lines[-70:]))
+              for name in ('autopkgtest-output/testsuite-stderr', 'autopkgtest-output/testsuite-stdout'):
+                  lines = archive.read(name).decode('utf-8', 'replace').splitlines()
+                  positions = [i for i, line in enumerate(lines) if marker in line]
+                  print(f'===== {name} =====')
+                  for pos in positions:
+                      start = max(0, pos - 12)
+                      end = min(len(lines), pos + 70)
+                      for i in range(start, end):
+                          print(f'{i + 1}: {lines[i]}')
           PY
