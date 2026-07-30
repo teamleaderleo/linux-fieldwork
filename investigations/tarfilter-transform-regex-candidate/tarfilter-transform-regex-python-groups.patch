@@ -1,0 +1,19 @@
+diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
+--- a/upstream/mmdebstrap/tarfilter
++++ b/upstream/mmdebstrap/tarfilter
+@@ -279,6 +279,14 @@ def _translate_pattern(pattern, extended):
+             result.append(expression)
+             branch_start = False
+             continue
+ 
++        if (
++            extended
++            and char == "("
++            and index + 1 < len(pattern)
++            and pattern[index + 1] == "?"
++        ):
++            raise ValueError("unsupported extended-regex group extension")
++
+         if char == "\\":
+             if index + 1 == len(pattern):
+                 result.append("\\")
