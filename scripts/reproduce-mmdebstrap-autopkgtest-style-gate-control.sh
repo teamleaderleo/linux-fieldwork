@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source_tree="$repo_root/upstream/mmdebstrap"
-patch_file="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/installed-command-wrapper.patch"
+patch_file="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/installed-command-style-gate-control.patch"
 output_input=${1:-"$repo_root/investigations/mmdebstrap-autopkgtest-1141078/runs/style-gate-control"}
 output=$(realpath -m -- "$output_input")
 runs_root=$(realpath -m -- "$repo_root/investigations/mmdebstrap-autopkgtest-1141078/runs")
@@ -66,7 +66,8 @@ patch -p1 -d "$candidate" -i "$patch_file" \
   printf 'source_path=upstream/mmdebstrap\n'
   printf 'execution_source=temporary patched copy\n'
   printf 'behavior_command=/usr/bin/mmdebstrap\n'
-  printf 'style_checked_command=temporary fake source-tree mmdebstrap\n'
+  printf 'style_gate_override=SKIP_MMSCRIPT_CHECKS=yes\n'
+  printf 'other_source_checks=enabled\n'
   dpkg-query -W -f='package=${binary:Package}\tversion=${Version}\tarchitecture=${Architecture}\n' \
     autopkgtest mmdebstrap perltidy apt dpkg patch 2>&1 || true
 } >"$output/environment.txt"
@@ -76,6 +77,7 @@ sha256sum \
   "$source_tree/coverage.sh" \
   "$patch_file" \
   "$candidate/debian/tests/testsuite" \
+  "$candidate/coverage.sh" \
   >"$output/input-sha256.txt"
 
 printf '%q ' autopkgtest --output-dir "$output/autopkgtest-output" '<temporary-patched-source>' -- null \
@@ -101,10 +103,16 @@ printf '%s\n' "$status" >"$output/exit-status"
   else
     printf 'perltidy_gate_failed=no\n'
   fi
-  if grep -Fq '/usr/bin/mmdebstrap' "$candidate/debian/tests/testsuite"; then
-    printf 'installed_command_wrapper_present=yes\n'
+  if grep -Fq 'pod2man: unable to format' "$output/console.log"; then
+    printf 'pod_gate_failed=yes\n'
   else
-    printf 'installed_command_wrapper_present=no\n'
+    printf 'pod_gate_failed=no\n'
+  fi
+  if grep -Fq 'SKIP_MMSCRIPT_CHECKS=yes CMD="mmdebstrap ' "$candidate/debian/tests/testsuite" \
+    && grep -Fq 'SKIP_MMSCRIPT_CHECKS' "$candidate/coverage.sh"; then
+    printf 'installed_behavior_style_override_present=yes\n'
+  else
+    printf 'installed_behavior_style_override_present=no\n'
   fi
 } >"$output/summary.txt"
 
