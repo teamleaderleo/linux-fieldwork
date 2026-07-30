@@ -1,0 +1,11 @@
+diff --git a/coverage.txt b/coverage.txt
+--- a/coverage.txt
++++ b/coverage.txt
+@@ -53,6 +53,7 @@ Test: root-mode-inside-unshare-chroot
+ 
+ Test: root-without-cap-sys-admin
+ Needs-Root: true
++Needs-APT-Config: true
+ 
+ Test: mount-is-missing
+ Needs-QEMU: true
