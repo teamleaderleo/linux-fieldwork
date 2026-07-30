@@ -149,3 +149,49 @@ jobs:
               exit "$status"
               ;;
           esac
+
+  capture-debci-72574145:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'research/debci-72574145-capture-2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Fetch bounded historical result files
+        shell: bash
+        run: |
+          set -u
+          base='https://ci.debian.net/data/autopkgtest/testing/amd64/m/mmdebstrap/72574145'
+          mkdir -p capture
+          printf 'base_url=%s\n' "$base" >capture/provenance.txt
+          printf 'captured_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>capture/provenance.txt
+          for name in log.gz testinfo.json artifacts.tar.gz metadata.json result.tar.gz; do
+            set +e
+            curl --location --silent --show-error \
+              --connect-timeout 20 --max-time 180 --max-filesize 67108864 \
+              --output "capture/$name" \
+              --write-out 'http_code=%{http_code}\ncontent_type=%{content_type}\nsize_download=%{size_download}\nurl_effective=%{url_effective}\n' \
+              "$base/$name" >"capture/$name.curl.txt" 2>"capture/$name.curl.stderr"
+            status=$?
+            set -e
+            printf 'curl_exit=%s\n' "$status" >>"capture/$name.curl.txt"
+            if [[ -f "capture/$name" ]]; then
+              stat -c 'bytes=%s' "capture/$name" >>"capture/$name.curl.txt"
+              sha256sum "capture/$name" >>capture/SHA256SUMS
+              file "capture/$name" >>capture/file-types.txt
+            fi
+          done
+          if [[ -s capture/log.gz ]] && gzip --test capture/log.gz 2>capture/log-gzip-test.stderr; then
+            gzip --decompress --stdout capture/log.gz >capture/log
+            tail -n 1000 capture/log >capture/log-tail-1000.txt
+          fi
+
+      - name: Upload historical capture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debci-mmdebstrap-72574145-capture-2
+          path: capture/
+          if-no-files-found: error
+          retention-days: 14
