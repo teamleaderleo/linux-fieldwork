@@ -60,7 +60,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
  def main():
      parser = argparse.ArgumentParser(
          formatter_class=argparse.RawDescriptionHelpFormatter,
-@@ -295,7 +347,43 @@ def main():
+@@ -295,7 +347,48 @@ def main():
                  for r, s in args.trans:
                      member.name = r.sub(s, member.name)
              if member.isfile():
@@ -83,6 +83,11 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +                        # represent a sparse member. Emit valid dense data
 +                        # instead of stale or incomplete sparse metadata.
 +                        member.sparse = None
++                        member.pax_headers = {
++                            key: value
++                            for key, value in member.pax_headers.items()
++                            if not key.startswith("GNU.sparse.")
++                        }
 +                        out_tar.addfile(member, file)
 +                        continue
 +                    logical_size = member.size
