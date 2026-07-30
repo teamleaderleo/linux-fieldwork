@@ -1,6 +1,6 @@
 --- a/upstream/mmdebstrap/caching_proxy.py
 +++ b/upstream/mmdebstrap/caching_proxy.py
-@@ -14,15 +14,65 @@
+@@ -14,15 +14,77 @@
  readonly = False
  
  
@@ -31,12 +31,15 @@
 +    ):
 +        raise ValueError("invalid proxy request target")
 +    raw_path = parsed.path[1:]
-+    lowered = raw_path.lower()
-+    if not raw_path or "%2f" in lowered or "%5c" in lowered:
++    if (
++        not raw_path
++        or "%" in raw_path
++        or "\\" in raw_path
++        or "\0" in raw_path
++    ):
 +        raise ValueError("unsafe cache path")
-+    decoded = urllib.parse.unquote(raw_path)
-+    components = decoded.split("/")
-+    if "\0" in decoded or any(part in ("", ".", "..") for part in components):
++    components = raw_path.split("/")
++    if any(part in ("", ".", "..") for part in components):
 +        raise ValueError("unsafe cache path")
 +    relative = pathlib.PurePosixPath(*components)
 +    root = root.resolve()
@@ -55,15 +58,24 @@
 -        sanitizedpath = urllib.parse.unquote(self.path.removeprefix(pathprefix))
 -        oldpath = oldcachedir / sanitizedpath
 -        newpath = newcachedir / sanitizedpath
++        host_values = self.headers.get_all("Host", [])
++        content_length_values = self.headers.get_all("Content-Length", [])
++        if (
++            len(host_values) != 1
++            or len(content_length_values) > 1
++            or self.headers.get_all("Transfer-Encoding", [])
++        ):
++            self.send_error(400, "invalid proxy request")
++            return
 +        try:
-+            content_length = int(self.headers.get("Content-Length", "0"))
++            content_length = int(content_length_values[0]) if content_length_values else 0
 +        except ValueError:
 +            self.send_error(400, "invalid Content-Length")
 +            return
-+        host = self.headers.get("Host")
-+        if content_length != 0 or host is None:
++        if content_length != 0:
 +            self.send_error(400, "invalid proxy request")
 +            return
++        host = host_values[0]
 +        try:
 +            oldpath = cache_path(oldcachedir, self.path, host)
 +            newpath = cache_path(newcachedir, self.path, host)
@@ -73,7 +85,7 @@
  
          if not readonly:
              newpath.parent.mkdir(parents=True, exist_ok=True)
-@@ -109,7 +159,7 @@
+@@ -109,7 +171,7 @@
          newcachedir = pathlib.Path(sys.argv[2])
      print(f"starting caching proxy for {newcachedir}", file=sys.stderr)
      httpd = http.server.ThreadingHTTPServer(
@@ -81,4 +93,3 @@
 +        server_address=("127.0.0.1", 8080), RequestHandlerClass=ProxyRequestHandler
      )
      httpd.serve_forever()
- 
