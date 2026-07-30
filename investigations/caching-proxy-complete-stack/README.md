@@ -12,15 +12,20 @@ The composed source remains generated evidence. The imported upstream file stays
 - integration owner: issue #188
 - helper: D
 - first repository candidate commit: `1efaaece6bf58e78753978a1ef3c06bfa2c1d9ed`
+- exact validated source head: `e3cde53b2a0b35fcccdbd7e0bed74de8ce4eeceb`
 - current integration branch: `integration/caching-proxy-complete-stack`
+- pull request: #198
 - external-contact authority: internal repository work only
 
 ## Source boundary
 
-- base repository commit: `d344c942af4b55b5b0c71c8a66a8870fbf0db7bf`
+- initial base repository commit: `d344c942af4b55b5b0c71c8a66a8870fbf0db7bf`
+- current-main alignment commit used before the validated run: `a254657636ca92302610cd4af4bc294fafa62bbd`
 - imported source: `upstream/mmdebstrap/caching_proxy.py`
 - imported blob: `e57a8516a0c76167894b05fc56be0e3165535488`
-- composer: `compose.py`
+- routing composer: `compose.py`
+- retained implementation: `compose_impl.py`
+- focused snapshots: `inputs/`
 - optimized-interpreter runner: `run_case.py`
 - full gate: `../../tests/test_caching_proxy_complete_stack.py`
 
@@ -37,7 +42,7 @@ The composer verifies defining markers in all eight retained repair artifacts be
 7. post-commit log-and-close behavior;
 8. explicit origin status validation under ordinary and optimized Python.
 
-Focused carriers remain mechanism records: PRs #118, #139, #147, #162, and #169.
+Focused carriers remain mechanism records: PRs #118, #139, #147, #162, and #169. Inputs already present on `main` are referenced directly. Inputs confined to open focused branches are copied into `inputs/` so an exact PR checkout can verify and compose them without fetching mutable branch state.
 
 ## Composition decisions
 
@@ -56,7 +61,7 @@ The generated handler performs the checks in this order:
 
 The chunked path deliberately ignores a conflicting origin `Content-Length` because `http.client` returns decoded entity bytes. Non-chunked responses retain strict declared-byte validation.
 
-## Executed gate
+## Executed gates
 
 Local command:
 
@@ -64,11 +69,27 @@ Local command:
 python3 -m unittest -v tests/test_caching_proxy_complete_stack.py
 ```
 
-Observed before repository publication:
+Initial local result:
 
 ```text
 Ran 7 tests in 16.425s
 OK
+```
+
+Snapshot-packaging rerun:
+
+```text
+Ran 7 tests in 15.297s
+OK
+```
+
+Exact-head repository gate:
+
+```text
+head: e3cde53b2a0b35fcccdbd7e0bed74de8ce4eeceb
+workflow: Linux Fieldwork CI
+run: 30578728258 / 565
+result: success
 ```
 
 The matrix covers:
@@ -80,19 +101,19 @@ The matrix covers:
 - pre-commit failure, post-header/body-prefix origin failure, cache-writer failure, and downstream disconnect with one status line and no failed publication;
 - synchronized concurrent misses, hidden final name until completion, complete client bytes, ordinary creation mode, temporary cleanup, and server/thread shutdown.
 
-Exact-head Linux Fieldwork CI is required after the pull request is opened. Its run and final head belong in the issue/PR receipt.
-
 ## Complete-diff review
 
-The intended branch diff contains only this investigation record, its composer and runner, and the executable regression. It does not edit the imported source or any focused repair artifact.
+The reviewed branch-owned paths are this record, the routing composer, retained implementation, optimized runner, four focused snapshots, and the executable regression. The imported source remains unchanged.
 
-The composer uses the merged atomic-publication patch as the executable base and verifies the remaining focused artifacts as preserved inputs. Their overlapping source changes are integrated by named anchors rather than mechanically applying stale hunks.
+The executable base is the merged atomic-publication patch. Overlapping request and fresh-response changes are integrated by named anchors instead of mechanically applying stale hunks. The four snapshots preserve the exact open-branch mechanisms needed by the composition gate.
+
+No unrelated source, workflow, upstream mirror, or external-contact file is changed by Packet D.
 
 ## Cleanup and rerun
 
 Every loopback server calls `shutdown()` and `server_close()` and joins its serving thread. Temporary roots use `TemporaryDirectory`. Origin connections are closed in `finally`. Tests wait for completed atomic publication before cache-hit controls and require temporary sibling removal after success and failure.
 
-The local full matrix completed once cleanly. Exact-head CI supplies the repository rerun receipt.
+The full matrix completed cleanly locally before publication, again after input snapshot packaging, and in the repository-wide exact-head CI suite.
 
 ## Evidence boundary
 
@@ -109,6 +130,8 @@ The retained limits are:
 
 ## Current disposition
 
-`REPAIR` until exact-head CI executes the full repository suite. A green exact-head run plus complete diff review promotes this composed unit to `READY FOR FINAL HUMAN CHECK`.
+`READY FOR FINAL HUMAN CHECK` at validated source head `e3cde53b2a0b35fcccdbd7e0bed74de8ce4eeceb`, with Linux Fieldwork CI run 565 successful.
+
+The final branch-record commit and any later current-main merge require their own green exact-head rerun before merge.
 
 No Debian or other external issue, email, patch, merge request, comment, or review is included or authorized.
