@@ -2,6 +2,8 @@
 
 Use this runbook whenever a person or agent is asked to add Linux learning, map a research direction, or investigate a Linux or Debian project through this repository.
 
+Read [`FIELD_GUIDE.md`](FIELD_GUIDE.md) alongside this runbook for practical do, do-not, 🍩 donut, review, and investigation-selection lessons retained from prior work.
+
 ## In simple words
 
 Choose the smallest useful record. Write a note for reusable understanding. Use the programme registry for a plausible formal direction. Give a lane its own directory when its bounded question and first probe are clear. Open an investigation when exact source work and repeatable evidence begin.
@@ -52,7 +54,14 @@ Start notes and investigations from [`templates/`](templates/). Follow [`program
 
 ## 3. Explain it simply
 
-Near the top, add `## In simple words` and answer:
+Near the top, add these reader-facing fields:
+
+- `## TL;DR` — the current answer and next action in a few sentences;
+- `## Explain like I'm five` — a concrete, low-jargon explanation;
+- `## Why care` — the practical failure, risk, or opportunity.
+
+Existing lightweight notes may keep the combined `## In simple words` heading.
+Whichever form is used, answer:
 
 - What is this?
 - Where does it sit in the system?
@@ -74,7 +83,7 @@ Update or create a target map when one upstream project becomes recurrent across
 
 Prefer a command or test that preserves the important behavior while remaining easy to repeat. Capture the exact command, expected distinguishing outcomes, actual result, and cleanup steps.
 
-For a candidate change, compare baseline and candidate behavior under the same conditions.
+For a candidate change, compare baseline and candidate behavior under the same conditions. Use the donut checks in [`FIELD_GUIDE.md`](FIELD_GUIDE.md) to look for missing permission, path, metadata, lifecycle, compatibility, and evidence boundaries around the headline result.
 
 ## 6. State the evidence boundary
 
