@@ -42,9 +42,10 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
 
     @staticmethod
     def publication_helpers(source: str) -> str:
-        start = source.index("WORKDIR=\nIMAGE_TMPDIR=\nIMAGE_TMP=\n")
+        start = source.index("prepare_image() {")
         end = source.index("\ntrap cleanup ", start)
-        return source[start:end].rstrip() + "\n"
+        declarations = "WORKDIR=\nIMAGE_TMPDIR=\nIMAGE_TMP=\n"
+        return declarations + source[start:end].rstrip() + "\n"
 
     @staticmethod
     def function_block(source: str, name: str) -> str:
