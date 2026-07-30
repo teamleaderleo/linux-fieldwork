@@ -85,11 +85,11 @@ def instrument_source(source: str) -> str:
         raise RuntimeError("before-child-launch insertion marker drifted")
     source = source.replace(before, after, 1)
 
-    worker_before = """        POSIX::sigprocmask(SIG_UNBLOCK, $sigset)\n          or error \"Can't unblock signals: $!\";\n\n        close $rfh;\n        close $parentsock;\n"""
-    worker_after = """        POSIX::sigprocmask(SIG_UNBLOCK, $sigset)\n          or error \"Can't unblock signals: $!\";\n\n        lf_checkpoint('active-worker', $options->{root});\n\n        close $rfh;\n        close $parentsock;\n"""
-    if source.count(worker_before) != 1:
+    active_before = """        @cleanup_tasks = setup_mounts($options);\n    }\n\n    eval {\n"""
+    active_after = """        @cleanup_tasks = setup_mounts($options);\n        lf_checkpoint('active-worker', $options->{root});\n    }\n\n    eval {\n"""
+    if source.count(active_before) != 1:
         raise RuntimeError("active-worker insertion marker drifted")
-    source = source.replace(worker_before, worker_after, 1)
+    source = source.replace(active_before, active_after, 1)
 
     cleanup_before = """    $waiting_for = \"cleanup\";\n\n    if (any { $_ eq $options->{format} } ('directory')) {\n"""
     cleanup_after = """    $waiting_for = \"cleanup\";\n\n    lf_checkpoint('cleanup', $options->{root});\n\n    if (any { $_ eq $options->{format} } ('directory')) {\n"""
@@ -144,6 +144,7 @@ def run_command(source: Path, run_dir: Path, checkpoint: str | None) -> subproce
         "--variant=custom",
         "--format=null",
         "--dry-run",
+        "--customize-hook=true",
         "--skip=check/signed-by,update",
         "",
         "/dev/null",
