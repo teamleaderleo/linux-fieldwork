@@ -1,0 +1,46 @@
+name: Reproduce mmdebstrap unwritable TMPDIR
+
+on:
+  push:
+    branches:
+      - investigate/mmdebstrap-unwritable-tmpdir
+    paths:
+      - "upstream/mmdebstrap/**"
+      - "investigations/mmdebstrap-unwritable-tmpdir/**"
+      - ".github/workflows/mmdebstrap-unwritable-tmpdir.yml"
+  pull_request:
+    paths:
+      - "upstream/mmdebstrap/**"
+      - "investigations/mmdebstrap-unwritable-tmpdir/**"
+      - ".github/workflows/mmdebstrap-unwritable-tmpdir.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out Linux Fieldwork
+        uses: actions/checkout@v4
+
+      - name: Install mmdebstrap runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libdistro-info-perl \
+            libdpkg-perl \
+            uidmap
+
+      - name: Run focused reproduction
+        run: bash investigations/mmdebstrap-unwritable-tmpdir/run.sh
+
+      - name: Upload reproduction evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmdebstrap-unwritable-tmpdir
+          path: investigations/mmdebstrap-unwritable-tmpdir/results/
+          if-no-files-found: warn
