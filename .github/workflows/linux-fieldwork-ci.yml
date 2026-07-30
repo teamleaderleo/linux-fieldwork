@@ -1,0 +1,124 @@
+name: Linux Fieldwork CI
+
+on:
+  pull_request:
+    paths:
+      - "tools/**"
+      - "tests/**"
+      - "scripts/**"
+      - "campaigns/**"
+      - "notes/**"
+      - "upstream/**"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lab-tools:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Compile Python tools
+        run: python3 -m compileall -q tools tests
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Check shell syntax and command help
+        run: |
+          bash -n scripts/capture-linux-context.sh
+          bash -n scripts/reproduce-mmdebstrap-autopkgtest.sh
+          python3 tools/tar_manifest.py --help >/dev/null
+          python3 tools/manifest_diff.py --help >/dev/null
+          python3 tools/debian_bug_report.py --help >/dev/null
+          bash scripts/capture-linux-context.sh --help >/dev/null
+
+  capture-bug-report:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'campaign/rootless-bootstrap-lab'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Capture Debian bug 1141078
+        run: |
+          python3 tools/debian_bug_report.py 1141078 \
+            --output-dir campaigns/0001-rootless-bootstrap/runs/bts-1141078
+
+      - name: Upload BTS capture
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-bug-1141078
+          path: campaigns/0001-rootless-bootstrap/runs/bts-1141078/
+          if-no-files-found: error
+          retention-days: 14
+
+  reproduce-mmdebstrap:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'campaign/rootless-bootstrap-lab'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Run Debian sid autopkgtest in a disposable container
+        shell: bash
+        run: |
+          set -uo pipefail
+          run_dir="campaigns/0001-rootless-bootstrap/runs/$RUN_ID"
+          mkdir -p "$run_dir"
+          set +e
+          docker run --privileged --rm \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            --env RUN_ID="$RUN_ID" \
+            --env AUTOPKGTEST_TIMEOUT=160m \
+            debian:sid-slim \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                autopkgtest ca-certificates python3 procps util-linux
+              apt-get clean
+              scripts/reproduce-mmdebstrap-autopkgtest.sh
+            '
+          status=$?
+          set -e
+          printf '%s\n' "$status" >"$run_dir/container-exit-status"
+          exit 0
+
+      - name: Upload reproduction evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmdebstrap-reproduction-${{ env.RUN_ID }}
+          path: campaigns/0001-rootless-bootstrap/runs/${{ env.RUN_ID }}/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Classify reproduction result
+        if: always()
+        shell: bash
+        run: |
+          status=$(cat "campaigns/0001-rootless-bootstrap/runs/$RUN_ID/container-exit-status")
+          case "$status" in
+            0)
+              echo "The contained autopkgtest passed."
+              ;;
+            77)
+              echo "The contained autopkgtest returned a neutral result."
+              ;;
+            *)
+              echo "The contained autopkgtest failed with status $status."
+              exit "$status"
+              ;;
+          esac
