@@ -20,7 +20,7 @@ The retained patch introduces a separate metadata class:
 Needs-Hook-Free-APT-Config: true
 ```
 
-`coverage.py` skips either host-APT-incompatible class while `USE_HOST_APT_CONFIG=yes`.
+The field is added to `coverage.py`'s explicit configuration whitelist; otherwise the parser would reject the new paragraph before any scheduling decision. The host-APT scheduler then skips either incompatible class while `USE_HOST_APT_CONFIG=yes`.
 
 After the package test rebuilds its hook-free mirror, `debian/tests/testsuite` runs the new class separately with:
 
@@ -42,6 +42,7 @@ The original `Needs-APT-Config` transition list remains a distinct soft-failure 
 
 - applies the patch to exact temporary copies of `coverage.txt`, `coverage.py`, and `debian/tests/testsuite`;
 - proves the capability case uses only the new metadata;
+- parses the candidate Python source and proves the new field is present in the config whitelist but absent from the baseline;
 - proves the host-APT skip recognizes the new metadata;
 - proves the hard phase precedes the soft phase and contains neither injected hook;
 - extracts and executes the actual candidate status block, requiring 0→0, 1→1, 2→2, and 124→77;
