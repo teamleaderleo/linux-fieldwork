@@ -73,6 +73,21 @@ The current child is still terminated and waited before the exit. Status 130 is 
 - exact patch application and Python compilation run before scenarios;
 - every suite lives under the test's `TemporaryDirectory`.
 
+## Execution record
+
+An earlier exact-head run failed before signal execution because the retained patch hunk targeted a stale line location. The patch was regenerated against the imported blob; that red run remains classified as patch-packaging evidence.
+
+Exact head `b0b87f9f1b30816b21dddcb6c3657b5a75b2b7f9` passed Linux Fieldwork CI run `30556199982`. The focused log records all four required tests as passing:
+
+```text
+test_baseline_reports_parent_only_sigint_as_success ... ok
+test_candidate_reports_parent_only_sigint_as_failure ... ok
+test_candidate_source_has_explicit_sigint_exit ... ok
+test_candidate_unsignaled_run_still_succeeds ... ok
+```
+
+The exact retained patch applied and compiled inside the test setup. Interrupted baseline and candidate runs left the worker PID gone and no completion marker; the immediate unsignaled candidate rerun returned 0 and produced `result: SUCCESS`.
+
 ## Severity
 
 **Medium reliability, approximately 5/10.**
@@ -88,4 +103,4 @@ This is test orchestration rather than mmdebstrap runtime behavior, but CI and c
 
 ## Disposition
 
-Retain the candidate and regression for internal review. No Debian or external upstream issue, patch, email, merge request, comment, or review is authorized or created.
+READY FOR FINAL HUMAN CHECK as an independent coverage-driver repair. No Debian or external upstream issue, patch, email, merge request, comment, or review is authorized or created.
