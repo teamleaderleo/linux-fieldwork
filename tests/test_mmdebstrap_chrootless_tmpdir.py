@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import shutil
 import stat
 import subprocess
@@ -31,6 +32,7 @@ class MmdebstrapChrootlessTmpdirTests(unittest.TestCase):
         source_text: str,
         target: pathlib.Path,
         caller_tmpdir: pathlib.Path,
+        dpkg_path: str = "/usr/sbin:/usr/bin:/sbin:/bin",
     ) -> subprocess.CompletedProcess[bytes]:
         helper = self.extract_helper(source_text)
         program = (
@@ -40,7 +42,7 @@ class MmdebstrapChrootlessTmpdirTests(unittest.TestCase):
             "sub error { die $_[0] . qq{\\n}; }\n"
             f"{helper}\n"
             "print join(qq{\\0}, "
-            "chrootless_dpkg_environment($ARGV[0])), qq{\\0};\n"
+            "chrootless_dpkg_environment($ARGV[0], $ARGV[1])), qq{\\0};\n"
         )
         with tempfile.TemporaryDirectory(prefix="lf69-perl-helper-") as td:
             script = pathlib.Path(td) / "helper.pl"
@@ -51,7 +53,7 @@ class MmdebstrapChrootlessTmpdirTests(unittest.TestCase):
                 "LC_ALL": "C.UTF-8",
             }
             return subprocess.run(
-                ["perl", str(script), str(target)],
+                ["perl", str(script), str(target), dpkg_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
@@ -80,6 +82,7 @@ class MmdebstrapChrootlessTmpdirTests(unittest.TestCase):
 
     def test_helper_creates_and_assigns_target_tmpdir(self) -> None:
         source_text = self.source.read_text()
+        canonical_path = "/usr/sbin:/usr/bin:/sbin:/bin"
         with tempfile.TemporaryDirectory(prefix="lf69-positive-") as td:
             root = pathlib.Path(td)
             target = root / "target"
@@ -87,11 +90,17 @@ class MmdebstrapChrootlessTmpdirTests(unittest.TestCase):
             target.mkdir()
             caller_tmpdir.mkdir()
 
-            completed = self.run_helper(source_text, target, caller_tmpdir)
+            completed = self.run_helper(
+                source_text,
+                target,
+                caller_tmpdir,
+                canonical_path,
+            )
             self.assertEqual(completed.returncode, 0, completed.stderr.decode())
             args = self.parse_environment_args(completed.stdout)
 
             self.assertEqual(args[0], "-i")
+            self.assertIn(f"PATH={canonical_path}", args)
             self.assertIn(f"TMPDIR={target / 'tmp'}", args)
             self.assertNotIn(f"TMPDIR={caller_tmpdir}", args)
             self.assertTrue((target / "tmp").is_dir())
@@ -108,9 +117,15 @@ class MmdebstrapChrootlessTmpdirTests(unittest.TestCase):
 
     def test_assignment_is_required_to_avoid_host_tmp_fallback(self) -> None:
         source_text = self.source.read_text()
-        assignment = "my @result = ('-i', \"TMPDIR=$tmpdir\");"
+        assignment = (
+            'my @result = (\'-i\', "PATH=$dpkgpath", "TMPDIR=$tmpdir");'
+        )
         self.assertEqual(source_text.count(assignment), 1)
-        mutant = source_text.replace(assignment, "my @result = ('-i');", 1)
+        mutant = source_text.replace(
+            assignment,
+            'my @result = (\'-i\', "PATH=$dpkgpath");',
+            1,
+        )
 
         with tempfile.TemporaryDirectory(prefix="lf69-negative-") as td:
             root = pathlib.Path(td)
@@ -130,6 +145,27 @@ class MmdebstrapChrootlessTmpdirTests(unittest.TestCase):
             self.assertEqual(created_path.parent, pathlib.Path("/tmp"))
             self.assertNotEqual(created_path.parent, target / "tmp")
             self.assertFalse(created_path.exists())
+
+    def test_helper_refuses_missing_canonical_path(self) -> None:
+        source_text = self.source.read_text()
+        with tempfile.TemporaryDirectory(prefix="lf107-path-") as td:
+            root = pathlib.Path(td)
+            target = root / "target"
+            caller_tmpdir = root / "caller-tmp"
+            target.mkdir()
+            caller_tmpdir.mkdir()
+
+            completed = self.run_helper(
+                source_text,
+                target,
+                caller_tmpdir,
+                "",
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(
+                b"cannot determine chrootless maintainer-script PATH",
+                completed.stderr,
+            )
 
     def test_helper_refuses_symlink_and_non_directory_targets(self) -> None:
         source_text = self.source.read_text()
@@ -165,14 +201,15 @@ class MmdebstrapChrootlessTmpdirTests(unittest.TestCase):
             self.assertNotEqual(file_result.returncode, 0)
             self.assertIn(b"is not a directory", file_result.stderr)
 
-    def test_both_chrootless_dpkg_paths_pass_the_selected_root(self) -> None:
+    def test_both_chrootless_dpkg_paths_pass_root_and_canonical_path(self) -> None:
         source_text = self.source.read_text()
-        self.assertEqual(
-            source_text.count(
-                "chrootless_dpkg_environment($options->{root})"
-            ),
-            2,
+        calls = re.findall(
+            r"chrootless_dpkg_environment\(\s*"
+            r"\$options->\{root\},\s*"
+            r"\$options->\{dpkgpath\}\s*\)",
+            source_text,
         )
+        self.assertEqual(len(calls), 2)
         self.assertNotIn("chrootless_dpkg_environment(),", source_text)
 
     def test_harness_refuses_root_as_runtime_parent(self) -> None:
