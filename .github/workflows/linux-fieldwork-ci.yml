@@ -140,3 +140,33 @@ jobs:
               exit "$status"
               ;;
           esac
+
+  capture-debci-run-72574145:
+    if: github.head_ref == 'investigation/debci-run-72574145'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Fetch canonical debci log
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://ci.debian.net/data/autopkgtest/testing/amd64/m/mmdebstrap/72574145/log.gz'
+          mkdir -p capture
+          curl --fail --location --retry 3 --retry-all-errors \
+            --connect-timeout 20 --max-time 180 \
+            --output capture/log.gz "$url"
+          gzip --test capture/log.gz
+          sha256sum capture/log.gz | tee capture/SHA256SUMS
+          gzip --decompress --stdout capture/log.gz > capture/log
+          printf 'source_url=%s\n' "$url" > capture/provenance.txt
+          printf 'compressed_bytes=%s\n' "$(stat -c %s capture/log.gz)" >> capture/provenance.txt
+          printf 'uncompressed_bytes=%s\n' "$(stat -c %s capture/log)" >> capture/provenance.txt
+          tail -n 500 capture/log > capture/tail-500.txt
+
+      - name: Upload capture
+        uses: actions/upload-artifact@v4
+        with:
+          name: debci-mmdebstrap-72574145
+          path: capture/
+          if-no-files-found: error
+          retention-days: 14
