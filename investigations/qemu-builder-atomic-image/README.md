@@ -24,8 +24,8 @@ Thus final-name visibility begins at `mke2fs`, not at the success message.
 
 `prepare_image()`:
 
-1. resolves the existing final parent directory;
-2. rejects canonical parent `/` and invalid basenames;
+1. resolves the existing final parent directory, including an explicitly selected filesystem-root parent;
+2. rejects invalid basenames;
 3. normalizes the final pathname to that canonical parent;
 4. creates a private sibling directory with `mktemp -d`;
 5. chooses an uncreated `image` pathname inside it.
@@ -59,10 +59,12 @@ Required cases:
 - existing final sentinel + injected failure: sentinel bytes and mode unchanged, no sibling temporary state;
 - absent final + injected failure: final remains absent;
 - success: complete bytes atomically replace the old image, effective mode is 0644 under umask 022, no temporary state;
-- literal filesystem-root parent and a symlink resolving to root: refusal before temporary creation;
+- final symlink: publication replaces the symlink itself while preserving its referent byte-for-byte;
 - source contract: all four mutation commands target `IMAGE_TMP`, exactly one publication precedes the success message.
 
 ## Compatibility and security boundary
+
+An explicit final pathname directly below `/` remains supported; this candidate does not recursively delete or otherwise treat the parent directory as disposable.
 
 A successful build still replaces an existing final pathname. When that pathname is a symlink, atomic rename replaces the symlink itself rather than following it and overwriting its referent. This is a deliberate safer publication semantic and differs from direct in-place construction.
 
@@ -74,7 +76,7 @@ PR #172 changes signal exit semantics. The final combined source must ensure sig
 
 ## Cleanup and safety
 
-The regression creates small text files only. It does not run mmdebstrap, mke2fs, partition tools, QEMU, mounts, root operations, or large sparse images. Root-parent negative names are unique and asserted absent.
+The regression creates small text files only. It does not run mmdebstrap, mke2fs, partition tools, QEMU, mounts, root operations, or large sparse images.
 
 ## Disposition
 
