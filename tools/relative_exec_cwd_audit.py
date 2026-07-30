@@ -43,7 +43,12 @@ class Finding:
 def is_relative_program_with_separator(program: str) -> bool:
     """Return true for a cross-platform relative program containing a separator."""
 
-    if not program or os.path.isabs(program) or ntpath.isabs(program):
+    if (
+        not program
+        or os.path.isabs(program)
+        or ntpath.isabs(program)
+        or program.startswith("\\")
+    ):
         return False
     return "/" in program or "\\" in program
 
@@ -139,30 +144,30 @@ def audit_python(path: str, source: str) -> list[Finding]:
     return findings
 
 
-def rust_statement(lines: Sequence[str], start: int, limit: int = 50) -> str:
-    collected: list[str] = []
-    depth = 0
-    for line in lines[start : start + limit]:
-        collected.append(line)
-        depth += line.count("(") + line.count("{") + line.count("[")
-        depth -= line.count(")") + line.count("}") + line.count("]")
-        if ";" in line and depth <= 0:
-            break
-    return "".join(collected)
+def rust_chain_after_command(source: str, match: re.Match[str]) -> str:
+    """Return only the builder chain owned by this literal Command::new call."""
+
+    statement_end = source.find(";", match.end())
+    if statement_end == -1:
+        statement_end = min(len(source), match.end() + 4096)
+    tail = source[match.end() : statement_end]
+    next_command = RUST_COMMAND.search(tail)
+    if next_command is not None:
+        tail = tail[: next_command.start()]
+    return tail
 
 
 def audit_rust(path: str, source: str) -> list[Finding]:
-    lines = source.splitlines(keepends=True)
     findings: list[Finding] = []
     for match in RUST_COMMAND.finditer(source):
         program = match.group(1)
         if not is_relative_program_with_separator(program):
             continue
-        line_number = source.count("\n", 0, match.start()) + 1
-        statement = rust_statement(lines, line_number - 1)
-        cwd_match = re.search(r"\.current_dir\((.*?)\)", statement, re.DOTALL)
+        chain = rust_chain_after_command(source, match)
+        cwd_match = re.search(r"\.current_dir\((.*?)\)", chain, re.DOTALL)
         if cwd_match is None:
             continue
+        line_number = source.count("\n", 0, match.start()) + 1
         findings.append(
             Finding(
                 path=path,
@@ -198,18 +203,27 @@ def shell_logical_lines(source: str) -> Iterator[tuple[int, str]]:
         yield start_line, " ".join(parts)
 
 
+def is_environment_assignment(token: str) -> bool:
+    return re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", token) is not None
+
+
+def is_env_executable(token: str) -> bool:
+    """Recognize PATH-searched env or an explicit absolute env path.
+
+    A relative path such as ./env names repository code whose semantics are
+    unknown, so it is not treated as GNU/coreutils env merely by basename.
+    """
+
+    return token == "env" or (token.startswith("/") and token.endswith("/env"))
+
+
 def env_token_index(tokens: Sequence[str]) -> int | None:
     index = 0
     while index < len(tokens) and is_environment_assignment(tokens[index]):
         index += 1
     if index >= len(tokens):
         return None
-    token = tokens[index]
-    return index if token == "env" or token.endswith("/env") else None
-
-
-def is_environment_assignment(token: str) -> bool:
-    return re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", token) is not None
+    return index if is_env_executable(tokens[index]) else None
 
 
 def is_split_string_option(token: str) -> bool:
