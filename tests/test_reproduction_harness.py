@@ -19,6 +19,13 @@ WRAPPER_PATCH = (
 )
 
 
+def extract_mmdebstrap_proxy(testsuite: str) -> str:
+    marker = "cat << 'END' > ./mmdebstrap\n"
+    start = testsuite.index(marker) + len(marker)
+    end = testsuite.index("\nEND\nchmod 0755 ./mmdebstrap", start)
+    return testsuite[start:end] + "\n"
+
+
 class ReproductionHarnessTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -64,7 +71,7 @@ class ReproductionHarnessTest(unittest.TestCase):
         )
         self.assertEqual(self.workflow.count(same_repository_guard), 2)
 
-    def test_installed_command_wrapper_patch_applies_to_imported_testsuite(self) -> None:
+    def test_installed_command_wrapper_patch_applies_and_proxy_has_pod(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tree = Path(tmp) / "tree"
             destination = tree / "debian/tests"
@@ -88,10 +95,30 @@ class ReproductionHarnessTest(unittest.TestCase):
                 timeout=30,
             )
             patched = (destination / "testsuite").read_text(encoding="utf-8")
+            proxy_path = Path(tmp) / "mmdebstrap-proxy"
+            proxy_path.write_text(extract_mmdebstrap_proxy(patched), encoding="utf-8")
+            perl_syntax = subprocess.run(
+                ["perl", "-c", str(proxy_path)],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+            pod = subprocess.run(
+                ["pod2man", str(proxy_path)],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("cat << 'END' > ./mmdebstrap-under-test", patched)
-        self.assertIn('CMD="./mmdebstrap-under-test --setup-hook=', patched)
+        self.assertIn("exec '/usr/bin/mmdebstrap', @ARGV", patched)
+        self.assertIn('CMD="./mmdebstrap --setup-hook=', patched)
+        self.assertNotIn("mmdebstrap-under-test", patched)
+        self.assertEqual(perl_syntax.returncode, 0, perl_syntax.stderr)
+        self.assertEqual(pod.returncode, 0, pod.stderr)
+        self.assertIn("proxy to the installed package under test", pod.stdout)
 
     def test_early_neutral_exit_retains_reason_in_artifact_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
