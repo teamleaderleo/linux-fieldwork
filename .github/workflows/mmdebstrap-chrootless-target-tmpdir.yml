@@ -1,0 +1,41 @@
+name: Verify chrootless target TMPDIR
+
+on:
+  pull_request:
+    paths:
+      - 'investigations/mmdebstrap-chrootless-env/mmdebstrap-chrootless-target-tmpdir.patch'
+      - 'investigations/mmdebstrap-chrootless-env/run-target-tmpdir-regression.sh'
+      - 'investigations/mmdebstrap-chrootless-env/TMPDIR.md'
+      - 'notes/packaging/chrootless-maintainer-script-tmpdir.md'
+      - '.github/workflows/mmdebstrap-chrootless-target-tmpdir.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  target-tmpdir:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libdistro-info-perl \
+            libdpkg-perl \
+            uidmap
+      - name: Check syntax
+        run: |
+          bash -n investigations/mmdebstrap-chrootless-env/run-target-tmpdir-regression.sh
+      - name: Run negative control and candidate
+        run: bash investigations/mmdebstrap-chrootless-env/run-target-tmpdir-regression.sh
+      - name: Upload compact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmdebstrap-chrootless-target-tmpdir-${{ github.run_id }}-${{ github.run_attempt }}
+          path: investigations/mmdebstrap-chrootless-env/target-tmpdir-results/
+          if-no-files-found: warn
+          retention-days: 14
