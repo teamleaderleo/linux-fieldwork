@@ -1,23 +1,35 @@
 # mmdebstrap coverage parent-only SIGINT status
 
-## In simple words
+## TL;DR
 
-The coverage driver catches Ctrl-C, terminates and reaps the current test child, then breaks out of the test loop. With no earlier failure, it exits 0 and reports a cancelled matrix as successful.
+`coverage.py` used to catch Ctrl-C, terminate and reap the current child, then leave the test loop through `break`. With no earlier failure, the driver reached its normal epilogue and exited 0 even though the matrix had been cancelled.
 
-The local candidate exits 130 immediately after child cleanup and prints a focused interruption diagnostic.
+The landed repair prints a focused interruption message and exits 130 after child cleanup. PR #204 merged the current-main restack as commit `23522b7f7d39ee3a237820e46168720edafb4d0a`.
+
+## Explain like I'm five
+
+The test runner stopped the test it was watching, skipped the rest of the tests, and still held up a green “finished” sign. The repair changes that sign to “stopped by Ctrl-C.”
+
+## Why care
+
+CI, scripts, and people use the driver status to decide whether the complete test matrix ran. Status 0 after cancellation can promote incomplete work as successful.
 
 ## Canonical records
 
-- issue: #141
-- source: `upstream/mmdebstrap/coverage.py`
-- imported blob: `9a522484aef05deae514a98e4b6adf5feb6c886d`
-- candidate: `0001-fail-after-parent-sigint.patch`
-- regression: `tests/test_mmdebstrap_coverage_parent_sigint.py`
-- reusable note: `notes/processes/cancellation-cleanup-must-not-fall-through-to-success.md`
+- Issue: #141
+- Historical development: PR #143
+- Landed current-main carrier: PR #204
+- Final source head: `b5efc8faf35c1da725a3b995a344fadc078ad5d2`
+- Merge commit: `23522b7f7d39ee3a237820e46168720edafb4d0a`
+- Source: `upstream/mmdebstrap/coverage.py`
+- Imported blob: `9a522484aef05deae514a98e4b6adf5feb6c886d`
+- Candidate patch: `0001-fail-after-parent-sigint.patch`
+- Regression: `tests/test_mmdebstrap_coverage_parent_sigint.py`
+- Reusable note: `notes/processes/cancellation-cleanup-must-not-fall-through-to-success.md`
 
-## Exact source boundary
+## Observed defect
 
-The driver uses:
+The imported driver uses:
 
 ```python
 proc = subprocess.Popen(argv)
@@ -29,78 +41,60 @@ except KeyboardInterrupt:
     break
 ```
 
-The current child is cleaned, but no failure is recorded and no nonzero status is raised. The final epilogue exits 1 only when `failed` is nonempty.
+The child cleanup succeeds, while the driver records no failure and raises no nonzero result. The final epilogue exits 1 only when `failed` contains an entry.
 
-## Negative control
+## Landed change
 
-The executable regression constructs a minimal disposable coverage suite around an exact copy of the imported driver:
-
-- one generated test;
-- a fake `run_null.sh` that execs the generated script;
-- a small Python worker that records its PID, handles TERM, sleeps, and writes a success marker only after the sleep;
-- fake successful `shellcheck` and `shfmt`;
-- a dependency-free fake `debian.deb822` parser;
-- required source/shared placeholders and release path.
-
-After the worker records its PID, the test sends SIGINT only to the coverage parent PID.
-
-The unmodified driver must:
-
-- terminate and reap the worker;
-- omit the worker success marker;
-- stop before completing the matrix;
-- return status 0.
-
-That last result is the defect.
-
-## Candidate
-
-The retained source patch replaces `break` with:
+The retained patch replaces `break` with:
 
 ```python
 print("interrupted by SIGINT", file=sys.stderr)
 raise SystemExit(130)
 ```
 
-The current child is still terminated and waited before the exit. Status 130 is the conventional shell-visible `128 + SIGINT` result and avoids an unhandled Python traceback.
+Child termination and reaping remain in the same order. Status 130 gives callers the conventional `128 + SIGINT` result without a Python traceback.
 
-## Regression matrix
+## Distinguishing regression
 
-- imported driver, parent-only SIGINT: status 0 negative control;
-- candidate, parent-only SIGINT: status 130 and focused diagnostic;
-- both interrupted runs: worker PID gone and success marker absent;
-- candidate without a signal: test completes, success marker exists, result is SUCCESS, driver exits 0;
-- exact patch application and Python compilation run before scenarios;
-- every suite lives under the test's `TemporaryDirectory`.
+The regression builds a disposable minimal coverage suite around exact baseline and candidate copies. It supplies one long-running worker, fake successful formatting tools, a small Deb822 parser, required placeholders, and a fake `run_null.sh`.
 
-## Execution record
+After the worker records its PID, the test sends SIGINT only to the coverage parent PID. The matrix proves:
 
-An earlier exact-head run failed before signal execution because the retained patch hunk targeted a stale line location. The patch was regenerated against the imported blob; that red run remains classified as patch-packaging evidence.
+- baseline: worker terminated and reaped, completion marker absent, driver status 0;
+- candidate: worker terminated and reaped, completion marker absent, focused diagnostic present, driver status 130;
+- unsignaled candidate rerun: completion marker present, `result: SUCCESS`, driver status 0;
+- retained patch application and Python compilation succeed before behavior tests;
+- every fixture lives below `TemporaryDirectory`.
 
-Exact head `b0b87f9f1b30816b21dddcb6c3657b5a75b2b7f9` passed Linux Fieldwork CI run `30556199982`. The focused log records all four required tests as passing:
+The baseline status 0 is the negative control that distinguishes the defect from ordinary child cleanup.
 
-```text
-test_baseline_reports_parent_only_sigint_as_success ... ok
-test_candidate_reports_parent_only_sigint_as_failure ... ok
-test_candidate_source_has_explicit_sigint_exit ... ok
-test_candidate_unsignaled_run_still_succeeds ... ok
-```
+## Executed evidence
 
-The exact retained patch applied and compiled inside the test setup. Interrupted baseline and candidate runs left the worker PID gone and no completion marker; the immediate unsignaled candidate rerun returned 0 and produced `result: SUCCESS`.
+An early run stopped at a stale patch location. That result classified patch packaging and carried no SIGINT behavior claim.
+
+The original repaired line passed focused CI during development. The clean current-main restack at head `b5efc8faf35c1da725a3b995a344fadc078ad5d2` passed Linux Fieldwork CI run `30579733315`. Execution carrier run `30579465025` also applied the exact four-file unit and ran the four-test matrix twice successfully.
+
+Evidence classification:
+
+- defect ownership and success epilogue: source-read;
+- parent-only SIGINT, child reaping, marker absence, status, and rerun: model-executed through the real coverage main loop with controlled dependencies;
+- repository compatibility: named Linux Fieldwork CI gate;
+- full Debian mirror matrix: open integration boundary.
 
 ## Severity
 
-**Medium reliability, approximately 5/10.**
+Medium reliability, approximately 5/10. The affected component is test orchestration, and its exit status is the completion contract consumed by CI and callers.
 
-This is test orchestration rather than mmdebstrap runtime behavior, but CI and callers rely on the coverage driver status to distinguish a complete matrix from cancellation.
+## Evidence boundary
 
-## Evidence limits
+The regression delivers SIGINT only to the coverage parent PID. Parent-only SIGTERM and SIGHUP, process-group delivery, grandchildren, QEMU backend cleanup, and escalation after an uncooperative child remain separate questions.
 
-- The regression delivers SIGINT only to the coverage parent PID.
-- Parent-only SIGTERM/SIGHUP, process-group delivery, QEMU backend cleanup, and grandchildren remain separate lifecycle boundaries.
-- The candidate uses TERM for the immediate child exactly as the existing handler does; escalation after an uncooperative child is outside this focused patch.
-- The minimal suite exercises the real main loop with controlled dependencies rather than the full Debian mirror matrix.
+The minimal suite exercises the real main loop with controlled dependencies. It skips the full Debian mirror and package matrix.
+
+## Authority
+
+Internal Linux Fieldwork result. External Debian or upstream contact remains unauthorized.
 
 ## Disposition
 
-READY FOR FINAL HUMAN CHECK as an independent coverage-driver repair. No Debian or external upstream issue, patch, email, merge request, comment, or review is authorized or created.
+**MERGED LOCALLY.** Use PR #204 and merge commit `23522b7f7d39ee3a237820e46168720edafb4d0a` as the canonical landed result. Retain PR #143 as development and repair history.
