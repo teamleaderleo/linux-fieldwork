@@ -150,6 +150,14 @@ A later review found two remaining identity errors:
 
 Both cases now have direct positive and negative controls.
 
+### Command-position repair
+
+A later exact-head check reproduced the earlier finding that an `env` token used
+as ordinary argument text could be mistaken for an executed command. The scanner
+now accepts `env` only at the executable command position after optional leading
+environment assignments. Direct `printf` and `logger` argument controls remain
+empty, while a leading-assignment `/usr/bin/env -C` launch remains positive.
+
 ## Windows experiment
 
 The RPFM research candidate used:
