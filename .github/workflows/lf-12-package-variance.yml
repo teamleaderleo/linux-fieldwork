@@ -1,0 +1,56 @@
+name: LF-12 reproducible package variance
+
+on:
+  pull_request:
+    paths:
+      - "programmes/debian-packages/lanes/LF-12-reproducible-package-variance/**"
+      - "tests/test_lf12_probe_safety.py"
+      - ".github/workflows/lf-12-package-variance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  variance-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Run the Debian 13 variance matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          runner="programmes/debian-packages/lanes/LF-12-reproducible-package-variance/scouts/LF-SCOUT-DEB-02/artifacts/run-variance-probe.sh"
+          evidence="programmes/debian-packages/lanes/LF-12-reproducible-package-variance/scouts/LF-SCOUT-DEB-02/artifacts/ci-run"
+          rm -rf "$evidence"
+          mkdir -p "$evidence"
+          docker run --rm \
+            --volume "$PWD:/work:ro" \
+            --volume "$PWD/$evidence:/evidence" \
+            --workdir /work \
+            debian:trixie-slim \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                binutils build-essential coreutils dpkg-dev fakeroot \
+                gzip locales util-linux xz-utils
+              apt-get clean
+              bash "'"$runner"'" /tmp/lf12-ci-work | tee /evidence/stdout.log
+              cp /tmp/lf12-ci-work/variance-matrix.tsv /evidence/
+              cp /tmp/lf12-ci-work/environment.txt /evidence/
+              cp /tmp/lf12-ci-work/diff-summary.txt /evidence/
+            '
+
+      - name: Upload compact LF-12 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lf-12-variance-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: programmes/debian-packages/lanes/LF-12-reproducible-package-variance/scouts/LF-SCOUT-DEB-02/artifacts/ci-run/
+          if-no-files-found: warn
+          retention-days: 14
