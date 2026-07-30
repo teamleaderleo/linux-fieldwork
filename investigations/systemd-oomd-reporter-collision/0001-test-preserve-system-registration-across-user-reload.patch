@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Linux Fieldwork <internal@example.invalid>
+Date: Thu, 31 Jul 2026 00:00:00 +0000
+Subject: [PATCH] test: keep PID 1 oomd policy across user manager reload
+
+A user manager reload republishes its active units. Its root -.slice uses the
+manager's own cgroup root, which is the same path PID 1 reports for
+user@<uid>.service. Preserve a regression that proves the system-manager
+ManagedOOMMemoryPressure=kill registration remains visible after the user
+manager reloads and that the service itself did not restart.
+---
+ test/units/TEST-55-OOMD.sh | 43 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 43 insertions(+)
+
+diff --git a/test/units/TEST-55-OOMD.sh b/test/units/TEST-55-OOMD.sh
+index 43937c6ec7..0000000000 100755
+--- a/test/units/TEST-55-OOMD.sh
++++ b/test/units/TEST-55-OOMD.sh
+@@ -537,6 +537,49 @@ testcase_prekill_hook() {
+     done
+ }
+ 
++testcase_user_manager_reload_preserves_system_oomd_registration() {
++    local active_enter after uid user_service_path
++
++    uid="$(id -u testuser)"
++    user_service_path="/user.slice/user-${uid}.slice/user@${uid}.service"
++
++    mkdir -p /run/systemd/system/user@.service.d/
++    cat >/run/systemd/system/user@.service.d/zz-oomd-reload-regression.conf <<'EOF'
++[Service]
++ManagedOOMMemoryPressure=kill
++ManagedOOMMemoryPressureLimit=50%
++EOF
++
++    systemctl daemon-reload
++    loginctl enable-linger testuser
++    systemctl start "user@${uid}.service"
++
++    timeout 1m bash -xec \
++        "until oomctl | grep -F 'Path: ${user_service_path}' >/dev/null; do sleep 1; done"
++    active_enter="$(systemctl show "user@${uid}.service" -P ActiveEnterTimestampMonotonic)"
++
++    systemctl --machine "testuser@.host" --user daemon-reload
++
++    # The bug is silent and permanent. Check immediately and after multiple
++    # oomd/user-manager event-loop turns instead of accepting a transient entry.
++    for after in 1 5 10; do
++        sleep "$after"
++        oomctl | grep -F "Path: ${user_service_path}" >/dev/null
++        assert_eq \
++            "$(systemctl show "user@${uid}.service" -P ActiveEnterTimestampMonotonic)" \
++            "$active_enter"
++        assert_eq "$(systemctl show "user@${uid}.service" -P NRestarts)" "0"
++        assert_eq \
++            "$(systemctl show "user@${uid}.service" -P ManagedOOMMemoryPressure)" \
++            "kill"
++    done
++
++    rm -f /run/systemd/system/user@.service.d/zz-oomd-reload-regression.conf
++    systemctl daemon-reload
++    loginctl disable-linger testuser
++}
++
+ run_testcases
+ 
+ touch /testok
+-- 
+2.50.1
