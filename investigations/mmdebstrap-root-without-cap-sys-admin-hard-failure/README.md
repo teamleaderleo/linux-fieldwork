@@ -44,6 +44,7 @@ The original `Needs-APT-Config` transition list remains a distinct soft-failure 
 - proves the capability case uses only the new metadata;
 - parses the candidate Python source and proves the new field is present in the config whitelist but absent from the baseline;
 - proves the host-APT skip recognizes the new metadata;
+- locks the Black-compatible parenthesization used by the package's current formatter gate;
 - proves the hard phase precedes the soft phase and contains neither injected hook;
 - extracts and executes the actual candidate status block, requiring 0→0, 1→1, 2→2, and 124→77;
 - preserves the original capability drop, `/proc/self/fd`, and tar assertions;
@@ -71,7 +72,25 @@ The ten Packet B tests all passed, including parser acceptance, hook exclusion, 
 
 A focused reconstructed-source guard run was executed twice after the harness repair; all three guard tests passed both times and temporary directories were removed after each run.
 
-The candidate differs from current `main` only by the four files in PR #171. The branch is one commit behind `main`; that commit changes only `ADAPTIVE_COORDINATION.md`, so it has no source or test overlap with this candidate. The pull-request merge ref built successfully against that current base.
+## Composition repair
+
+PR #72 applies the exact retained patch alongside the Deb822 `sourcesfilter` candidate in a disposable Debian sid autopkgtest.
+
+Composed run `30577374058` reached the package's own formatter gate and failed before functional cases because Black 26.3.1 would rewrite the newly added `coverage.py` condition. The retained logic was unchanged; the patch packaging used nested parentheses that differed from current Black output.
+
+Commit `b3576452edbac347890c4a54c6d3c4074b6555f7` rewrote the condition into formatter-stable form and added an exact source regression. Pull-request merge-ref run `30578896764` then passed:
+
+```text
+python3 -m unittest discover -s tests -v
+Ran 122 tests in 22.874s
+OK
+```
+
+Compilation, shell syntax, and command-help gates also passed. PR #72 head `ff89c85712ebcd888cba15ebb803bf7f7134c032` carries the same formatter-stable patch and regression; composed run `30578966104` is the current disposable sid execution.
+
+## Current-main relation
+
+The candidate differs from live `main` only by the four files in PR #171: the retained patch, this evidence record, the scheduling/status regression, and the guard execution regression. Live `main` advanced during the push, leaving the branch 37 commits behind and 13 commits ahead of their merge base. The pull request remains mergeable, and its current merge ref passed the full repository gate. No imported source file is edited directly.
 
 ## Evidence boundary
 
