@@ -27,6 +27,35 @@ jobs:
           ' .github/workflows/apply-mmdebstrap-chrootless-env-security.yml \
             >/tmp/apply-security.py
           python3 /tmp/apply-security.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('upstream/mmdebstrap/mmdebstrap')
+          source = path.read_text()
+          old = """    return sort grep {
+                  $exact{$_}
+                    || $_ =~ /(?:^|_)(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|PRIVATE_KEY|API_KEY)(?:$|_)/i
+              } keys %ENV;
+          """
+          new = """    my $sensitive_name = qr{
+                  (?:^|_)
+                  (?:
+                      TOKEN
+                    | SECRET
+                    | PASSWORD
+                    | PASSWD
+                    | CREDENTIALS?
+                    | PRIVATE_KEY
+                    | API_KEY
+                  )
+                  (?:$|_)
+              }ix;
+              return sort grep { $exact{$_} || $_ =~ $sensitive_name } keys %ENV;
+          """
+          if source.count(old) != 1:
+              raise SystemExit('unexpected credential matcher count')
+          path.write_text(source.replace(old, new))
+          PY
 
       - name: Format with current Debian sid perltidy
         run: |
@@ -46,7 +75,9 @@ jobs:
           perl -c upstream/mmdebstrap/mmdebstrap
           pod2man upstream/mmdebstrap/mmdebstrap >/dev/null
           git diff --check
-          test "$(sed -e '/^__END__$/,$d' upstream/mmdebstrap/mmdebstrap | wc --max-line-length)" -le 79
+          max_length="$(sed -e '/^__END__$/,$d' upstream/mmdebstrap/mmdebstrap | wc --max-line-length)"
+          echo "maximum code line length: $max_length"
+          test "$max_length" -le 79
           rm .github/workflows/apply-mmdebstrap-chrootless-env-security.yml
           rm .github/workflows/apply-mmdebstrap-chrootless-env-security-pr.yml
           git config user.name github-actions[bot]
