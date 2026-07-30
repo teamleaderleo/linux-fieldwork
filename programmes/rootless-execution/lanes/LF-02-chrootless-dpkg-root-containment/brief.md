@@ -10,7 +10,11 @@ Chrootless package installation asks dpkg and package scripts to act on a target
 
 ## State
 
-`mapped` — ready for source reading and a bounded current-CI probe.
+`active` — the `mmdebstrap` autopkgtest investigation is mapping the first failing case before any chrootless containment branch is promoted.
+
+## Active work
+
+- [`mmdebstrap` autopkgtest failure 1141078](../../../../investigations/mmdebstrap-autopkgtest-1141078/README.md) maps suite selection, package transitions, rootless execution, and the package test's chrootless cases.
 
 ## Question
 

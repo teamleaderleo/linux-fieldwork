@@ -10,7 +10,11 @@ Root filesystem archives describe paths, links, ownership, permissions, and spec
 
 ## State
 
-`mapped` — ready for ordinary current-CI cases and a later privileged extension.
+`active` — the `mmdebstrap` autopkgtest investigation has produced the first archive-manifest and comparison tools while the full extraction matrix remains open.
+
+## Active work
+
+- [`mmdebstrap` autopkgtest failure 1141078](../../../../investigations/mmdebstrap-autopkgtest-1141078/README.md) records root archive ownership, modes, links, device metadata, PAX extras, timestamps, content hashes, and member order before extraction.
 
 ## Question
 
