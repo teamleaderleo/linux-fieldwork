@@ -11,4 +11,4 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Explain status
-        run: echo 'The candidate patch is already applied; use the verification workflow.'
+        run: echo 'The candidate patch is already applied. Run Verify mmdebstrap explicit TMPDIR handling instead.'
