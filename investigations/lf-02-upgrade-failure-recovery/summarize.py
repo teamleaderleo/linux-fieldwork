@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from pathlib import Path
@@ -73,6 +74,13 @@ CATEGORY_IDS = {
     "unresolved",
 }
 
+MAPPED_SERVICE_EXECUTABLE = "/usr/lib/needrestart/dpkg-status"
+MAPPED_SERVICE_PATHS = {
+    "/run/needrestart",
+    "/run/needrestart/unpacked",
+    "/run/needrestart/errored",
+}
+
 
 class ValidationError(RuntimeError):
     """Raised when retained evidence violates the declared contract."""
@@ -124,6 +132,53 @@ def validate_snapshot(label: str, record: dict[str, Any]) -> None:
         )
 
 
+def mapped_service_action(row: dict[str, str]) -> bool:
+    operation = row["operation"]
+    path = row["path"]
+    result = row["result"]
+    if (
+        operation == "execution"
+        and path == MAPPED_SERVICE_EXECUTABLE
+        and result == "0"
+    ):
+        return True
+    return (
+        operation == "mutation"
+        and path in MAPPED_SERVICE_PATHS
+        and result.startswith("-1 ")
+    )
+
+
+def classify_service_actions(
+    results: Path, name: str, record: dict[str, Any], expected_count: int
+) -> tuple[int, int]:
+    artifacts = record.get("artifacts", {})
+    require(isinstance(artifacts, dict), f"{name}: artifacts must be an object")
+    event_name = artifacts.get("events", f"{name}-access.tsv")
+    require(isinstance(event_name, str) and event_name, f"{name}: missing event file")
+    event_path = results / event_name
+    require(event_path.is_file(), f"{name}: missing classifier event file {event_name}")
+
+    with event_path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        required_columns = {"operation", "path", "result", "category"}
+        require(
+            reader.fieldnames is not None
+            and required_columns.issubset(reader.fieldnames),
+            f"{name}: classifier event columns are incomplete",
+        )
+        service_rows = [
+            row for row in reader if row.get("category") == "service action"
+        ]
+
+    require(
+        len(service_rows) == expected_count,
+        f"{name}: service-action rows {len(service_rows)}, expected {expected_count}",
+    )
+    mapped = sum(mapped_service_action(row) for row in service_rows)
+    return mapped, len(service_rows) - mapped
+
+
 def build_summary(results: Path, target: str) -> dict[str, Any]:
     provenance = load_json(results / "provenance.json")
     fixtures = load_json(results / "fixtures/manifest.json")
@@ -170,6 +225,8 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
 
     classifications: dict[str, dict[str, Any]] = {}
     totals = {identifier: 0 for identifier in CATEGORY_IDS}
+    mapped_service_actions = 0
+    unmapped_service_actions = 0
     for name in PHASE_ORDER:
         record = load_json(results / f"{name}-access.summary.json")
         require(record.get("schema_version") == 1, f"{name}: unsupported classifier schema")
@@ -191,6 +248,11 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
             record.get("outside_access_events") == computed_total,
             f"{name}: outside access events differ from category counts",
         )
+        mapped, unmapped = classify_service_actions(
+            results, name, record, categories["service_action"]
+        )
+        mapped_service_actions += mapped
+        unmapped_service_actions += unmapped
         classifications[name] = record
         for identifier, count in categories.items():
             totals[identifier] += count
@@ -200,7 +262,7 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
     lifecycle_contract = True
     product_candidate = (
         totals["unexpected_mutation"] > 0
-        or totals["service_action"] > 0
+        or unmapped_service_actions > 0
         or not host_fingerprint_unchanged
         or not lifecycle_contract
     )
@@ -218,6 +280,7 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
     }
     return {
         "schema_version": 1,
+        "decision_policy_version": 2,
         "question": "chrootless dpkg upgrade, expected configure failure, recovery, and purge",
         "provenance": provenance,
         "fixtures": fixtures,
@@ -251,6 +314,9 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
             "lifecycle_contract_satisfied": lifecycle_contract,
             "unexpected_mutations": totals["unexpected_mutation"],
             "service_actions": totals["service_action"],
+            "mapped_needrestart_actions": mapped_service_actions,
+            "unmapped_service_actions": unmapped_service_actions,
+            "environment_sensitive_host_hooks": mapped_service_actions > 0,
             "unresolved": totals["unresolved"],
             "host_fingerprint_unchanged": host_fingerprint_unchanged,
             "product_candidate": product_candidate,
