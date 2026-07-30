@@ -1,17 +1,20 @@
 diff --git a/upstream/mmdebstrap/proxysolver b/upstream/mmdebstrap/proxysolver
 --- a/upstream/mmdebstrap/proxysolver
 +++ b/upstream/mmdebstrap/proxysolver
-@@ -17,6 +17,7 @@ import subprocess
+@@ -15,6 +15,7 @@
  import sys
  import os
  import getpass
 +import signal
  
  if not os.path.exists("/usr/lib/apt/solvers/apt"):
-@@ -52,6 +53,13 @@ try:
+     print(
+@@ -48,6 +49,13 @@
+                 print(line, end="")
                  f.write(line)
              returncode = p.wait()
 +    if returncode < 0:
++        sys.stdout.flush()
 +        signum = -returncode
 +        if signum not in (signal.SIGKILL, signal.SIGSTOP):
 +            signal.signal(signum, signal.SIG_DFL)
