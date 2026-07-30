@@ -19,20 +19,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8758712312/zip" > /tmp/a.zip
-      - name: Print create-directory case
+      - name: Print create-directory stdout block
         shell: bash
         run: |
           python3 - <<'PY'
           import zipfile
-          marker = '(30/284) create-directory'
           with zipfile.ZipFile('/tmp/a.zip') as archive:
-              for name in ('autopkgtest-output/testsuite-stderr', 'autopkgtest-output/testsuite-stdout'):
-                  lines = archive.read(name).decode('utf-8', 'replace').splitlines()
-                  positions = [i for i, line in enumerate(lines) if marker in line]
-                  print(f'===== {name} =====')
-                  for pos in positions:
-                      start = max(0, pos - 12)
-                      end = min(len(lines), pos + 70)
-                      for i in range(start, end):
-                          print(f'{i + 1}: {lines[i]}')
+              lines = archive.read('autopkgtest-output/testsuite-stdout').decode('utf-8', 'replace').splitlines()
+          markers = [i for i, line in enumerate(lines) if 'create-directory' in line]
+          print(f'markers={markers}')
+          if markers:
+              pos = markers[-1]
+              start = max(0, pos - 20)
+              end = min(len(lines), pos + 100)
+              for i in range(start, end):
+                  print(f'{i + 1}: {lines[i]}')
+          else:
+              for i, line in enumerate(lines[-100:], start=max(1, len(lines) - 99)):
+                  print(f'{i}: {line}')
           PY
