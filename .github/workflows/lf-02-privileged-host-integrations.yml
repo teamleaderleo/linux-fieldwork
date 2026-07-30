@@ -123,7 +123,19 @@ jobs:
               assert (pair["difference_lines"] == 0) is pair["equal"]
               assert (summary_path.parent / pair["diff_artifact"]).is_file()
           PY
-          for diff in "$(dirname "$summary")"/*-tree.diff; do
-            echo "--- $(basename "$diff") ---"
-            cat "$diff"
-          done
+
+  tree-diff-evidence:
+    needs: privileged-host-integrations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Print retained target tree differences
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "lf-02-privileged-host-integrations-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --dir evidence >/dev/null
+          find evidence -name '*-tree.diff' -type f -print -exec cat {} \;
