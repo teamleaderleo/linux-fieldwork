@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -81,24 +81,36 @@ class TransformAction(argparse.Action):
+@@ -81,24 +81,42 @@ class TransformAction(argparse.Action):
          if values.startswith(f"s{d}{d}"):
              raise ValueError("empty regex")
          values = values.removeprefix(f"s{d}")
@@ -50,17 +50,34 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +        pattern, repl, transform_flags = parts
 +        if not pattern:
 +            raise ValueError("empty regex")
-+        if any(flag not in "gi" for flag in transform_flags):
++        if any(flag not in "giRrSsHh" for flag in transform_flags):
 +            raise ValueError("invalid transform flag: %s" % transform_flags)
 +        if len(set(transform_flags)) != len(transform_flags):
 +            raise ValueError("duplicate transform flag: %s" % transform_flags)
 +        regex_flags = re.IGNORECASE if "i" in transform_flags else 0
 +        count = 0 if "g" in transform_flags else 1
-+        items.append((re.compile(pattern, regex_flags), repl, count))
++        scope = {"r": True, "s": True, "h": True}
++        for flag in transform_flags:
++            if flag in "rsh":
++                scope[flag] = True
++            elif flag in "RSH":
++                scope[flag.lower()] = False
++        items.append((re.compile(pattern, regex_flags), repl, count, scope))
          setattr(namespace, "trans", items)
-@@ -293,3 +305,3 @@ def main():
+@@ -293,3 +311,14 @@ def main():
              if hasattr(args, "trans"):
 -                for r, s in args.trans:
 -                    member.name = r.sub(s, member.name)
-+                for r, s, count in args.trans:
-+                    member.name = r.sub(s, member.name, count=count)
++                original_name = member.name
++                original_linkname = member.linkname
++                for r, s, count, scope in args.trans:
++                    if scope["r"]:
++                        member.name = r.sub(s, member.name, count=count)
++                    if member.issym() and scope["s"]:
++                        member.linkname = r.sub(s, member.linkname, count=count)
++                    if member.islnk() and scope["h"]:
++                        member.linkname = r.sub(s, member.linkname, count=count)
++                if member.name != original_name:
++                    member.pax_headers.pop("path", None)
++                if member.linkname != original_linkname:
++                    member.pax_headers.pop("linkpath", None)
