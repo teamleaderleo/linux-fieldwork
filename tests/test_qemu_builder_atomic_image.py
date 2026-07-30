@@ -67,6 +67,11 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
             + "case $mode in\n"
             + "  fail) printf 'partial' >\"$IMAGE_TMP\"; exit 7 ;;\n"
             + "  success) printf 'complete-image' >\"$IMAGE_TMP\"; publish_image ;;\n"
+            + "  success-residue)\n"
+            + "    printf 'complete-image' >\"$IMAGE_TMP\"\n"
+            + "    printf 'unexpected' >\"$IMAGE_TMPDIR/unexpected\"\n"
+            + "    publish_image\n"
+            + "    ;;\n"
             + "  *) die \"unknown mode: $mode\" ;;\n"
             + "esac\n",
             encoding="utf-8",
@@ -159,6 +164,30 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
             self.assertEqual(referent.read_bytes(), b"trusted-referent")
             self.assertEqual(self.temporary_siblings(image), [])
 
+    def test_post_publication_cleanup_failure_keeps_success_truthful(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="qemu-atomic-residue-") as tmp:
+            root = pathlib.Path(tmp)
+            candidate = self.prepare_candidate(root)
+            harness = self.write_harness(root, candidate)
+            image = root / "result.img"
+            image.write_bytes(b"old-image")
+
+            result = subprocess.run(
+                ["/bin/sh", str(harness), "success-residue", str(image)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=10,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(image.read_bytes(), b"complete-image")
+            self.assertIn("image published but private directory remains", result.stderr)
+            siblings = self.temporary_siblings(image)
+            self.assertEqual(len(siblings), 1)
+            self.assertEqual((siblings[0] / "unexpected").read_bytes(), b"unexpected")
+            self.assertFalse((siblings[0] / "image").exists())
+
     def test_every_image_mutation_uses_temporary_path_before_one_publication(self) -> None:
         with tempfile.TemporaryDirectory(prefix="qemu-atomic-source-") as tmp:
             candidate = self.prepare_candidate(pathlib.Path(tmp))
@@ -170,6 +199,10 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
             self.assertEqual(source.count("publish_image\n"), 1)
             self.assertLess(source.index("publish_image\n"), source.index("I: SUCCESS!"))
             self.assertIn('mv --no-target-directory -- "$IMAGE_TMP" "$IMAGE"', source)
+            self.assertLess(
+                source.index('mv --no-target-directory -- "$IMAGE_TMP" "$IMAGE"'),
+                source.index("IMAGE_TMP=\n"),
+            )
 
 
 if __name__ == "__main__":
