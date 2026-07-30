@@ -12,6 +12,8 @@ This record carries one combined candidate. It validates every status-fd occurre
 - imported source: `upstream/mmdebstrap/gpgvnoexpkeysig`;
 - imported blob: `83370755454a1322bf6862751aab7381d175aa8b`;
 - combined patch: `0001-canonical-lifecycle.patch`;
+- applied candidate SHA-256: `a84aab13551311be70fb9d2875540888d52e8ab66d61a38ae41a005e10f8c8fb`;
+- applied candidate Git blob: `de7e0ae24218632fe2e32a1130f5c2a39f8c4aed`;
 - core regression: `tests/test_mmdebstrap_gpgvnoexpkeysig_canonical.py`;
 - late-signal regression: `tests/test_mmdebstrap_gpgvnoexpkeysig_post_filter_signal.py`.
 
