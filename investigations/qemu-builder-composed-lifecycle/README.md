@@ -1,104 +1,135 @@
 # QEMU builder composed image lifecycle
 
-## In simple words
+## TL;DR
 
-The QEMU image builder had two overlapping lifecycle candidates: one made signal traps terminate with signal-derived status, and one kept image construction private until a final rename. This investigation composes both mechanisms against current `main` and tests the combined ownership, cleanup, publication, signal, rerun, and path-interpretation contract.
+The QEMU image builder now creates its disk image under a private sibling directory, publishes it with one final rename, and exits with the correct signal-derived status after cleanup. The combined candidate landed on `main` through PR #195 as commit `a0ec62f64fd6a9ff2cc20b28142ec876c52a5145`.
 
-The integration candidate is the final-check unit. The focused records in PR #172 and PR #192 remain useful mechanism histories.
+The retained regressions prove existing-output preservation, one-time cleanup, HUP/INT/QUIT/TERM results, post-publication safety, cleanup-error precedence, trailing-slash rejection, and immediate reruns. A heavier builder run with real image tools remains a separate integration step.
+
+## Explain like I'm five
+
+Imagine building a model airplane for someone who already has a finished airplane on the shelf. The old script started cutting up the shelf airplane while the new one was still being assembled. It could also hear “stop,” tidy the table, and then keep building.
+
+The landed version builds the new airplane in a private box. Failure or cancellation throws away only that box. Success moves the finished airplane onto the shelf in one step. A stop signal ends the job with the expected status.
+
+## Why care
+
+A failed or cancelled image build could previously leave a partial file at the trusted output name, damage an older valid image, continue after cleanup, or report success. Automated callers could then mistake an interrupted build for a usable virtual-machine image.
+
+The landed lifecycle gives the output name one clear publication point and gives cancellation one clear terminal result.
 
 ## Canonical records
 
 - Integration issue: #193
-- Signal issue and focused candidate: #170 / PR #172
-- Atomic-publication issue and focused candidate: #191 / PR #192
-- Candidate branch: `integrate/qemu-builder-composed-lifecycle`
-- Initial current-main base: `d344c942af4b55b5b0c71c8a66a8870fbf0db7bf`
+- Landed integration: PR #195
+- Landed commit: `a0ec62f64fd6a9ff2cc20b28142ec876c52a5145`
+- Final reviewed source head: `b7fbc7e6dcf40e95d17b7cb67fc96c710571f154`
+- Signal mechanism history: issue #170 / PR #172
+- Atomic-publication mechanism history: issue #191 / PR #192
 - Imported source: `upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu`
 - Composed patch: `0001-compose-image-publication-and-signal-lifecycle.patch`
 - Core regression: `tests/test_qemu_builder_composed_lifecycle.py`
 - Path regression: `tests/test_qemu_builder_composed_lifecycle_paths.py`
 
-## Composed source contract
+## Observed defect
 
-The candidate:
+The imported helper used the caller-selected final `IMAGE` throughout construction. `mke2fs` created or replaced that path before EFI assembly, partition-table work, and the final FAT copy completed. A later failure therefore left the trusted output name pointing at partial work.
 
-1. rejects a trailing-slash image argument before path reinterpretation or private-image creation;
-2. resolves the final image parent and creates a private sibling directory on the same filesystem;
-3. refuses a literal root parent or a parent symlink resolving to `/` before private-image creation or image mutation;
-4. sends `mke2fs`, `truncate`, `sfdisk`, and `dd` to the private image path;
-5. publishes with exactly one `mv --no-target-directory` after all image mutations;
-6. clears private-image ownership after publication so later cleanup cannot delete the final image;
-7. gives HUP, INT, QUIT, and TERM terminating actions with statuses 129, 130, 131, and 143;
-8. clears all traps before signal cleanup so EXIT cannot run cleanup a second time;
-9. aggregates cleanup failures while attempting both `WORKDIR` and private-image cleanup;
-10. preserves a primary ordinary failure or signal status over cleanup failure;
-11. reports cleanup failure when an otherwise successful exit has no stronger status.
+The same helper installed one cleanup-only action for ordinary exit and for `INT`, `TERM`, and `QUIT`. A parent-only signal delivered while the shell waited for foreground work could be handled after that work returned. Cleanup removed temporary files, returned, and allowed later commands to continue.
 
-## Review repair: trailing-slash image paths
+A review pass found a third path-interpretation defect in the first combined candidate: an existing directory argument ending in `/` could be reinterpreted by `dirname` and `basename` as a nested output path.
 
-The first composed head validated the basename only after GNU `dirname` and `basename` processed the argument. For an existing directory supplied as `path/to/output/`, those utilities produced parent `path/to/output` and basename `output`, silently changing the requested destination into `path/to/output/output`.
+## Source intent and design choice
 
-The repaired candidate checks the original argument for a trailing slash first. The focused negative control supplies an existing directory with a trailing slash and requires status 1, a focused diagnostic, zero `mktemp` calls, and no nested output path.
+The source clearly treats the final success message as the point where callers should receive a usable image, yet the old pathname became visible much earlier. No retained upstream statement defines partial-image publication as desired behavior.
+
+The landed design chooses:
+
+1. private same-filesystem construction;
+2. one final rename as the publication point;
+3. separate ordinary-exit and signal paths;
+4. primary failure or signal status ahead of cleanup failure;
+5. cleanup failure as the terminal status after an otherwise successful exit;
+6. rejection of ambiguous trailing-slash and filesystem-root destinations before private-image creation.
+
+These choices keep the change within output ownership, cancellation, and cleanup. Foreground-child forwarding, crash durability, concurrent-publisher locking, and image validation remain separate questions.
+
+## Landed source contract
+
+The landed patch:
+
+1. rejects an image argument ending in `/` before path reinterpretation;
+2. resolves the final parent and creates a private sibling directory on the same filesystem;
+3. refuses a parent resolving to `/` before image creation;
+4. sends `mke2fs`, `truncate`, `sfdisk`, and `dd` to `IMAGE_TMP`;
+5. publishes with one `mv --no-target-directory` after every image mutation;
+6. clears temporary-image ownership after publication;
+7. handles HUP, INT, QUIT, and TERM as 129, 130, 131, and 143;
+8. clears traps before signal cleanup, preventing a second EXIT cleanup;
+9. attempts both work-directory and private-image cleanup;
+10. preserves ordinary failure and signal status over cleanup errors;
+11. returns cleanup failure after an otherwise successful exit.
 
 ## Regression matrix
 
-The regressions apply the composed patch to exact temporary copies of the imported source and check the complete candidate with `sh -n`. They extract the exact candidate functions into reduced real `/bin/sh` harnesses and prove:
+The regressions apply the retained patch to exact temporary copies of the imported source and run `sh -n` on the complete candidate. Reduced real `/bin/sh` harnesses prove:
 
-- existing final image plus ordinary failure: status 42, sentinel bytes and mode preserved, private state removed, cleanup called once;
+- existing final image plus ordinary failure: status 42, original bytes and mode preserved, private state removed, cleanup called once;
 - absent final image plus ordinary failure: output remains absent and private state is removed;
-- wrapper-only HUP, INT, and TERM before publication: status 129, 130, and 143, later marker absent, existing final preserved, cleanup called once;
+- wrapper-only HUP, INT, and TERM before publication: status 129, 130, and 143, later work omitted, existing final preserved, cleanup called once;
 - immediate successful rerun after each signal: complete bytes published and temporary state removed;
-- successful publication: complete bytes replace the sentinel through one rename, mode is 0644 under umask 022, status 0;
-- TERM after publication: status 143 while the published final image remains intact;
-- cleanup failure precedence: cleanup failure becomes status 74 after otherwise successful exit, while ordinary failure 42 and TERM 143 remain authoritative;
+- successful publication: complete bytes replace the sentinel through one rename, mode 0644 under umask 022, status 0;
+- TERM after publication: status 143 with the published image intact;
+- cleanup failure precedence: status 74 after otherwise successful exit, while failure 42 and TERM 143 remain authoritative;
 - literal root and symlink-to-root parents: refusal before private-image creation;
-- existing directory with trailing slash: refusal before `mktemp`, with no nested destination created;
-- source assertions: every image mutator uses `IMAGE_TMP`, one publication precedes the success message, and EXIT/HUP/INT/QUIT/TERM actions are distinct.
+- existing directory with trailing slash: refusal before `mktemp`, with zero nested output;
+- source contract: every image mutator uses `IMAGE_TMP`, one publication precedes success, and EXIT/HUP/INT/QUIT/TERM actions are distinct.
 
-The lifecycle test instruments the exact cleanup body with a thin call counter. The body itself remains unchanged in the harness.
+The lifecycle harness wraps the exact cleanup body with a call counter. The body itself remains unchanged.
 
-## Executed gate history
+## Executed evidence
 
-The initial construction command was:
+Initial lifecycle head `dec8133d1e90de51dae603bc2b195ed1ae32b0ac` passed seven focused tests and Linux Fieldwork CI run `30577530343`.
 
-```text
-python -m unittest -v tests/test_qemu_builder_composed_lifecycle.py
-```
+Complete-diff review then found the trailing-slash reinterpretation. Final source head `b7fbc7e6dcf40e95d17b7cb67fc96c710571f154` added the negative control and repair. Linux Fieldwork CI run `30578489526` passed; job `90992563661` completed Python compilation, the complete repository unit suite, shell syntax, and command-help checks. PR #195 merged as `a0ec62f64fd6a9ff2cc20b28142ec876c52a5145`.
 
-It passed seven tests. Linux Fieldwork CI run `30577530343` also passed on initial head `dec8133d1e90de51dae603bc2b195ed1ae32b0ac`.
+Evidence classification:
 
-That green head preceded the trailing-slash review repair. Exact-head CI after the repair is the authoritative final gate.
+- source ownership and command routing: demonstrated by source inspection and exact patch assertions;
+- lifecycle, signal, cleanup, publication, mode, path, and rerun behavior: demonstrated by reduced real-shell models;
+- repository regression compatibility: demonstrated by the named Linux Fieldwork CI gate;
+- full QEMU image construction: open integration boundary.
 
 ## Cleanup and rerun result
 
-Ordinary failure and every signal case remove the work directory and active private image state once. The same final image pathname succeeds on the immediate next run. Post-publication signals leave the completed final image intact.
+Ordinary failure and every pre-publication signal remove the work directory and active private image state once. The same output path succeeds on the immediate next run. Signals after publication leave the completed final image intact.
 
-Injected cleanup failure intentionally leaves disposable harness residue. The test records one cleanup call and then lets its enclosing temporary directory remove the fixture. The trailing-slash negative control creates no private image state.
+Injected cleanup failure intentionally leaves disposable harness residue for the enclosing temporary directory to remove. The trailing-slash control creates zero private image state.
 
-## Composition and overlap decision
+## Composition decision
 
-PR #172 and PR #192 overlap mechanically in the `WORKDIR`/cleanup/trap block. Neither focused patch is the final landing unit by itself. This generated patch is the explicit composition order and carries the combined gate.
+PR #172 and PR #192 changed the same `WORKDIR`, cleanup, and trap region. Their separate patches remain useful mechanism histories. PR #195 is the canonical combined source and the landed result.
 
-The integration adds HUP handling and explicit ordinary-exit cleanup precedence. It also follows issue #193's stricter root-parent refusal, superseding PR #192's earlier root-parent compatibility choice for the integrated candidate.
+The combined result adds HUP handling, ordinary-exit cleanup precedence, final-output preservation, path validation, and signal behavior before and after publication. The earlier focused root-parent compatibility choice from PR #192 was superseded by the stricter combined refusal in issue #193.
 
 ## Evidence boundary
 
-This work establishes pathname publication, input-path interpretation, wrapper status, cleanup ownership, and immediate rerun behavior with small files and real shell signal delivery. It does not run `mmdebstrap`, `mke2fs`, partition tools, QEMU, mounts, root operations, or a multi-gigabyte image.
+The retained tests use small files and real shell signals. They skip `mmdebstrap`, `mke2fs`, partition tools, QEMU, mounts, root operations, and multi-gigabyte images.
 
-The candidate still leaves these boundaries:
+Open boundaries:
 
-- parent-only signals may be deferred while the shell waits for a foreground child;
-- signals are not forwarded to foreground tools;
-- publication has rename atomicity without file or directory `fsync` durability;
-- concurrent publishers are not locked;
-- final image contents are not validated;
-- replacement does not preserve metadata from an existing inode;
+- parent-only signals may wait until a foreground child returns;
+- foreground tools receive no forwarded signal from this wrapper;
+- rename atomicity includes no file or directory `fsync` guarantee;
+- concurrent publishers have no lock;
+- final image contents receive no validation step;
+- replacement creates a new inode and carries no prior mode, ownership, ACL, or xattr promise;
 - unexpected post-publication residue is retained with a warning.
 
 ## Authority
 
-Internal Linux Fieldwork work only. No Debian or other external issue, email, patch, merge request, comment, or review is authorized or included.
+Internal Linux Fieldwork work only. External Debian or upstream contact remains unauthorized for this result.
 
 ## Disposition
 
-Run exact-head CI and complete-diff review after the trailing-slash repair. If green, merge the integration carrier locally and retain PR #172 and PR #192 as focused mechanism records.
+**MERGED LOCALLY.** Use PR #195 and landed commit `a0ec62f64fd6a9ff2cc20b28142ec876c52a5145` as the canonical result. Retain PR #172 and PR #192 as focused mechanism history.
