@@ -22,9 +22,7 @@ A suitable shell form is:
 cut -s -d: -f1 /etc/subuid | grep -Fxq -- "$user"
 ```
 
-The `-s` option suppresses delimiter-free malformed records, `--` protects
-usernames beginning with `-`, `-F` disables regex interpretation, `-x`
-requires the whole extracted field, and `-q` keeps the check quiet.
+The `-s` option suppresses delimiter-free malformed records, `--` protects usernames beginning with `-`, `-F` disables regex interpretation, `-x` requires the whole extracted field, and `-q` keeps the check quiet.
 
 ## Counterexample
 
@@ -38,7 +36,7 @@ A plain `grep debci /etc/subuid` succeeds and falsely reports that `debci` is co
 
 ## mmdebstrap package-test example
 
-The imported `debian/tests/testsuite` ensures subordinate ranges for the ordinary autopkgtest user before running unshare cases. Its original check searches the whole line with an unanchored regex. Issue #80 and its focused candidate change only the two match conditions; the existing append policy remains intact.
+The imported `debian/tests/testsuite` ensures subordinate ranges for the ordinary autopkgtest user before running unshare cases. Its original check searches the whole line with an unanchored regex. Issue #80 and merged PR #92 change only the two match conditions; the existing append policy remains intact.
 
 The regression executes the exact patched shell blocks against temporary files and covers:
 
@@ -46,10 +44,12 @@ The regression executes the exact patched shell blocks against temporary files a
 - username appearing only inside another account;
 - username appearing alone on a delimiter-free malformed line;
 - regex-significant input treated literally;
+- leading-hyphen input passed after an option terminator;
 - empty file;
 - absent file;
 - subuid and subgid parity;
-- immediate rerun without duplicate entries.
+- immediate rerun without duplicate entries;
+- complete patched testsuite shell syntax.
 
 ## Limits
 
@@ -57,5 +57,6 @@ Exact matching does not validate range overlap, numeric bounds, duplicate confli
 
 ## Related records
 
-- Issue #80
+- completed issue #80
+- merged PR #92
 - `investigations/mmdebstrap-exact-subid-user-match/README.md`
