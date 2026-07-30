@@ -6,7 +6,6 @@ import stat
 import subprocess
 import tempfile
 import unittest
-import uuid
 
 
 class QemuBuilderAtomicImageTest(unittest.TestCase):
@@ -137,27 +136,28 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(image.stat().st_mode), 0o644)
             self.assertEqual(self.temporary_siblings(image), [])
 
-    def test_filesystem_root_parent_and_symlink_to_root_are_refused(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="qemu-atomic-root-") as tmp:
+    def test_success_replaces_final_symlink_without_overwriting_referent(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="qemu-atomic-symlink-") as tmp:
             root = pathlib.Path(tmp)
             candidate = self.prepare_candidate(root)
             harness = self.write_harness(root, candidate)
-            root_link = root / "root-link"
-            root_link.symlink_to("/", target_is_directory=True)
-            name = f"lf-qemu-atomic-{uuid.uuid4().hex}.img"
+            referent = root / "referent.img"
+            referent.write_bytes(b"trusted-referent")
+            image = root / "result.img"
+            image.symlink_to(referent.name)
 
-            for image in (pathlib.Path("/") / name, root_link / name):
-                with self.subTest(image=str(image)):
-                    result = subprocess.run(
-                        ["/bin/sh", str(harness), "success", str(image)],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        timeout=10,
-                    )
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("refusing filesystem root as image parent", result.stderr)
-                    self.assertFalse((pathlib.Path("/") / name).exists())
+            result = subprocess.run(
+                ["/bin/sh", str(harness), "success", str(image)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(image.is_symlink())
+            self.assertEqual(image.read_bytes(), b"complete-image")
+            self.assertEqual(referent.read_bytes(), b"trusted-referent")
+            self.assertEqual(self.temporary_siblings(image), [])
 
     def test_every_image_mutation_uses_temporary_path_before_one_publication(self) -> None:
         with tempfile.TemporaryDirectory(prefix="qemu-atomic-source-") as tmp:
