@@ -1,0 +1,76 @@
+name: mmdebstrap autopkgtest style-gate control
+
+on:
+  pull_request:
+    paths:
+      - "investigations/mmdebstrap-autopkgtest-1141078/**"
+      - "scripts/reproduce-mmdebstrap-autopkgtest-style-gate-control.sh"
+      - "tests/test_mmdebstrap_autopkgtest_style_gate_control.py"
+      - ".github/workflows/mmdebstrap-autopkgtest-style-gate-control.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  controlled-autopkgtest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      EVIDENCE: investigations/mmdebstrap-autopkgtest-1141078/runs/style-gate-control-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Run the controlled Debian sid package test
+        shell: bash
+        run: |
+          set -uo pipefail
+          rm -rf "$EVIDENCE"
+          mkdir -p "$EVIDENCE"
+          set +e
+          docker run --privileged --rm \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            debian:sid-slim \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                autopkgtest ca-certificates patch python3 procps util-linux
+              apt-get clean
+              bash scripts/reproduce-mmdebstrap-autopkgtest-style-gate-control.sh \
+                "'"$EVIDENCE"'"
+            '
+          status=$?
+          set -e
+          printf '%s\n' "$status" >"$EVIDENCE/container-exit-status"
+          exit 0
+
+      - name: Upload controlled package-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmdebstrap-style-gate-control-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE }}/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Classify the package-test result
+        if: always()
+        shell: bash
+        run: |
+          status=$(cat "$EVIDENCE/container-exit-status")
+          case "$status" in
+            0)
+              echo "The controlled package test passed."
+              ;;
+            77)
+              echo "The controlled package test returned a neutral result."
+              ;;
+            *)
+              echo "The controlled package test failed with status $status."
+              exit "$status"
+              ;;
+          esac
