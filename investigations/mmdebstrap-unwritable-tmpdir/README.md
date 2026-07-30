@@ -21,7 +21,7 @@ When `TMPDIR` is explicitly set to an existing but unwritable directory, does `m
 bash investigations/mmdebstrap-unwritable-tmpdir/run.sh
 ```
 
-The runner uses the imported executable with `--dry-run`, `--mode=unshare`, and `--variant=apt`. Dry-run initializes apt and exercises temporary-root selection without downloading or installing the root filesystem packages.
+The runner uses the imported executable with `--dry-run`, `--mode=chrootless`, and `--variant=apt`. Dry-run initializes apt and exercises temporary-root selection without downloading or installing the root filesystem packages. Chrootless mode avoids the hosted runner's blocked user-namespace operation while preserving the tarball temporary-root path under study.
 
 ## Distinguishing outcomes
 
