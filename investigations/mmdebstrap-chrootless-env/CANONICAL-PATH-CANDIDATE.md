@@ -78,6 +78,23 @@ The same head passed:
 1. The first source-transform workflow used indentation-sensitive multiline strings and failed before modifying the source. Exact escaped markers replaced that carrier.
 2. Existing TMPDIR unit tests encoded the helper's former one-argument signature and result line. They now assert root plus canonical path, target TMPDIR, empty-path refusal, and both call sites.
 3. The candidate test retains a mutation control rather than treating a green candidate transaction alone as proof.
+4. Peer review found that the first PATH harness accepted arbitrary non-root runtime parents and chmodded the imported source in place. Both apt-managed and direct probes now use an explicit disposable-parent allowlist, execute preserved runtime copies, and assert source mode and repository cleanliness. Issue #130 tracks the equivalent defects in merged harnesses.
+5. The first direct essential-package transaction reached `run_essential()` and proved that the candidate bypassed the caller `dpkg` wrapper, but current sid later failed on known package chrootless limitations. The revised probe records path reach and package outcome separately and runs the caller-PATH mutation despite the shared later failure.
+
+## Exact-head controls now present
+
+The self-contained PR #109 head includes:
+
+- tainted and clean apt-managed package transactions;
+- a one-line caller-PATH mutation;
+- expected-tool lookup for `dpkg`, `ldconfig`, `start-stop-daemon`, and `update-rc.d`;
+- an explicit `APT_CONFIG` with empty `DPkg::Path`, which must fail closed before the fixture package is installed;
+- a real `--variant=essential` direct-path probe with a caller `dpkg` wrapper and mutation;
+- runtime-parent negative controls;
+- source-copy and repository-cleanliness assertions;
+- the existing credential/environment, explicit TMPDIR, deep-review, formatter, and repository CI gates.
+
+These controls are listed here as present, not as passed, until the exact-head workflows complete.
 
 ## Anti-patterns avoided
 
@@ -86,16 +103,16 @@ The same head passed:
 - Do not silently hard-code a fallback for an explicitly empty apt setting.
 - Do not describe canonical PATH as isolation. Maintainer scripts still execute on the host.
 - Do not claim parity from selected log lines. Use the imported root-versus-chrootless and fakeroot comparisons before merge.
+- Do not let an evidence harness recursively delete beneath an arbitrary parent or mutate imported source merely to execute it.
 
 ## Remaining merge gates
 
-1. Complete a real `--variant=essential` chrootless transaction for direct `run_essential()` with a caller-path dpkg wrapper and mutation control.
+1. Complete the exact-head apt-managed, empty-path, and direct `run_essential()` workflows.
 2. Run the imported root-versus-chrootless comparison on representative variants.
 3. Run the imported chrootless-fakeroot comparison.
 4. Exercise foreign-architecture/QEMU behavior if available.
-5. Add a documented empty-`DPkg::Path` product test, not only the extracted-helper unit test.
-6. Verify non-chrootless modes remain unchanged.
-7. Review the final exact head independently.
+5. Verify non-chrootless modes remain unchanged.
+6. Review the final exact head independently.
 
 ## Authority
 
