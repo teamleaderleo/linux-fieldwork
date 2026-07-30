@@ -46,12 +46,12 @@ class GomarkdocMatrixTest(unittest.TestCase):
                 "missing-fixture-is-sufficient",
             ),
             "either": (
-                cases("unset-goflags", "add-fixture"),
+                cases("filter-goflags", "add-fixture"),
                 "either-narrow-repair-is-sufficient",
             ),
             "combined": (
-                cases("add-fixture-unset-goflags"),
-                "fixture-and-test-flags-interact",
+                cases("add-fixture-filter-goflags"),
+                "fixture-and-supported-tag-filter-interact",
             ),
             "unresolved": (
                 cases(),
@@ -87,7 +87,7 @@ FAIL  github.com/princjef/gomarkdoc/cmd/gomarkdoc
                 status = 1
                 if label == "known-good":
                     status = 0
-                if label == "current" and mode == "unset-goflags":
+                if label == "current" and mode == "filter-goflags":
                     status = 0
                 records.append(record(label, mode, status))
 
