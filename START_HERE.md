@@ -8,6 +8,8 @@ Read [`FIELD_GUIDE.md`](FIELD_GUIDE.md) alongside this runbook for practical do,
 
 Choose the smallest useful record. Write a note for reusable understanding. Use the programme registry for a plausible formal direction. Give a lane its own directory when its bounded question and first probe are clear. Open an investigation when exact source work and repeatable evidence begin.
 
+A reader should understand the defect or question before meeting the test matrix. Lead with the thing that goes wrong, who or what it can affect, and the proposed correction. Technical detail then proves the explanation.
+
 ## 1. Check existing work
 
 Search, in order:
@@ -52,17 +54,37 @@ Use an **investigation** for:
 
 Start notes and investigations from [`templates/`](templates/). Follow [`programmes/README.md`](programmes/README.md) for formal lane promotion.
 
-## 3. Explain it simply
+## 3. Explain it for a human reader
 
-Near the top, add `## In simple words` and answer:
+Near the top, add `## In simple words`. For a defect, candidate, or surprising behavior, answer these questions before presenting the implementation details:
 
-- What is this?
-- Where does it sit in the system?
-- What is being learned, tested, or changed?
-- Why could someone care?
-- What is the current answer or next step?
+1. **What is this component?** Say where it sits in the larger workflow.
+2. **What goes wrong?** Give one concrete input → action → bad result example.
+3. **Why should someone care?** Name the affected bytes, files, processes, privileges, users, packages, or decisions.
+4. **What happens if the behavior remains?** Describe the repeatable consequence instead of using a severity adjective alone.
+5. **Was it intentional?** Separate evidence of an intended tradeoff from evidence of a shortcut, stale assumption, or accidental interaction.
+6. **What is the proposed fix?** Describe the before/after behavior in ordinary language.
+7. **Why this fix?** Explain the narrower and broader alternatives and the compatibility cost of the chosen boundary.
+8. **What precedent applies?** Link relevant standards, manuals, prior bugs, release notes, or well-established design practice.
+9. **What remains open?** State the evidence limit and next decision.
 
-Keep established behavior separate from guesses and future work.
+Use an analogy when it genuinely clarifies the authority or lifecycle involved. Pair the analogy with a literal example. A metaphor helps the reader; commands and observations carry the proof.
+
+Prefer concrete language:
+
+```text
+origin promises 100 bytes → sends 40 → candidate deletes the temporary
+```
+
+instead of:
+
+```text
+response handling is hardened
+```
+
+Define specialized terms at first use. Expand phrases such as “post-commit failure,” “hop-by-hop header,” or “canonical path” into the actual event they describe.
+
+Keep established behavior separate from interpretation, intent hypotheses, and future work.
 
 ## 4. Record the source boundary
 
@@ -78,11 +100,38 @@ Prefer a command or test that preserves the important behavior while remaining e
 
 For a candidate change, compare baseline and candidate behavior under the same conditions. Use the donut checks in [`FIELD_GUIDE.md`](FIELD_GUIDE.md) to look for missing permission, path, metadata, lifecycle, compatibility, and evidence boundaries around the headline result.
 
-## 6. State the evidence boundary
+The smallest useful demonstration should support the plain-language claim directly. A reader should be able to map each important sentence near the top to a command, fixture, source line, or observed result later in the record.
+
+## 6. Cite precedent with care
+
+Use primary sources when a claim depends on a protocol, API, command contract, package policy, or language behavior:
+
+- RFCs and standards for protocol rules;
+- official language or library documentation for runtime behavior;
+- project manuals and source for command semantics;
+- upstream issue, commit, or release history for project intent;
+- established weakness catalogues for recurring defect classes.
+
+Explain how the source applies. A link alone does not establish that the current case is identical.
+
+Historical precedent can support three different conclusions; say which one applies:
+
+- the behavior conflicts with a long-standing contract;
+- the behavior reflects an old compatibility tradeoff that still has value;
+- the behavior began as a reasonable shortcut whose assumptions no longer hold.
+
+## 7. State the evidence boundary
 
 Say exactly what the work establishes and where the conclusion ends. Mention skipped test suites, untested platforms, privilege assumptions, mocked components, reduced fixtures, and environment-specific behavior.
 
-## 7. Decide the next step
+Distinguish:
+
+- **demonstrated defect** — reproduced against the stated baseline;
+- **plausible consequence** — follows from the demonstrated authority but was kept out of the safe fixture;
+- **design judgment** — the proposed policy and its compatibility tradeoff;
+- **open question** — requires another source, environment, or decision.
+
+## 8. Decide the next step
 
 Choose one:
 
@@ -93,6 +142,8 @@ Choose one:
 - keep a local candidate change;
 - prepare an upstream packet after explicit authorization;
 - close with a negative result.
+
+For a merge or upstream decision, state the human choice in ordinary language. “READY FOR FINAL HUMAN CHECK” should be followed by what the reviewer is deciding and which exact evidence supports that decision.
 
 ## Upstream contact
 
