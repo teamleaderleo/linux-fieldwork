@@ -129,7 +129,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
                      return False
          return skip
  
-@@ -294,7 +358,43 @@
+@@ -294,7 +358,48 @@
                      member.name = r.sub(s, member.name)
              if member.isfile():
                  with in_tar.extractfile(member) as file:
@@ -151,6 +151,11 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +                        # represent a sparse member. Emit valid dense data
 +                        # instead of stale or incomplete sparse metadata.
 +                        member.sparse = None
++                        member.pax_headers = {
++                            key: value
++                            for key, value in member.pax_headers.items()
++                            if not key.startswith("GNU.sparse.")
++                        }
 +                        out_tar.addfile(member, file)
 +                        continue
 +                    logical_size = member.size
