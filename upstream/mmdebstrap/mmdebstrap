@@ -1207,38 +1207,6 @@ sub error {
     }
 }
 
-sub check_tmpdir {
-    return
-      if !exists $ENV{TMPDIR}
-      || !defined $ENV{TMPDIR}
-      || $ENV{TMPDIR} eq '';
-
-    my $tmpdir = $ENV{TMPDIR};
-    if (!-d $tmpdir) {
-        error "TMPDIR \"$tmpdir\" is not a directory";
-    }
-
-    my ($fh, $filename);
-    my $success = eval {
-        ($fh, $filename) = tempfile(
-            "mmdebstrap.tmpdir-check.XXXXXXXXXXXX",
-            DIR    => $tmpdir,
-            UNLINK => 0
-        );
-        1;
-    };
-    if (!$success) {
-        chomp(my $msg = $@ || "$!");
-        error "cannot use TMPDIR \"$tmpdir\": $msg";
-    }
-
-    close $fh
-      or error "cannot close temporary file in TMPDIR \"$tmpdir\": $!";
-    unlink $filename
-      or error "cannot remove temporary file in TMPDIR \"$tmpdir\": $!";
-    return;
-}
-
 # The encoding of dev_t is MMMM Mmmm mmmM MMmm, where M is a hex digit of
 # the major number and m is a hex digit of the minor number.
 sub major {
@@ -5868,8 +5836,6 @@ sub main() {
         open(STDERR, '>', $logfile) or error "cannot open $logfile: $!";
     }
 
-    check_tmpdir();
-
     foreach my $arg (@{ $options->{noop} }) {
         info "the option --$arg is a no-op. It only exists for compatibility"
           . " with some debootstrap wrappers.";
@@ -6902,7 +6868,12 @@ sub main() {
         }
         # since the output is a tarball, we create the rootfs in a temporary
         # directory
-        $options->{root} = tempdir('mmdebstrap.XXXXXXXXXX', TMPDIR => 1);
+        my @tempdir_options = (TMPDIR => 1);
+if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne '') {
+    @tempdir_options = (DIR => $ENV{TMPDIR});
+}
+$options->{root}
+  = tempdir('mmdebstrap.XXXXXXXXXX', @tempdir_options);
         info "using $options->{root} as tempdir";
         # add an flock on the temporary directory to prevent cleanup by systemd
         # see section Age in tmpfiles.d(5)
