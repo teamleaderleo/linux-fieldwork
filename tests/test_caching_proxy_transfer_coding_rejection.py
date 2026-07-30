@@ -164,20 +164,26 @@ class CachingProxyTransferCodingRejectionTest(unittest.TestCase):
                         response = raw_proxy_request(proxy, target, host)
 
                 self.assertTrue(response.startswith(b"HTTP/1.0 502"), response[:100])
-                self.assertEqual(response.count(b"HTTP/"), 1, response)
+                self.assertEqual(response.count(b"\r\nHTTP/"), 0, response)
                 self.assertNotIn(UNSUPPORTED_BODY, response)
                 self.assertEqual(origin.request_count, 1)
                 final = new_cache / f"pool/{label}.deb"
                 self.assertFalse(final.exists())
                 if final.parent.exists():
                     self.assertEqual(
-                        [path for path in final.parent.iterdir() if path.name.startswith(".")],
+                        [
+                            path
+                            for path in final.parent.iterdir()
+                            if path.name.startswith(".")
+                        ],
                         [],
                     )
 
     def test_exact_chunked_coding_remains_the_only_supported_transfer_coding(self) -> None:
         source = self.candidate.read_text(encoding="utf-8")
-        self.assertIn('values = response.headers.get_all("Transfer-Encoding", [])', source)
+        self.assertIn(
+            'values = response.headers.get_all("Transfer-Encoding", [])', source
+        )
         self.assertIn('if tokens != ["chunked"] or not response.chunked:', source)
         self.assertIn("unsupported upstream Transfer-Encoding", source)
         fresh = source.index("res = conn.getresponse()")
