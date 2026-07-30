@@ -27,7 +27,7 @@ Does preserving the `TMPDIR` value established by `run_setup()` keep chrootless 
 - Resolved upstream commit: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
 - Merged environment-hardening commit: `09e2c5ef74683723cca9cf70c1162dec0328750d`
 - Merged PR #57 head: `5ebb8095288c7b3c11a4d23e2a329d6424f6a96e`
-- Executed candidate head: `43005ead9bd5967470a2095fd2c55914744e524e`
+- Final candidate head: `f7f8402ea2b721eea829140bcb7bb6206ff64ebd`
 - Local source: `upstream/mmdebstrap/mmdebstrap`
 - Candidate patch: `mmdebstrap-chrootless-target-tmpdir.patch`
 - Candidate branch: `fix/mmdebstrap-chrootless-target-tmpdir-main`
@@ -107,17 +107,17 @@ created=<target>/tmp/...
 target_tmp_mode=1777
 ```
 
-It also requires the created directory not to survive, then repeats the candidate in a fresh target and under fakeroot when available.
+It also requires the created directory not to survive, then repeats the candidate in a fresh target and under fakeroot.
 
 ## Results
 
-Replacement head `43005ead9bd5967470a2095fd2c55914744e524e` passed all three exact-head workflows:
+Final head `f7f8402ea2b721eea829140bcb7bb6206ff64ebd` passed all exact-head workflows:
 
-- target-TMPDIR run `30536852201`, job `90852098465`;
-- Linux Fieldwork CI run `30536852205`;
-- chrootless environment security run `30536852182`.
+- target-TMPDIR run `30537044267`, job `90852710660`;
+- Linux Fieldwork CI run `30537044255`;
+- chrootless environment security run `30537044293`.
 
-The focused artifact is `8757007293`, digest `sha256:c1246052455824d008d04a61b77fb2acc0b7c6a7baa0da301f56c7cb7729594b`.
+The focused artifact is `8757082452`, digest `sha256:5c696c7ed15a5fca018da44cf9bd934da41b8d3f0b78ef8075ef3a27215825ab`.
 
 The executable result established:
 
@@ -127,7 +127,8 @@ The executable result established:
 - target `/tmp` is mode `1777`;
 - the package-created directory is removed;
 - a fresh candidate run succeeds;
-- fakeroot preserves the same target-derived invariant.
+- fakeroot preserves the same target-derived invariant;
+- the original chrootless environment hardening regression remains green.
 
 ## Cleanup and rerun
 
@@ -157,7 +158,7 @@ The evidence establishes that preserving `TMPDIR` here is not equivalent to inhe
 
 ## Peer review
 
-Pending exact-head peer review of PR #73 after this result-recording update reruns.
+PR #73 is ready for exact-head peer review at `f7f8402ea2b721eea829140bcb7bb6206ff64ebd`.
 
 ## Reusable notes
 
@@ -165,7 +166,7 @@ Related note: `notes/packaging/chrootless-maintainer-script-tmpdir.md`.
 
 ## Next step
 
-Rerun the documentation-updated exact head, mark PR #73 ready for review, and merge only after exact-head peer review.
+Merge only after peer review confirms the one-line source change, negative control, and retained exact-head evidence.
 
 ## Authority
 
