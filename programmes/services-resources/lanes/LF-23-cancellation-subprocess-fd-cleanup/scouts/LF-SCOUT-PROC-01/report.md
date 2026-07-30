@@ -2,7 +2,7 @@
 
 ## In simple words
 
-Three process-group interruptions behaved cleanly: before worker launch, while the worker had live mounts and IPC, and during final cleanup. Every interrupted run failed, every process group emptied, mounts and sockets disappeared, temporary roots were removed, and every immediate rerun succeeded.
+Three process-group interruptions behaved cleanly: before worker launch, while the worker had live mounts and IPC, and during final cleanup. Every interrupted run failed, every process group emptied, temporary roots were removed, and every immediate rerun succeeded. The active-worker evidence observed the target mounts vanish before the parent exited; the final empty-group snapshot does not independently scan the host mount table.
 
 A narrower probe found a promotion candidate in the exact imported `run_progress()` function. When only the process running `run_progress()` received `SIGTERM`, the function logged the interruption, waited for its child, returned normally, and the driver exited `0`. The interruption was therefore reported as success.
 
@@ -127,9 +127,9 @@ The durable retained subset is under `artifacts/retained-run-30515323482/`.
 
 | Case | Signal scope | PIDs before | Live resources before | Interrupted exit | State after exit | Clean rerun |
 |---|---|---:|---|---:|---|---:|
-| `before-child-launch` | process group | 1 | root flock, two pipes, Unix socketpair, root FD | 25 | 0 PIDs; no locks, sockets, mounts, or temp paths | 0 |
-| `active-worker` | process group | 3 | root flock, pipes, Unix socketpair, `dev/pts` and `dev/shm` mounts | 25 | 0 PIDs; no locks, sockets, mounts, or temp paths | 0 |
-| `cleanup` | process group | 1 | root flock and root FD | 25 | 0 PIDs; no locks, sockets, mounts, or temp paths | 0 |
+| `before-child-launch` | process group | 1 | root flock, two pipes, Unix socketpair, root FD | 25 | 0 PIDs; no retained temp paths | 0 |
+| `active-worker` | process group | 3 | root flock, pipes, Unix socketpair, `dev/pts` and `dev/shm` mounts | 25 | 0 PIDs; no retained temp paths; target mounts had already vanished before parent exit | 0 |
+| `cleanup` | process group | 1 | root flock and root FD | 25 | 0 PIDs; no retained temp paths | 0 |
 | `run-progress-parent-only` | owner PID only | 4 | owner, command child, progress child, sleeping grandchild, progress pipes | **0** | 0 PIDs | 0 |
 
 ### Required matrix
@@ -160,6 +160,7 @@ This is a promotion candidate because the behavior is deterministic, tied to the
 
 - The required matrix uses an empty suite, custom variant, dry-run, skipped update, and null output.
 - `dev/pts` and `dev/shm` were live in the active-worker case; `/proc` and `/sys` mounts were skipped because those target directories were absent in this dry-run root.
+- The active-worker snapshots observed the target mounts vanish before parent exit. After the process group is empty, the harness has no surviving process mount namespace to inspect and does not independently scan the host mount table.
 - Package download, extraction, dpkg execution, maintainer scripts, service actions, network activity, and archive creation are outside this run.
 - Null output proves absence of a retained output path in the required matrix. It does not measure truncation or corruption of a real tar stream.
 - The `run_progress()` promotion probe is function-level. It uses the exact imported function and real fork/pipe/signal behavior, with a purpose-built child command.
