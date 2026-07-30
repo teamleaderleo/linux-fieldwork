@@ -4,7 +4,28 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 source_root="$repo_root/upstream/mmdebstrap"
 result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/results"
-runtime="${RUNNER_TEMP:-/tmp}/mmdebstrap-chrootless-env"
+runtime_parent="$(realpath -m "${RUNNER_TEMP:-/tmp}")"
+if [[ "$runtime_parent" == / ]]; then
+  echo "refusing unsafe runtime parent: $runtime_parent" >&2
+  exit 2
+fi
+runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-env")"
+case "$runtime" in
+  "$runtime_parent"/*) ;;
+  *)
+    echo "refusing runtime outside parent: $runtime" >&2
+    exit 2
+    ;;
+esac
+result_parent="$(realpath -m "$repo_root/investigations/mmdebstrap-chrootless-env")"
+result_dir="$(realpath -m "$result_dir")"
+case "$result_dir" in
+  "$result_parent"/*) ;;
+  *)
+    echo "refusing result directory outside investigation: $result_dir" >&2
+    exit 2
+    ;;
+esac
 fixture="$runtime/fixture"
 package="$runtime/lf-chrootless-env-probe_1.0_all.deb"
 server_pid=
@@ -19,7 +40,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-for command in dpkg dpkg-deb dpkg-query perl python3; do
+for command in dpkg dpkg-deb dpkg-query perl python3 realpath; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "missing required command: $command" >&2
     exit 2
@@ -59,6 +80,7 @@ mkdir -p "$(dirname "$log")"
     DBUS_SESSION_BUS_ADDRESS \
     XDG_RUNTIME_DIR \
     HOME \
+    TMPDIR \
     PATH \
     DEBIAN_FRONTEND \
     DEBCONF_NONINTERACTIVE_SEEN \
@@ -91,6 +113,14 @@ PY
   else
     printf 'agent_socket_connect=unavailable\n'
   fi
+  temp_base="${TMPDIR:-/tmp}"
+  created="$(mktemp -d "$temp_base/lf-chrootless-tmp.XXXXXX")"
+  printf 'temp_created=%s\n' "$created"
+  case "$created" in
+    "$DPKG_ROOT"/tmp/*) printf 'temp_inside_target=yes\n' ;;
+    *) printf 'temp_inside_target=no\n' ;;
+  esac
+  rmdir "$created"
 } >"$log"
 EOF
 chmod 0755 "$fixture/DEBIAN/postinst"
@@ -145,6 +175,21 @@ assert_installed() {
     | grep -Fx installed >/dev/null
 }
 
+assert_target_tmpdir() {
+  local target=$1 log=$2 created
+  grep -Fx "TMPDIR=$target/tmp" "$log"
+  grep -Fx 'temp_inside_target=yes' "$log"
+  [[ "$(stat -c %a "$target/tmp")" == 1777 ]]
+  created="$(sed -n 's/^temp_created=//p' "$log")"
+  [[ "$created" == "$target/tmp"/lf-chrootless-tmp.* ]]
+  test ! -e "$created"
+  if find "$target/tmp" -maxdepth 1 -name 'lf-chrootless-tmp.*' \
+    -print -quit | grep -q .; then
+    echo "temporary probe path survived below target: $target/tmp" >&2
+    exit 1
+  fi
+}
+
 make_command() {
   local target=$1 skip_environment_check=$2
   local package_dir hook
@@ -177,7 +222,7 @@ direct_stop="$runtime/direct-agent.stop"
 mkdir -p "$direct_target/var/lib/dpkg" "$direct_target/var/log"
 : >"$direct_target/var/lib/dpkg/status"
 start_server "$direct_socket" "$direct_received" "$direct_stop"
-env \
+env -i \
   PATH=/usr/sbin:/usr/bin:/sbin:/bin \
   LF_SECRET_CANARY=direct-secret-canary \
   GITHUB_TOKEN=direct-github-token \
@@ -198,6 +243,11 @@ grep -Fx 'LF_SECRET_CANARY=direct-secret-canary' "$direct_log"
 grep -Fx 'GITHUB_TOKEN=direct-github-token' "$direct_log"
 grep -Fx 'agent_socket_connect=success' "$direct_log"
 grep -Fx 'lf-chrootless-package-script' "$direct_received"
+grep -Fx 'TMPDIR=<unset>' "$direct_log"
+grep -Fx 'temp_inside_target=no' "$direct_log"
+direct_created="$(sed -n 's/^temp_created=//p' "$direct_log")"
+[[ "$direct_created" == /tmp/lf-chrootless-tmp.* ]]
+test ! -e "$direct_created"
 cp "$direct_log" "$result_dir/direct-environment.log"
 
 # The default launch check must reject a credential-rich shell and report
@@ -309,6 +359,7 @@ grep -Fx 'TZ=UTC' "$san_log"
 grep -Fx 'SOURCE_DATE_EPOCH=1700000000' "$san_log"
 grep -F 'DPKG_ROOT=' "$san_log" | grep -F "$sanitized_target"
 grep -F 'DPKG_ADMINDIR=' "$san_log" | grep -F "$sanitized_target"
+assert_target_tmpdir "$sanitized_target" "$san_log"
 grep -Fx 'http_proxy=http://proxy.invalid:3128' "$apt_env_log"
 grep -Fx 'GITHUB_TOKEN=fake-github-token' "$apt_env_log"
 
@@ -328,8 +379,9 @@ for label in safe safe-rerun; do
     >"$result_dir/$label.stdout" \
     2>"$result_dir/$label.stderr"
   assert_installed "$target"
-  cp "$target/var/lib/lf-chrootless-env-probe/environment.log" \
-    "$result_dir/$label-environment.log"
+  run_log="$target/var/lib/lf-chrootless-env-probe/environment.log"
+  assert_target_tmpdir "$target" "$run_log"
+  cp "$run_log" "$result_dir/$label-environment.log"
 done
 cmp \
   "$runtime/safe-root/usr/lib/lf-chrootless-env-probe/payload" \
@@ -357,6 +409,7 @@ grep -E '^FAKEROOTKEY=.+$' "$fakeroot_log"
 grep -E '^LD_PRELOAD=.*libfakeroot' "$fakeroot_log"
 grep -Fx 'LF_SECRET_CANARY=<unset>' "$fakeroot_log"
 grep -Fx 'TZ=UTC' "$fakeroot_log"
+assert_target_tmpdir "$fakeroot_target" "$fakeroot_log"
 
 cat >"$result_dir/summary.txt" <<EOF
 negative_control=ambient credentials and agent socket reached direct chrootless dpkg script
@@ -369,6 +422,8 @@ apt_token_preserved_to_apt_only=yes
 dpkg_environment_sanitized=yes
 agent_socket_blocked=yes
 required_dpkg_environment_preserved=yes
+target_tmpdir_contained=yes
+target_tmpdir_cleanup=yes
 fakeroot_environment_preserved=yes
 safe_launch_succeeded=yes
 clean_rerun_succeeded=yes
