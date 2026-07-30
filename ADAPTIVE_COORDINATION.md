@@ -58,6 +58,22 @@ Keep one current owner for a coherent piece of work. That owner may:
 
 Record a meaningful scope change or transfer. Do not force a useful investigation to remain inside an obsolete initial assignment.
 
+## Autonomous push work
+
+An issue may declare an autonomous multi-helper push for a bounded batch. In that mode:
+
+1. Every helper first reads [`README.md`](README.md), [`START_HERE.md`](START_HERE.md), this coordination guide, the push issue in full, and the live issues, pull requests, tracked records, and source revisions linked from its initial packet.
+2. A helper letter, callsign, packet, or review pairing identifies an initial focus. It does not reserve work, limit review authority, or require another helper to finish first.
+3. Begin useful work immediately. Do not wait for a coordinator, schedule, claim, reviewer assignment, or another packet when the next safe action is available.
+4. Make bounded repository changes, execute focused gates, inspect the complete current diff, rerun after cleanup, and review the exact head being recommended. Careful self-review is valid for reversible internal work; higher-consequence work still deserves stronger independent review.
+5. After completing the initial packet, inspect adjacent packets and the current open work. Continue with useful review, repair, evidence transfer, or closeout rather than ending solely because the initial packet is complete.
+6. Keep ownership discoverable while allowing overlap. A short claim or transfer comment records who is acting; it never locks the work.
+7. Record substantial completed work in at least two durable surfaces:
+   - the owning issue or pull request, with the disposition, exact head, executed gates, caveats, authority state, and next human decision;
+   - the relevant tracked fieldwork record, such as an investigation README or results file, scout report or artifact, reusable note, programme status, research selection record, or target map.
+8. Link records instead of copying large reports between them. The tracked record carries commands, fixtures, results, interpretation, and evidence limits; the issue or pull request carries routing, review state, and the current decision.
+9. Leave the repository sufficient for another person or agent to understand, reproduce, review, and continue the work even when the helper chat receives no follow-up message.
+
 ## Notes stay lightweight
 
 Use a note when the durable value is an explanation, command, workflow, source-reading lesson, or small demonstration. Notes do not need scout identities, formal review, promotion decisions, research metadata, or a full evidence packet.
