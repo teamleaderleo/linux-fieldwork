@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
+
+
+def sha256(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 class LF14SparseRepairTest(unittest.TestCase):
@@ -77,12 +87,71 @@ class LF14SparseRepairTest(unittest.TestCase):
                 filtered_file["allocated_bytes"], direct_file["allocated_bytes"] * 4
             )
 
+            direct_path = (
+                output
+                / "extracts/gnu-tar-direct/sparse/target/.sparse-source"
+            )
+            filtered_path = (
+                output
+                / "extracts/mmdebstrap-tarfilter/sparse/target/.sparse-source"
+            )
+            self.assertEqual(sha256(filtered_path), sha256(direct_path))
+            for path in (direct_path, filtered_path):
+                with path.open("rb") as stream:
+                    for offset, expected in (
+                        (0, b"BEGIN"),
+                        (1024 * 1024, b"MIDDLE"),
+                        (8 * 1024 * 1024, b"END"),
+                    ):
+                        stream.seek(offset)
+                        self.assertEqual(stream.read(len(expected)), expected)
+                    for offset in (4096, 2 * 1024 * 1024):
+                        stream.seek(offset)
+                        self.assertEqual(stream.read(32), b"\0" * 32)
+
             original_archive = output / "fixtures/sparse.tar"
             filtered_archive = output / "filtered/sparse.tar"
             self.assertLess(filtered_archive.stat().st_size, filtered_file["size"] // 4)
             self.assertLessEqual(
                 filtered_archive.stat().st_size, original_archive.stat().st_size * 2
             )
+
+            dense_archive = work / "dense-sparse-member.tar"
+            with original_archive.open("rb") as source, dense_archive.open("wb") as target:
+                dense = subprocess.run(
+                    [
+                        sys.executable,
+                        str(upstream / "tarfilter"),
+                        "--pax-exclude=GNU.sparse.name",
+                    ],
+                    stdin=source,
+                    stdout=target,
+                    stderr=subprocess.PIPE,
+                )
+            self.assertEqual(
+                dense.returncode,
+                0,
+                dense.stderr.decode("utf-8", "replace"),
+            )
+            with tarfile.open(dense_archive, "r:*") as archive:
+                member = archive.getmember(".sparse-source")
+                self.assertIsNone(member.sparse)
+                self.assertFalse(
+                    any(key.startswith("GNU.sparse.") for key in member.pax_headers)
+                )
+
+            dense_target = work / "dense-target"
+            dense_target.mkdir()
+            extracted = subprocess.run(
+                ["tar", "-xf", str(dense_archive), "-C", str(dense_target)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(extracted.returncode, 0, extracted.stdout + extracted.stderr)
+            dense_path = dense_target / ".sparse-source"
+            self.assertEqual(sha256(dense_path), sha256(direct_path))
+            self.assertGreater(dense_archive.stat().st_size, direct_file["size"])
 
 
 if __name__ == "__main__":
