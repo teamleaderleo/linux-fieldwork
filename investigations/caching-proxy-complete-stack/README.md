@@ -1,26 +1,90 @@
 # Complete caching-proxy composition
 
-## In simple words
+## Explain it like I am five
 
-The caching proxy repairs were developed as focused candidates that overlap in one request handler. This record builds one source file from the preserved imported `caching_proxy.py`, composes every active request, cache, response, and lifecycle mechanism deliberately, and runs them through one real loopback matrix.
+Imagine a mailroom that also keeps a copy of every parcel it delivers.
 
-The composed source remains generated evidence. The imported upstream file stays unchanged.
+The old helper trusted the address written by the customer, used that same text as a shelf location, copied nearly every delivery instruction to the supplier, and wrote a new parcel directly onto the public shelf while it was still arriving.
+
+That creates several ways to get the wrong result:
+
+- a strange address can point outside the cache cabinet;
+- a private proxy instruction can reach the supplier;
+- a supplier's `404 Not Found` parcel can be relabelled as `200 OK` and cached;
+- half a parcel can become visible as though it were complete;
+- a broken response can contain one `200` followed by a second `502` status line.
+
+This work makes the mailroom check the address, remove private delivery instructions, verify the supplier's answer, receive the full parcel into a hidden temporary location, and reveal it only after completion.
+
+## Why should anyone care?
+
+This helper sits in mmdebstrap development and CI workflows that fetch and cache Debian archive files. A bad cache entry can be served repeatedly, so one transient failure can become a persistent wrong answer. The demonstrated paths also let request text influence local file reads and writes within the helper process's permissions.
+
+The exposure is bounded: this is a development/CI helper, and the candidate binds its standalone listener to loopback. The consequences inside that boundary remain concrete: incorrect package bytes, cached error pages, truncated downloads, leaked proxy credentials, confusing HTTP streams, and misleading test results.
+
+## What happens if we leave it alone?
+
+The focused fixes can each pass while the combined handler still fails. The overlaps occur in the same request path, so patch order can silently remove or bypass another repair.
+
+Without one composed gate:
+
+1. optimized Python can erase `assert` checks and accept requests or origin failures that ordinary Python rejects;
+2. malformed or conflicting message lengths can reach downstream clients or the cache;
+3. concurrent misses can observe a final cache name before the file is complete;
+4. late failures can append a second HTTP response after the first one already began;
+5. a retry can reuse corrupted cache state instead of recovering from the origin.
+
+## Was the old behavior intentional?
+
+The original file reads like a compact workflow helper written around friendly inputs: well-formed APT requests, a trusted local caller, ordinary Python, and a cooperative origin. Several individual choices were useful shortcuts in that setting.
+
+The unsafe combination does not form a coherent product requirement. HTTP has long treated proxies as trust boundaries, Python documents that optimized mode removes assertions, and pathname-containment guidance treats canonicalization plus descendant checks as standard defensive practice.
+
+A few restrictions in the candidate are deliberate design choices:
+
+- the accepted URL-path language is narrower than general HTTP and rejects percent escapes because this Debian archive helper does not need them and decoding would create cache-key aliases;
+- misses remain uncoalesced, so two clients may fetch the same object concurrently;
+- the imported source remains preserved; the repository generates a candidate source for evidence and review.
+
+## The proposed fix in plain terms
+
+The generated handler follows one receiving checklist:
+
+1. accept only the supported request method and bodyless request framing;
+2. confirm that the absolute request URL and `Host` describe the same origin;
+3. turn the accepted raw URL path into a cache path that remains below the cache root;
+4. remove proxy credentials and connection-specific fields before contacting the origin;
+5. require an origin status code of `200` with an ordinary runtime check;
+6. understand the response framing before sending a downstream success status;
+7. write response bytes to an exclusive hidden temporary file;
+8. publish the final cache name with one rename after complete receipt;
+9. send one `502` for failures before response commitment;
+10. after commitment, log the original error and close the connection without writing a second response.
+
+The result is still a small caching proxy. The fix adds checks at each boundary where text changes authority: URL to origin, URL to filesystem, origin response to downstream response, and incomplete file to shared cache entry.
+
+## Historical and standards precedent
+
+- HTTP/1.1 has required proxy requests to use an absolute-form target for decades. The current standard also requires a forwarding proxy to derive `Host` from that target: https://www.rfc-editor.org/rfc/rfc9112.html#name-absolute-form
+- HTTP message framing rules require a proxy to reject an invalid upstream `Content-Length`, discard that response, and send `502`; an early close before the declared byte count makes the message incomplete: https://www.rfc-editor.org/rfc/rfc9112.html#name-message-body-length
+- HTTP marks connection-specific fields as hop-by-hop and treats authority as critical routing data: https://www.rfc-editor.org/rfc/rfc9110.html#name-message-forwarding
+- Python specifies that `python -O` emits no code for `assert` statements: https://docs.python.org/3/reference/simple_stmts.html#the-assert-statement
+- CWE-22 records the recurring pathname-traversal pattern and recommends canonicalization plus containment checks: https://cwe.mitre.org/data/definitions/22.html
+
+These references show a long-running design lesson: proxies, caches, and filesystem adapters must validate again at their own boundary, even when an earlier caller usually supplies clean input.
 
 ## Owners and routing
 
 - push packet: issue #194, Packet D
 - integration owner: issue #188
 - helper: D
-- first repository candidate commit: `1efaaece6bf58e78753978a1ef3c06bfa2c1d9ed`
-- exact validated source head: `e3cde53b2a0b35fcccdbd7e0bed74de8ce4eeceb`
 - current integration branch: `integration/caching-proxy-complete-stack`
 - pull request: #198
+- exact validated head: `00caba3d753536dd9a3a68fc6f110c75e338ec08`
 - external-contact authority: internal repository work only
 
 ## Source boundary
 
-- initial base repository commit: `d344c942af4b55b5b0c71c8a66a8870fbf0db7bf`
-- current-main alignment commit used before the validated run: `a254657636ca92302610cd4af4bc294fafa62bbd`
 - imported source: `upstream/mmdebstrap/caching_proxy.py`
 - imported blob: `e57a8516a0c76167894b05fc56be0e3165535488`
 - routing composer: `compose.py`
@@ -29,109 +93,48 @@ The composed source remains generated evidence. The imported upstream file stays
 - optimized-interpreter runner: `run_case.py`
 - full gate: `../../tests/test_caching_proxy_complete_stack.py`
 
-## Canonical inputs
-
-The composer verifies defining markers in all eight retained repair artifacts before generating a candidate:
-
-1. atomic, permission-compatible cache publication;
-2. downstream hop-header removal and close framing;
-3. declared-length completion checks;
-4. origin request credential and hop-header removal;
-5. request authority, path, and cache-root confinement;
-6. strict bodyless request `Content-Length` grammar;
-7. post-commit log-and-close behavior;
-8. explicit origin status validation under ordinary and optimized Python.
-
-Focused carriers remain mechanism records: PRs #118, #139, #147, #162, and #169. Inputs already present on `main` are referenced directly. Inputs confined to open focused branches are copied into `inputs/` so an exact PR checkout can verify and compose them without fetching mutable branch state.
-
-## Composition decisions
-
-The generated handler performs the checks in this order:
-
-1. reject unsupported methods and ambiguous/body-bearing request framing;
-2. validate absolute HTTP authority against the single `Host` field;
-3. derive strict-descendant cache paths from the accepted raw path subset;
-4. remove proxy credentials, standard hop fields, and `Connection`-nominated request fields;
-5. connect to the validated authority and require origin status 200 at runtime;
-6. accept only an exactly chunked transfer coding or no transfer coding;
-7. validate non-chunked declared length as non-empty ASCII decimal before commitment;
-8. remove response hop fields, commit one downstream 200, stream into an exclusive temporary, and publish with one rename;
-9. on a pre-commit error, send one 502; after commitment, log the original exception and close without appending another response;
-10. close the origin connection in every path and bind the standalone helper to loopback.
-
-The chunked path deliberately ignores a conflicting origin `Content-Length` because `http.client` returns decoded entity bytes. Non-chunked responses retain strict declared-byte validation.
+The imported upstream file stays unchanged. Inputs already present on `main` are referenced directly. Reviewed mechanisms that still live on open focused branches are snapshotted under `inputs/` so the exact PR checkout carries every composition input.
 
 ## Executed gates
 
-Local command:
+Local full-matrix runs:
 
 ```text
 python3 -m unittest -v tests/test_caching_proxy_complete_stack.py
-```
-
-Initial local result:
-
-```text
 Ran 7 tests in 16.425s
 OK
-```
 
-Snapshot-packaging rerun:
-
-```text
+snapshot-packaging rerun:
 Ran 7 tests in 15.297s
 OK
 ```
 
-Exact-head repository gate:
+Final current-main-aligned repository gate:
 
 ```text
-head: e3cde53b2a0b35fcccdbd7e0bed74de8ce4eeceb
+head: 00caba3d753536dd9a3a68fc6f110c75e338ec08
 workflow: Linux Fieldwork CI
-run: 30578728258 / 565
+run: 30578916643 / 572
 result: success
 ```
 
-The matrix covers:
+The matrix covers rejected request inputs with zero origin/cache activity, request-header sanitization, ordinary and optimized Python, status and framing failures, complete fixed/chunked/EOF responses, premature EOF and retry, post-commit failures, cache-writer and downstream failures, concurrent misses, file mode, temporary cleanup, and server/thread/socket shutdown.
 
-- method, authority, userinfo, query/fragment, traversal, absolute-path, percent, separator, backslash, duplicate-header, body-length, and transfer-coding request rejection before origin/cache activity;
-- ordinary and real `python -O` request validation and origin-status behavior;
-- proxy credential, standard hop-header, and `Connection` token removal while preserving repeated end-to-end fields;
-- successful custom-reason 200, exact chunked decoding, malformed/unsupported transfer coding, malformed and negative declared lengths, premature EOF, immediate retry, and final cache bytes;
-- pre-commit failure, post-header/body-prefix origin failure, cache-writer failure, and downstream disconnect with one status line and no failed publication;
-- synchronized concurrent misses, hidden final name until completion, complete client bytes, ordinary creation mode, temporary cleanup, and server/thread shutdown.
+## Why this fix is narrow
 
-## Complete-diff review
+The candidate preserves successful fixed-length, exactly chunked, and EOF-delimited downloads. It accepts a `200` with a custom reason phrase because the status code carries the protocol meaning. It rejects unsupported transfer-coding combinations before downstream commitment because Python's HTTP client does not supply a safely decoded representation for them.
 
-The reviewed branch-owned paths are this record, the routing composer, retained implementation, optimized runner, four focused snapshots, and the executable regression. The imported source remains unchanged.
+The candidate intentionally leaves these separate questions open:
 
-The executable base is the merged atomic-publication patch. Overlapping request and fresh-response changes are integrated by named anchors instead of mechanically applying stale hunks. The four snapshots preserve the exact open-branch mechanisms needed by the composition gate.
-
-No unrelated source, workflow, upstream mirror, or external-contact file is changed by Packet D.
-
-## Cleanup and rerun
-
-Every loopback server calls `shutdown()` and `server_close()` and joins its serving thread. Temporary roots use `TemporaryDirectory`. Origin connections are closed in `finally`. Tests wait for completed atomic publication before cache-hit controls and require temporary sibling removal after success and failure.
-
-The full matrix completed cleanly locally before publication, again after input snapshot packaging, and in the repository-wide exact-head CI suite.
-
-## Evidence boundary
-
-This composition closes the demonstrated lexical path, request framing, header forwarding, origin-status, response framing, transfer-coding, declared-length, atomic publication, post-commit, and ordinary concurrency/lifecycle cases.
-
-The retained limits are:
-
-- same-UID component replacement between path validation and file open;
-- request miss coalescing;
-- crash-durable directory/file synchronization;
-- checksums or content authentication;
-- remote-network and installed-service exposure;
-- broader URI syntax beyond the deliberately narrow Debian archive path subset.
+- pathname replacement between validation and file open by another same-UID process;
+- miss coalescing;
+- crash-durable file and directory synchronization;
+- content checksums or authentication;
+- remote deployment policy;
+- broader URI syntax.
 
 ## Current disposition
 
-`READY FOR FINAL HUMAN CHECK` at validated source head `e3cde53b2a0b35fcccdbd7e0bed74de8ce4eeceb`, with Linux Fieldwork CI run 565 successful.
+`READY FOR FINAL HUMAN CHECK` at `00caba3d753536dd9a3a68fc6f110c75e338ec08`, with Linux Fieldwork CI run 572 successful.
 
-The final branch-record commit and any later current-main merge require their own green exact-head rerun before merge.
-
-No Debian or other external issue, email, patch, merge request, comment, or review is included or authorized.
+The human decision is whether this nine-file internal evidence unit explains and proves the combined behavior well enough to merge. External submission remains a separate decision. No Debian or other external contact is included or authorized.
