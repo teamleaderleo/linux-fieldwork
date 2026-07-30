@@ -51,12 +51,13 @@ if [[ "$unwritable_status" -eq 0 ]]; then
 fi
 
 if [[ -n "$unwritable_selected" ]]; then
-  echo "mmdebstrap selected a fallback directory after TMPDIR validation should have failed: $unwritable_selected" >&2
+  echo "mmdebstrap selected a fallback directory after explicit TMPDIR failed: $unwritable_selected" >&2
   exit 1
 fi
 
-grep -F 'cannot use TMPDIR' "$unwritable_log"
+grep -F 'Error in tempdir()' "$unwritable_log"
 grep -F "$unwritable_tmp" "$unwritable_log"
+grep -F 'Permission denied' "$unwritable_log"
 
 TMPDIR="$writable_tmp" timeout 240 \
   "$source_root/mmdebstrap" \
@@ -112,6 +113,7 @@ data = {
         "command_status": int(unwritable_status),
         "selected_tmpdir": None,
         "diagnostic_names_requested_tmpdir": True,
+        "diagnostic_source": "File::Temp tempdir",
         "result": "rejected",
     },
     "writable_case": {
@@ -126,4 +128,4 @@ pathlib.Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8
 print(json.dumps(data, indent=2))
 PY
 
-echo "Verified: unusable explicit TMPDIR fails early; writable explicit TMPDIR remains honored"
+echo "Verified: unusable explicit TMPDIR fails at File::Temp; writable explicit TMPDIR remains honored"
