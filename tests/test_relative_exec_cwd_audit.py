@@ -141,6 +141,13 @@ Command::new("./tool").output()?;
         self.assertEqual(findings[0].program, "../proxy")
         self.assertEqual(findings[0].cwd, "/tmp/target")
 
+    def test_shell_split_strings_are_outside_literal_scope(self) -> None:
+        source = """\
+env -C /tmp/target -S './proxy --check'
+env --chdir=/tmp/target --split-string='./proxy --check'
+"""
+        self.assertEqual(audit_text("probe.sh", source), [])
+
     def test_shell_absolute_and_simple_programs_are_controls(self) -> None:
         source = """\
 env --chdir=/tmp/target /usr/bin/proxy
