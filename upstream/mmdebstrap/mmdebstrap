@@ -3912,7 +3912,8 @@ sub chrootless_dpkg_environment($) {
     if (!-e $tmpdir) {
         make_path($tmpdir, { mode => 01777 });
     } elsif (!-d $tmpdir) {
-        error "chrootless target temporary path is not a directory: $tmpdir";
+        error "chrootless target temporary path is not a directory:"
+          . " $tmpdir";
     }
     chmod 01777, $tmpdir
       or error "cannot set mode 01777 on $tmpdir: $!";

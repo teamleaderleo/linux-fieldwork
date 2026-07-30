@@ -145,10 +145,10 @@ index 767b4b7..5b9f019 100644
  safe_launch_succeeded=yes
  clean_rerun_succeeded=yes
 diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
-index bbe2b64..f50b8e6 100644
+index bbe2b64..5cf0b42 100644
 --- a/upstream/mmdebstrap/mmdebstrap
 +++ b/upstream/mmdebstrap/mmdebstrap
-@@ -3902,7 +3902,21 @@ sub run_prepare {
+@@ -3902,7 +3902,22 @@ sub run_prepare {
      return \@chrootcmd;
  }
  
@@ -163,7 +163,8 @@ index bbe2b64..f50b8e6 100644
 +    if (!-e $tmpdir) {
 +        make_path($tmpdir, { mode => 01777 });
 +    } elsif (!-d $tmpdir) {
-+        error "chrootless target temporary path is not a directory: $tmpdir";
++        error "chrootless target temporary path is not a directory:"
++          . " $tmpdir";
 +    }
 +    chmod 01777, $tmpdir
 +      or error "cannot set mode 01777 on $tmpdir: $!";
@@ -171,7 +172,7 @@ index bbe2b64..f50b8e6 100644
      my @names = qw(
        PATH
        DEBIAN_FRONTEND
-@@ -3919,7 +3933,7 @@ sub chrootless_dpkg_environment() {
+@@ -3919,7 +3934,7 @@ sub chrootless_dpkg_environment() {
          push @names, qw(FAKEROOTKEY FAKED_MODE FAKEROOT_FD_BASE LD_PRELOAD
            LD_LIBRARY_PATH);
      }
@@ -180,7 +181,7 @@ index bbe2b64..f50b8e6 100644
      foreach my $name (@names) {
          next if !defined $ENV{$name};
          push @result, "$name=$ENV{$name}";
-@@ -4042,7 +4056,7 @@ sub run_essential() {
+@@ -4042,7 +4057,7 @@ sub run_essential() {
          run_dpkg_progress({
                  ARGV => [
                      'env',
@@ -189,7 +190,7 @@ index bbe2b64..f50b8e6 100644
                      'dpkg',
                      '--force-not-root',
                      '--force-script-chrootless',
-@@ -4145,8 +4159,9 @@ sub run_install() {
+@@ -4145,8 +4160,9 @@ sub run_install() {
  
      if ($options->{mode} eq 'chrootless') {
          if (scalar @pkgs_to_install > 0) {
