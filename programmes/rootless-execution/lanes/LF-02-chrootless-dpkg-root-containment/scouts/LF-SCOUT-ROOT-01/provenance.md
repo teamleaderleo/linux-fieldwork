@@ -6,13 +6,14 @@ The original hosted artifact recorded `git branch --show-current`. GitHub Action
 
 The same artifact kept useful raw commands and traces, but their absolute runner paths made ordinary cross-run comparisons noisy. This record defines separate raw and normalized evidence layers instead of discarding either one.
 
-Tracking: issue #110.
+Tracking: issue #110 and PR #115.
 
 ## Source boundary
 
 - Scout investigation: issue #11 / PR #21
 - Reviewed scout head: `f5c6b835bcc3283fc934718942c587593cb713af`
 - Correction branch: `fix/lf-02-evidence-provenance`
+- Validated implementation head: `33285c9e572792a238f4b1a1dfa1339699cc562f`
 - Runner: `artifacts/run-probe.sh`
 - Provenance helper: `artifacts/write-provenance.py`
 - Regression: `tests/test_lf02_evidence_provenance.py`
@@ -108,16 +109,53 @@ Focused tests require:
 
 The hosted workflow additionally downloads the final artifact and asserts the provenance against its own run ID and attempt.
 
+## Hosted validation
+
+Run `30544282909` passed:
+
+- containment job `90876375124`;
+- provenance receipt job `90876464096`.
+
+Artifact `8760014817` has digest `sha256:7e8c48ca83981b0247ee37031350957af6ed7fffceb7e30526aab8c65aae6aaa`.
+
+The artifact receipt printed and asserted:
+
+```text
+summary_schema_version=2
+provenance_schema_version=1
+checked_out_head=6a09fed4649a7e6e69f466b1dadf5020886b2c6d
+detached_head=true
+effective_ref=fix/lf-02-evidence-provenance
+github_sha=6a09fed4649a7e6e69f466b1dadf5020886b2c6d
+github_ref=refs/pull/115/merge
+github_head_ref=fix/lf-02-evidence-provenance
+github_base_ref=scout/lf-scout-root-01/lf-02-dpkg-root-containment
+github_run=30544282909 attempt=1
+```
+
+The workflow artifact metadata separately names branch head `33285c9e572792a238f4b1a1dfa1339699cc562f`. The checked-out SHA is the pull-request merge commit. Retaining both values makes that distinction explicit instead of calling either one "the branch."
+
+All six traced phases had paired command views:
+
+- direct install;
+- direct reinstall;
+- direct purge;
+- direct install after purge;
+- first mmdebstrap run;
+- second mmdebstrap run.
+
+The receipt required every normalized view to omit the declared repository and runtime roots and required every raw view to preserve at least one of them.
+
 ## Evidence limits
 
-- `GITHUB_SHA` can name the pull-request merge commit while `checked_out_head` names whatever `actions/checkout` actually selected. Both are retained rather than assumed equal.
+- `GITHUB_SHA` can name the pull-request merge commit while workflow artifact metadata names the head branch SHA. Both are retained rather than assumed equal.
 - Repository paths remain in raw traces by design.
 - The normalized command view currently replaces only the three declared roots. Other host-specific paths remain visible if they are semantically part of the command.
 - This contract describes evidence provenance; it does not claim reproducible execution across runner images or package versions.
 
-## Validation
+## Decision
 
-Pending exact-head hosted execution.
+**Retain the correction.** It removes the ambiguous empty branch field, preserves exact Actions identity, and adds portable command views without weakening the raw evidence layer.
 
 ## Authority
 
