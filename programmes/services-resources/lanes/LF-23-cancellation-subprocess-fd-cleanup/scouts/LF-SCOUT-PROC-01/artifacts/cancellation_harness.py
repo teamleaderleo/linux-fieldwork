@@ -16,7 +16,6 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
-import tempfile
 import time
 from typing import Any
 
@@ -340,7 +339,11 @@ def capture_environment(output_root: Path) -> None:
 
 def prepare_output(requested: Path, artifacts: Path) -> Path:
     output = requested.resolve()
-    allowed_roots = (artifacts.resolve(), Path(tempfile.gettempdir()).resolve())
+    allowed_roots = (
+        artifacts.resolve(),
+        Path("/tmp").resolve(),
+        Path("/var/tmp").resolve(),
+    )
     if not any(root in output.parents for root in allowed_roots):
         roots = ", ".join(str(root) for root in allowed_roots)
         raise ValueError(
