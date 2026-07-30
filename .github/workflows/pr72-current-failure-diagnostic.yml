@@ -20,7 +20,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8762098688/zip" > /tmp/reproduction.zip
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8765484385/zip" > /tmp/reproduction.zip
           python3 - <<'PY'
           import re
           import zipfile
