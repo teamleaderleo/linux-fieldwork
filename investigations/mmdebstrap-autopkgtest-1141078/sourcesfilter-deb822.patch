@@ -1,14 +1,30 @@
 diff --git a/debian/tests/sourcesfilter b/debian/tests/sourcesfilter
 --- a/debian/tests/sourcesfilter
 +++ b/debian/tests/sourcesfilter
-@@ -2,5 +2,5 @@
+@@ -1,36 +1,37 @@
+ #!/usr/bin/env python3
  
 -from aptsources.sourceslist import SourcesList, Deb822SourceEntry
 +from aptsources.sourceslist import SourcesList
  import apt_pkg
  import glob
  import os.path
-@@ -25,12 +25,13 @@ def main(rootfs):
+ import sys
+ import os
+ 
+ 
+ def main(rootfs):
+     sources = SourcesList(False, deb822=True)
+ 
+     dbglvl = os.environ.get("MMDEBSTRAP_VERBOSITY", "-1")
+     try:
+         dbglvl = int(dbglvl)
+     except ValueError:
+         dbglvl = -1
+     if dbglvl >= 2:
+         print("before:", file=sys.stderr)
+         for s in sources.list:
+             print(s.str(), end="", file=sys.stderr)
  
      os.makedirs(rootfs + "/etc/apt/sources.list.d", exist_ok=True)
  
