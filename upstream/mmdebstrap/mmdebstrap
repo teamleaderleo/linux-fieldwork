@@ -8970,11 +8970,16 @@ or fill them with reproducible content:
 
 =item C<TMPDIR>
 
-When creating a tarball, a temporary directory is populated with the rootfs
-before the tarball is packed. The location of that temporary directory will be
-in F</tmp> or the location pointed to by C<TMPDIR> if that environment variable
-is set. Setting C<TMPDIR> to a different directory than F</tmp> is useful if
-you have F</tmp> on a tmpfs that is too small for your rootfs.
+For the C<tar>, C<squashfs>, C<ext2>, C<ext4>, and C<null> formats,
+B<mmdebstrap> populates a temporary directory with the root filesystem before
+creating or discarding the requested output.
+
+If C<TMPDIR> is unset or empty, the directory is created in the system
+temporary location, usually F</tmp>. If C<TMPDIR> is set to a non-empty value,
+B<mmdebstrap> creates the temporary root below that directory and exits with an
+error if it cannot do so. Setting C<TMPDIR> to a different directory than
+F</tmp> is useful if F</tmp> is on a tmpfs that is too small for the root
+filesystem.
 
 If you set C<TMPDIR> in B<unshare> mode, then the unshared user must be able to
 access the directory. This means that the directory itself must be
