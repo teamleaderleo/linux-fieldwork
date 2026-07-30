@@ -10,7 +10,7 @@ Debian CI run `72574145` failed because the `dev-ptmx` test uses `script(1)` ins
 - Central transition investigation: #53
 - Historical capture: closed PR #82
 - Imported source: `upstream/mmdebstrap/tests/dev-ptmx`
-- Candidate patch: `0001-include-bsdutils-for-dev-ptmx.patch`
+- Candidate patch: `0001-include-bsdutils.patch`
 - Historical evidence: `debci-72574145-summary.json`
 - Regression: `tests/test_mmdebstrap_dev_ptmx_dependency.py`
 - Reusable note: `notes/debian/tests-must-declare-command-providers-not-essential-set-assumptions.md`
