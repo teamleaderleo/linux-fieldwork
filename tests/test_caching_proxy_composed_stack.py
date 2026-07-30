@@ -28,6 +28,13 @@ def load_module(path: pathlib.Path, name: str) -> types.ModuleType:
     return module
 
 
+def read_request_headers(stream) -> None:
+    while True:
+        line = stream.readline()
+        if line in (b"", b"\r\n", b"\n"):
+            return
+
+
 @contextlib.contextmanager
 def running_http_server(handler):
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -116,7 +123,7 @@ class FixedOrigin(http.server.BaseHTTPRequestHandler):
 
 class RecoveringShortOrigin(socketserver.StreamRequestHandler):
     def handle(self):
-        self.rfile.readuntil(b"\r\n\r\n")
+        read_request_headers(self.rfile)
         with self.server.lock:
             self.server.request_count += 1
             request_number = self.server.request_count
@@ -132,7 +139,7 @@ class RecoveringShortOrigin(socketserver.StreamRequestHandler):
 
 class ChunkedOrigin(socketserver.StreamRequestHandler):
     def handle(self):
-        self.rfile.readuntil(b"\r\n\r\n")
+        read_request_headers(self.rfile)
         with self.server.lock:
             self.server.request_count += 1
         first = CHUNKED[:9]
