@@ -1,0 +1,40 @@
+name: PR 57 chrootless environment diagnostic
+
+on:
+  pull_request:
+    paths:
+      - 'upstream/mmdebstrap/mmdebstrap'
+      - 'investigations/mmdebstrap-chrootless-env/**'
+      - '.github/workflows/pr-57-chrootless-env-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libdistro-info-perl \
+            libdpkg-perl \
+            uidmap
+      - name: Syntax
+        run: |
+          perl -c upstream/mmdebstrap/mmdebstrap
+          bash -n investigations/mmdebstrap-chrootless-env/run.sh
+      - name: Run focused regression
+        run: bash investigations/mmdebstrap-chrootless-env/run.sh
+      - name: Upload compact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-57-chrootless-env-diagnostic
+          path: investigations/mmdebstrap-chrootless-env/results/
+          if-no-files-found: warn
+          retention-days: 14
