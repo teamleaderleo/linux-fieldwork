@@ -6,6 +6,7 @@ on:
       - "investigations/lf-02-privileged-host-integrations/**"
       - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/**"
       - "upstream/mmdebstrap/**"
+      - "tests/test_lf02_privileged_summary.py"
       - ".github/workflows/lf-02-privileged-host-integrations.yml"
   workflow_dispatch:
 
@@ -28,11 +29,13 @@ jobs:
             libdpkg-perl \
             strace
 
-      - name: Check probe syntax
+      - name: Check probe syntax and summary classifier
         run: |
           perl -c upstream/mmdebstrap/mmdebstrap
           bash -n investigations/lf-02-privileged-host-integrations/run.sh
           bash -n investigations/lf-02-privileged-host-integrations/run-env-canary.sh
+          python3 -m py_compile investigations/lf-02-privileged-host-integrations/summarize_results.py
+          python3 -m unittest tests/test_lf02_privileged_summary.py
           for script in \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/preinst \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/postinst \
