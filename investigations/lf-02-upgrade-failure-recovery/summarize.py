@@ -80,6 +80,7 @@ MAPPED_SERVICE_PATHS = {
     "/run/needrestart/unpacked",
     "/run/needrestart/errored",
 }
+SCRIPT_LOG_REQUIRED_FIELDS = {"phase", "script_version", "dpkg_root", "cwd"}
 
 
 class ValidationError(RuntimeError):
@@ -132,6 +133,24 @@ def validate_snapshot(label: str, record: dict[str, Any]) -> None:
         )
 
 
+def parse_script_log_line(line: str) -> dict[str, str]:
+    """Parse the probe's space-delimited key=value script log format exactly."""
+
+    require(isinstance(line, str) and bool(line), "script log line must be non-empty text")
+    fields: dict[str, str] = {}
+    for token in line.split():
+        require("=" in token, f"script log token is not key=value: {token!r}")
+        key, value = token.split("=", 1)
+        require(bool(key) and bool(value), f"script log token is incomplete: {token!r}")
+        require(key not in fields, f"script log repeats field {key!r}: {line}")
+        fields[key] = value
+    require(
+        SCRIPT_LOG_REQUIRED_FIELDS.issubset(fields),
+        f"script log fields {sorted(fields)!r} omit required fields",
+    )
+    return fields
+
+
 def mapped_service_action(row: dict[str, str]) -> bool:
     operation = row["operation"]
     path = row["path"]
@@ -149,6 +168,20 @@ def mapped_service_action(row: dict[str, str]) -> bool:
     )
 
 
+def contained_artifact(results: Path, name: str, artifact_name: str) -> Path:
+    relative = Path(artifact_name)
+    require(not relative.is_absolute(), f"{name}: artifact path must be relative")
+    require(".." not in relative.parts, f"{name}: artifact path contains parent traversal")
+    results_root = results.resolve(strict=True)
+    path = (results_root / relative).resolve(strict=True)
+    require(
+        path.is_relative_to(results_root),
+        f"{name}: artifact path escaped results: {artifact_name}",
+    )
+    require(path.is_file(), f"{name}: missing classifier event file {artifact_name}")
+    return path
+
+
 def classify_service_actions(
     results: Path, name: str, record: dict[str, Any], expected_count: int
 ) -> tuple[int, int]:
@@ -156,8 +189,7 @@ def classify_service_actions(
     require(isinstance(artifacts, dict), f"{name}: artifacts must be an object")
     event_name = artifacts.get("events", f"{name}-access.tsv")
     require(isinstance(event_name, str) and event_name, f"{name}: missing event file")
-    event_path = results / event_name
-    require(event_path.is_file(), f"{name}: missing classifier event file {event_name}")
+    event_path = contained_artifact(results, name, event_name)
 
     with event_path.open(encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
@@ -211,15 +243,28 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
 
     final_script_log = snapshots["purge"]["script_log"]
     require(isinstance(final_script_log, list) and bool(final_script_log), "empty script log")
-    for line in final_script_log:
-        require(f"dpkg_root={target}" in line, f"script log has wrong dpkg_root: {line}")
-        require(f"cwd={target}" in line, f"script log has wrong cwd: {line}")
+    script_records = [parse_script_log_line(line) for line in final_script_log]
+    for fields in script_records:
+        require(
+            fields["dpkg_root"] == target,
+            f"script log has wrong dpkg_root: {fields['dpkg_root']!r}",
+        )
+        require(
+            fields["cwd"] == target,
+            f"script log has wrong cwd: {fields['cwd']!r}",
+        )
     require(
-        any("phase=postinst script_version=3.0" in line for line in final_script_log),
+        any(
+            fields["phase"] == "postinst" and fields["script_version"] == "3.0"
+            for fields in script_records
+        ),
         "missing failing 3.0 postinst log",
     )
     require(
-        any("phase=postinst script_version=3.1" in line for line in final_script_log),
+        any(
+            fields["phase"] == "postinst" and fields["script_version"] == "3.1"
+            for fields in script_records
+        ),
         "missing recovery 3.1 postinst log",
     )
 
