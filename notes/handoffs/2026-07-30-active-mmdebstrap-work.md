@@ -45,6 +45,20 @@ Latest authoritative workflow: `30551542868`
 - retained artifact: `8765484385`;
 - artifact digest: `sha256:0da65bdd591a7eac1fbac00215caebd371ad84379325940d0b5ea9a2307d6942`.
 
+Artifact inspection completed after the original handoff. The current head ran
+77 cases and first failed at `(125/284)
+cwd-directory-not-accessible-by-unshared-user`. Its command changes directory
+to the deliberately inaccessible target and then invokes the temporary
+installed-command proxy as `./mmdebstrap`; `env --chdir` therefore cannot find
+that repository-relative proxy and reports `No such file or directory`. This
+is a reduction-harness path defect. It provides no new mmdebstrap product
+conclusion.
+
+The run never reached the later hook-free phase, so it also provides no
+execution evidence for `root-without-cap-sys-admin` under the temporary
+`Needs-APT-Config` scheduling experiment. PR #171 remains the canonical
+hard-failure scheduling correction.
+
 The run reached real package-test execution. Earlier current-sid execution at run `30546575662` proved that the Deb822 repair moved the suite past:
 
 - `help`;
@@ -72,20 +86,16 @@ Do not interpret a future PR #72 pass through the merged PR #158 scheduling as a
 
 ### PR #72 diagnostics
 
-Temporary diagnostic PR #167 was retargeted to the latest retained artifact `8765484385`.
+Temporary diagnostic PR #167 was retargeted to the latest retained artifact `8765484385` and is now closed without merge.
 
 - diagnostic head: `72e484630c29ff2057acdef228c925e9f5d9612d`;
 - workflow run: `30558320795`;
-- status at handoff: queued.
+- result: artifact inspection identified the case-125 relative-proxy path defect described above.
 
 Its only job downloads the retained ZIP and prints bounded result files, final testsuite streams, case boundaries, and anchored failure signatures. It executes no artifact content and does not match the privileged reproduction guard.
 
-When it completes:
-
-1. identify the first failing named case and owning command;
-2. update PR #72's reduction history with the exact artifact/run/head;
-3. close PR #167 without merge;
-4. do not start another full privileged run until the next candidate has a direct exact-apply/unit regression.
+The diagnostic executed no artifact content. Its bounded question is answered;
+do not revive it.
 
 Obsolete diagnostics PR #128 and PR #156 were closed during handoff cleanup.
 
@@ -261,14 +271,13 @@ Diagnostic PRs should never merge. Close them as soon as their bounded question 
 
 ## Immediate pickup checklist
 
-1. Read run `30558320795` for PR #167.
-2. Record the latest PR #72 first failing case and close PR #167.
-3. Check PR #171 exact-head CI and treat it as the blocker for authoritative hook-free execution.
-4. Check PR #118 exact-head CI; merge only the successor, not PR #94.
-5. Check PR #162 exact-head CI before extending the cache stack.
-6. Check PR #169 and PR #179 exact-head CI.
-7. Keep PR #72 draft until the temporary proxy and bundled source-copy candidates are separated or explicitly justified.
-8. Close stale/duplicate carriers instead of accumulating parallel owners.
+1. Treat the latest PR #72 result as a relative-proxy harness failure at case 125.
+2. Keep PR #171 as the owner of authoritative hook-free hard-failure scheduling.
+3. Check PR #118 exact-head CI; merge only the successor, not PR #94.
+4. Check PR #162 exact-head CI before extending the cache stack.
+5. Check PR #169 and PR #179 exact-head CI.
+6. Retain PR #72's history and tooling in its branch and conversation, but retire the broad draft carrier; promote reusable tools only in focused current-main slices.
+7. Close stale/duplicate carriers instead of accumulating parallel owners.
 
 ## Final status at handoff
 
@@ -280,12 +289,15 @@ Completed cleanup:
 
 Still intentionally open:
 
-- PR #167 — temporary artifact diagnostic, run `30558320795` queued;
-- PR #72 — draft current-sid reduction harness, latest reproduction failed;
 - PR #171 — required hard-failure scheduling correction, CI queued;
 - PR #118 — canonical explicit request-validation/containment successor, CI queued;
 - PR #162 — core cache composition gate, CI queued;
 - PR #169 — explicit origin-status validation, CI queued;
 - PR #179 — file-mirror setup/cleanup containment, CI queued.
+
+Retired after evidence transfer:
+
+- PR #167 — diagnostic question answered; closed without merge;
+- PR #72 — broad current-sid reduction carrier; history and reusable-tooling source remain preserved in the branch and conversation, while focused owners carry the live fixes.
 
 No upstream contact occurred.
