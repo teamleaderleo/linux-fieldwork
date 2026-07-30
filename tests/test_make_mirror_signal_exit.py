@@ -43,7 +43,7 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
 
     @staticmethod
     def candidate_blocks(source: str) -> tuple[str, str]:
-        function_start = source.index("record_signal() {\n")
+        function_start = source.index("handle_launch_signal() {\n")
         function_end = source.index("trap 'cleanup_owner' EXIT", function_start)
         functions = source[function_start:function_end]
         trap_start = function_end
@@ -107,21 +107,49 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             '    kill -STOP "$$"\n'
             "  fi\n"
             "  PROXYPID=$!\n"
+            '  if [ "$competing_signal" = yes ] '
+            '&& [ "$launch_count" -eq "$window_at" ]; then\n'
+            "    printf 'registered\\n' >\"$runtime/registered\"\n"
+            '    kill -STOP "$$"\n'
+            "  fi\n"
         )
         if functions.count(launch) != 1:
             raise AssertionError("launch_proxy registration seam changed")
         return functions.replace(launch, instrumented)
+
+    @staticmethod
+    def instrument_cleanup_counts(functions: str) -> str:
+        replacements = {
+            "stop_proxy() {\n": (
+                "stop_proxy() {\n"
+                "  printf 'stop_proxy\\n' >>\"$runtime/stop-proxy.log\"\n"
+            ),
+            "cleanup_owner() {\n": (
+                "cleanup_owner() {\n"
+                "  printf 'cleanup_owner\\n' >>\"$runtime/cleanup-owner.log\"\n"
+            ),
+        }
+        for original, instrumented in replacements.items():
+            if functions.count(original) != 1:
+                raise AssertionError(f"cleanup seam changed: {original.strip()}")
+            functions = functions.replace(original, instrumented)
+        return functions
 
     def write_launch_window_harness(
         self,
         root: pathlib.Path,
         label: str,
         source: str,
+        *,
+        preexisting_cache: bool = False,
     ) -> pathlib.Path:
         functions, _traps = self.candidate_blocks(source)
         functions = self.instrument_launch_window(functions)
+        functions = self.instrument_cleanup_counts(functions)
         runtime = root / label
         runtime.mkdir()
+        if preexisting_cache:
+            (runtime / "cache-state").touch()
         script = runtime / "launch-window.sh"
         script.write_text(
             "#!/bin/sh\n"
@@ -129,15 +157,20 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             f"runtime={self.shell_quote(str(runtime))}\n"
             'window_at=${WINDOW_AT:-0}\n'
             'launch_total=${LAUNCH_TOTAL:-1}\n'
+            'competing_signal=${COMPETING_SIGNAL:-no}\n'
             "launch_count=0\n"
             "cleanup_newcachedir() {\n"
-            "  printf 'cleanup\\n' >>\"$runtime/cleanup.log\"\n"
+            "  printf 'cleanup_cache\\n' >>\"$runtime/cache-cleanup.log\"\n"
             "  rm -f \"$runtime/cache-state\"\n"
             "}\n"
+            'if [ -e "$runtime/cache-state" ]; then\n'
+            "  printf 'removed_stale_cache\\n' >>\"$runtime/preflight.log\"\n"
+            "  rm -f \"$runtime/cache-state\"\n"
+            "fi\n"
             "newcache=cache.B\n"
             "PROXYPID=\n"
             "PENDING_SIGNAL=\n"
-            "CLEANUP_PROXY_CACHE=yes\n"
+            "CLEANUP_PROXY_CACHE=no\n"
             "CLEANUP_TMPDIR=no\n"
             + functions
             + "touch \"$runtime/cache-state\"\n"
@@ -146,11 +179,13 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             'if [ "$launch_total" -eq 2 ]; then\n'
             "  launch_proxy true\n"
             "  stop_proxy\n"
+            "  CLEANUP_PROXY_CACHE=yes\n"
             "  launch_proxy sh -c 'printf ready >\"$1\"; exec sleep 60' "
             "proxy \"$runtime/proxy-ready-2\"\n"
             "else\n"
             "  launch_proxy sh -c 'printf ready >\"$1\"; exec sleep 60' "
             "proxy \"$runtime/proxy-ready-1\"\n"
+            "  CLEANUP_PROXY_CACHE=yes\n"
             "fi\n"
             'while [ ! -e "$runtime/proxy-ready-$launch_total" ]; do sleep 0.01; done\n'
             "printf 'after\\n' >\"$runtime/after\"\n",
@@ -226,20 +261,9 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             time.sleep(0.01)
         self.assertTrue((runtime / "window").exists(), "launch window was not reached")
         self.assertTrue(proxy_ready.exists(), "proxy did not become ready in window")
-
-        stopped = False
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            waited_pid, status = os.waitpid(
-                process.pid, os.WUNTRACED | os.WNOHANG
-            )
-            if waited_pid == process.pid and os.WIFSTOPPED(status):
-                stopped = True
-                break
-            if process.poll() is not None:
-                break
-            time.sleep(0.01)
-        self.assertTrue(stopped, "owner did not stop inside the registration window")
+        self.assert_process_stopped(
+            process, "owner did not stop inside the registration window"
+        )
 
         proxy_pid = int((runtime / "window-proxy.pid").read_text().strip())
         os.kill(process.pid, signal.SIGTERM)
@@ -249,21 +273,40 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
         self.assertEqual(stdout, "")
         self.assertEqual(stderr, "")
         self.assertFalse((runtime / "after").exists())
-        self.assertFalse((runtime / "cache-state").exists())
         self.assertEqual(
-            (runtime / "cleanup.log").read_text().splitlines(),
-            ["cleanup"],
+            self.read_log(runtime / "cleanup-owner.log"),
+            ["cleanup_owner"],
         )
+        self.assertEqual(
+            self.read_log(runtime / "stop-proxy.log"),
+            ["stop_proxy"] * launch_index,
+        )
+        if launch_index == 1:
+            self.assertTrue((runtime / "cache-state").exists())
+            self.assertEqual(self.read_log(runtime / "cache-cleanup.log"), [])
+        else:
+            self.assertFalse((runtime / "cache-state").exists())
+            self.assertEqual(
+                self.read_log(runtime / "cache-cleanup.log"),
+                ["cleanup_cache"],
+            )
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline and self.process_exists(proxy_pid):
             time.sleep(0.02)
         self.assertFalse(self.process_exists(proxy_pid))
 
         rerun_script = self.write_launch_window_harness(
-            root, f"launch-{launch_index}-rerun", source
+            root,
+            f"launch-{launch_index}-rerun",
+            source,
+            preexisting_cache=launch_index == 1,
         )
         rerun_environment = os.environ.copy()
-        rerun_environment.update(WINDOW_AT="0", LAUNCH_TOTAL=str(launch_index))
+        rerun_environment.update(
+            WINDOW_AT="0",
+            LAUNCH_TOTAL=str(launch_index),
+            COMPETING_SIGNAL="no",
+        )
         rerun = subprocess.run(
             ["sh", str(rerun_script)],
             cwd=rerun_script.parent,
@@ -278,9 +321,43 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
         self.assertTrue((rerun_runtime / "after").exists())
         self.assertFalse((rerun_runtime / "cache-state").exists())
         self.assertEqual(
-            (rerun_runtime / "cleanup.log").read_text().splitlines(),
-            ["cleanup"],
+            self.read_log(rerun_runtime / "cleanup-owner.log"),
+            ["cleanup_owner"],
         )
+        self.assertEqual(
+            self.read_log(rerun_runtime / "stop-proxy.log"),
+            ["stop_proxy"] * launch_index,
+        )
+        self.assertEqual(
+            self.read_log(rerun_runtime / "cache-cleanup.log"),
+            ["cleanup_cache"],
+        )
+        expected_preflight = ["removed_stale_cache"] if launch_index == 1 else []
+        self.assertEqual(
+            self.read_log(rerun_runtime / "preflight.log"),
+            expected_preflight,
+        )
+
+    def assert_process_stopped(
+        self, process: subprocess.Popen, message: str
+    ) -> None:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            waited_pid, status = os.waitpid(
+                process.pid, os.WUNTRACED | os.WNOHANG
+            )
+            if waited_pid == process.pid and os.WIFSTOPPED(status):
+                return
+            if process.poll() is not None:
+                break
+            time.sleep(0.01)
+        self.fail(message)
+
+    @staticmethod
+    def read_log(path: pathlib.Path) -> list[str]:
+        if not path.exists():
+            return []
+        return path.read_text().splitlines()
 
     @staticmethod
     def process_exists(pid: int) -> bool:
@@ -421,6 +498,89 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             candidate_source = self.prepare_candidate(root)
             self.run_launch_window_control(root, candidate_source, launch_index=2)
 
+    def test_first_recorded_signal_wins_during_registration_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="make-mirror-first-signal-") as tmp:
+            root = pathlib.Path(tmp)
+            candidate_source = self.prepare_candidate(root)
+            script = self.write_launch_window_harness(
+                root, "competing-signals", candidate_source
+            )
+            environment = os.environ.copy()
+            environment.update(
+                WINDOW_AT="1",
+                LAUNCH_TOTAL="1",
+                COMPETING_SIGNAL="yes",
+            )
+            process = subprocess.Popen(
+                ["sh", str(script)],
+                cwd=script.parent,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            runtime = script.parent
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and (
+                not (runtime / "window").exists()
+                or not (runtime / "proxy-ready-1").exists()
+            ):
+                if process.poll() is not None:
+                    stdout, stderr = process.communicate()
+                    self.fail(
+                        "competing-signal harness exited before launch window: "
+                        f"{process.returncode}: {stdout}{stderr}"
+                    )
+                time.sleep(0.01)
+            self.assertTrue((runtime / "window").exists())
+            self.assertTrue((runtime / "proxy-ready-1").exists())
+            self.assert_process_stopped(
+                process, "owner did not stop before PID registration"
+            )
+
+            proxy_pid = int((runtime / "window-proxy.pid").read_text().strip())
+            os.kill(process.pid, signal.SIGTERM)
+            os.kill(process.pid, signal.SIGCONT)
+
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and not (
+                runtime / "registered"
+            ).exists():
+                if process.poll() is not None:
+                    stdout, stderr = process.communicate()
+                    self.fail(
+                        "competing-signal harness exited before registered stop: "
+                        f"{process.returncode}: {stdout}{stderr}"
+                    )
+                time.sleep(0.01)
+            self.assertTrue((runtime / "registered").exists())
+            self.assert_process_stopped(
+                process, "owner did not stop after PID registration"
+            )
+
+            os.kill(process.pid, signal.SIGINT)
+            os.kill(process.pid, signal.SIGCONT)
+            stdout, stderr = process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 143, stdout + stderr)
+            self.assertEqual(stdout, "")
+            self.assertEqual(stderr, "")
+            self.assertFalse((runtime / "after").exists())
+            self.assertTrue((runtime / "cache-state").exists())
+            self.assertEqual(
+                self.read_log(runtime / "cleanup-owner.log"),
+                ["cleanup_owner"],
+            )
+            self.assertEqual(
+                self.read_log(runtime / "stop-proxy.log"),
+                ["stop_proxy"],
+            )
+            self.assertEqual(self.read_log(runtime / "cache-cleanup.log"), [])
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and self.process_exists(proxy_pid):
+                time.sleep(0.02)
+            self.assertFalse(self.process_exists(proxy_pid))
+
     def test_candidate_replaces_top_level_cleanup_only_signal_traps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="make-mirror-source-") as tmp:
             candidate = self.prepare_candidate(pathlib.Path(tmp))
@@ -459,10 +619,22 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
                 './caching_proxy.py --readonly "$oldcachedir" "$newcachedir" &',
                 candidate,
             )
-            self.assertIn("trap 'record_signal 130' INT", candidate)
-            self.assertIn("trap 'record_signal 131' QUIT", candidate)
-            self.assertIn("trap 'record_signal 143' TERM", candidate)
+            self.assertIn("trap 'handle_launch_signal 130' INT", candidate)
+            self.assertIn("trap 'handle_launch_signal 131' QUIT", candidate)
+            self.assertIn("trap 'handle_launch_signal 143' TERM", candidate)
             self.assertIn('if [ -n "$PENDING_SIGNAL" ]; then', candidate)
+            launch_start = candidate.index("launch_proxy() {\n")
+            launch_end = candidate.index("\n}\n", launch_start)
+            launch_proxy = candidate[launch_start:launch_end]
+            self.assertLess(
+                launch_proxy.index('if [ -n "$PENDING_SIGNAL" ]; then'),
+                launch_proxy.index("install_signal_traps"),
+            )
+            handler_start = candidate.index("handle_launch_signal() {\n")
+            handler_end = candidate.index("\n}\n", handler_start)
+            handler = candidate[handler_start:handler_end]
+            self.assertIn('if [ -z "${PENDING_SIGNAL:-}" ]; then', handler)
+            self.assertIn('signal_exit "$PENDING_SIGNAL"', handler)
 
 
 if __name__ == "__main__":
