@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -120,6 +120,128 @@ def _sed_substitute(regex, replacement, value, occurrence, global_after):
+@@ -120,6 +120,118 @@ def _sed_substitute(regex, replacement, value, occurrence, global_after):
      return regex.sub(replace_selected, value)
  
  
@@ -120,7 +120,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
  class TransformAction(argparse.Action):
      def __call__(self, parser, namespace, values, option_string=None):
          items = getattr(namespace, "trans", [])
-@@ -150,7 +272,7 @@ class TransformAction(argparse.Action):
+@@ -150,7 +262,7 @@ class TransformAction(argparse.Action):
          if not pattern:
              raise ValueError("empty regex")
  
@@ -129,7 +129,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
          unsupported = sorted(
              set(flag for flag in flag_text if flag not in "0123456789") - supported
          )
-@@ -174,7 +296,10 @@ class TransformAction(argparse.Action):
+@@ -174,7 +286,10 @@ class TransformAction(argparse.Action):
          if number_text:
              occurrence = int(number_text)
          pattern = _unescape_delimiter(pattern, delimiter)
