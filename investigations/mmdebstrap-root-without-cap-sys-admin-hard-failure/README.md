@@ -1,101 +1,123 @@
 # Hook-free capability tests must keep hard-failure semantics
 
-## Finding
+## Explain it like I am five
 
-The Debian package test injects `sourcesfilter` and `file-mirror-automount` into its main host-APT phase. `root-without-cap-sys-admin` deliberately drops `CAP_SYS_ADMIN`, so the bind-mount hook fails before the case reaches its `/proc/self/fd` invariant.
+This test asks: “Can mmdebstrap behave correctly after we take away its permission to mount things?”
 
-Merged PR #158 proposed `Needs-APT-Config: true` so the case would move to the existing hook-free phase. Post-merge audit found that phase explicitly treats failures as irrelevant and runs:
+The test runner then attaches a helper that immediately tries to mount something.
+
+That is like testing whether a person can finish a task without a key while the examiner requires that same key to open the examination room. The person never reaches the task. The setup fails first.
+
+The corrected candidate runs this one capability test in a room without the mount-dependent helper and still treats a real test failure as a failure.
+
+## What actually goes wrong?
+
+The `root-without-cap-sys-admin` case deliberately runs:
 
 ```sh
-coverage.py ... $SKIPPED_TESTS || exit 77
+capsh --drop=cap_sys_admin
 ```
 
-That removes the incompatible hook but weakens an authoritative coverage invariant into a neutral result. Issue #153 required the case not be silently skipped, so it was reopened.
+Its purpose is to check mmdebstrap's fallback behavior and confirm that `/proc/self/fd` stays absent in the target.
 
-## Corrected candidate
+The Debian package test's main host-APT phase injects `file-mirror-automount`. In root mode that hook performs a bind mount. The case has deliberately removed the capability required for that bind mount, so execution stops in the hook before reaching the mmdebstrap behavior under test.
 
-The retained patch introduces a separate metadata class:
+Literal sequence:
+
+```text
+test removes CAP_SYS_ADMIN
+→ global helper calls mount --bind
+→ mount returns permission denied
+→ intended /proc/self/fd assertion never runs
+```
+
+## Why should anyone care?
+
+A failing test usually tells us the product failed. This failure tells us the test setup contradicted the condition being tested.
+
+Leaving the contradiction in place creates two bad choices:
+
+- treat the hook failure as a product regression, which blames mmdebstrap for a setup error;
+- move the case into a phase where every failure becomes a neutral skip, which can hide a real regression in the capability fallback.
+
+The test checks a privilege-sensitive safety path. Its ordinary failures need to remain authoritative.
+
+## Was the old behavior intentional?
+
+The global hooks serve a real purpose: many package tests need local APT sources and test binaries visible inside the generated root. Applying them to the main phase is a useful default.
+
+The capability case has the opposite requirement. It deliberately removes the privilege one of those hooks consumes. The conflict looks like a scheduling oversight created by combining two individually sensible test features.
+
+Merged PR #158 removed the incompatible hook by using the existing `Needs-APT-Config` phase. That phase intentionally treats failures as transition-test skips. The move solved the mount contradiction while weakening this case's result. Issue #153 was reopened for that reason.
+
+## Proposed fix in plain terms
+
+Give tests a distinct metadata label:
 
 ```text
 Needs-Hook-Free-APT-Config: true
 ```
 
-The field is added to `coverage.py`'s explicit configuration whitelist; otherwise the parser would reject the new paragraph before any scheduling decision. The host-APT scheduler then skips either incompatible class while `USE_HOST_APT_CONFIG=yes`.
+Then:
 
-After the package test rebuilds its hook-free mirror, `debian/tests/testsuite` runs the new class separately with:
+1. skip those cases while the host APT hooks are active;
+2. run them later with `CMD=mmdebstrap` and without `sourcesfilter` or `file-mirror-automount`;
+3. preserve ordinary child statuses such as 1 and 2;
+4. map GNU `timeout` status 124 to neutral 77 because the package-test time budget expired before a result;
+5. fail with status 1 when the metadata selects zero tests;
+6. leave the original capability drop and assertions unchanged.
 
-```text
-CMD=mmdebstrap
-```
+## Why this boundary?
 
-and no injected hooks. Its status policy is:
+A broader change could make `file-mirror-automount` fall back to copying whenever bind mounting fails. That changes hook behavior and requires mount/copy parity work.
 
-- success 0 remains 0;
-- ordinary failures such as 1 or 2 are propagated unchanged;
-- timeout 124 remains neutral 77 as a time-budget outcome.
+A narrower change could skip this one named test through an ad hoc condition. That hides the scheduling rule and makes the next capability-sensitive case repeat the same problem.
 
-The original `Needs-APT-Config` transition list remains a distinct soft-failure phase.
+A separate metadata class states the real contract: **this test needs APT configuration without host hooks, and its functional failure still counts.**
 
-## Regression
+## Historical and technical precedent
 
-`tests/test_mmdebstrap_hook_free_hard_failure.py`:
+Autopkgtest uses status 77 for a runtime skip and warns test authors to reserve it for conditions that genuinely make the test inapplicable; other statuses retain their normal success/failure meaning. GNU `timeout` returns 124 when the command exceeds its time limit. Those conventions support the candidate's split between authoritative child failure and neutral budget exhaustion:
 
-- applies the patch to exact temporary copies of `coverage.txt`, `coverage.py`, and `debian/tests/testsuite`;
-- proves the capability case uses only the new metadata;
-- parses the candidate Python source and proves the new field is present in the config whitelist but absent from the baseline;
-- proves the host-APT skip recognizes the new metadata;
-- locks the Black-compatible parenthesization used by the package's current formatter gate;
-- proves the hard phase precedes the soft phase and contains neither injected hook;
-- extracts and executes the actual candidate status block, requiring 0→0, 1→1, 2→2, and 124→77;
-- preserves the original capability drop, `/proc/self/fd`, and tar assertions;
-- compiles the Python driver and checks package-test shell syntax.
+- Debian autopkgtest test specification: https://sources.debian.org/src/debian-policy/4.7.2.0/autopkgtest.md
+- GNU `timeout` exit status: https://www.gnu.org/software/coreutils/timeout
 
-`tests/test_mmdebstrap_hook_free_hard_failure_guards.py` executes the complete candidate hard-phase shell block and requires:
+The broader testing lesson is fixture compatibility: setup should provide the conditions required by the case, instead of consuming the capability the case intentionally removes.
 
-- an empty metadata class to fail with status 1 before `timeout` runs;
-- exhausted remaining time to return 77 before `timeout` runs;
-- a selected child status 2 to remain status 2.
+## Candidate source changes
 
-## Push validation
+The retained patch changes three temporary source-copy files:
 
-Helper B reviewed the complete four-file diff and repaired the guard harness at commit `c38e15db62143e91a81df0ec72e7bfecce726569`: the per-run parent directory is now created before fake commands and the extracted shell block execute.
+- `coverage.txt` — labels `root-without-cap-sys-admin` with the new metadata;
+- `coverage.py` — accepts the field and skips that class during host-hook execution;
+- `debian/tests/testsuite` — adds the separate hook-free hard-failure phase.
 
-Exact GitHub Actions run `30577002902` then passed on Ubuntu 24.04:
+The imported source remains unchanged.
 
-```text
-python3 -m unittest discover -s tests -v
-Ran 98 tests in 21.445s
-OK
-```
+## Executable evidence
 
-The ten Packet B tests all passed, including parser acceptance, hook exclusion, 0/1/2/124 classification, empty selection, exhausted time, hard child failure, syntax, and unchanged capability assertions. Shell syntax and command-help gates also passed.
+The focused regressions prove:
 
-A focused reconstructed-source guard run was executed twice after the harness repair; all three guard tests passed both times and temporary directories were removed after each run.
+- parser acceptance of the metadata;
+- host-hook exclusion;
+- absence of `sourcesfilter` and `file-mirror-automount` in the hard phase;
+- result mapping `0→0`, `1→1`, `2→2`, and `124→77`;
+- empty selection fails before child execution;
+- exhausted time returns 77 before child execution;
+- the original `capsh`, `/proc/self/fd`, tar creation, and archive comparisons remain present;
+- patch application, Python compilation, and shell syntax;
+- temporary-directory cleanup and repeat execution.
 
-## Composition repair
-
-PR #72 applies the exact retained patch alongside the Deb822 `sourcesfilter` candidate in a disposable Debian sid autopkgtest.
-
-Composed run `30577374058` reached the package's own formatter gate and failed before functional cases because Black 26.3.1 would rewrite the newly added `coverage.py` condition. The retained logic was unchanged; the patch packaging used nested parentheses that differed from current Black output.
-
-Commit `b3576452edbac347890c4a54c6d3c4074b6555f7` rewrote the condition into formatter-stable form and added an exact source regression. Pull-request merge-ref run `30578896764` then passed:
-
-```text
-python3 -m unittest discover -s tests -v
-Ran 122 tests in 22.874s
-OK
-```
-
-Compilation, shell syntax, and command-help gates also passed. PR #72 head `ff89c85712ebcd888cba15ebb803bf7f7134c032` carries the same formatter-stable patch and regression; composed run `30578966104` is the current disposable sid execution.
-
-## Current-main relation
-
-The candidate differs from live `main` only by the four files in PR #171: the retained patch, this evidence record, the scheduling/status regression, and the guard execution regression. Live `main` advanced during the push, leaving the branch 37 commits behind and 13 commits ahead of their merge base. The pull request remains mergeable, and its current merge ref passed the full repository gate. No imported source file is edited directly.
+PR #72 owns the disposable Debian sid composition run that applies this patch together with the Deb822 source-filter candidate. The focused branch proves the scheduling and classification logic; the contained sid run proves that the real package test reaches the intended case.
 
 ## Evidence boundary
 
-This is package-test scheduling and result classification only. It does not change mmdebstrap product behavior, the imported source tree, or historical Debian bug ownership.
+This candidate changes package-test scheduling and result classification. It does not change mmdebstrap product behavior, hook behavior, historical Debian bug ownership, or the package-test time budget.
 
-The focused repository gates prove the retained patch and scheduling contract. PR #72 owns the disposable current-sid composition run that applies this exact patch alongside the Deb822 reduction candidate.
+A green focused matrix cannot replace the contained Debian sid run. Until that run reaches and classifies `root-without-cap-sys-admin`, the disposition remains `HOLD`.
+
+## Human decision
+
+Confirm that this capability test should run without host APT hooks while ordinary statuses remain hard failures. After the contained sid run completes, decide whether the four-file scheduling record is ready to merge locally.
 
 No external contact is included or authorized. Refs #153, merged #158, PR #171, and PR #72.
