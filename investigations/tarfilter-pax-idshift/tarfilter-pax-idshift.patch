@@ -1,8 +1,23 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -292,2 +292,4 @@ def main():
+@@ -280,17 +280,19 @@ def main():
+             member.pax_headers = {
+                 k: v
+                 for k, v in member.pax_headers.items()
+                 if not pax_filter_should_skip(k)
+             }
+             if args.idshift:
+                 if args.idshift < 0 and -args.idshift > member.uid:
+                     print("uid cannot be negative", file=sys.stderr)
+                     exit(1)
+                 if args.idshift < 0 and -args.idshift > member.gid:
+                     print("gid cannot be negative", file=sys.stderr)
+                     exit(1)
                  member.uid += args.idshift
                  member.gid += args.idshift
 +                member.pax_headers.pop("uid", None)
 +                member.pax_headers.pop("gid", None)
+             if hasattr(args, "trans"):
+                 for r, s in args.trans:
+                     member.name = r.sub(s, member.name)
