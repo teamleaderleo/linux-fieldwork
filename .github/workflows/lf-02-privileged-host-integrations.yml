@@ -32,6 +32,7 @@ jobs:
         run: |
           perl -c upstream/mmdebstrap/mmdebstrap
           bash -n investigations/lf-02-privileged-host-integrations/run.sh
+          bash -n investigations/lf-02-privileged-host-integrations/run-env-canary.sh
           for script in \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/preinst \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/postinst \
@@ -43,11 +44,16 @@ jobs:
       - name: Run privileged host integration matrix
         run: sudo -E bash investigations/lf-02-privileged-host-integrations/run.sh
 
+      - name: Run environment and agent-socket canary
+        run: bash investigations/lf-02-privileged-host-integrations/run-env-canary.sh
+
       - name: Upload traces and summaries
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lf-02-privileged-host-integrations-${{ github.run_id }}-${{ github.run_attempt }}
-          path: investigations/lf-02-privileged-host-integrations/results/
+          path: |
+            investigations/lf-02-privileged-host-integrations/results/
+            investigations/lf-02-privileged-host-integrations/env-results/
           if-no-files-found: warn
           retention-days: 14
