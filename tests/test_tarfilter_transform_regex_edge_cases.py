@@ -132,6 +132,34 @@ class TarfilterTransformRegexEdgeCasesTest(
             self.assertEqual(filtered.stdout, b"")
             self.assertNotEqual(reference.returncode, 0)
 
+    def test_python_only_extended_groups_are_rejected_like_gnu(self) -> None:
+        cases = (
+            ("ab", "s/a(?=b)/X/x"),
+            ("a", "s/(?:a)/X/x"),
+            ("A", "s/(?i)a/X/x"),
+            ("a", "s/(?P<n>a)/X/x"),
+        )
+        with tempfile.TemporaryDirectory(prefix="tarfilter-regex-python-groups-") as td:
+            work = pathlib.Path(td)
+            candidate = self.prepare_candidate(
+                work / "candidate-work", include_regex_patch=True
+            )
+            for member_name, expression in cases:
+                with self.subTest(member=member_name, expression=expression):
+                    filtered = self.run_filter(candidate, member_name, expression)
+                    reference = self.run_gnu(
+                        work / expression.encode().hex(),
+                        member_name,
+                        expression,
+                    )
+                    self.assertNotEqual(filtered.returncode, 0)
+                    self.assertEqual(filtered.stdout, b"")
+                    self.assertIn(
+                        "unsupported extended-regex group extension",
+                        filtered.stderr.decode("utf-8", "replace"),
+                    )
+                    self.assertNotEqual(reference.returncode, 0)
+
     def test_edge_patch_source_contract(self) -> None:
         with tempfile.TemporaryDirectory(prefix="tarfilter-regex-edge-source-") as td:
             candidate = self.prepare_candidate(
@@ -143,6 +171,10 @@ class TarfilterTransformRegexEdgeCasesTest(
             self.assertIn('if escaped == "0":', source)
             self.assertIn(
                 'if not extended and char == "*" and branch_start:', source
+            )
+            self.assertIn(
+                'raise ValueError("unsupported extended-regex group extension")',
+                source,
             )
             self.assertIn(
                 'return _normalize_repeated_quantifiers("".join(result), extended)',
