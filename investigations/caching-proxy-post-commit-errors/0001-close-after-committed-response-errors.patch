@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_proxy.py
 --- a/upstream/mmdebstrap/caching_proxy.py
 +++ b/upstream/mmdebstrap/caching_proxy.py
-@@ -71,30 +71,36 @@ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
+@@ -105,30 +105,36 @@ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
              return
  
          # download fresh copy
@@ -20,7 +20,7 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
                      continue
                  self.send_header(k, v)
              self.end_headers()
-             with newpath.open(mode="wb") as f:
+             with cache_destination(newpath) as f:
                  # we are not using shutil.copyfileobj() because we want to
                  # write to two file objects simultaneously and throttle the
                  # writing speed to 1024 kB/s
