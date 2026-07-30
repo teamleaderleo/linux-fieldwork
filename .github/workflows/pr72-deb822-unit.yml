@@ -1,0 +1,22 @@
+name: PR72 Deb822 unit diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pr72-deb822-unit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  focused-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run focused PR72 tests
+        shell: bash
+        run: |
+          python3 -m unittest \
+            tests.test_mmdebstrap_sourcesfilter_deb822 \
+            tests.test_reproduction_harness -v
