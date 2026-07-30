@@ -9,9 +9,17 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-PATCH = ROOT / (
-    "investigations/mmdebstrap-file-mirror-containment/"
-    "0001-contain-file-mirror-targets.patch"
+PATCHES = (
+    ROOT
+    / (
+        "investigations/mmdebstrap-file-mirror-containment/"
+        "0001-contain-file-mirror-targets.patch"
+    ),
+    ROOT
+    / (
+        "investigations/mmdebstrap-file-mirror-containment/"
+        "0002-preserve-file-uri-target-path.patch"
+    ),
 )
 SETUP_SOURCE = ROOT / "upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh"
 CLEANUP_SOURCE = ROOT / "upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh"
@@ -27,15 +35,16 @@ class FileMirrorAutomountCleanupPreflightTest(unittest.TestCase):
         hooks.mkdir(parents=True)
         shutil.copy2(SETUP_SOURCE, hooks / "setup00.sh")
         shutil.copy2(CLEANUP_SOURCE, hooks / "customize00.sh")
-        applied = subprocess.run(
-            ["patch", "--batch", "--forward", "-p1", "-i", str(PATCH)],
-            cwd=self.tree,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=30,
-        )
-        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        for patch in PATCHES:
+            applied = subprocess.run(
+                ["patch", "--batch", "--forward", "-p1", "-i", str(patch)],
+                cwd=self.tree,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
         self.cleanup = hooks / "customize00.sh"
         syntax = subprocess.run(
             ["/bin/sh", "-n", str(self.cleanup)],
