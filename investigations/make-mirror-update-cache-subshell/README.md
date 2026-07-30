@@ -4,7 +4,7 @@
 
 `update_cache()` runs in a pipeline subshell but used one cleanup-only `EXIT INT TERM` trap that killed the cache proxy owned by the top-level mirror process. A TERM delivered only to the subshell could kill that shared proxy, clean the subshell APT root twice, resume later work, and return status 0.
 
-The retained candidate gives the subshell ownership of only its APT root. Ordinary EXIT cleanup preserves the incoming status. INT, QUIT, and TERM clean once and exit 130, 131, or 143. The top-level pipeline receives that nonzero result and its own EXIT cleanup stops and waits for the proxy.
+The retained candidate gives the subshell ownership of only its APT root. Ordinary EXIT cleanup preserves the incoming status. Executed INT, QUIT, and TERM cases clean once and exit 130, 131, or 143. The top-level pipeline receives that nonzero result and its own EXIT cleanup stops and waits for the proxy.
 
 ## Explain like I'm five
 
@@ -22,7 +22,8 @@ The old ownership can turn cancellation into success, kill a shared proxy from t
 - top-level parent lifecycle: PR #224;
 - imported source: `upstream/mmdebstrap/make_mirror.sh` blob `6c4be092edcf23b56b63a3befe238c099c45f590`;
 - candidate patch: `0001-confine-update-cache-signal-cleanup.patch`;
-- regression: `tests/test_make_mirror_update_cache_signal_ownership.py`;
+- ownership regression: `tests/test_make_mirror_update_cache_signal_ownership.py`;
+- complete signal matrix: `tests/test_make_mirror_update_cache_signal_matrix.py`;
 - stacked branch: `investigation/make-mirror-update-cache-subshell`.
 
 ## Source and ownership boundary
@@ -71,37 +72,33 @@ The handlers produce these contracts:
 
 Cleanup errors remain secondary on failure and signal paths. The candidate deliberately leaves cleanup-error reporting after an otherwise successful explicit `cleanupapt` unchanged.
 
-## Executed local model gate
+## Executed local model gates
 
-Command:
+Commands:
 
 ```text
 python3 -m unittest -v tests/test_make_mirror_update_cache_signal_ownership.py
+python3 -m unittest -v tests/test_make_mirror_update_cache_signal_matrix.py
 ```
 
-Observed against a minimal source fixture carrying the exact imported trap and end-of-function contexts:
+The original focused gate observed four passing tests in 1.562 seconds against a minimal source fixture carrying the exact imported trap and end-of-function contexts.
 
-```text
-Ran 4 tests in 1.562s
-
-OK
-```
-
-The dynamic `/bin/sh` matrix proves:
+The dynamic `/bin/sh` matrices prove:
 
 - baseline subshell-only TERM returns 0, executes both later markers, cleans twice, and kills the parent-owned proxy;
-- candidate subshell-only TERM returns 143 through the parent pipeline, omits both later markers, cleans the APT state once, and lets the parent stop and wait for the proxy once;
-- immediate unsignaled rerun in the same disposable runtime succeeds, cleans once, and leaves no APT marker or proxy;
+- candidate subshell-only INT, QUIT, and TERM return 130, 131, and 143 through the parent pipeline;
+- every executed signal omits both later markers, cleans the APT state once, and lets the parent stop and wait for the proxy once;
+- immediate unsignaled rerun after each signal succeeds, cleans once, and leaves no APT marker or proxy;
 - ordinary failure 42 remains 42 when cleanup returns 74;
 - TERM 143 remains 143 when cleanup returns 74;
 - the retained patch applies to the exact fixture and the candidate passes `/bin/sh -n`;
 - source assertions remove proxy signaling from the complete `update_cache()` block and require explicit INT/QUIT/TERM mappings.
 
-Repository CI is the exact imported-source gate. It must apply the retained patch to blob `6c4be092…`, run `/bin/sh -n` on the complete script, and execute the focused matrix.
+Repository CI is the exact imported-source gate. It must apply the retained patch to blob `6c4be092…`, run `/bin/sh -n` on the complete script, and execute both focused matrices.
 
 ## Cleanup and rerun
 
-Every dynamic process and file lives below `TemporaryDirectory`. Signals target only worker shells created by the test. The parent waits for its proxy child, candidate cleanup removes the APT-state marker, and the immediate rerun reuses the same runtime path successfully.
+Every dynamic process and file lives below `TemporaryDirectory`. Signals target only worker shells created by the tests. The parent waits for its proxy child, candidate cleanup removes the APT-state marker, and each immediate rerun uses a fresh disposable runtime path successfully.
 
 The baseline intentionally lets the subshell kill the parent-owned proxy; the parent still performs `wait()` during its EXIT cleanup so no zombie remains.
 
@@ -127,6 +124,6 @@ The exact imported source patch and complete repository suite still require host
 
 ## Disposition
 
-`EXECUTE` as a focused stacked evidence carrier. Promote only after exact-head repository CI, complete three-file review, cleanup/rerun confirmation on the published head, and reconciliation with PR #224's final state.
+`EXECUTE` as a focused stacked evidence carrier. Promote only after exact-head repository CI, complete four-file review, cleanup/rerun confirmation on the published head, and reconciliation with PR #224's final state.
 
 Internal Linux Fieldwork work only. No external contact is authorized or performed.
