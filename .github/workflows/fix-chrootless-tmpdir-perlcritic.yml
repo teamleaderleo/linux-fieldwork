@@ -1,0 +1,74 @@
+name: Correct chrootless TMPDIR helper Perl style
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/fix-chrootless-tmpdir-perlcritic.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  correct:
+    if: github.head_ref == 'fix/chrootless-target-tmpdir' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/chrootless-target-tmpdir
+          fetch-depth: 0
+
+      - name: Remove prototype and leading-zero literals
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('upstream/mmdebstrap/mmdebstrap')
+          text = path.read_text()
+          replacements = {
+              'sub chrootless_dpkg_environment($) {':
+                  'sub chrootless_dpkg_environment {',
+              'make_path($tmpdir, { mode => 01777 });':
+                  'make_path($tmpdir, { mode => oct("1777") });',
+              'chmod 01777, $tmpdir':
+                  'chmod oct("1777"), $tmpdir',
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected one marker, found {text.count(old)}: {old}')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+      - name: Validate source and focused contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes libperl-critic-perl
+          perl -c upstream/mmdebstrap/mmdebstrap
+          perlcritic --severity 4 --verbose 8 upstream/mmdebstrap/mmdebstrap
+          max_line_length="$(sed -e '/^__END__$/,$d' upstream/mmdebstrap/mmdebstrap | wc --max-line-length)"
+          test "$max_line_length" -le 79
+          python3 -m unittest tests.test_mmdebstrap_chrootless_tmpdir -v
+
+      - name: Commit corrected candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git diff origin/main -- \
+            upstream/mmdebstrap/mmdebstrap \
+            investigations/mmdebstrap-chrootless-env/run.sh \
+            > investigations/mmdebstrap-chrootless-target-tmpdir/0001-target-contained-tmpdir.patch
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            upstream/mmdebstrap/mmdebstrap \
+            investigations/mmdebstrap-chrootless-target-tmpdir/0001-target-contained-tmpdir.patch
+          git rm \
+            .github/workflows/fix-chrootless-tmpdir-perlcritic.yml \
+            investigations/mmdebstrap-chrootless-target-tmpdir/deep-review-trace.log \
+            investigations/mmdebstrap-chrootless-target-tmpdir/deep-review-trace.status
+          git commit -m 'Use prototype-free TMPDIR helper and portable octal mode'
+          git push origin HEAD:fix/chrootless-target-tmpdir
