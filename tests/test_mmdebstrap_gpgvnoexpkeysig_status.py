@@ -236,9 +236,10 @@ exit "$FAKE_GPGV_STATUS"
     def start_sleeping_wrapper(
         self, label: str
     ) -> tuple[subprocess.Popen[str], pathlib.Path, int]:
-        case_tmp = pathlib.Path(self.work.name) / label
+        root = pathlib.Path(self.work.name)
+        case_tmp = root / label
         case_tmp.mkdir()
-        pidfile = case_tmp / "gpgv.pid"
+        pidfile = root / f"{label}.pid"
         process = subprocess.Popen(
             ["/bin/sh", str(self.candidate)],
             stdout=subprocess.PIPE,
@@ -254,6 +255,7 @@ exit "$FAKE_GPGV_STATUS"
             start_new_session=True,
         )
         child_pid = self.wait_for_pidfile(process, pidfile)
+        pidfile.unlink()
         return process, case_tmp, child_pid
 
     def assert_process_gone(self, pid: int) -> None:
