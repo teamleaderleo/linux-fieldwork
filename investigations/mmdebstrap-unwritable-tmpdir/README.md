@@ -1,52 +1,52 @@
-# mmdebstrap unwritable TMPDIR reproduction
+# mmdebstrap explicit TMPDIR handling
 
 ## In simple words
 
-`mmdebstrap` creates a temporary root directory while building a Debian filesystem. This probe checks what happens when a caller explicitly points `TMPDIR` at a directory they cannot write to. The result is confirmed: at the imported revision, `mmdebstrap` silently falls back to `/tmp`, completes the dry-run, and never identifies the unusable requested directory.
+`mmdebstrap` used to ignore an explicitly configured `TMPDIR` when that directory was unusable and silently place its temporary root under `/tmp`. The candidate now checks the configured directory before beginning the build. An unusable directory produces an immediate error naming the path; a usable directory continues to be honored and cleaned up.
 
-## Question
+## Question and answer
 
-When `TMPDIR` is explicitly set to an existing but unwritable directory, does `mmdebstrap` report the problem or silently create its temporary root under `/tmp`?
+**Question:** When `TMPDIR` is explicitly set to an existing but unwritable directory, should `mmdebstrap` silently choose another filesystem?
+
+**Candidate answer:** No. Treat the explicit value as a caller contract and fail before apt setup or root-filesystem creation.
 
 ## Source
 
 - Project: Debian `mmdebstrap`
 - Imported revision: `debian/1.5.7-3`
-- Resolved commit: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
+- Upstream commit: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
+- Candidate source commit: `927263e1a883e21573847da362456af637148868`
 - Local source: `upstream/mmdebstrap/`
 
-## Command
+## Change
+
+The candidate adds `check_tmpdir()` immediately after option parsing. When `TMPDIR` is non-empty, it:
+
+1. requires the path to be a directory;
+2. creates a small temporary file in that exact directory;
+3. closes and removes the file;
+4. reports a path-specific error when any step fails.
+
+The imported test registry now includes `tests/fail-with-unwritable-tmpdir` alongside the existing successful custom-`TMPDIR` coverage.
+
+## Verification
+
+Run:
 
 ```sh
 bash investigations/mmdebstrap-unwritable-tmpdir/run.sh
 ```
 
-The runner uses the imported executable with `--dry-run`, `--mode=chrootless`, and `--variant=apt`. Dry-run initializes apt and exercises temporary-root selection without downloading or installing the root filesystem packages. Chrootless mode avoids the hosted runner's blocked user-namespace operation while preserving the tarball temporary-root path under study.
+GitHub Actions run `30510240339` on Ubuntu 24.04.4 LTS verified both sides:
 
-## Result
-
-GitHub Actions run `30509181216` completed successfully on Ubuntu 24.04.4 LTS.
-
-- The probe confirmed that the invoking user could not write to the requested `TMPDIR`.
-- `mmdebstrap` selected `/tmp/mmdebstrap.xZqT2ZRG4w` instead.
-- No diagnostic named or explained the unusable requested directory.
-- The simulated apt and tarball path completed with status `0`.
-- `mmdebstrap` removed the fallback directory during cleanup.
-
-Retained evidence:
-
-- `results/summary.json`
-- `results/mmdebstrap.log`
-- `results/notes.md`
+- an unwritable explicit `TMPDIR` exited nonzero, selected no fallback directory, and named the requested path in the diagnostic;
+- a writable explicit `TMPDIR` completed with status 0, created its temporary root below the requested directory, and left no temporary files behind;
+- `perl -c`, `sh -n`, and `bash -n` syntax checks passed.
 
 ## Evidence boundary
 
-This establishes the behavior of revision `6fde999741f4fe1e7bf38079acf29432ef87a35e` under the declared GitHub-hosted Ubuntu environment. It does not decide whether the preferred change is an error, a warning, or documented fallback behavior.
-
-## Stop condition
-
-Met. The repository now retains the selected temporary directory, command status, full program log, exact source revision, environment, blocked first attempt, and diagnostic check.
+This verifies the candidate under the declared GitHub-hosted environment and the real `mmdebstrap` dry-run path in `chrootless` mode. The upstream test file is added and syntax-checked; the complete Debian test matrix has not been run in this repository.
 
 ## Authority
 
-This repository is owned by `teamleaderleo`. Upstream contact is not authorized by this experiment.
+This work modifies only `teamleaderleo/linux-fieldwork`. No Debian issue, email, merge request, or patch submission has been created.
