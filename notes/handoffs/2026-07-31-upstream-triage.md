@@ -209,7 +209,13 @@ Upstream readiness: **ready to add evidence to existing Debian bug #1141078 when
 
 ### Current-sid Deb822 and capability scheduling
 
-PR #72 remains an investigation carrier. Its Deb822 `sourcesfilter` compatibility candidate is strongly reproduced on current sid, but the PR also contains a temporary Perl proxy and bundled tooling. PR #171 corrects an internal hard-failure scheduling hole introduced while removing incompatible hooks.
+PR #72 is a retired broad investigation carrier. Its Deb822 `sourcesfilter`
+compatibility candidate is strongly reproduced on current sid, and its branch
+and conversation retain the reduction history and reusable-tooling source. The
+final run first failed at case 125 because `env --chdir` could not resolve the
+temporary repository-relative `./mmdebstrap` proxy. Focused current-main slices
+should carry any reusable tools. PR #171 owns the hard-failure scheduling
+correction introduced while removing incompatible hooks.
 
 Estimated severity: **2/10 to 4/10** package-test/tooling compatibility.
 
