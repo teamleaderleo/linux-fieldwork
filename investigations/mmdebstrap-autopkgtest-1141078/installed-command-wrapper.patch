@@ -1,7 +1,7 @@
 diff --git a/debian/tests/testsuite b/debian/tests/testsuite
 --- a/debian/tests/testsuite
 +++ b/debian/tests/testsuite
-@@ -140,11 +140,28 @@ trap "kill $HTTPD_PID" INT QUIT TERM EXIT
+@@ -140,11 +140,27 @@ trap "kill $HTTPD_PID" INT QUIT TERM EXIT
 -# create a fake mmdebstrap file in the current directory that coverage.sh can
 -# copy
 -cat << END > ./mmdebstrap
@@ -30,11 +30,10 @@ diff --git a/debian/tests/testsuite b/debian/tests/testsuite
 +=cut
  END
 +chmod 0755 ./mmdebstrap
-+install -m 0755 ./mmdebstrap "$AUTOPKGTEST_TMP/mmdebstrap"
  
  # must not be used during testing -- installed version must be used instead
  cat << END > ./tarfilter
-@@ -175,7 +192,7 @@ fi
+@@ -175,7 +191,7 @@ fi
  # HAVE_QEMU=no because there is no kvm kernel module
  # HAVE_BINFMT=no because there is no binfmt_misc kernel module
  ret=0
