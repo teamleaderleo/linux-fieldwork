@@ -32,7 +32,7 @@ and no injected hooks. Its status policy is:
 
 - success 0 remains 0;
 - ordinary failures such as 1 or 2 are propagated unchanged;
-- timeout 124 remains neutral 77 as an infrastructure/time-budget outcome.
+- timeout 124 remains neutral 77 as a time-budget outcome.
 
 The original `Needs-APT-Config` transition list remains a distinct soft-failure phase.
 
@@ -49,8 +49,34 @@ The original `Needs-APT-Config` transition list remains a distinct soft-failure 
 - preserves the original capability drop, `/proc/self/fd`, and tar assertions;
 - compiles the Python driver and checks package-test shell syntax.
 
-## Boundary
+`tests/test_mmdebstrap_hook_free_hard_failure_guards.py` executes the complete candidate hard-phase shell block and requires:
+
+- an empty metadata class to fail with status 1 before `timeout` runs;
+- exhausted remaining time to return 77 before `timeout` runs;
+- a selected child status 2 to remain status 2.
+
+## Push validation
+
+Helper B reviewed the complete four-file diff and repaired the guard harness at commit `c38e15db62143e91a81df0ec72e7bfecce726569`: the per-run parent directory is now created before fake commands and the extracted shell block execute.
+
+Exact GitHub Actions run `30577002902` then passed on Ubuntu 24.04:
+
+```text
+python3 -m unittest discover -s tests -v
+Ran 98 tests in 21.445s
+OK
+```
+
+The ten Packet B tests all passed, including parser acceptance, hook exclusion, 0/1/2/124 classification, empty selection, exhausted time, hard child failure, syntax, and unchanged capability assertions. Shell syntax and command-help gates also passed.
+
+A focused reconstructed-source guard run was executed twice after the harness repair; all three guard tests passed both times and temporary directories were removed after each run.
+
+The candidate differs from current `main` only by the four files in PR #171. The branch is one commit behind `main`; that commit changes only `ADAPTIVE_COORDINATION.md`, so it has no source or test overlap with this candidate. The pull-request merge ref built successfully against that current base.
+
+## Evidence boundary
 
 This is package-test scheduling and result classification only. It does not change mmdebstrap product behavior, the imported source tree, or historical Debian bug ownership.
 
-No external contact is included or authorized. Refs #153, merged #158, and PR #72.
+The focused repository gates prove the retained patch and scheduling contract. PR #72 owns the disposable current-sid composition run that applies this exact patch alongside the Deb822 reduction candidate.
+
+No external contact is included or authorized. Refs #153, merged #158, PR #171, and PR #72.
