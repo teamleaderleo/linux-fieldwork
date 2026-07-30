@@ -10,6 +10,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SETUP_SOURCE = ROOT / "upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh"
+CLEANUP_SOURCE = ROOT / "upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh"
 BASE_PATCHES = (
     ROOT
     / (
@@ -58,9 +59,11 @@ class FileMirrorAutomountParentComponentReachabilityTest(unittest.TestCase):
         self, name: str, patches: tuple[pathlib.Path, ...]
     ) -> pathlib.Path:
         tree = self.work / name
-        destination = tree / "upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh"
-        destination.parent.mkdir(parents=True)
+        hooks = tree / "upstream/mmdebstrap/hooks/file-mirror-automount"
+        hooks.mkdir(parents=True)
+        destination = hooks / "setup00.sh"
         shutil.copy2(SETUP_SOURCE, destination)
+        shutil.copy2(CLEANUP_SOURCE, hooks / "customize00.sh")
         for patch in patches:
             applied = subprocess.run(
                 ["patch", "--batch", "--forward", "-p1", "-i", str(patch)],
