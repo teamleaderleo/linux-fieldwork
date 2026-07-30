@@ -13,7 +13,7 @@ fi
 
 A bare trailing `--status-fd` therefore aborts through the shell's unset-positional-parameter path instead of the wrapper's controlled validation diagnostic.
 
-The baseline scanner also ignores the common `--status-fd=N` spelling and returns the first separated occurrence without defining repeated-option precedence.
+The baseline scanner also ignores the common `--status-fd=N` spelling, returns the first separated occurrence without defining repeated-option precedence, and does not stop option discovery at `--`.
 
 ## Candidate
 
@@ -25,6 +25,7 @@ The retained POSIX-shell patch:
 - rejects empty, signed, alphanumeric, and otherwise non-decimal values before invoking gpgv;
 - rejects the whole invocation if any status-fd occurrence is malformed;
 - uses the last valid occurrence, matching ordinary command-line option precedence;
+- stops wrapper option discovery at `--`, leaving later positional spellings untouched;
 - retains the existing downstream numeric guard as defense in depth.
 
 ## Regression
@@ -41,6 +42,11 @@ It requires:
 - two valid occurrences to select only the last descriptor;
 - a valid occurrence followed by a malformed one to reject the whole invocation and write to neither descriptor;
 - both wrappers to pass `/bin/sh -n`.
+
+`tests/test_mmdebstrap_gpgvnoexpkeysig_status_fd_end_options.py` separately proves:
+
+- a positional `--status-fd` after `--` is not parsed by the wrapper;
+- a valid selection before `--` remains authoritative when the same spelling appears positionally afterward.
 
 ## Boundary
 
