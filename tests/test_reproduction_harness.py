@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -10,6 +11,12 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 REPRODUCTION_SCRIPT = REPOSITORY_ROOT / "scripts/reproduce-mmdebstrap-autopkgtest.sh"
 WORKFLOW = REPOSITORY_ROOT / ".github/workflows/linux-fieldwork-ci.yml"
+SOURCE_TESTSUITE = REPOSITORY_ROOT / "upstream/mmdebstrap/debian/tests/testsuite"
+WRAPPER_PATCH = (
+    REPOSITORY_ROOT
+    / "investigations/mmdebstrap-autopkgtest-1141078"
+    / "installed-command-wrapper.patch"
+)
 
 
 class ReproductionHarnessTest(unittest.TestCase):
@@ -56,6 +63,35 @@ class ReproductionHarnessTest(unittest.TestCase):
             "github.event.pull_request.head.repo.full_name == github.repository"
         )
         self.assertEqual(self.workflow.count(same_repository_guard), 2)
+
+    def test_installed_command_wrapper_patch_applies_to_imported_testsuite(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp) / "tree"
+            destination = tree / "debian/tests"
+            destination.mkdir(parents=True)
+            shutil.copy2(SOURCE_TESTSUITE, destination / "testsuite")
+            completed = subprocess.run(
+                [
+                    "patch",
+                    "--batch",
+                    "--forward",
+                    "-p1",
+                    "-d",
+                    str(tree),
+                    "-i",
+                    str(WRAPPER_PATCH),
+                ],
+                cwd=REPOSITORY_ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+            patched = (destination / "testsuite").read_text(encoding="utf-8")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("cat << 'END' > ./mmdebstrap-under-test", patched)
+        self.assertIn('CMD="./mmdebstrap-under-test --setup-hook=', patched)
 
     def test_early_neutral_exit_retains_reason_in_artifact_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
