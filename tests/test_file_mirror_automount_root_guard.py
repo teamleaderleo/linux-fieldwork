@@ -12,9 +12,17 @@ class FileMirrorAutomountRootGuardTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.repo = pathlib.Path(__file__).resolve().parents[1]
-        cls.patch = cls.repo / (
-            "investigations/mmdebstrap-file-mirror-containment/"
-            "0001-contain-file-mirror-targets.patch"
+        cls.patches = (
+            cls.repo
+            / (
+                "investigations/mmdebstrap-file-mirror-containment/"
+                "0001-contain-file-mirror-targets.patch"
+            ),
+            cls.repo
+            / (
+                "investigations/mmdebstrap-file-mirror-containment/"
+                "0002-preserve-file-uri-target-path.patch"
+            ),
         )
         cls.setup_source = cls.repo / (
             "upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh"
@@ -29,14 +37,15 @@ class FileMirrorAutomountRootGuardTest(unittest.TestCase):
         hooks.mkdir(parents=True)
         shutil.copy2(self.setup_source, hooks / "setup00.sh")
         shutil.copy2(self.cleanup_source, hooks / "customize00.sh")
-        applied = subprocess.run(
-            ["patch", "--batch", "--forward", "-p1", "-i", str(self.patch)],
-            cwd=tree,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        for patch in self.patches:
+            applied = subprocess.run(
+                ["patch", "--batch", "--forward", "-p1", "-i", str(patch)],
+                cwd=tree,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
         for script in (hooks / "setup00.sh", hooks / "customize00.sh"):
             syntax = subprocess.run(
                 ["/bin/sh", "-n", str(script)],
