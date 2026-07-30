@@ -34,6 +34,7 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
 +
 +
  class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
++@@ -20,10 +47,18 @@ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
      def do_GET(self):
 -        assert int(self.headers.get("Content-Length", 0)) == 0
 -        assert self.headers["Host"]
