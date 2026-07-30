@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/gpgvnoexpkeysig b/upstream/mmdebstrap/gpgvnoexpkeysig
 --- a/upstream/mmdebstrap/gpgvnoexpkeysig
 +++ b/upstream/mmdebstrap/gpgvnoexpkeysig
-@@ -31,14 +31,39 @@ set -eu
+@@ -31,15 +31,39 @@ set -eu
  
  find_gpgv_status_fd() {
 +  status_fd=1
