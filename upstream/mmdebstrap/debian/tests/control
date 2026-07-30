@@ -1,0 +1,166 @@
+Tests:
+ testsuite,
+Depends:
+ dpkg-dev,
+ apt-cudf,
+ arch-test,
+ aspcud,
+ black,
+ debian-archive-keyring,
+ debootstrap (>= 1.0.128),
+ diffoscope,
+ e2fsprogs,
+ fakechroot,
+ fakeroot,
+ genext2fs,
+ gpg,
+ grep-dctrl,
+ iputils-ping (>= 3:20240905-1),
+ libcap2-bin,
+ libperl-critic-perl,
+ mmdebstrap,
+ mount,
+ perl-doc,
+ perltidy,
+ python3,
+ python3-apt,
+ python3-debian,
+ shellcheck,
+ shfmt,
+ squashfs-tools-ng,
+ sudo,
+ tzdata (>= 2024b-5),
+ uidmap,
+ uuid-runtime,
+Restrictions:
+ allow-stderr,
+ needs-root,
+ skippable,
+
+# add a manual trigger on those packages that in the past broke this test
+#
+# YEAR | SOURCE PACKAGE         BUG NUMBERS                  FAILED TESTS
+# -----+-----------------------------------------------------------------------
+#      | passwd                 #1004710
+#      | python3                #1010368, #1010366
+#      | man-db                 #1010957
+# 2022 | glibc                  #1017590
+#      | cron                   #1012622, #1020603
+#      | kmod                   #1020605
+#      | ifupdown               #1020604
+#      | procps                 #1020602
+# -----+-----------------------------------------------------------------------
+#      | fakeroot               #1030638, #1023286
+#      | debootstrap            #1031222, #1031105, #1049898, #837060 check-against-debootstrap-dist, as-debootstrap-unshare-wrapper, chrootless
+#      | libgdbm-compat4        #1031276                     check-for-bit-by-bit-identical-format-output
+#      | tzdata                 #1031395                     essential-hook, multiple-include
+# 2023 | debian-archive-keyring #1019922                     ascii-armored-keys, keyring, signed-by-without-host-keys
+#      | doc-debian             #1035913                     include, install-doc-debian, install-doc-debian-and-test-hooks, multiple-include, unpack-doc-debian
+#      | dash                   #989632
+#      | adduser                #1039709                     check-against-debootstrap-dist
+#      | debianutils            #1050752                     chrootless
+#      | usrmerge               #1050755, #1053671           chrootless-foreign, merged-fakechroot-inside-unmerged-chroot
+# -----+-----------------------------------------------------------------------
+#      | dpkg                   #1059982                     remove-start-stop-daemon-and-policy-rc-d-in-hook
+#      | findutils              #1072986                     empty-sources.list
+# 2024 | base-files             #1064459                     check-against-debootstrap-dist, eatmydata-via-hook-dir, jessie-or-older, missing-dev-sys-proc-inside-the-chroot, pivot_root
+#      | util-linux             #1064459                     check-against-debootstrap-dist, eatmydata-via-hook-dir, jessie-or-older, missing-dev-sys-proc-inside-the-chroot, pivot_root
+#      | iputils-ping           #1008281                     check-against-debootstrap-dist, tarfilter-idshift
+# -----+-----------------------------------------------------------------------
+# 2025 | dash                   #1092494                     missing-dev-sys-proc-inside-the-chroot compare-output-with-pre-seeded-var-cache-apt-archives
+#      | tzdata                 #822733                      multiple-include
+#
+Features:
+ test-name=hint-testsuite-triggers,
+Test-Command: false
+Depends:
+ adduser,
+ base-files,
+ cron,
+ dash,
+ debian-archive-keyring,
+ debianutils,
+ debootstrap,
+ doc-debian,
+ dpkg,
+ fakeroot,
+ findutils,
+ ifupdown,
+ iputils-ping,
+ kmod,
+ libc-bin,
+ libgdbm-compat4,
+ man-db,
+ passwd,
+ procps,
+ python3,
+ tzdata,
+ usrmerge,
+ util-linux,
+Restrictions:
+ hint-testsuite-triggers,
+
+# FIXME: in an ideal world, debci would have enough computational resources
+#        to run this autopkgtest for all the packages in essential and
+#        build-essential and priority:standard that trigger it. But we are
+#        not there yet, so we must live with the situation that even if a
+#        package upload breaks the mmdebstrap autopkgtest, we will only notice
+#        either because another unrelated package triggers the autopkgtest
+#        or because this failed:
+#        https://jenkins.debian.net/job/mmdebstrap-jenkins-worker/
+## Using the hint-testsuite-triggers restriction we make all packages that are
+## put into the local archive by ./make_mirror.sh a trigger for the mmdebstrap
+## autopkgtest. This is essential, priority:required, priority:important,
+## priority:standard, build-essential, busybox, gpg, eatmydata, usr-is-merged
+## and usrmerge plus their dependency closure. The set is different depending
+## on the native architecture. Since we cannot depend on source packages and
+## to reduce the binary package set, only one binary package per source
+## package is listed here. If there are multiple choices, the binary packages
+## available on more architectures are preferred and then sorted by name.
+## Since library binary package names change frequently, this list has to be
+## updated regularly. Use the debian/compute_pkgset.py script to update the
+## list of dependencies.
+## FIXME: find out why util-linux or libc6 are missing from the list below
+#Features: test-name=hint-testsuite-triggers
+#Test-Command: false
+#Depends: acl, adduser, anacron, apt, apt-listchanges, base-files, base-passwd,
+# bash, bash-completion, bc [ppc64el], bcron, bind9-dnsutils, binutils,
+# bsdextrautils, build-essential, busybox, bzip2, ca-certificates, cdebconf,
+# coreutils, cpio, cpp, cpp-12, cron, daemon, dash, dbus, dbus-broker, debconf,
+# debian-archive-keyring, debian-faq, debianutils, diffutils, distro-info-data,
+# dmidecode [amd64 arm64 armhf i386], dmsetup, doc-debian, dpkg, e2fsprogs,
+# eatmydata, file, findutils, gawk, gettext-base, gpg, gpgv1, grep, groff-base,
+# guile-3.0-libs, gzip, hostname, ifupdown, inetutils-telnet, init,
+# initscripts, insserv, install-info, iproute2, iputils-ping, isc-dhcp-client,
+# kmod, krb5-locales, less, libapparmor1, libargon2-1, libassuan0, libattr1,
+# libaudit-common, libbg2, libbpf1, libbrotli1, libbsd0, libc-bin, libcap-ng0,
+# libcap2, libcbor0.8, libcrypt-dev, libcryptsetup12, libcurl3-gnutls,
+# libdb5.3, libdebian-installer4, libedit2, libeinfo1, libelf1, libelogind0,
+# libexpat1, libffi8, libfido2-1, libfile-find-rule-perl, libfstrm0,
+# libfuse2 [s390x], libgc1, libgcrypt20, libgdbm-compat4, libgmp10,
+# libgnutls30, libgpg-error0, libhogweed6, libicu72, libidn2-0, libip4tc2,
+# libisl23, libjansson4, libjemalloc2, libjson-c5, libkeyutils1, libldap-2.5-0,
+# liblmdb0, liblocale-gettext-perl, liblockfile-bin, liblz4-1, liblzma5,
+# libmaxminddb0, libmd0, libmnl0, libmpc3, libmpfr6, libncursesw6, libnewt0.52,
+# libnftables1, libnftnl11, libnghttp2-14, libnsl-dev, libnss-systemd,
+# libnuma1 [ppc64el], libnumber-compare-perl, libp11-kit0, libpam-modules,
+# libpci3, libpcre2-8-0, libperl5.36, libpipeline1, libpopt0, libproc2-0,
+# libprotobuf-c1, libpsl5, libpython3-stdlib, libpython3.11-minimal,
+# libreadline8, librtas2 [ppc64el], librtmp1, libsasl2-2, libseccomp2,
+# libselinux1, libsemanage-common, libsepol2, libsigsegv2, libslang2,
+# libsqlite3-0, libssh2-1, libssl3, libtasn1-6, libtext-charwidth-perl,
+# libtext-glob-perl, libtext-iconv-perl, libtext-wrapi18n-perl, libtextwrap1,
+# libtirpc-common, libuchardet0, libunistring2, libuv1, libxml2, libxxhash0,
+# libzstd1, linux-libc-dev, login, logrotate, lsb-base, lsof, mailcap, make,
+# man-db, manpages, mawk, media-types, mime-support, nano, netbase,
+# netcat-traditional, openssh-client, opensysusers, original-awk, patch,
+# pci.ids, powerpc-ibm-utils [ppc64el], python-apt-common, python3-certifi,
+# python3-chardet, python3-charset-normalizer, python3-debian,
+# python3-debianbts, python3-httplib2, python3-idna, python3-pkg-resources,
+# python3-pycurl, python3-pyparsing, python3-pysimplesoap, python3-reportbug,
+# python3-requests, python3-six, python3-urllib3, rpcsvc-proto, runit-helper,
+# s390-tools [s390x], sed, sensible-utils, startpar,
+# sysconfig-hardware [s390x], systemd-cron, sysuser-helper, tar, tasksel,
+# traceroute, tzdata, ucf, ucspi-unix, usr-is-merged, vim-common, wamerican,
+# wget, zlib1g
+#Restrictions: hint-testsuite-triggers
