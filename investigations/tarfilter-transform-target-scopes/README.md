@@ -24,6 +24,7 @@ No separate candidate covered correct default target scopes plus the reviewed re
 - Candidate branch: `fix/tarfilter-transform-target-scopes`
 - Candidate patch: `tarfilter-transform-target-scopes.patch`
 - Corrected regression: `tests/test_tarfilter_path_rewrite_metadata.py`
+- Pull request: #68
 
 The imported file remains unchanged. The test applies the retained integrated patch to an exact temporary copy.
 
@@ -70,6 +71,12 @@ python3 -m unittest tests.test_tarfilter_path_rewrite_metadata -v
 
 Repository test discovery also runs the corrected regression and adjacent tarfilter candidates.
 
+## Validation
+
+Linux Fieldwork CI run `30536021112` passed on Ubuntu 24.04 against exact candidate head `155217c61c740ace30d3b56e947b792d48bad544`.
+
+The run passed 15 tests. The corrected scope test applied both the stale PR #48 patch and the integrated candidate, required the stale default result as a negative control, matched candidate archives to GNU tar for default and `S`, extracted the default archive, verified hard-link inode identity, and required `sym -> target`. Adjacent no-option, path-filter, replacement-semantics, LF-07 safety, and LF-23 safety regressions also passed. Shell syntax and optional command-help checks passed.
+
 ## Evidence limits
 
 - This follow-up establishes default `rsh` behavior and uppercase `S` using GNU tar as the differential reference.
@@ -90,6 +97,7 @@ All patch applications, fixture trees, reference archives, and extraction target
 - Covered archive metadata and extracted filesystem effects.
 - Kept the claim narrower than complete GNU tar transform compatibility.
 - Separated this post-merge correction from the already completed replacement-count issue #51.
+- Exact-head CI passed the complete current repository test set.
 
 ## Authority
 
