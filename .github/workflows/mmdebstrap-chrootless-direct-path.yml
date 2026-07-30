@@ -23,6 +23,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
+            apt-utils \
+            dpkg-dev \
             libdistro-info-perl \
             libdpkg-perl \
             uidmap
