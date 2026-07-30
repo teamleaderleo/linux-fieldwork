@@ -1,0 +1,16 @@
+probe_date_utc=2026-07-30
+runner=disposable Debian 13 container
+kernel=Linux 6.12.13 x86_64 GNU/Linux
+orchestrator_uid=0
+package_action_uid=65534
+package_action_gid=65534
+package_action_user=nobody
+dpkg=1.22.22
+apt=3.0.3
+update-alternatives=1.22.22
+network_access=unavailable
+trace_method=custom ptrace path/process tracer
+upstream_requested_revision=debian/1.5.7-3
+upstream_resolved_commit=6fde999741f4fe1e7bf38079acf29432ef87a35e
+repository_import_commit=51c8480d7e61b3e31d74f69864042a3fc8c1d772
+source_blob_upstream_mmdebstrap=dfb5e37b68271a46b9e75128cdd85975fbb383a1
