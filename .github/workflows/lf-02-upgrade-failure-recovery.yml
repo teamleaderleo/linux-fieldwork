@@ -38,6 +38,20 @@ jobs:
       - name: Run upgrade failure and recovery matrix
         run: bash investigations/lf-02-upgrade-failure-recovery/run.sh
 
+      - name: Remove account name from public evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          environment_file="investigations/lf-02-upgrade-failure-recovery/results/environment.txt"
+          if [[ -f "$environment_file" ]]; then
+            sed -i '/^user=/d' "$environment_file"
+            if grep -q '^user=' "$environment_file"; then
+              echo "account name remains in public evidence" >&2
+              exit 1
+            fi
+          fi
+
       - name: Upload lifecycle evidence
         if: always()
         uses: actions/upload-artifact@v4
