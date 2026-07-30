@@ -45,7 +45,7 @@ The full chrootless security fixture also records package-script `TMPDIR` and cr
 
 ## Validation boundary
 
-The candidate is checked by the shared Python suite, Perl syntax and POD checks, the current Debian sid `perltidy`, the explicit-TMPDIR regression, the full chrootless security fixture, and the expanded unwritable-TMPDIR review. Source lines before `__END__` remain within the repository's 79-column contract.
+The candidate is checked by the shared Python suite, Perl syntax, POD, and severity-4 `perlcritic` checks, the current Debian sid `perltidy`, the explicit-TMPDIR regression, the full chrootless security fixture, and the expanded unwritable-TMPDIR review. The helper is prototype-free and uses `oct("1777")`; source lines before `__END__` remain within the repository's 79-column contract.
 
 ## Source boundary
 
