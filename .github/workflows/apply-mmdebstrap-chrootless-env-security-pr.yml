@@ -75,9 +75,8 @@ jobs:
           perl -c upstream/mmdebstrap/mmdebstrap
           pod2man upstream/mmdebstrap/mmdebstrap >/dev/null
           git diff --check
-          max_length="$(sed -e '/^__END__$/,$d' upstream/mmdebstrap/mmdebstrap | wc --max-line-length)"
-          echo "maximum code line length: $max_length"
-          test "$max_length" -le 79
+          sed -e '/^__END__$/,$d' upstream/mmdebstrap/mmdebstrap \
+            | awk 'length($0) > 79 { print NR ":" length($0) ":" $0; bad=1 } END { exit bad }'
           rm .github/workflows/apply-mmdebstrap-chrootless-env-security.yml
           rm .github/workflows/apply-mmdebstrap-chrootless-env-security-pr.yml
           git config user.name github-actions[bot]
