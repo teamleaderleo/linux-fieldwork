@@ -20,6 +20,11 @@ PATCHES = (
         "investigations/mmdebstrap-file-mirror-containment/"
         "0002-preserve-file-uri-target-path.patch"
     ),
+    ROOT
+    / (
+        "investigations/mmdebstrap-file-mirror-containment/"
+        "0003-reject-parent-uri-components.patch"
+    ),
 )
 SETUP_SOURCE = ROOT / "upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh"
 CLEANUP_SOURCE = ROOT / "upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh"
@@ -82,7 +87,7 @@ class FileMirrorAutomountSourceNormalizationTest(unittest.TestCase):
     def nul_fields(path: pathlib.Path) -> list[str]:
         return [field.decode() for field in path.read_bytes().split(b"\0") if field]
 
-    def test_embedded_parent_component_is_canonicalized_before_target_and_marker(self) -> None:
+    def test_embedded_parent_component_is_rejected_before_action(self) -> None:
         parent = self.work / "sources"
         repository = parent / "repository"
         spelling = parent / "spelling"
@@ -101,16 +106,36 @@ class FileMirrorAutomountSourceNormalizationTest(unittest.TestCase):
             timeout=20,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        canonical_source = repository.resolve()
+        self.assertIn("refusing unsafe file repository path", result.stderr)
+        self.assertFalse(self.mount_log.exists())
+        self.assertFalse((root / "run/mmdebstrap/file-mirror-automount").exists())
+
+    def test_dot_component_keeps_configured_path_reachable(self) -> None:
+        spelling = self.work / "sources" / "spelling"
+        repository = spelling / "repository"
+        repository.mkdir(parents=True)
+        root = self.work / "dot-root"
+        root.mkdir()
+        uri = f"file://{spelling}/./repository"
+
+        result = subprocess.run(
+            ["/bin/sh", str(self.setup), str(root)],
+            env=self.environment(uri),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
         target = root.resolve() / repository.relative_to("/")
         self.assertEqual(
             self.nul_fields(self.mount_log),
-            ["-o", "ro,bind", str(canonical_source), str(target)],
+            ["-o", "ro,bind", str(repository.resolve()), str(target)],
         )
         marker = root / "run/mmdebstrap/file-mirror-automount"
-        entries = self.nul_fields(marker)
-        self.assertEqual(entries, [str(repository.relative_to("/"))])
-        self.assertNotIn("..", pathlib.PurePosixPath(entries[0]).parts)
+        self.assertEqual(self.nul_fields(marker), [str(repository.relative_to("/"))])
+        configured_path = root / spelling.relative_to("/") / "." / "repository"
+        self.assertTrue(configured_path.exists())
 
     def test_leading_parent_traversal_remains_rejected_before_action(self) -> None:
         root = self.work / "leading-parent-root"
