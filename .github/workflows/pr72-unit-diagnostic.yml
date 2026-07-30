@@ -26,26 +26,42 @@ jobs:
             "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8758712312/zip" \
             > /tmp/pr72-artifact.zip
 
-      - name: Print concise result and failure streams
+      - name: Extract failure signatures with context
         shell: bash
         run: |
           python3 - <<'PY'
+          import re
           import zipfile
 
-          wanted = {
-              "exit-status": None,
-              "result.md": None,
-              "autopkgtest-output/summary": None,
-              "autopkgtest-output/testsuite-stderr": 120,
-              "autopkgtest-output/testsuite-stdout": 120,
-              "autopkgtest-console.log": 100,
-          }
+          pattern = re.compile(
+              r"fail|error|timeout|timed out|no such file|not ok|traceback|exception|"
+              r"perltidy|result:|time left: 0:00:0[0-5]",
+              re.IGNORECASE,
+          )
+          names = (
+              "autopkgtest-output/summary",
+              "autopkgtest-output/testsuite-stderr",
+              "autopkgtest-output/testsuite-stdout",
+              "autopkgtest-console.log",
+          )
           with zipfile.ZipFile("/tmp/pr72-artifact.zip") as archive:
-              for name, limit in wanted.items():
-                  text = archive.read(name).decode("utf-8", errors="replace")
-                  lines = text.splitlines()
-                  if limit is not None:
-                      lines = lines[-limit:]
-                  print(f"\n===== {name} =====")
-                  print("\n".join(lines))
+              for name in names:
+                  lines = archive.read(name).decode("utf-8", errors="replace").splitlines()
+                  selected = set()
+                  for index, line in enumerate(lines):
+                      if pattern.search(line):
+                          selected.update(range(max(0, index - 3), min(len(lines), index + 4)))
+                  ordered = sorted(selected)
+                  if len(ordered) > 180:
+                      ordered = ordered[-180:]
+                  print(f"\n===== {name}: failure contexts =====")
+                  previous = None
+                  for index in ordered:
+                      if previous is not None and index != previous + 1:
+                          print("...")
+                      print(f"{index + 1}: {lines[index]}")
+                      previous = index
+                  print(f"\n===== {name}: final 24 lines =====")
+                  for index, line in enumerate(lines[-24:], start=max(1, len(lines) - 23)):
+                      print(f"{index}: {line}")
           PY
