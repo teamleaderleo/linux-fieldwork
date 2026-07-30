@@ -24,7 +24,7 @@ diff --git a/mmdebstrap b/mmdebstrap
  sub chrootless_dpkg_environment {
      my $root     = shift;
      my $dpkgpath = shift;
-@@ -4061,7 +4077,7 @@ sub run_essential() {
+@@ -4061,6 +4077,6 @@ sub run_essential() {
          run_dpkg_progress({
                  ARGV => [
 -                    'env',
