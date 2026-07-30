@@ -107,7 +107,9 @@ Alphabetic escapes outside numeric backreferences also receive an explicit rejec
 - literal `\0` in both dialects;
 - GNU-compatible nested simple and interval repetition in the tested extended forms;
 - tested nested basic repetition;
-- matching rejection of consecutive basic intervals.
+- matching rejection of consecutive basic intervals;
+- matching rejection of malformed active intervals in both dialects;
+- literal unmatched closing parentheses in extended mode.
 
 Commands:
 

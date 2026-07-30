@@ -56,7 +56,16 @@ The same selected match is required independently for the member name, hard-link
 
 GNU tar 1.35 accepts the executed nested repetition forms that Python rejects or interprets as lazy or possessive syntax. The edge patch wraps the preceding atom in a noncapturing group before applying each later quantifier, preserving user capture numbering.
 
-The same GNU tar rejects consecutive basic intervals such as `a\{2\}\{2,3\}`. The candidate rejects that proven form before archive output. Other malformed or nested interval combinations stay outside this subset.
+The same GNU tar rejects consecutive basic intervals such as `a\{2\}\{2,3\}`.
+It also rejects active malformed interval openings such as `a{}`, `a{2`, and
+`a{x}` in extended mode and their escaped basic equivalents. Python treats
+several of those spellings as literal text, so the candidate rejects every
+active `{` that is not a parsed interval before archive output.
+
+GNU extended regex treats an unmatched closing `)` as a literal. Python
+rejects it as an unbalanced group. The normalizer escapes a closing parenthesis
+only when extended mode has no open group; balanced groups and active basic
+`\)` keep their original behavior.
 
 ## Explicit unsupported policy
 
@@ -72,7 +81,7 @@ Alphabetic escapes such as GNU word-boundary extensions and Python-specific shor
 
 ## Questions reserved for later slices
 
-- exact GNU behavior for nested, empty, and malformed intervals;
+- exact GNU behavior for interval forms beyond the executed valid and malformed matrix;
 - POSIX classes and collation outside the C locale;
 - GNU word-boundary and buffer-boundary escapes;
 - byte-oriented versus Unicode-oriented matching;

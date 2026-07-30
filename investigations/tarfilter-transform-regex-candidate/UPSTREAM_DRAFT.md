@@ -13,9 +13,10 @@ candidate adds a scanner for the characterized basic/extended subset, rejects
 unresolved syntax before archive output, and carries a direct GNU tar 1.35
 differential matrix.
 
-The core subset is implemented and internally merged. Malformed active
-intervals and unmatched extended `)` remain a bounded repair before this packet
-should leave Linux Fieldwork.
+The core subset is internally merged. A follow-up candidate now repairs
+malformed active intervals and unmatched extended `)`. Hosted exact-head CI and
+one more complete-diff review remain before this packet should leave Linux
+Fieldwork.
 
 ## Explain like I'm five
 
@@ -106,11 +107,12 @@ The post-merge malformed-grammar probe found:
 
 | Expression | Retained candidate | GNU tar 1.35 |
 | --- | --- | --- |
-| `s/a{}/X/x` | success, literal `{}` | error |
-| `s/a{2/X/x` | success, literal `{2` | error |
-| `s/a)/X/x` | Python error | success, literal `)` |
+| `s/a{}/X/x` | early error | error |
+| `s/a{2/X/x` | early error | error |
+| `s/a)/X/x` | success, literal `)` | success, literal `)` |
 
-This table is a release gate, not a claim of complete POSIX parity.
+The follow-up regression locks this table. It remains a bounded grammar claim,
+not a claim of complete POSIX parity.
 
 ## Pull-request draft
 
@@ -139,7 +141,7 @@ their owning changes.
 - exercise member names, hard-link targets, and symlink targets;
 - exercise numeric selector composition;
 - reject POSIX bracket forms and Python-only `(?...)` groups early;
-- repair and lock the malformed interval/unmatched-close table above;
+- retain the malformed interval/unmatched-close table above;
 - run the focused matrix twice after cleanup;
 - run Python compilation, shell syntax, command help, and the repository suite;
 - review the exact composed source diff after every semantic change.
@@ -160,7 +162,7 @@ behind independent differential tests.
 - [x] Cleanup and rerun checked.
 - [x] Target-scope and occurrence-selector composition checked.
 - [x] Second pass found and repaired Python-only `(?...)` acceptance.
-- [ ] Repair malformed active intervals and unmatched extended `)`.
+- [x] Repair malformed active intervals and unmatched extended `)`.
 - [ ] Review the repaired exact head twice.
 - [ ] Rebase the proposed source patch onto the current canonical upstream
       revision and run the upstream test entry points.
