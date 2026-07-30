@@ -35,7 +35,7 @@ jobs:
             tests/test_lf02_upgrade_failure_summary.py \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/classify-strace.py \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/write-provenance.py
-          python3 -m unittest tests.test_lf02_upgrade_failure_summary -v
+          python3 -m unittest discover -s tests -p 'test_lf02_upgrade_failure_summary.py' -v
           bash -n investigations/lf-02-upgrade-failure-recovery/run.sh
 
       - name: Run upgrade failure and recovery matrix
