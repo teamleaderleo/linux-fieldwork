@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirror.sh
 --- a/upstream/mmdebstrap/make_mirror.sh
 +++ b/upstream/mmdebstrap/make_mirror.sh
-@@ -337,3 +337,64 @@
+@@ -337,3 +337,67 @@
 -./caching_proxy.py "$oldcachedir" "$newcachedir" &
 -PROXYPID=$!
 -trap 'kill "$PROXYPID" || :' EXIT INT TERM
@@ -10,7 +10,10 @@ diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirro
 +CLEANUP_PROXY_CACHE=no
 +CLEANUP_TMPDIR=no
 +
-+record_signal() {
++handle_launch_signal() {
++  if [ -n "${PROXYPID:-}" ]; then
++    signal_exit "${PENDING_SIGNAL:-$1}"
++  fi
 +  if [ -z "${PENDING_SIGNAL:-}" ]; then
 +    PENDING_SIGNAL=$1
 +  fi
@@ -55,40 +58,40 @@ diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirro
 +
 +launch_proxy() {
 +  PENDING_SIGNAL=
-+  trap 'record_signal 130' INT
-+  trap 'record_signal 131' QUIT
-+  trap 'record_signal 143' TERM
++  trap 'handle_launch_signal 130' INT
++  trap 'handle_launch_signal 131' QUIT
++  trap 'handle_launch_signal 143' TERM
 +  "$@" &
 +  PROXYPID=$!
-+  install_signal_traps
 +  if [ -n "$PENDING_SIGNAL" ]; then
 +    signal_exit "$PENDING_SIGNAL"
 +  fi
++  install_signal_traps
 +}
 +
 +trap 'cleanup_owner' EXIT
 +install_signal_traps
 +launch_proxy ./caching_proxy.py "$oldcachedir" "$newcachedir"
-@@ -347 +407,0 @@
+@@ -347 +410,0 @@
 -  kill $PROXYPID
-@@ -351 +411 @@
+@@ -351 +414 @@
 -trap 'kill "$PROXYPID" || :;cleanup_newcachedir' EXIT INT TERM
 +CLEANUP_PROXY_CACHE=yes
-@@ -408 +468 @@
+@@ -408 +471 @@
 -kill $PROXYPID
 +stop_proxy
-@@ -447,2 +507 @@
+@@ -447,2 +510 @@
 -  ./caching_proxy.py --readonly "$oldcachedir" "$newcachedir" &
 -  PROXYPID=$!
 +  launch_proxy ./caching_proxy.py --readonly "$oldcachedir" "$newcachedir"
-@@ -456 +514,0 @@
+@@ -456 +517,0 @@
 -    kill $PROXYPID
-@@ -461 +519 @@
+@@ -461 +522 @@
 -  trap 'kill "$PROXYPID" || :;cleanuptmpdir; cleanup_newcachedir' EXIT INT TERM
 +  CLEANUP_TMPDIR=yes
-@@ -563 +621 @@
+@@ -563 +624 @@
 -  kill $PROXYPID
 +  stop_proxy
-@@ -565 +623 @@
+@@ -565 +626 @@
 -  trap "cleanup_newcachedir" EXIT INT TERM
 +  CLEANUP_TMPDIR=no
