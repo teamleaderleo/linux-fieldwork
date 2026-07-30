@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
 --- a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
 +++ b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
-@@ -320,1 +320,23 @@
+@@ -320,1 +320,26 @@
  WORKDIR=
 +IMAGE_TMPDIR=
 +IMAGE_TMP=
@@ -21,31 +21,34 @@ diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mm
 +
 +publish_image() {
 +  mv --no-target-directory -- "$IMAGE_TMP" "$IMAGE"
-+  rmdir "$IMAGE_TMPDIR"
++  published_image_tmpdir=$IMAGE_TMPDIR
 +  IMAGE_TMP=
 +  IMAGE_TMPDIR=
++  if ! rmdir "$published_image_tmpdir"; then
++    echo "W: image published but private directory remains: $published_image_tmpdir" >&2
++  fi
 +}
-@@ -323,1 +345,5 @@ cleanup() {
+@@ -323,1 +348,5 @@ cleanup() {
    test -n "$WORKDIR" && rm -Rf "$WORKDIR"
 +  if test -n "$IMAGE_TMPDIR"; then
 +    rm -f -- "$IMAGE_TMP"
 +    rmdir "$IMAGE_TMPDIR" 2>/dev/null || :
 +  fi
-@@ -328,1 +354,2 @@ trap cleanup EXIT INT TERM QUIT
+@@ -328,1 +357,2 @@ trap cleanup EXIT INT TERM QUIT
  WORKDIR=$(mktemp -d)
 +prepare_image
-@@ -399,1 +426,1 @@ mmdebstrap "$@" | {
+@@ -399,1 +429,1 @@ mmdebstrap "$@" | {
 -  set -- "$@" -E "$EXTOPTS" "$IMAGE" "$SIZE"
 +  set -- "$@" -E "$EXTOPTS" "$IMAGE_TMP" "$SIZE"
-@@ -468,3 +495,3 @@ rm -f "$WORKDIR/efiimg"
+@@ -468,3 +498,3 @@ rm -f "$WORKDIR/efiimg"
 -truncate --size="+$((34 * 512))" "$IMAGE"
 -/sbin/sfdisk "$IMAGE" <<EOF
 +truncate --size="+$((34 * 512))" "$IMAGE_TMP"
 +/sbin/sfdisk "$IMAGE_TMP" <<EOF
-@@ -477,1 +504,1 @@ EOF
+@@ -477,1 +507,1 @@ EOF
 -dd if="$WORKDIR/fat" of="$IMAGE" conv=notrunc,sparse bs=512 "seek=$FAT_OFFSET_SECTORS" status=none
 +dd if="$WORKDIR/fat" of="$IMAGE_TMP" conv=notrunc,sparse bs=512 "seek=$FAT_OFFSET_SECTORS" status=none
-@@ -486,1 +513,3 @@ if test -n "$VMFPKG" && test "$(dpkg-query -f '${db:Status-Status}' -W "$VMFPKG")" != installed; then
+@@ -486,1 +516,3 @@ if test -n "$VMFPKG" && test "$(dpkg-query -f '${db:Status-Status}' -W "$VMFPKG")" != installed; then
  fi
  
 +publish_image
