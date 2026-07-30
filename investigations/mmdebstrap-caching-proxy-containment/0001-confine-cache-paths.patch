@@ -1,7 +1,8 @@
 diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_proxy.py
 --- a/upstream/mmdebstrap/caching_proxy.py
 +++ b/upstream/mmdebstrap/caching_proxy.py
-@@ -14,6 +14,33 @@ oldcachedir = None
+@@ -14,6 +14,33 @@
+ oldcachedir = None
  newcachedir = None
  readonly = False
  
