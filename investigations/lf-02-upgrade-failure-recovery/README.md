@@ -43,6 +43,8 @@ Apt-managed upgrades, triggers, and dependencies are later boundaries.
 
 The dedicated workflow runs on GitHub-hosted Ubuntu 24.04 and records exact repository provenance, tool versions, UID/GID, kernel, package archive digests, commands, timing, target snapshots, host fingerprints, and per-process syscall traces.
 
+Uploaded public evidence removes the account-name line from `environment.txt` and verifies its absence before artifact upload. UID and GID remain available for privilege interpretation.
+
 ## Baseline
 
 PR #21 retained clean direct install, reinstall, purge, install-after-purge, and two fresh mmdebstrap builds. It did not exercise:
@@ -89,8 +91,10 @@ Each phase retains its raw and normalized command, stdout, stderr, status, timin
 ## Distinguishing results
 
 - **Product candidate:** successful unexpected host mutation, host package state used as target state, a successful exit for the deliberately failing configure, failure to recover, or conffile behavior contradicting `--force-confold`.
-- **Mapped behavior:** expected target-local partial state, later recovery, target-local residue, and only classified host reads/runtime/service actions.
-- **Blocked:** the environment cannot distinguish package failure from containment failure.
+- **Mapped behavior:** expected target-local partial state, later recovery, target-local residue, and only fully classified host reads/runtime effects.
+- **Blocked:** unresolved outside access or an environment that cannot distinguish package failure from containment failure.
+
+Host service actions require promotion or a deliberate narrower interpretation; they cannot produce a clean mapped-behavior disposition by default.
 
 ## Evidence boundary
 
@@ -98,15 +102,22 @@ Each phase retains its raw and normalized command, stdout, stderr, status, timin
 - `--force-confold` is an explicit policy choice; this matrix does not characterize interactive conffile prompting.
 - The syscall classifier observes path-bearing file/process/network calls. FD-only effects still require raw trace review.
 - The first matrix does not yet prove apt-managed upgrade, dependency ordering, triggers, multiarch, or rollback semantics for arbitrary packages.
-- A failed configure is expected evidence, not a workflow failure, when the target status and later recovery match the declared contract.
+- A failed configure is expected evidence when the target status and later recovery match the declared contract.
+- The current runner still needs guarded recursive-deletion roots and cancellation semantics that terminate without resuming later phases.
+- The summary contract still needs explicit validation that behaves identically under normal Python and `python -O`.
+- Conffile sibling sets and contents still need phase-specific validation before the conffile lifecycle can be declared complete.
 
 ## Results
 
-Pending exact hosted execution.
+Dedicated workflow run `30557757766` completed successfully at head `40c2b1ec89e4d8391bbcbe95a14f96a4a87760ca`. Review found the safety and decision-contract gaps listed above, so that run remains exploratory evidence rather than an authoritative receipt.
+
+Generic Linux Fieldwork CI run `30557757125` passed compilation and all nine inherited tests, then failed because the stacked base carried an older repository workflow that unconditionally invoked `scripts/capture-linux-context.sh`, which is absent from that base. This is a base-composition failure outside the five-file investigation diff.
+
+Helper B added the public-evidence account-name removal at commit `353e963f1200eae7733e8f0814f2e18ccf53270b`. The dedicated workflow removes any `user=` line from `environment.txt` and fails if one remains before upload.
 
 ## Next step
 
-Run the exact-head matrix. If it is clean, use the resulting package/state contract as the baseline for one later boundary at a time: apt-managed upgrade, triggers, then dependencies.
+Complete the runtime deletion guard, INT/TERM child handling and exit-status preservation, optimized-Python validation tests, disposition precedence, and conffile sibling contract. Then rerun both the dedicated matrix and the artifact receipt on the exact head. Refresh or restack the base before using the generic repository CI result as a merge signal.
 
 ## Authority
 
