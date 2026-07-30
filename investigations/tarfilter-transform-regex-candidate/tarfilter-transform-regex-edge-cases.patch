@@ -3,8 +3,8 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
 @@ -182,6 +182,93 @@
      return pattern[start:], len(pattern)
-
-
+ 
+ 
 +def _quantifier_at(pattern, index):
 +    char = pattern[index]
 +    if char in "*+?":
@@ -95,9 +95,24 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
  def _translate_pattern(pattern, extended):
      result = []
      index = 0
-@@ -205,6 +292,11 @@
+@@ -198,6 +285,14 @@
+             branch_start = False
+             continue
+ 
++        if (
++            extended
++            and char == "("
++            and index + 1 < len(pattern)
++            and pattern[index + 1] == "?"
++        ):
++            raise ValueError("unsupported extended-regex group extension")
++
+         if char == "\\":
+             if index + 1 == len(pattern):
+                 result.append("\\")
+@@ -205,6 +300,11 @@
                  continue
-
+ 
              escaped = pattern[index + 1]
 +            if escaped == "0":
 +                result.append("0")
@@ -107,10 +122,10 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
              if escaped in unsupported_alpha_escapes and escaped not in "123456789":
                  raise ValueError(
                      "unsupported alphabetic regex escape: \\%s" % escaped
-@@ -225,6 +317,12 @@
+@@ -225,6 +325,12 @@
              index += 2
              continue
-
+ 
 +        if not extended and char == "*" and branch_start:
 +            result.append("\\*")
 +            branch_start = False
@@ -120,12 +135,12 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
          if char == "^":
              result.append("^" if extended or branch_start else "\\^")
              branch_start = False
-@@ -256,7 +354,7 @@
+@@ -256,7 +362,7 @@
              branch_start = False
          index += 1
-
+ 
 -    return "".join(result)
 +    return _normalize_repeated_quantifiers("".join(result), extended)
-
-
+ 
+ 
  class TransformAction(argparse.Action):
