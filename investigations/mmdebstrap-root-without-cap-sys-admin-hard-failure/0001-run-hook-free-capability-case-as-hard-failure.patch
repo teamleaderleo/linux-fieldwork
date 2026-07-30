@@ -20,18 +20,16 @@ diff --git a/coverage.py b/coverage.py
                  ]:
                      print(f"Unknown field name {k} in test {name}")
                      exit(1)
-@@ -270,10 +271,14 @@ def main():
+@@ -270,10 +271,11 @@ def main():
              skipreason = skip(test.get("Skip-If"), dist, mode, variant, fmt)
              if skipreason:
                  tt = ("skip", skipreason)
              elif (
 -                test.get("Needs-APT-Config", "false") == "true" and use_host_apt_config
-+                (
-+                    test.get("Needs-APT-Config", "false") == "true"
-+                    or test.get("Needs-Hook-Free-APT-Config", "false") == "true"
-+                )
-+                and use_host_apt_config
-             ):
+-            ):
++                test.get("Needs-APT-Config", "false") == "true"
++                or test.get("Needs-Hook-Free-APT-Config", "false") == "true"
++            ) and use_host_apt_config:
                  tt = ("skip", "test cannot use host apt config")
              elif have_qemu:
                  tt = "qemu"
