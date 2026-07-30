@@ -220,3 +220,42 @@ programmes:
         title: Block fault injection and recovery
         state: inbox
         environment: vm-or-kernel-lab
+
+  ecosystem-contributions:
+    title: Ecosystem contributions and upstream fixes
+    status_path: programmes/ecosystem-contributions/STATUS.md
+    lanes:
+      - id: LF-35
+        slug: package-collection-candidate-harvesting
+        title: Package collection candidate harvesting
+        state: mapped
+        priority: immediate
+        environment: current-ci-plus-containers
+        path: programmes/ecosystem-contributions/lanes/LF-35-package-collection-candidate-harvesting/brief.md
+      - id: LF-36
+        slug: downstream-patch-retirement
+        title: Downstream patch retirement and upstream transfer
+        state: mapped
+        priority: immediate
+        environment: current-ci-plus-containers
+        path: programmes/ecosystem-contributions/lanes/LF-36-downstream-patch-retirement/brief.md
+      - id: LF-37
+        slug: cross-distribution-build-portability
+        title: Cross-distribution build portability
+        state: inbox
+        environment: current-ci-plus-container-matrix
+      - id: LF-38
+        slug: runtime-toolchain-distribution-regressions
+        title: Runtime and toolchain distribution regressions
+        state: inbox
+        environment: current-ci-plus-container-matrix
+      - id: LF-39
+        slug: foundational-library-boundary-corpus
+        title: Foundational-library boundary corpus
+        state: inbox
+        environment: current-ci
+      - id: LF-40
+        slug: package-metadata-provenance-verification
+        title: Package metadata, provenance, and verification
+        state: inbox
+        environment: current-ci-plus-network

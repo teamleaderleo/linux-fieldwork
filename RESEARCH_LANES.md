@@ -2,29 +2,32 @@
 
 ## In simple words
 
-This is the short working index for choosing formal Linux Fieldwork lanes. The full inventory of 34 possibilities lives in [`programmes/registry.yml`](programmes/registry.yml). Ten lanes currently have dedicated directories because their questions and first probes are clear enough to scout.
+This is the short working index for choosing formal Linux Fieldwork lanes. The full inventory of 40 possibilities lives in [`programmes/registry.yml`](programmes/registry.yml). Twelve lanes currently have dedicated directories because their questions and first probes are clear enough to scout.
 
 ## Immediate current-CI lanes
 
-1. [LF-02 — chrootless `DPKG_ROOT` containment](programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/brief.md)
-2. [LF-07 — maintainer-script interruption and idempotency](programmes/debian-packages/lanes/LF-07-maintainer-script-interruption-idempotency/brief.md)
-3. [LF-12 — reproducible package variance](programmes/debian-packages/lanes/LF-12-reproducible-package-variance/brief.md)
-4. [LF-14 — archive extraction and metadata contracts](programmes/filesystems-images/lanes/LF-14-archive-extraction-metadata-contracts/brief.md)
-5. [LF-23 — cancellation, subprocess, and file-descriptor cleanup](programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/brief.md)
-6. [LF-11 — merged-`/usr` path assumptions](programmes/debian-packages/lanes/LF-11-merged-usr-path-assumptions/brief.md)
+1. [LF-35 — package collection candidate harvesting](programmes/ecosystem-contributions/lanes/LF-35-package-collection-candidate-harvesting/brief.md)
+2. [LF-36 — downstream patch retirement and upstream transfer](programmes/ecosystem-contributions/lanes/LF-36-downstream-patch-retirement/brief.md)
+3. [LF-02 — chrootless `DPKG_ROOT` containment](programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/brief.md)
+4. [LF-07 — maintainer-script interruption and idempotency](programmes/debian-packages/lanes/LF-07-maintainer-script-interruption-idempotency/brief.md)
+5. [LF-12 — reproducible package variance](programmes/debian-packages/lanes/LF-12-reproducible-package-variance/brief.md)
+6. [LF-14 — archive extraction and metadata contracts](programmes/filesystems-images/lanes/LF-14-archive-extraction-metadata-contracts/brief.md)
+7. [LF-23 — cancellation, subprocess, and file-descriptor cleanup](programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/brief.md)
+8. [LF-11 — merged-`/usr` path assumptions](programmes/debian-packages/lanes/LF-11-merged-usr-path-assumptions/brief.md)
 
 ## Capability-check lanes
 
-7. [LF-03 — rootless ownership and idmapped mounts](programmes/rootless-execution/lanes/LF-03-rootless-ownership-idmapped-mounts/brief.md)
-8. [LF-15 — OverlayFS copy-up and metadata behavior](programmes/filesystems-images/lanes/LF-15-overlayfs-copy-up-metadata/brief.md)
-9. [LF-22 — cgroup v2 delegation and cleanup](programmes/services-resources/lanes/LF-22-cgroup-v2-delegation-cleanup/brief.md)
+9. [LF-03 — rootless ownership and idmapped mounts](programmes/rootless-execution/lanes/LF-03-rootless-ownership-idmapped-mounts/brief.md)
+10. [LF-15 — OverlayFS copy-up and metadata behavior](programmes/filesystems-images/lanes/LF-15-overlayfs-copy-up-metadata/brief.md)
+11. [LF-22 — cgroup v2 delegation and cleanup](programmes/services-resources/lanes/LF-22-cgroup-v2-delegation-cleanup/brief.md)
 
 ## VM lane
 
-10. [LF-20 — systemd stop, timeout, and descendant cleanup](programmes/services-resources/lanes/LF-20-systemd-stop-timeout-descendant-cleanup/brief.md)
+12. [LF-20 — systemd stop, timeout, and descendant cleanup](programmes/services-resources/lanes/LF-20-systemd-stop-timeout-descendant-cleanup/brief.md)
 
 ## Programmes
 
+- [`Ecosystem contributions and upstream fixes`](programmes/ecosystem-contributions/STATUS.md)
 - [`Rootless execution, namespaces, and mounts`](programmes/rootless-execution/STATUS.md)
 - [`Debian packages, transactions, and builds`](programmes/debian-packages/STATUS.md)
 - [`Filesystems, archives, and disk images`](programmes/filesystems-images/STATUS.md)
