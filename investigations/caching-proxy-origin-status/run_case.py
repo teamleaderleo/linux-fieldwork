@@ -42,6 +42,7 @@ def main() -> None:
     parser.add_argument("--old-cache", type=pathlib.Path, required=True)
     parser.add_argument("--new-cache", type=pathlib.Path, required=True)
     parser.add_argument("--status", type=int, required=True)
+    parser.add_argument("--reason")
     parser.add_argument("--body", required=True)
     parser.add_argument("--requests", type=int, default=1)
     args = parser.parse_args()
@@ -51,7 +52,7 @@ def main() -> None:
     class Origin(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             self.server.request_count += 1
-            self.send_response(args.status)
+            self.send_response(args.status, args.reason)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Connection", "close")
             self.end_headers()
@@ -110,6 +111,7 @@ def main() -> None:
             {
                 "optimized": not __debug__,
                 "origin_status": args.status,
+                "origin_reason": args.reason,
                 "origin_requests": origin.request_count,
                 "responses": responses,
                 "cache_exists": cached.exists(),
