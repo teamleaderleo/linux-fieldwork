@@ -1,0 +1,48 @@
+{
+  "workflow_run": 30530666222,
+  "job": 90831976076,
+  "artifact": 8754537765,
+  "artifact_digest": "sha256:5c7d978934983858438a08f737c2596b892ec8151f676175ff0edae586f43c5b",
+  "cases": {
+    "default-root": {
+      "exit": 0,
+      "marker_before_present": false,
+      "marker_after_present": true,
+      "marker_after_mode": "0644",
+      "marker_after_owner": "0:0",
+      "system_bus_connect": true,
+      "logind_inhibit_message": true,
+      "inhibitor_fd_received": true,
+      "needrestart_exec": true,
+      "needrestart_host_marker_created": true
+    },
+    "no-inhibit-root": {
+      "exit": 0,
+      "marker_before_present": false,
+      "marker_after_present": true,
+      "system_bus_connect": false,
+      "logind_inhibit_message": false,
+      "inhibitor_fd_received": false,
+      "needrestart_exec": true,
+      "needrestart_host_marker_created": true
+    },
+    "isolated-root": {
+      "exit": 0,
+      "marker_before_present": false,
+      "marker_after_present": false,
+      "system_bus_connect": false,
+      "logind_inhibit_message": false,
+      "inhibitor_fd_received": false,
+      "needrestart_exec": false,
+      "needrestart_host_marker_created": false
+    }
+  },
+  "target_script_state_equal": true,
+  "target_alternatives_state_equal": true,
+  "findings": {
+    "privileged_needrestart_host_mutation": true,
+    "inhibit_option_removes_system_bus_call": true,
+    "disabling_host_dpkg_logger_removes_needrestart": true,
+    "isolated_control_has_no_observed_host_service_action": true
+  }
+}
