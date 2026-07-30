@@ -27,6 +27,13 @@ def load_module(path: pathlib.Path, name: str) -> types.ModuleType:
     return module
 
 
+def read_request_headers(stream) -> None:
+    while True:
+        line = stream.readline()
+        if line in (b"", b"\r\n", b"\n"):
+            return
+
+
 @contextlib.contextmanager
 def running_http_server(handler):
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -122,7 +129,7 @@ def wait_for_clean_cache(directory: pathlib.Path, final: pathlib.Path) -> None:
 
 class ShortOrigin(socketserver.StreamRequestHandler):
     def handle(self):
-        self.rfile.readuntil(b"\r\n\r\n")
+        read_request_headers(self.rfile)
         self.wfile.write(
             b"HTTP/1.1 200 OK\r\n"
             b"Content-Length: 20\r\n"
