@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import pathlib
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -11,6 +13,7 @@ INVESTIGATION = ROOT / "investigations/util-linux-lscpu-cpuset-double-free"
 RUNNER = INVESTIGATION / "run_model.py"
 PATCH = INVESTIGATION / "0001-clear-cpuset-output-after-error.patch"
 MODEL = INVESTIGATION / "ownership_model.c"
+FIXTURE = INVESTIGATION / "fixtures/v2.41"
 
 
 class UtilLinuxLscpuCpusetDoubleFreeTest(unittest.TestCase):
@@ -26,6 +29,34 @@ class UtilLinuxLscpuCpusetDoubleFreeTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("baseline: duplicate cleanup detected (status 42)", result.stdout)
         self.assertIn("candidate: output cleared", result.stdout)
+
+    def test_retained_patch_applies_to_v241_error_path(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="util-linux-cpuset-patch-") as tmp:
+            tree = pathlib.Path(tmp) / "source"
+            shutil.copytree(FIXTURE, tree)
+            for extra in ([], ["--dry-run"]):
+                result = subprocess.run(
+                    [
+                        "patch",
+                        "--batch",
+                        "--forward",
+                        *extra,
+                        "-p1",
+                        "-i",
+                        str(PATCH),
+                    ],
+                    cwd=tree,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                if not extra:
+                    break
+            patched = (tree / "lib/path.c").read_text(encoding="utf-8")
+            self.assertIn("cpuset_free(*set);\n\t\t*set = NULL;", patched)
+            self.assertLess(patched.index("cpuset_free(*set);"), patched.index("*set = NULL;"))
 
     def test_retained_patch_clears_output_after_free(self) -> None:
         patch = PATCH.read_text(encoding="utf-8")
