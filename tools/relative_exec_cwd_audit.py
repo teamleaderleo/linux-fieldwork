@@ -121,7 +121,9 @@ def audit_python(path: str, source: str) -> list[Finding]:
         if python_call_name(node) not in PYTHON_CALLS:
             continue
         cwd_node = keyword_value(node, "cwd")
-        if cwd_node is None:
+        if cwd_node is None or (
+            isinstance(cwd_node, ast.Constant) and cwd_node.value is None
+        ):
             continue
         program = python_program(node)
         if program is None or not is_relative_program_with_separator(program):
