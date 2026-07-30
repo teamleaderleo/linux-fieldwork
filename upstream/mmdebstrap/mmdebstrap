@@ -3903,18 +3903,24 @@ sub run_prepare {
 }
 
 sub chrootless_dpkg_environment() {
+    my @names = qw(
+      PATH
+      DEBIAN_FRONTEND
+      DEBCONF_NONINTERACTIVE_SEEN
+      LC_ALL
+      LANGUAGE
+      LANG
+      TZ
+      SOURCE_DATE_EPOCH
+      QEMU_LD_PREFIX
+    );
+
+    if (defined $ENV{FAKEROOTKEY}) {
+        push @names, qw(FAKEROOTKEY FAKED_MODE FAKEROOT_FD_BASE LD_PRELOAD
+          LD_LIBRARY_PATH);
+    }
     my @result = ('-i');
-    foreach my $name (qw(
-        PATH
-        DEBIAN_FRONTEND
-        DEBCONF_NONINTERACTIVE_SEEN
-        LC_ALL
-        LANGUAGE
-        LANG
-        SOURCE_DATE_EPOCH
-        QEMU_LD_PREFIX
-        )
-    ) {
+    foreach my $name (@names) {
         next if !defined $ENV{$name};
         push @result, "$name=$ENV{$name}";
     }

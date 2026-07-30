@@ -61,7 +61,10 @@ mkdir -p "$(dirname "$log")"
     DEBIAN_FRONTEND \
     DEBCONF_NONINTERACTIVE_SEEN \
     LC_ALL \
+    TZ \
     SOURCE_DATE_EPOCH \
+    FAKEROOTKEY \
+    LD_PRELOAD \
     DPKG_ROOT \
     DPKG_ADMINDIR; do
     value="$(printenv "$name" 2>/dev/null || printf '<unset>')"
@@ -248,6 +251,7 @@ env \
   HOME="$runtime/home" \
   TMPDIR="$runtime" \
   LC_ALL=C.UTF-8 \
+  TZ=UTC \
   SOURCE_DATE_EPOCH=1700000000 \
   http_proxy=http://proxy.invalid:3128 \
   LF_APT_ENV_LOG="$apt_env_log" \
@@ -281,6 +285,7 @@ grep -Fx 'no-connection' "$san_received"
 grep -Fx 'DEBIAN_FRONTEND=noninteractive' "$san_log"
 grep -Fx 'DEBCONF_NONINTERACTIVE_SEEN=true' "$san_log"
 grep -Fx 'LC_ALL=C.UTF-8' "$san_log"
+grep -Fx 'TZ=UTC' "$san_log"
 grep -Fx 'SOURCE_DATE_EPOCH=1700000000' "$san_log"
 grep -F 'DPKG_ROOT=' "$san_log" | grep -F "$sanitized_target"
 grep -F 'DPKG_ADMINDIR=' "$san_log" | grep -F "$sanitized_target"
@@ -297,6 +302,7 @@ for label in safe safe-rerun; do
     HOME="$runtime/home" \
     TMPDIR="$runtime" \
     LC_ALL=C.UTF-8 \
+    TZ=UTC \
     SOURCE_DATE_EPOCH=1700000000 \
     "${command[@]}" \
     >"$result_dir/$label.stdout" \
@@ -309,6 +315,29 @@ cmp \
   "$runtime/safe-root/usr/lib/lf-chrootless-env-probe/payload" \
   "$runtime/safe-rerun-root/usr/lib/lf-chrootless-env-probe/payload"
 
+# Chrootless mode explicitly supports fakeroot. Its IPC key and preload
+# state must survive the dpkg boundary while unrelated variables remain
+# absent.
+fakeroot_target="$runtime/fakeroot-root"
+make_command "$fakeroot_target" no
+env -i \
+  PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+  HOME="$runtime/home" \
+  TMPDIR="$runtime" \
+  LC_ALL=C.UTF-8 \
+  TZ=UTC \
+  SOURCE_DATE_EPOCH=1700000000 \
+  fakeroot -- "${command[@]}" \
+  >"$result_dir/fakeroot.stdout" \
+  2>"$result_dir/fakeroot.stderr"
+assert_installed "$fakeroot_target"
+fakeroot_log="$fakeroot_target/var/lib/lf-chrootless-env-probe/environment.log"
+cp "$fakeroot_log" "$result_dir/fakeroot-environment.log"
+grep -E '^FAKEROOTKEY=.+$' "$fakeroot_log"
+grep -E '^LD_PRELOAD=.*libfakeroot' "$fakeroot_log"
+grep -Fx 'LF_SECRET_CANARY=<unset>' "$fakeroot_log"
+grep -Fx 'TZ=UTC' "$fakeroot_log"
+
 cat >"$result_dir/summary.txt" <<EOF
 negative_control=ambient credentials and agent socket reached direct chrootless dpkg script
 unsafe_launch_status=$unsafe_status
@@ -319,6 +348,7 @@ apt_token_preserved_to_apt_only=yes
 dpkg_environment_sanitized=yes
 agent_socket_blocked=yes
 required_dpkg_environment_preserved=yes
+fakeroot_environment_preserved=yes
 safe_launch_succeeded=yes
 clean_rerun_succeeded=yes
 EOF

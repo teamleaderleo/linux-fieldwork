@@ -66,7 +66,8 @@ Candidate preserved classes:
 - `PATH`;
 - locale variables set by mmdebstrap;
 - `DEBIAN_FRONTEND` and `DEBCONF_*` noninteractive controls;
-- `SOURCE_DATE_EPOCH` and `TZ` where needed for reproducibility.
+- `SOURCE_DATE_EPOCH` and `TZ` where needed for reproducibility;
+- fakeroot's `FAKEROOTKEY`, preload, and daemon state when fakeroot is active.
 
 Variables created by dpkg for maintainer scripts, including `DPKG_ROOT` and `DPKG_ADMINDIR`, remain available because dpkg supplies them after the wrapper starts it.
 
@@ -90,7 +91,7 @@ Document that chrootless mode is not a package-script sandbox. Recommend an unpr
 
 1. Reproduce the original inherited environment with fake values only.
 2. Require the launch check to reject a credential-rich environment and report variable names only.
-3. Require the explicit skip to restore the current behavior.
+3. Require the explicit skip to bypass only the launch refusal while the dpkg environment remains sanitized.
 4. Apply the dpkg-wrapper candidate to a temporary copy of the imported source.
 5. Require the package script not to receive:
    - `AWS_SECRET_ACCESS_KEY`;
@@ -112,7 +113,8 @@ Document that chrootless mode is not a package-script sandbox. Recommend an unpr
 11. Compare normalized target state with the unsanitized control.
 12. Verify ordinary non-chrootless execution is unchanged.
 13. Add `/proc` and host-file controls that demonstrate the remaining non-sandbox boundary.
-14. Verify cleanup and a second clean run.
+14. Verify a fakeroot chrootless run preserves fakeroot state without restoring unrelated variables.
+15. Verify cleanup and a second clean run.
 
 ## Decision rule
 
