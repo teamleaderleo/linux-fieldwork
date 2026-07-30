@@ -10,9 +10,10 @@ Debian CI run `72574145` failed because the `dev-ptmx` test uses `script(1)` ins
 - Central transition investigation: #53
 - Historical capture: closed PR #82
 - Imported source: `upstream/mmdebstrap/tests/dev-ptmx`
-- Candidate patch: `0001-include-bsdutils.patch`
-- Historical signature: `historical-failure.txt`
-- Regression: `tests/test_mmdebstrap_dev_ptmx_dependencies.py`
+- Candidate patch: `0001-include-bsdutils-for-dev-ptmx.patch`
+- Historical evidence: `debci-72574145-summary.json`
+- Regression: `tests/test_mmdebstrap_dev_ptmx_dependency.py`
+- Reusable note: `notes/debian/tests-must-declare-command-providers-not-essential-set-assumptions.md`
 
 ## Exact source boundary
 
@@ -26,13 +27,13 @@ It then runs `script` twice through `chroot "$1"`: once as root and once through
 
 ## Historical evidence
 
-The recovered Debian testing amd64 run reached case `(252/283) dev-ptmx --mode=root` after 158 passes and 93 skips. Its first unavailable command was:
+The recovered Debian testing amd64 run reached case `(252/283) dev-ptmx --mode=root --variant=apt` after 158 passes and 93 skips. Its first unavailable command was:
 
 ```text
 chroot: failed to run command ‘script’: No such file or directory
 ```
 
-The failing archive used `bsdutils 1:2.42.2-1`. The captured root include set did not contain `bsdutils`.
+The failing archive used `bsdutils 1:2.42.2-1`. The captured root include set did not contain `bsdutils`. The compact JSON record retains the run, artifact digest, case coordinates, package universe, command provider, sizes, duration, and exit status.
 
 ## Candidate
 
@@ -51,9 +52,10 @@ The executable regression:
 
 1. proves the unmodified imported source lacks `bsdutils` while containing two inner `script` hooks;
 2. applies the retained patch to an exact temporary source copy;
-3. requires the patched include set to be exactly `bsdutils,gcc,libc6-dev,python3,passwd`;
-4. requires every other byte, including hook order, to remain unchanged;
-5. validates the compact historical failure signature.
+3. requires the patched include set to contain `bsdutils,gcc,libc6-dev,python3,passwd`;
+4. requires the only changed source line to be the include declaration;
+5. requires all customize hooks and their order to remain unchanged;
+6. validates the historical run, failure case, package provider, binary path, and missing-command signature from the JSON evidence.
 
 ## Validation boundary
 
