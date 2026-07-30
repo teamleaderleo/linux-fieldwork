@@ -245,7 +245,13 @@ set -e
 [[ "$empty_dpkg_path_status" -ne 0 ]]
 grep -F 'cannot determine chrootless maintainer-script PATH' \
   "$result_dir/empty-dpkg-path.stderr"
-test ! -f "$empty_target/usr/share/lf-path-precedence/payload"
+test ! -f "$empty_target/var/lib/lf-path-precedence-probe/result.txt"
+if dpkg-query --admindir="$empty_target/var/lib/dpkg" \
+  -W -f='${db:Status-Status}\n' lf-path-precedence-probe 2>/dev/null \
+  | grep -Fx installed >/dev/null; then
+  echo 'empty DPkg::Path unexpectedly installed the fixture' >&2
+  exit 1
+fi
 
 source_mode_after="$(stat -c '%a' "$source_root/mmdebstrap")"
 [[ "$source_mode_after" == "$source_mode_before" ]]
@@ -270,7 +276,9 @@ configured_authority_interpretation=explicit apt configuration is authoritative 
 expected_tools_resolved=yes
 empty_dpkg_path_status=$empty_dpkg_path_status
 empty_dpkg_path_failed_closed=yes
-interpretation=canonical DPkg::Path blocks caller-prefix command resolution, honors explicit non-empty apt configuration, and rejects an explicit empty apt path
+empty_dpkg_path_maintainer_script_ran=no
+empty_dpkg_path_installed=no
+interpretation=canonical DPkg::Path blocks caller-prefix command resolution, honors explicit non-empty apt configuration, and rejects an explicit empty apt path before maintainer configuration
 EOF
 
 cat "$result_dir/summary.txt"
