@@ -98,7 +98,7 @@ def classify_lines(lines: Iterable[str]) -> dict[str, Any]:
         "first_failed_test": first_failed_test,
         "last_named_test": current,
         "saw_named_test": saw_named_test,
-        "wrapper_failure_only": saw_wrapper_failure and first_failed_test is None,
+        "wrapper_failure_only": saw_wrapper_failure and phase == "unknown",
         "signals": signals,
     }
 
