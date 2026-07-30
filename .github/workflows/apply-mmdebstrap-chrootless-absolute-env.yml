@@ -1,0 +1,113 @@
+name: Apply mmdebstrap trusted chrootless env wrapper
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out candidate branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/mmdebstrap-chrootless-canonical-path
+          fetch-depth: 0
+
+      - name: Apply trusted wrapper boundary
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('upstream/mmdebstrap/mmdebstrap')
+          source = path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f'unexpected replacement count {count} for marker:\n{old}'
+                  )
+              source = source.replace(old, new)
+
+          replace_once(
+              "sub chrootless_dpkg_environment {\n",
+              "sub chrootless_env_path() {\n"
+              "    my $envpath = '/usr/bin/env';\n"
+              "    if (!-x $envpath) {\n"
+              "        error \"cannot execute trusted environment wrapper: $envpath\";\n"
+              "    }\n"
+              "    return $envpath;\n"
+              "}\n\n"
+              "sub chrootless_dpkg_environment {\n",
+          )
+          replace_once(
+              "                    'env',\n"
+              "                    chrootless_dpkg_environment(\n",
+              "                    chrootless_env_path(),\n"
+              "                    chrootless_dpkg_environment(\n",
+          )
+          replace_once(
+              "                '-oDir::Bin::dpkg=env',\n",
+              "                '-oDir::Bin::dpkg=' . chrootless_env_path(),\n",
+          )
+          replace_once(
+              "scripts are additionally run with a small environment. Their PATH is\n"
+              "apt's configured DPkg::Path rather than the caller's executable search path.\n",
+              "scripts are additionally launched through the trusted /usr/bin/env wrapper\n"
+              "with a small environment. Their PATH is apt's configured DPkg::Path rather\n"
+              "than the caller's executable search path.\n",
+          )
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Format and validate with Debian sid
+        run: |
+          docker run --rm \
+            --volume "$PWD:/work" \
+            --workdir /work/upstream/mmdebstrap \
+            debian:sid-slim \
+            sh -euxc '
+              apt-get update
+              apt-get install --yes --no-install-recommends \
+                libperl-critic-perl \
+                perltidy
+              perltidy < mmdebstrap > /tmp/mmdebstrap.tdy
+              mv /tmp/mmdebstrap.tdy mmdebstrap
+              perl -c mmdebstrap
+              perlcritic --severity 4 --verbose 8 mmdebstrap
+              pod2man mmdebstrap >/dev/null
+              test "$(sed -e "/^__END__$/,\$d" mmdebstrap | wc --max-line-length)" -le 79
+            '
+          git diff --check
+
+      - name: Verify source boundary
+        run: |
+          grep -F "my \$envpath = '/usr/bin/env';" upstream/mmdebstrap/mmdebstrap
+          grep -F "'-oDir::Bin::dpkg=' . chrootless_env_path()" upstream/mmdebstrap/mmdebstrap
+          test "$(grep -F 'chrootless_env_path(),' upstream/mmdebstrap/mmdebstrap | wc -l)" -eq 1
+          if grep -F "'-oDir::Bin::dpkg=env'" upstream/mmdebstrap/mmdebstrap; then
+            echo 'apt-managed path still uses caller-resolved env' >&2
+            exit 1
+          fi
+          if sed -n '/run_dpkg_progress({/,/PKGS =>/p' upstream/mmdebstrap/mmdebstrap \
+            | grep -F "                    'env',"; then
+            echo 'direct path still uses caller-resolved env' >&2
+            exit 1
+          fi
+
+      - name: Commit trusted wrapper fix
+        run: |
+          rm .github/workflows/apply-mmdebstrap-chrootless-absolute-env.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Use trusted env wrapper for chrootless dpkg'
+          git push origin HEAD:fix/mmdebstrap-chrootless-canonical-path
