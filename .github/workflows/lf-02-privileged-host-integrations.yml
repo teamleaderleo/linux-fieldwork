@@ -72,7 +72,7 @@ jobs:
           name: lf-02-privileged-host-integrations-${{ github.run_id }}-${{ github.run_attempt }}
           path: evidence
 
-      - name: Print and assert the corrected logind matrix
+      - name: Print and assert corrected result contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -83,7 +83,8 @@ jobs:
           import pathlib
           import sys
 
-          summary = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          summary_path = pathlib.Path(sys.argv[1])
+          summary = json.loads(summary_path.read_text())
           expected = {
               "default-root": "inhibitor-fd-received",
               "no-inhibit-root": "not-observed",
@@ -101,4 +102,23 @@ jobs:
               assert case["logind_access_denied"] is False
           assert summary["findings"]["default_inhibitor_fd_received"] is True
           assert summary["findings"]["inhibit_controls_have_no_logind_call"] is True
+
+          comparison = summary["target_state_comparison"]
+          print(
+              "target_state: "
+              f"script_equal={str(comparison['maintainer_script_log_equal']).lower()} "
+              f"alternatives_equal={str(comparison['alternatives_database_equal']).lower()} "
+              f"tree_equal={str(comparison['full_tree_manifest_equal']).lower()}"
+          )
+          assert summary["target_script_state_equal"] is comparison["maintainer_script_log_equal"]
+          assert summary["target_alternatives_state_equal"] is comparison["alternatives_database_equal"]
+          assert summary["target_tree_state_equal"] is comparison["full_tree_manifest_equal"]
+          for name, pair in comparison["tree_pairwise"].items():
+              print(
+                  f"{name}: equal={str(pair['equal']).lower()} "
+                  f"difference_lines={pair['difference_lines']} "
+                  f"diff_artifact={pair['diff_artifact']}"
+              )
+              assert (pair["difference_lines"] == 0) is pair["equal"]
+              assert (summary_path.parent / pair["diff_artifact"]).is_file()
           PY
