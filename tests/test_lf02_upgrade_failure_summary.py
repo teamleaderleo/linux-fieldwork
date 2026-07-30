@@ -232,8 +232,9 @@ class LF02UpgradeFailureSummaryTest(unittest.TestCase):
         path = results / "install-v1-access.summary.json"
         record = json.loads(path.read_text(encoding="utf-8"))
         record["categories"][identifier] = count
-        record["category_total"] = count
-        record["outside_access_events"] = count
+        total = sum(record["categories"].values())
+        record["category_total"] = total
+        record["outside_access_events"] = total
         write_json(path, record)
 
     def test_disposition_precedence(self) -> None:
