@@ -16,6 +16,7 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 from typing import Any
 
@@ -337,16 +338,28 @@ def capture_environment(output_root: Path) -> None:
     (output_root / "environment.json").write_text(json.dumps(rows, indent=2, sort_keys=True) + "\n")
 
 
+def prepare_output(requested: Path, artifacts: Path) -> Path:
+    output = requested.resolve()
+    allowed_roots = (artifacts.resolve(), Path(tempfile.gettempdir()).resolve())
+    if not any(root in output.parents for root in allowed_roots):
+        roots = ", ".join(str(root) for root in allowed_roots)
+        raise ValueError(
+            f"output must be a child of one of: {roots}; got {output}"
+        )
+    if output.exists():
+        shutil.rmtree(output)
+    output.mkdir(parents=True)
+    return output
+
+
 def main() -> int:
+    artifacts = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, default=Path("upstream/mmdebstrap/mmdebstrap"))
-    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parent / "ci-run")
+    parser.add_argument("--output", type=Path, default=artifacts / "ci-run")
     args = parser.parse_args()
 
-    output_root = args.output.resolve()
-    if output_root.exists():
-        shutil.rmtree(output_root)
-    output_root.mkdir(parents=True)
+    output_root = prepare_output(args.output, artifacts)
     capture_environment(output_root)
 
     source_text = args.source.read_text()
