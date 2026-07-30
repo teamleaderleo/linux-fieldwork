@@ -1,0 +1,37 @@
+diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
+--- a/upstream/mmdebstrap/tarfilter
++++ b/upstream/mmdebstrap/tarfilter
+@@ -273,12 +273,32 @@ def main():
+                 if len(comps) <= args.strip_components:
+                     continue
+                 member.name = "/".join(comps[args.strip_components :])
++                member.pax_headers.pop("path", None)
++                if member.islnk():
++                    link_comps = member.linkname.split("/")
++                    if len(link_comps) <= args.strip_components:
++                        continue
++                    member.linkname = "/".join(
++                        link_comps[args.strip_components :]
++                    )
++                    member.pax_headers.pop("linkpath", None)
+             member.pax_headers = {
+                 k: v
+                 for k, v in member.pax_headers.items()
+                 if not pax_filter_should_skip(k)
+             }
+@@ -294,8 +314,18 @@ def main():
+                 member.gid += args.idshift
+             if hasattr(args, "trans"):
++                original_name = member.name
++                original_linkname = member.linkname
+                 for r, s in args.trans:
+                     member.name = r.sub(s, member.name)
++                    if member.islnk():
++                        member.linkname = r.sub(s, member.linkname)
++                if member.name != original_name:
++                    member.pax_headers.pop("path", None)
++                if member.islnk() and member.linkname != original_linkname:
++                    member.pax_headers.pop("linkpath", None)
+             if member.isfile():
+                 with in_tar.extractfile(member) as file:
+                     out_tar.addfile(member, file)
