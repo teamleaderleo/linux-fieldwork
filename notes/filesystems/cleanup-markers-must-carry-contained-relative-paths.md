@@ -22,11 +22,14 @@ During setup:
 
 1. canonicalize the root;
 2. canonicalize the existing source;
-3. derive the destination below the root;
-4. resolve existing destination components;
-5. require a strict descendant of the root;
-6. perform the operation against that canonical destination;
-7. record only the root-relative destination, without a leading slash, empty component, `.` or `..`.
+3. preserve the configured destination identity when the consumer will reopen that exact path;
+4. reject a spelling whose components cannot remain reachable after normalization;
+5. resolve existing destination components;
+6. require a strict descendant of the root;
+7. perform the operation against that canonical destination;
+8. record only the root-relative destination, without a leading slash, empty component, `.` or `..`.
+
+Source and destination identities can differ. A terminal source symlink may safely use its canonical referent as the bind source while retaining the configured symlink pathname as the destination. Parent components require more care: turning `spelling/../repository` into `repository` leaves the configured path unreachable unless `spelling` also exists below the generated root. Reject that spelling or reproduce every required component deliberately.
 
 During cleanup:
 
@@ -70,7 +73,9 @@ A focused regression should cover:
 - a baseline traversal that points outside the root;
 - candidate rejection before creation, copy, mount, removal, or unmount;
 - a normal source and contained target;
-- embedded source traversal that canonicalizes to a contained target and marker;
+- a terminal source symlink whose configured destination remains reachable;
+- a parent-component spelling that would become unreachable after lexical normalization;
+- a harmless dot component whose configured path stays reachable;
 - a symlinked target parent;
 - a marker with `..`;
 - a marker whose current resolution follows a symlink outside the root;
@@ -87,3 +92,4 @@ A focused regression should cover:
 - `tests/test_file_mirror_automount_containment.py`
 - `tests/test_file_mirror_automount_cleanup_preflight.py`
 - `tests/test_file_mirror_automount_source_normalization.py`
+- `tests/test_file_mirror_automount_parent_component_reachability.py`
