@@ -93,3 +93,43 @@ Repair commits:
 - `4d6cfc383df94cb21f4b86000398e948b65d6da7`: add direct GNU differential regressions for lookahead, noncapturing groups, inline flags, and named groups.
 
 The retained edge patch parses cleanly with `git apply --numstat`. The four local GNU reference probes used disposable directories and left no persistent state. Exact stacked application, full inherited regression, repository discovery, cleanup/rerun, and hosted CI remain the acceptance gates for the repaired head.
+
+## Helper H follow-up — malformed interval and unmatched-close parity
+
+Post-merge differential probes found three success-versus-error gaps:
+
+```text
+expression      merged candidate         GNU tar 1.35
+s/a{}/X/x       success, literal {}      status 2
+s/a{2/X/x       success, literal {2      status 2
+s/a)/X/x        Python pattern error      success, literal )
+```
+
+The follow-up changes the retained edge patch only:
+
+- an active `{` that does not begin a parsed interval now fails before archive
+  output in both basic and extended mode;
+- an unmatched closing `)` is escaped as a literal only in extended mode;
+- balanced extended groups and active basic `\)` keep their prior behavior.
+
+New controls cover six malformed intervals and three unmatched-close matches
+directly against GNU tar 1.35 under `LC_ALL=C`.
+
+Local gate:
+
+```text
+git apply --numstat tarfilter-transform-regex-edge-cases.patch
+113  1  upstream/mmdebstrap/tarfilter
+
+python3 -m unittest discover -s tests -p 'test_tarfilter_transform_regex*.py' -v
+Ran 23 tests
+OK
+
+python3 -m unittest discover -s tests -p 'test_tarfilter_transform_regex*.py' -q
+Ran 23 tests
+OK
+```
+
+The caller-selected temporary root and generated Python caches were removed
+after the rerun. Hosted exact-head CI and an independent final diff review
+remain before release-candidate promotion.

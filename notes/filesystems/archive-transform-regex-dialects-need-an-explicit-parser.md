@@ -103,7 +103,7 @@ Add:
 - Python-only group extensions such as `(?=...)`, `(?:...)`, inline flags, and
   named groups, which GNU tar rejects;
 - malformed active intervals and unmatched closing groups, whose GNU/Python
-  error behavior still needs an explicit policy.
+  error behavior needs an explicit policy.
 
 Compare actual archive metadata with GNU tar under a recorded locale. Exit status alone cannot detect a successful wrong rename.
 
@@ -117,11 +117,12 @@ Compare actual archive metadata with GNU tar under a recorded locale. Exit statu
 The retained candidate passed 21 focused GNU tar 1.35 differential tests twice
 on a synthetic merge with current `main` at reviewed head
 `4555c5c250c1afedb3947fd1a7b5a0323bd9d262`. A follow-up malformed-grammar
-probe found two remaining success-versus-error mismatches: GNU rejects active
+probe found two success-versus-error mismatches: GNU rejects active
 `{` sequences such as `a{}` and `a{2`, while Python treats them as literals;
 GNU extended regex treats an unmatched closing `)` as a literal, while Python
-rejects it. These are bounded follow-up work and should stay visible in any
-upstream draft.
+rejects it. The follow-up candidate now rejects unparsed active intervals and
+escapes unmatched closing parentheses only in extended mode. Six interval
+controls and three unmatched-close controls compare directly with GNU tar.
 
 This note covers the basic/extended dialect switch and translator design.
 Persistent `flags=` statements, multiple substitutions, replacement case

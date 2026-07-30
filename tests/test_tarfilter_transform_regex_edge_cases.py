@@ -160,6 +160,57 @@ class TarfilterTransformRegexEdgeCasesTest(
                     )
                     self.assertNotEqual(reference.returncode, 0)
 
+    def test_malformed_active_intervals_are_rejected_like_gnu(self) -> None:
+        cases = (
+            ("aaaa", "s/a{}/X/x"),
+            ("aaaa", "s/a{2/X/x"),
+            ("aaaa", "s/a{x}/X/x"),
+            ("aaaa", r"s/a\{\}/X/"),
+            ("aaaa", r"s/a\{2/X/"),
+            ("aaaa", r"s/a\{x\}/X/"),
+        )
+        with tempfile.TemporaryDirectory(prefix="tarfilter-regex-bad-interval-") as td:
+            work = pathlib.Path(td)
+            candidate = self.prepare_candidate(
+                work / "candidate-work", include_regex_patch=True
+            )
+            for member_name, expression in cases:
+                with self.subTest(member=member_name, expression=expression):
+                    filtered = self.run_filter(candidate, member_name, expression)
+                    reference = self.run_gnu(
+                        work / expression.encode().hex(),
+                        member_name,
+                        expression,
+                    )
+                    self.assertNotEqual(filtered.returncode, 0)
+                    self.assertEqual(filtered.stdout, b"")
+                    self.assertIn(
+                        "invalid active regex interval",
+                        filtered.stderr.decode("utf-8", "replace"),
+                    )
+                    self.assertNotEqual(reference.returncode, 0)
+
+    def test_unmatched_extended_close_is_literal_like_gnu(self) -> None:
+        cases = (
+            (")", "s/)/X/x", "X"),
+            ("a)", "s/a)/X/x", "X"),
+            ("a)b", "s/a)b/X/x", "X"),
+        )
+        with tempfile.TemporaryDirectory(prefix="tarfilter-regex-close-") as td:
+            work = pathlib.Path(td)
+            candidate = self.prepare_candidate(
+                work / "candidate-work", include_regex_patch=True
+            )
+            for member_name, expression, expected_name in cases:
+                with self.subTest(member=member_name, expression=expression):
+                    self.assert_matches_gnu(
+                        candidate,
+                        work / expression.encode().hex(),
+                        member_name,
+                        expression,
+                        {expected_name: ("file", "")},
+                    )
+
     def test_edge_patch_source_contract(self) -> None:
         with tempfile.TemporaryDirectory(prefix="tarfilter-regex-edge-source-") as td:
             candidate = self.prepare_candidate(
@@ -185,6 +236,11 @@ class TarfilterTransformRegexEdgeCasesTest(
                 'raise ValueError("consecutive basic-regex intervals are invalid")',
                 source,
             )
+            self.assertIn(
+                'raise ValueError("invalid active regex interval")',
+                source,
+            )
+            self.assertIn('if extended and not group_starts:', source)
 
 
 if __name__ == "__main__":
