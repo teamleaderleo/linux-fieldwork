@@ -1,7 +1,7 @@
 diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh candidate/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh
---- base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh	2026-07-30 15:29:41.261301911 +0000
-+++ candidate/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh	2026-07-30 15:31:59.065305058 +0000
-@@ -8,13 +8,44 @@
+--- base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh	2026-07-30 20:06:42.852498534 +0000
++++ candidate/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh	2026-07-30 20:06:42.856498534 +0000
+@@ -8,13 +8,42 @@
  	set -x
  fi
  
@@ -47,7 +47,7 @@ diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh ca
  
  case $MMDEBSTRAP_MODE in
  	root|unshare)
-@@ -23,19 +54,10 @@
+@@ -23,19 +52,10 @@
  		echo "removing the following directories:" >&2 ;;
  esac
  
@@ -73,8 +73,8 @@ diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh ca
 +rm "$marker"
  rmdir --ignore-fail-on-non-empty "$rootdir/run/mmdebstrap"
 diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh candidate/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh
---- base/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh	2026-07-30 15:31:59.065305058 +0000
-+++ candidate/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh	2026-07-30 15:31:59.065305058 +0000
+--- base/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh	2026-07-30 20:06:42.852498534 +0000
++++ candidate/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh	2026-07-30 20:06:42.856498534 +0000
 @@ -6,31 +6,73 @@
  	set -x
  fi
