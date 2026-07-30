@@ -44,7 +44,7 @@ The candidate rejected all three non-ASCII expressions before the failure. GNU t
 
 The correction keeps the rejection contract and decodes GNU tar diagnostic output with `errors="replace"`. The test does not depend on localized error wording.
 
-## Corrected exact-head code run
+## Corrected code run
 
 - Candidate code head: `b1e5df6b3fb2b77d6e54fc57f27f83a5df3c7113`
 - Linux Fieldwork CI run: `30543032983`
@@ -63,8 +63,17 @@ The full repository suite passed after the ASCII-only parser correction and defe
 - independent regular-member, hard-link-target, and symlink-target counting;
 - rejection of non-ASCII numeral characters by both candidate and GNU tar.
 
+## Documentation-complete head run
+
+- Complete branch head: `aa2b454cbcae1180188d5d096a7a627b390548f0`
+- Linux Fieldwork CI run: `30543253886`
+- Job: `90872890121` (`lab-tools`)
+- Conclusion: success
+
+This run validates the six-file final review surface before the final receipt-only commit: investigation, result history, exploratory observations, incremental patch, reusable note, and executable regression.
+
 ## Result boundary
 
 The result establishes the retained incremental patch against the PR #68 predecessor and GNU tar 1.35 for the tested numeric selector matrix. It excludes `x`, `flags=` statements, semicolon-separated expressions, complete BRE translation, case-conversion escapes, and duplicate-letter-flag compatibility.
 
-Documentation-only commits follow the corrected code head. The complete branch head must carry a final green Linux Fieldwork CI receipt before merge or final review.
+This file is the final receipt-only commit. Its exact head requires one last green Linux Fieldwork CI run so the peer-review anchor includes the recorded validation history itself.
