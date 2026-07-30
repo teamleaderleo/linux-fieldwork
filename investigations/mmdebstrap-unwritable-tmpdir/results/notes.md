@@ -2,35 +2,47 @@
 
 ## In simple words
 
-The caller supplied an existing directory through `TMPDIR`, and the probe confirmed that the caller could not write there. `mmdebstrap` did not report that condition. It created its temporary root under `/tmp`, completed the dry-run successfully, and removed the fallback directory during cleanup.
+The original `mmdebstrap` revision silently ignored an explicitly configured but unwritable `TMPDIR` and used `/tmp`. The candidate now rejects that configuration before creating the temporary root. A writable explicit directory still works and is left empty after cleanup.
 
 ## Environment
 
-- GitHub Actions run: `30509181216`
-- Job: `90765352097`
+- Verification run: `30510240339`
+- Job: `90768531961`
 - Runner: GitHub-hosted Ubuntu 24.04.4 LTS
-- Imported source revision: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
+- Imported upstream revision: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
+- Candidate source commit: `927263e1a883e21573847da362456af637148868`
 - Mode: `chrootless`
 - Variant: `apt`
-- Operation: dry-run with null output
+- Operation: real `mmdebstrap` dry-run with null output
 
-## Observation
+## Unwritable case
 
 - Requested `TMPDIR`: `/home/runner/work/_temp/linux-fieldwork-mmdebstrap-tmpdir/unwritable`
-- Requested directory writable by the invoking user: no
-- Selected temporary root: `/tmp/mmdebstrap.xZqT2ZRG4w`
-- Diagnostic naming the unusable requested directory: none
+- Command status: `25`
+- Selected temporary root: none
+- Diagnostic: `cannot use TMPDIR` followed by the exact requested path and `Permission denied`
+- Result: rejected before apt setup and temporary-root fallback
+
+## Writable case
+
+- Requested `TMPDIR`: `/home/runner/work/_temp/linux-fieldwork-mmdebstrap-tmpdir/writable`
 - Command status: `0`
-- Cleanup: selected fallback directory removed
+- Selected temporary root: `/home/runner/work/_temp/linux-fieldwork-mmdebstrap-tmpdir/writable/mmdebstrap.fE8Jq8ztSf`
+- Cleanup: complete; no files remained below the requested directory
+- Result: explicit usable directory honored
 
-## Conclusion
+## Candidate
 
-At this revision and under the declared environment, an explicitly configured but unwritable `TMPDIR` is silently replaced with a `/tmp/mmdebstrap.*` directory. This establishes the local program behavior. It does not yet decide whether upstream should fail, warn, or retain fallback behavior.
+The executable now validates a non-empty explicit `TMPDIR` by creating, closing, and removing a small temporary file in that exact directory. Failure produces a path-specific error. The imported upstream test registry includes `fail-with-unwritable-tmpdir` in `chrootless` mode.
 
-## Earlier blocked attempt
+## Verification status
 
-The first attempt used `--mode=unshare`. The hosted runner failed during user-namespace setup before temporary-root selection with `setgid failed: Operation not permitted`. The retained result therefore uses `chrootless`, which reaches the same tarball temporary-root selection code without requiring the blocked namespace operation.
+- Perl syntax: passed
+- Upstream regression-script shell syntax: passed
+- Fieldwork runner shell syntax: passed
+- Focused runtime regression: passed
+- Full Debian test matrix: not run
 
 ## Authority
 
-No upstream issue, message, merge request, or patch submission was created.
+No Debian issue, email, merge request, comment, or patch submission was created.
