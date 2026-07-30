@@ -18,6 +18,7 @@ This candidate canonicalizes sources, resolves every generated destination, requ
 - containment regression: `tests/test_file_mirror_automount_containment.py`
 - generated-root regression: `tests/test_file_mirror_automount_root_guard.py`
 - cleanup preflight regression: `tests/test_file_mirror_automount_cleanup_preflight.py`
+- source-normalization regression: `tests/test_file_mirror_automount_source_normalization.py`
 - reusable note: `notes/filesystems/cleanup-markers-must-carry-contained-relative-paths.md`
 
 ## Source boundary
@@ -39,15 +40,15 @@ Local package files use a canonical source path, but their target also relies on
 The setup hook now:
 
 1. canonicalizes the generated root with `realpath -e` and refuses `/`;
-2. rejects empty, absolute, doubled-separator, dot, and parent repository components before source access;
-3. canonicalizes each existing source;
+2. rejects empty, absolute-after-prefix, and leading-parent repository spellings;
+3. canonicalizes each existing source, including embedded `.` and `..` components;
 4. derives a root-relative destination from the canonical absolute source;
 5. resolves the destination with `realpath -m` so existing target symlinks are visible;
 6. requires the destination to be a strict descendant of the generated root;
 7. uses the canonical source and destination for bind/copy operations;
 8. records only the canonical relative destination without a leading slash or `..` component.
 
-The same destination helper is used for local package files.
+The same destination helper is used for local package files. An embedded parent component such as `spelling/../repository` resolves to the canonical repository and produces a canonical contained target and marker. A leading spelling such as `../../etc` remains rejected before source or target action.
 
 The cleanup hook canonicalizes the root, refuses `/`, and treats the marker as untrusted persisted input. Its first NUL-delimited pass validates every entry and current target without invoking `umount` or `rm -r`. Only after that complete preflight succeeds does a second pass repeat lexical and canonical containment checks immediately before each cleanup action. Any rejected entry leaves the marker present for diagnosis.
 
@@ -58,7 +59,8 @@ The complete preflight prevents a valid early entry from being removed or unmoun
 The disposable regressions use fake `apt-get`, `mount`, `umount`, and destructive `rm -r` commands. They perform no real mount or package operation. They require:
 
 - the imported baseline to derive an out-of-root target from `file:///../../etc`;
-- the candidate to reject that input before target creation, mount, or marker write;
+- the candidate to reject that leading-parent input before target creation, mount, or marker write;
+- an embedded parent component to normalize to the canonical source, contained target, and canonical marker;
 - a valid local repository to map below the root and create one canonical relative marker entry;
 - an existing target-parent symlink that resolves outside the root to be rejected before mount;
 - a local package file to use the same contained target contract;
@@ -70,7 +72,7 @@ The disposable regressions use fake `apt-get`, `mount`, `umount`, and destructiv
 - the retained patch to apply exactly to temporary source copies;
 - both candidate scripts to pass POSIX shell syntax validation.
 
-Packet F local review also executed a direct cleanup harness in `root` and `fakechroot` modes. Both rejected a later traversal entry before any fake action, preserved the marker and valid target, then succeeded immediately after the marker was corrected.
+Packet F local review executed direct setup and cleanup harnesses. Setup normalized an embedded parent component to the canonical source and marker while rejecting leading traversal. Cleanup in `root` and `fakechroot` modes rejected a later traversal entry before any fake action, preserved the marker and valid target, then succeeded immediately after the marker was corrected.
 
 ## Evidence boundary
 
@@ -86,4 +88,4 @@ All files and symlinks live below `TemporaryDirectory`. The only real filesystem
 
 ## Disposition
 
-Packet F repaired mixed-marker cleanup so static invalid marker state causes zero destructive action. PR #179 carries the exact-head routing receipt and CI result. The remaining explicit hold boundary is the documented pathname/marker replacement race; it does not block final human review of this contained candidate. No Debian or external upstream issue, patch, email, merge request, comment, or review is authorized or created by this record.
+Packet F repaired mixed-marker cleanup so static invalid marker state causes zero destructive action and aligned embedded traversal handling with issue #164's canonicalization requirement. PR #179 carries the exact-head routing receipt and CI result. The remaining explicit hold boundary is the documented pathname/marker replacement race; it does not block final human review of this contained candidate. No Debian or external upstream issue, patch, email, merge request, comment, or review is authorized or created by this record.
