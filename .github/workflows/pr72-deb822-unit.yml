@@ -13,25 +13,31 @@ jobs:
   focused-unit:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Fetch exact PR72 source without checkout noise
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir /tmp/source
+          gh api "/repos/${GITHUB_REPOSITORY}/tarball/5aed66e8193c67b91af75dd8e6e3ea676a104b59" > /tmp/source.tar.gz
+          tar -xzf /tmp/source.tar.gz --strip-components=1 -C /tmp/source
+
       - name: Run focused PR72 tests
         shell: bash
+        working-directory: /tmp/source
         run: |
           set +e
           python3 -m unittest \
             tests.test_mmdebstrap_sourcesfilter_deb822 \
-            tests.test_reproduction_harness -v \
-            > /tmp/focused.log 2>&1
+            tests.test_reproduction_harness -v
           status=$?
           set -e
-          cat /tmp/focused.log
           printf 'focused_status=%s\n' "$status"
 
       - name: Inspect failed reproduction preflight artifact
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8760389758/zip" > /tmp/a.zip
