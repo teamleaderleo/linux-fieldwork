@@ -1,0 +1,28 @@
+name: PR94 containment diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pr94-containment-unit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  focused-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Fetch exact PR94 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir /tmp/source
+          gh api "/repos/${GITHUB_REPOSITORY}/tarball/0f962058040c4e9bb2565e38129fe6ae105c8671" > /tmp/source.tar.gz
+          tar -xzf /tmp/source.tar.gz --strip-components=1 -C /tmp/source
+      - name: Run only containment regression
+        shell: bash
+        working-directory: /tmp/source
+        run: python3 -m unittest tests.test_caching_proxy_cache_containment -v
