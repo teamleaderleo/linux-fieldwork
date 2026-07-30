@@ -129,11 +129,6 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
          unsupported = sorted(
              set(flag for flag in flag_text if flag not in "0123456789") - supported
          )
-@@ -174,7 +286,10 @@ class TransformAction(argparse.Action):
-         if number_text:
-             occurrence = int(number_text)
+@@ -174,1 +286,2 @@ class TransformAction(argparse.Action):
          pattern = _unescape_delimiter(pattern, delimiter)
 +        pattern = _translate_pattern(pattern, extended="x" in flag_text)
-         items.append(
-             (
-                 re.compile(pattern, flags),
