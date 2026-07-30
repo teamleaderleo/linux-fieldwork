@@ -1,7 +1,7 @@
 diff --git a/debian/tests/testsuite b/debian/tests/testsuite
 --- a/debian/tests/testsuite
 +++ b/debian/tests/testsuite
-@@ -146,6 +146,13 @@ cat << END > ./mmdebstrap
+@@ -146,6 +146,14 @@ cat << END > ./mmdebstrap
  exit(1)
  END
  
@@ -16,7 +16,7 @@ diff --git a/debian/tests/testsuite b/debian/tests/testsuite
  # must not be used during testing -- installed version must be used instead
  cat << END > ./tarfilter
  #!/usr/bin/env python3
-@@ -175,7 +182,7 @@ fi
+@@ -175,7 +183,7 @@ fi
  # HAVE_QEMU=no because there is no kvm kernel module
  # HAVE_BINFMT=no because there is no binfmt_misc kernel module
  ret=0
