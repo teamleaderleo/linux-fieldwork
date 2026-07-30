@@ -13,11 +13,11 @@ The apt-managed product probe on PR #105 showed that mmdebstrap appends apt's co
 - Artifact: `8759472834`.
 - Digest: `sha256:95e179066eee3311a112ccce5b9bb5ff5b8361808415295cab0888b1a2d898a8`.
 
-The first baseline run failed in the shell carrier before mmdebstrap execution and is not product evidence.
+The first baseline run failed in the shell carrier before mmdebstrap execution and carries no product result.
 
-## Candidate design
+## Inner PATH candidate
 
-The candidate stores apt's configured `DPkg::Path` before mmdebstrap appends it to the caller path for its own host-side tool discovery.
+The current source stores apt's configured `DPkg::Path` before mmdebstrap appends it to the caller path for its own host-side tool discovery.
 
 `chrootless_dpkg_environment()` then receives the selected root and that stored path. It:
 
@@ -27,9 +27,48 @@ The candidate stores apt's configured `DPkg::Path` before mmdebstrap appends it 
 - preserves the existing mmdebstrap-owned debconf and locale values, reproducibility controls, QEMU state, and conditional fakeroot state;
 - is used by both direct `run_essential()` and apt-managed `run_install()`.
 
-Apt itself retains the caller environment and combined host-side path so repository authentication, proxying, and apt helpers are not changed by this candidate.
+Apt itself retains the caller environment and combined host-side path so repository authentication, proxying, and apt helpers keep their existing boundary.
 
-## APT precedent and deliberate incompatibility
+## Outer-wrapper defect
+
+Exact source review found that both chrootless launch paths still resolve the sanitizing wrapper through caller-influenced PATH:
+
+```perl
+ARGV => [
+    'env',
+    chrootless_dpkg_environment(...),
+```
+
+and:
+
+```perl
+'-oDir::Bin::dpkg=env',
+```
+
+A caller-leading fake `env` can execute before the clean `PATH=<DPkg::Path>` assignment takes effect. The current source therefore protects inner `dpkg` lookup while leaving the outer sanitizer executable caller-controlled.
+
+## Retained repair patch
+
+Helper B added:
+
+```text
+investigations/mmdebstrap-chrootless-env/0001-use-absolute-env-wrapper.patch
+```
+
+The patch introduces `chrootless_env_path()` with `/usr/bin/env` as the explicit authority. It requires the path to exist, be a regular file, and be executable. Both direct `run_essential()` and apt-managed `run_install()` use that absolute path. Non-chrootless apt execution keeps its existing `Dir::Bin::dpkg=env` behavior.
+
+`tests/test_mmdebstrap_chrootless_env_wrapper_patch.py` applies the patch to an exact temporary copy of the current imported source and requires:
+
+- clean patch application;
+- existence, regular-file, and executable checks;
+- the direct chrootless call to use `chrootless_env_path()`;
+- the apt-managed chrootless option to use the same helper;
+- the inner `env -i`, canonical `PATH`, and target `TMPDIR` contract to remain;
+- Perl syntax to pass.
+
+The repair stays a retained patch until exact candidate/mutation controls exercise fake `env` in both launch paths. The imported source remains unchanged by this review unit.
+
+## APT path authority
 
 APT documents `DPkg::Path` as the string used for the `PATH` environment variable when it runs dpkg. Since apt 1.8 its default is:
 
@@ -37,82 +76,57 @@ APT documents `DPkg::Path` as the string used for the `PATH` environment variabl
 /usr/sbin:/usr/bin:/sbin:/bin
 ```
 
-APT also permits an explicitly empty `DPkg::Path`, meaning that apt does not change the inherited `PATH`.
+APT also permits an explicitly empty `DPkg::Path`, meaning apt leaves the inherited `PATH` unchanged.
 
 - APT NEWS: <https://sources.debian.org/src/apt/3.0.3/debian/NEWS>
 - apt.conf(5): <https://manpages.debian.org/unstable/apt/apt.conf.5.en.html>
 
-The candidate does **not** reproduce the empty-value behavior in chrootless mode. It fails closed with:
+The current inner-PATH candidate deliberately rejects an empty value in chrootless mode:
 
 ```text
 cannot determine chrootless maintainer-script PATH
 ```
 
-That is a deliberate hardening and reproducibility choice. Falling back to the inherited path would recreate issue #107. Silently substituting a hard-coded path would ignore an administrator's explicit apt configuration. The candidate therefore requires the incompatibility to be documented and tested rather than hidden.
+This preserves the issue #107 boundary and requires an explicit configured path for chrootless maintainer scripts.
 
-## Apt-managed candidate evidence
+## Earlier evidence
 
-Exact tested head: `cdcf7f04259638596abe02b4d8897541e47e3f02`.
-
-The candidate and clean runs both supplied:
-
-```text
-/usr/sbin:/usr/bin:/sbin:/bin
-```
-
-Neither resolved the disposable caller command. A one-line mutation restored `PATH=$ENV{PATH}` and reproduced caller-command execution. The fixture also required `dpkg`, `ldconfig`, `start-stop-daemon`, and `update-rc.d` to resolve from absolute system paths.
+Exact tested head `cdcf7f04259638596abe02b4d8897541e47e3f02` supplied `/usr/sbin:/usr/bin:/sbin:/bin` to candidate and clean runs. Neither resolved the disposable caller command. A one-line mutation restored `PATH=$ENV{PATH}` and reproduced caller-command execution.
 
 - Workflow: `30544183531`, success.
 - Artifact: `8759979312`.
 - Digest: `sha256:6eaf2dbd49de64d858ad5825c5cc4ec4e5bf43773705009b623d02d606419ee9`.
 
-The same head passed:
+That evidence supports the inner PATH direction. It predates the outer-wrapper finding and cannot close it.
 
-- Linux Fieldwork CI `30544183512`;
-- chrootless credential/environment security `30544183499`;
-- explicit TMPDIR runtime verification `30544183498`;
-- TMPDIR deep review and Perl::Critic `30544183493`.
+## Current controls
 
-## Review corrections
-
-1. The first source-transform workflow used indentation-sensitive multiline strings and failed before modifying the source. Exact escaped markers replaced that carrier.
-2. Existing TMPDIR unit tests encoded the helper's former one-argument signature and result line. They now assert root plus canonical path, target TMPDIR, empty-path refusal, and both call sites.
-3. The candidate test retains a mutation control rather than treating a green candidate transaction alone as proof.
-4. Peer review found that the first PATH harness accepted arbitrary non-root runtime parents and chmodded the imported source in place. Both apt-managed and direct probes now use an explicit disposable-parent allowlist, execute preserved runtime copies, and assert source mode and repository cleanliness. Issue #130 tracks the equivalent defects in merged harnesses.
-5. The first direct essential-package transaction reached `run_essential()` and proved that the candidate bypassed the caller `dpkg` wrapper, but current sid later failed on known package chrootless limitations. The revised probe records path reach and package outcome separately and runs the caller-PATH mutation despite the shared later failure.
-
-## Exact-head controls now present
-
-The self-contained PR #109 head includes:
+PR #109 includes:
 
 - tainted and clean apt-managed package transactions;
 - a one-line caller-PATH mutation;
 - expected-tool lookup for `dpkg`, `ldconfig`, `start-stop-daemon`, and `update-rc.d`;
-- an explicit `APT_CONFIG` with empty `DPkg::Path`, which must fail closed before the fixture package is installed;
-- a real `--variant=essential` direct-path probe with a caller `dpkg` wrapper and mutation;
+- explicit non-empty and empty `APT_CONFIG` `DPkg::Path` controls;
+- a local-repository `--variant=essential` direct-path probe;
 - runtime-parent negative controls;
 - source-copy and repository-cleanliness assertions;
-- the existing credential/environment, explicit TMPDIR, deep-review, formatter, and repository CI gates.
+- credential/environment, explicit TMPDIR, deep-review, formatter, and repository CI gates;
+- the retained absolute-wrapper patch and patch-execution regression.
 
-These controls are listed here as present, not as passed, until the exact-head workflows complete.
+## Remaining repair gates
 
-## Anti-patterns avoided
+1. Apply the retained patch to the production candidate source on a clean current-main branch.
+2. Add candidate and mutation controls with a fake leading-path `env` for direct and apt-managed paths.
+3. Exercise missing, non-regular, and non-executable absolute-wrapper failure controls.
+4. Require a successful direct essential transaction as a distinct gate.
+5. Rerun canonical `DPkg::Path`, explicit `APT_CONFIG`, TMPDIR, credential, formatter, parity, and repository gates on one exact head.
+6. Review the complete current-main diff independently.
 
-- Do not filter path components by owner or writability at startup. That creates policy ambiguity and check-then-use windows.
-- Do not keep the caller prefix merely because apt needs its environment. Apt and dpkg are separate execution boundaries.
-- Do not silently hard-code a fallback for an explicitly empty apt setting.
-- Do not describe canonical PATH as isolation. Maintainer scripts still execute on the host.
-- Do not claim parity from selected log lines. Use the imported root-versus-chrootless and fakeroot comparisons before merge.
-- Do not let an evidence harness recursively delete beneath an arbitrary parent or mutate imported source merely to execute it.
+## Disposition
 
-## Remaining merge gates
+`REPAIR`
 
-1. Complete the exact-head apt-managed, empty-path, and direct `run_essential()` workflows.
-2. Run the imported root-versus-chrootless comparison on representative variants.
-3. Run the imported chrootless-fakeroot comparison.
-4. Exercise foreign-architecture/QEMU behavior if available.
-5. Verify non-chrootless modes remain unchanged.
-6. Review the final exact head independently.
+The inner PATH design is retained. The outer wrapper remains caller-controlled in the current product source. The exact repair patch and regression provide the next bounded implementation unit.
 
 ## Authority
 
