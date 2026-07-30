@@ -1,0 +1,10 @@
+diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
+--- a/upstream/mmdebstrap/mmdebstrap
++++ b/upstream/mmdebstrap/mmdebstrap
+@@ -3905,6 +3905,7 @@ sub chrootless_dpkg_environment() {
+     my @names = qw(
+       PATH
++      TMPDIR
+       DEBIAN_FRONTEND
+       DEBCONF_NONINTERACTIVE_SEEN
+       LC_ALL
