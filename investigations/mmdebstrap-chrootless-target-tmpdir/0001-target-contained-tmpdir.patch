@@ -145,13 +145,15 @@ index 767b4b7..5b9f019 100644
  safe_launch_succeeded=yes
  clean_rerun_succeeded=yes
 diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
-index bbe2b64..52ca220 100644
+index bbe2b64..c2a27fb 100644
 --- a/upstream/mmdebstrap/mmdebstrap
 +++ b/upstream/mmdebstrap/mmdebstrap
-@@ -3903,6 +3903,20 @@ sub run_prepare {
+@@ -3902,7 +3902,21 @@ sub run_prepare {
+     return \@chrootcmd;
  }
  
- sub chrootless_dpkg_environment() {
+-sub chrootless_dpkg_environment() {
++sub chrootless_dpkg_environment($) {
 +    my $root   = shift;
 +    my $tmpdir = "$root/tmp";
 +

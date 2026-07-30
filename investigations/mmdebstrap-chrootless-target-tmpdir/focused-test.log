@@ -1,43 +1,56 @@
-Backslash found where operator expected (Do you need to predeclare "checkokthx"?) at upstream/mmdebstrap/mmdebstrap line 4691, near "checkokthx \"
-Too many arguments for main::chrootless_dpkg_environment at upstream/mmdebstrap/mmdebstrap line 4059, near "})"
-Too many arguments for main::chrootless_dpkg_environment at upstream/mmdebstrap/mmdebstrap line 4163, near "})"
-syntax error at upstream/mmdebstrap/mmdebstrap line 4691, near "checkokthx \"
-upstream/mmdebstrap/mmdebstrap had compilation errors.
-test_assignment_is_required_to_avoid_host_tmp_fallback (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_assignment_is_required_to_avoid_host_tmp_fallback) ... FAIL
+upstream/mmdebstrap/mmdebstrap syntax OK
+test_assignment_is_required_to_avoid_host_tmp_fallback (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_assignment_is_required_to_avoid_host_tmp_fallback) ... ERROR
 test_both_chrootless_dpkg_paths_pass_the_selected_root (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_both_chrootless_dpkg_paths_pass_the_selected_root) ... ok
 test_harness_refuses_root_as_runtime_parent (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_harness_refuses_root_as_runtime_parent) ... ok
-test_helper_creates_and_assigns_target_tmpdir (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_helper_creates_and_assigns_target_tmpdir) ... FAIL
-test_helper_refuses_symlink_and_non_directory_targets (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_helper_refuses_symlink_and_non_directory_targets) ... FAIL
+test_helper_creates_and_assigns_target_tmpdir (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_helper_creates_and_assigns_target_tmpdir) ... ERROR
+test_helper_refuses_symlink_and_non_directory_targets (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_helper_refuses_symlink_and_non_directory_targets) ... ERROR
 
 ======================================================================
-FAIL: test_assignment_is_required_to_avoid_host_tmp_fallback (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_assignment_is_required_to_avoid_host_tmp_fallback)
+ERROR: test_assignment_is_required_to_avoid_host_tmp_fallback (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_assignment_is_required_to_avoid_host_tmp_fallback)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 123, in test_assignment_is_required_to_avoid_host_tmp_fallback
-    self.assertEqual(completed.returncode, 0, completed.stderr.decode())
-AssertionError: 255 != 0 : Too many arguments for main::chrootless_dpkg_environment at /tmp/lf69-perl-helper-uyt5e1yw/helper.pl line 44, near "])"
-Execution of /tmp/lf69-perl-helper-uyt5e1yw/helper.pl aborted due to compilation errors.
-
+  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 122, in test_assignment_is_required_to_avoid_host_tmp_fallback
+    completed = self.run_helper(mutant, target, caller_tmpdir)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 35, in run_helper
+    helper = self.extract_helper(source_text)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 25, in extract_helper
+    start = source_text.index(start_marker)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: substring not found
 
 ======================================================================
-FAIL: test_helper_creates_and_assigns_target_tmpdir (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_helper_creates_and_assigns_target_tmpdir)
+ERROR: test_helper_creates_and_assigns_target_tmpdir (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_helper_creates_and_assigns_target_tmpdir)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 91, in test_helper_creates_and_assigns_target_tmpdir
-    self.assertEqual(completed.returncode, 0, completed.stderr.decode())
-AssertionError: 255 != 0 : Too many arguments for main::chrootless_dpkg_environment at /tmp/lf69-perl-helper-kco5s0sc/helper.pl line 44, near "])"
-Execution of /tmp/lf69-perl-helper-kco5s0sc/helper.pl aborted due to compilation errors.
-
+  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 90, in test_helper_creates_and_assigns_target_tmpdir
+    completed = self.run_helper(source_text, target, caller_tmpdir)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 35, in run_helper
+    helper = self.extract_helper(source_text)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 25, in extract_helper
+    start = source_text.index(start_marker)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: substring not found
 
 ======================================================================
-FAIL: test_helper_refuses_symlink_and_non_directory_targets (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_helper_refuses_symlink_and_non_directory_targets)
+ERROR: test_helper_refuses_symlink_and_non_directory_targets (tests.test_mmdebstrap_chrootless_tmpdir.MmdebstrapChrootlessTmpdirTests.test_helper_refuses_symlink_and_non_directory_targets)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 154, in test_helper_refuses_symlink_and_non_directory_targets
-    self.assertIn(b"is a symlink", symlink_result.stderr)
-AssertionError: b'is a symlink' not found in b'Too many arguments for main::chrootless_dpkg_environment at /tmp/lf69-perl-helper-v90v6s1p/helper.pl line 44, near "])"\nExecution of /tmp/lf69-perl-helper-v90v6s1p/helper.pl aborted due to compilation errors.\n'
+  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 148, in test_helper_refuses_symlink_and_non_directory_targets
+    symlink_result = self.run_helper(
+                     ^^^^^^^^^^^^^^^^
+  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 35, in run_helper
+    helper = self.extract_helper(source_text)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/linux-fieldwork/linux-fieldwork/tests/test_mmdebstrap_chrootless_tmpdir.py", line 25, in extract_helper
+    start = source_text.index(start_marker)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: substring not found
 
 ----------------------------------------------------------------------
-Ran 5 tests in 0.047s
+Ran 5 tests in 0.012s
 
-FAILED (failures=3)
+FAILED (errors=3)

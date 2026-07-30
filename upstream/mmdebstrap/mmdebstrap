@@ -3902,7 +3902,7 @@ sub run_prepare {
     return \@chrootcmd;
 }
 
-sub chrootless_dpkg_environment() {
+sub chrootless_dpkg_environment($) {
     my $root   = shift;
     my $tmpdir = "$root/tmp";
 
