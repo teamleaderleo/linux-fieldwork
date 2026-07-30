@@ -6,16 +6,19 @@ on:
       - scout/lf-scout-root-01/lf-02-dpkg-root-containment
     paths:
       - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/**"
+      - "tests/test_lf02_evidence_provenance.py"
       - "upstream/mmdebstrap/**"
       - ".github/workflows/lf-02-chrootless-dpkg-root-containment.yml"
   pull_request:
     paths:
       - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/**"
+      - "tests/test_lf02_evidence_provenance.py"
       - "upstream/mmdebstrap/**"
       - ".github/workflows/lf-02-chrootless-dpkg-root-containment.yml"
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -34,11 +37,13 @@ jobs:
             libdpkg-perl \
             strace
 
-      - name: Check probe syntax
+      - name: Check probe syntax and provenance contract
         run: |
           perl -c upstream/mmdebstrap/mmdebstrap
           python3 -m py_compile \
-            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/classify-strace.py
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/classify-strace.py \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/write-provenance.py
+          python3 -m unittest tests/test_lf02_evidence_provenance.py
           bash -n \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/run-probe.sh
           for script in \
@@ -62,3 +67,68 @@ jobs:
           path: programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/results/
           if-no-files-found: warn
           retention-days: 14
+
+  provenance-receipt:
+    needs: containment
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Assert artifact provenance and normalized command views
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "lf-02-chrootless-dpkg-root-containment-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --dir evidence >/dev/null
+          python3 - evidence <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          summary_path = next(root.rglob("summary.json"))
+          summary = json.loads(summary_path.read_text())
+          provenance = summary["provenance"]
+          repository = provenance["repository"]
+          actions = provenance["github_actions"]
+          paths = provenance["path_views"]["raw"]
+
+          print(f"summary_schema_version={summary['schema_version']}")
+          print(f"provenance_schema_version={provenance['schema_version']}")
+          print(f"checked_out_head={repository['checked_out_head']}")
+          print(f"detached_head={str(repository['detached_head']).lower()}")
+          print(f"effective_ref={repository['effective_ref']}")
+          print(f"github_sha={actions['sha']}")
+          print(f"github_ref={actions['ref']}")
+          print(f"github_head_ref={actions['head_ref']}")
+          print(f"github_base_ref={actions['base_ref']}")
+          print(f"github_run={actions['run_id']} attempt={actions['run_attempt']}")
+
+          assert summary["schema_version"] == 2
+          assert provenance["schema_version"] == 1
+          assert actions["active"] is True
+          assert actions["run_id"] == str(__import__("os").environ["GITHUB_RUN_ID"])
+          assert actions["run_attempt"] == str(__import__("os").environ["GITHUB_RUN_ATTEMPT"])
+          assert repository["checked_out_head"]
+          assert repository["effective_ref"]
+          if actions["event_name"] == "pull_request":
+              assert repository["detached_head"] is True
+              assert actions["head_ref"]
+              assert actions["base_ref"]
+              assert repository["effective_ref"] == actions["head_ref"]
+
+          assert summary["command_views"]
+          for name, views in summary["command_views"].items():
+              normalized = summary_path.parent.joinpath(views["normalized"])
+              raw = summary_path.parent.joinpath(views["raw"])
+              normalized_text = normalized.read_text()
+              raw_text = raw.read_text()
+              assert normalized.is_file() and raw.is_file()
+              assert paths["repository_root"] not in normalized_text
+              assert paths["runtime_root"] not in normalized_text
+              assert "<runtime>" in normalized_text or "<repo-root>" in normalized_text
+              assert paths["runtime_root"] in raw_text or paths["repository_root"] in raw_text
+              print(f"command={name} normalized={normalized.name} raw={raw.name}")
+          PY
