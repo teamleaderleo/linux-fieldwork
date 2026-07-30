@@ -37,6 +37,7 @@ Environment sanitization tests should include a filesystem consequence. Proving 
 - Issue: #69
 - Original hardening: PR #57
 - Repair candidate: PR #73
+- Final candidate head: `f7f8402ea2b721eea829140bcb7bb6206ff64ebd`
 
 ## Example
 
@@ -71,13 +72,13 @@ The PR #65 diagnostic ran the credential/socket mitigation successfully and then
 
 PR #73's retained candidate regression applies a one-line allowlist patch to a temporary source copy, requires merged main to reproduce host `/tmp`, and requires the candidate to use `<target>/tmp`, mode `1777`, with cleanup, fresh rerun, and fakeroot coverage.
 
-Executed candidate head `43005ead9bd5967470a2095fd2c55914744e524e` passed:
+Final head `f7f8402ea2b721eea829140bcb7bb6206ff64ebd` passed:
 
-- target-TMPDIR run `30536852201`, job `90852098465`;
-- Linux Fieldwork CI run `30536852205`;
-- chrootless environment security run `30536852182`.
+- target-TMPDIR run `30537044267`, job `90852710660`;
+- Linux Fieldwork CI run `30537044255`;
+- chrootless environment security run `30537044293`.
 
-Artifact `8757007293` has digest `sha256:c1246052455824d008d04a61b77fb2acc0b7c6a7baa0da301f56c7cb7729594b`.
+Artifact `8757082452` has digest `sha256:5c696c7ed15a5fca018da44cf9bd934da41b8d3f0b78ef8075ef3a27215825ab`.
 
 ## Environment and assumptions
 
