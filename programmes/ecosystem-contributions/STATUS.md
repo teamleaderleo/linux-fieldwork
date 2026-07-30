@@ -15,18 +15,21 @@ This programme turns Linux package collections, runtimes, developer tools, found
 
 ## Retained rounds
 
+- [`2026-07-31 name-brand actionable scan`](../../research/rounds/2026-07-31-name-brand-actionable-scan/selection.md) — ranked BuildKit, libarchive, util-linux, systemd, and capability-gated work; promoted five bounded investigations; retained duplicate stops.
 - [`2026-07-30 ecosystem candidate scan`](../../research/rounds/2026-07-30-ecosystem-candidate-scan/selection.md) — selections, environment gates, live-overlap repair, and active-fix references.
 - [`LF-35 round 001`](lanes/LF-35-package-collection-candidate-harvesting/artifacts/round-001.md) — `gomarkdoc` test restoration, Homebrew recurring intake, AAVMF capability queue, and duplicate stops.
 - [`LF-36 round 001`](lanes/LF-36-downstream-patch-retirement/artifacts/round-001.md) — canonical fixes and exact triggers for future downstream patch removal.
 
 ## First sequence
 
-1. Run the `gomarkdoc` test-restoration matrix in investigation #136: inherited `GOFLAGS`, working directory, subpackage selection, and pinned nixpkgs revisions.
-2. Select a leaf from the Homebrew unsolved-formula tracker with current logs and no active equivalent work.
-3. Run systemd-oomd investigation #140 in a cgroup-v2 VM and capture ManagedOOM Varlink notifications around a user-manager reload.
-4. Keep AAVMF behind aarch64 QEMU capability.
-5. Retain libarchive PPMd short reads as an active-fix reference through upstream PR 3340.
-6. Recheck canonical fixes as they land so downstream patches and workarounds can be removed promptly.
+1. Run the libarchive seekability/bidder matrix in investigation #230.
+2. Map the canonical util-linux `lscpu` ownership correction and stable backport boundary in investigation #234.
+3. Run the BuildKit multi-platform symlink exporter matrix in investigation #233 when the pinned container environment is available.
+4. Run systemd-oomd investigation #140 in a cgroup-v2 VM and capture ManagedOOM Varlink notifications around a user-manager reload.
+5. Build investigation #232's direct fsck/udev synchronization fixture before escalating to repeated VM boots.
+6. Compare rootful and rootless BuildKit OCI metadata in investigation #229.
+7. Keep AAVMF behind aarch64 QEMU capability.
+8. Recheck canonical fixes as they land so downstream patches and workarounds can be removed promptly.
 
 ## Candidate target classes
 
