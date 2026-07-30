@@ -6866,8 +6866,8 @@ sub main() {
                 }
             }
         }
-        # since the output is a tarball, we create the rootfs in a temporary
-        # directory
+        # create the rootfs in a temporary directory before creating or
+        # discarding the requested output
         my @tempdir_options = (TMPDIR => 1);
         if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne '') {
             @tempdir_options = (DIR => $ENV{TMPDIR});
