@@ -91,11 +91,24 @@ SNAPSHOTS = {
     ),
     "purge": ("absent", None, {}),
 }
+SERVICE_HEADER = "operation\tpath\tresult\tcategory\n"
 
 
 def write_json(path: pathlib.Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def write_service_rows(
+    results: pathlib.Path,
+    name: str,
+    rows: list[tuple[str, str, str]],
+) -> None:
+    body = SERVICE_HEADER + "".join(
+        f"{operation}\t{path}\t{result}\tservice action\n"
+        for operation, path, result in rows
+    )
+    (results / f"{name}-access.tsv").write_text(body, encoding="utf-8")
 
 
 def make_results(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
@@ -127,8 +140,10 @@ def make_results(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
                 "category_total_matches_events": True,
                 "category_total": 0,
                 "outside_access_events": 0,
+                "artifacts": {"events": f"{name}-access.tsv"},
             },
         )
+        write_service_rows(results, name, [])
 
     script_log = [
         f"phase=postinst script_version=3.0 dpkg_root={target} cwd={target}",
@@ -192,6 +207,25 @@ class LF02UpgradeFailureSummaryTest(unittest.TestCase):
                 self.assertIn("evidence validation failed:", completed.stderr)
                 self.assertFalse((results / "summary.json").exists())
 
+    def set_summary_category(
+        self, results: pathlib.Path, identifier: str, count: int
+    ) -> None:
+        path = results / "install-v1-access.summary.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["categories"][identifier] = count
+        total = sum(record["categories"].values())
+        record["category_total"] = total
+        record["outside_access_events"] = total
+        write_json(path, record)
+
+    def set_service_rows(
+        self,
+        results: pathlib.Path,
+        rows: list[tuple[str, str, str]],
+    ) -> None:
+        self.set_summary_category(results, "service_action", len(rows))
+        write_service_rows(results, "install-v1", rows)
+
     def test_invalid_evidence_is_rejected_with_and_without_optimization(self) -> None:
         mutations: dict[str, Callable[[pathlib.Path, pathlib.Path], None]] = {
             "phase-status": lambda results, target: self.mutate_json(
@@ -205,6 +239,9 @@ class LF02UpgradeFailureSummaryTest(unittest.TestCase):
             "category-total": lambda results, target: self.mutate_json(
                 results / "install-v1-access.summary.json",
                 lambda record: record.__setitem__("category_total", 1),
+            ),
+            "service-row-count": lambda results, target: self.set_summary_category(
+                results, "service_action", 1
             ),
             "script-root": lambda results, target: self.mutate_json(
                 results / "purge.snapshot.json",
@@ -228,40 +265,116 @@ class LF02UpgradeFailureSummaryTest(unittest.TestCase):
             with self.subTest(mutation=name):
                 self.assert_rejected_in_both_modes(mutator)
 
-    def set_category(self, results: pathlib.Path, identifier: str, count: int) -> None:
-        path = results / "install-v1-access.summary.json"
-        record = json.loads(path.read_text(encoding="utf-8"))
-        record["categories"][identifier] = count
-        total = sum(record["categories"].values())
-        record["category_total"] = total
-        record["outside_access_events"] = total
-        write_json(path, record)
-
     def test_disposition_precedence(self) -> None:
+        mapped_rows = [
+            ("execution", "/usr/lib/needrestart/dpkg-status", "0"),
+            ("mutation", "/run/needrestart/unpacked", "-1 ENOENT"),
+        ]
+        unknown_rows = [("execution", "/usr/bin/systemctl", "0")]
+        successful_needrestart = [
+            ("mutation", "/run/needrestart/unpacked", "0")
+        ]
         cases = (
-            ("clean", {}, "retain-mapped-behavior", False, False),
-            ("service", {"service_action": 1}, "promote-product-candidate", True, False),
-            ("mutation", {"unexpected_mutation": 1}, "promote-product-candidate", True, False),
-            ("unresolved", {"unresolved": 1}, "blocked-unresolved", False, True),
+            ("clean", {}, [], "retain-mapped-behavior", False, False, False, 0),
             (
-                "service-and-unresolved",
-                {"service_action": 1, "unresolved": 1},
+                "mapped-service",
+                {},
+                mapped_rows,
+                "retain-mapped-behavior",
+                False,
+                False,
+                True,
+                0,
+            ),
+            (
+                "unknown-service",
+                {},
+                unknown_rows,
                 "promote-product-candidate",
                 True,
                 False,
+                False,
+                1,
+            ),
+            (
+                "successful-needrestart-mutation",
+                {},
+                successful_needrestart,
+                "promote-product-candidate",
+                True,
+                False,
+                False,
+                1,
+            ),
+            (
+                "mutation",
+                {"unexpected_mutation": 1},
+                [],
+                "promote-product-candidate",
+                True,
+                False,
+                False,
+                0,
+            ),
+            (
+                "unresolved",
+                {"unresolved": 1},
+                [],
+                "blocked-unresolved",
+                False,
+                True,
+                False,
+                0,
+            ),
+            (
+                "mapped-service-and-unresolved",
+                {"unresolved": 1},
+                mapped_rows,
+                "blocked-unresolved",
+                False,
+                True,
+                True,
+                0,
+            ),
+            (
+                "unknown-service-and-unresolved",
+                {"unresolved": 1},
+                unknown_rows,
+                "promote-product-candidate",
+                True,
+                False,
+                False,
+                1,
             ),
         )
-        for name, categories, expected, product, blocked in cases:
+        for (
+            name,
+            categories,
+            service_rows,
+            expected,
+            product,
+            blocked,
+            environment_sensitive,
+            unmapped,
+        ) in cases:
             with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
                 results, target = make_results(pathlib.Path(tmp))
                 for identifier, count in categories.items():
-                    self.set_category(results, identifier, count)
+                    self.set_summary_category(results, identifier, count)
+                self.set_service_rows(results, service_rows)
                 completed = run_summary(results, target)
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 summary = json.loads((results / "summary.json").read_text())
+                inputs = summary["decision_inputs"]
+                self.assertEqual(summary["decision_policy_version"], 2)
                 self.assertEqual(summary["disposition"], expected)
-                self.assertIs(summary["decision_inputs"]["product_candidate"], product)
-                self.assertIs(summary["decision_inputs"]["blocked_unresolved"], blocked)
+                self.assertIs(inputs["product_candidate"], product)
+                self.assertIs(inputs["blocked_unresolved"], blocked)
+                self.assertIs(
+                    inputs["environment_sensitive_host_hooks"],
+                    environment_sensitive,
+                )
+                self.assertEqual(inputs["unmapped_service_actions"], unmapped)
 
     def test_host_fingerprint_change_promotes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
