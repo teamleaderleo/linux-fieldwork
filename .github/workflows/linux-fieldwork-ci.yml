@@ -6,7 +6,7 @@ on:
       - "tools/**"
       - "tests/**"
       - "scripts/**"
-      - "campaigns/**"
+      - "investigations/**"
       - "notes/**"
       - "upstream/**"
       - ".github/workflows/**"
@@ -39,7 +39,7 @@ jobs:
           bash scripts/capture-linux-context.sh --help >/dev/null
 
   capture-bug-report:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'campaign/rootless-bootstrap-lab'
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -49,18 +49,18 @@ jobs:
       - name: Capture Debian bug 1141078
         run: |
           python3 tools/debian_bug_report.py 1141078 \
-            --output-dir campaigns/0001-rootless-bootstrap/runs/bts-1141078
+            --output-dir investigations/0001-mmdebstrap-autopkgtest/runs/bts-1141078
 
       - name: Upload BTS capture
         uses: actions/upload-artifact@v4
         with:
           name: debian-bug-1141078
-          path: campaigns/0001-rootless-bootstrap/runs/bts-1141078/
+          path: investigations/0001-mmdebstrap-autopkgtest/runs/bts-1141078/
           if-no-files-found: error
           retention-days: 14
 
   reproduce-mmdebstrap:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'campaign/rootless-bootstrap-lab'
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest')
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -73,7 +73,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          run_dir="campaigns/0001-rootless-bootstrap/runs/$RUN_ID"
+          run_dir="investigations/0001-mmdebstrap-autopkgtest/runs/$RUN_ID"
           mkdir -p "$run_dir"
           set +e
           docker run --privileged --rm \
@@ -101,7 +101,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mmdebstrap-reproduction-${{ env.RUN_ID }}
-          path: campaigns/0001-rootless-bootstrap/runs/${{ env.RUN_ID }}/
+          path: investigations/0001-mmdebstrap-autopkgtest/runs/${{ env.RUN_ID }}/
           if-no-files-found: warn
           retention-days: 14
 
@@ -109,7 +109,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          status=$(cat "campaigns/0001-rootless-bootstrap/runs/$RUN_ID/container-exit-status")
+          status=$(cat "investigations/0001-mmdebstrap-autopkgtest/runs/$RUN_ID/container-exit-status")
           case "$status" in
             0)
               echo "The contained autopkgtest passed."
