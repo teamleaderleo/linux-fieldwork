@@ -1,0 +1,64 @@
+name: Verify LF-02 chrootless containment
+
+on:
+  push:
+    branches:
+      - scout/lf-scout-root-01/lf-02-dpkg-root-containment
+    paths:
+      - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/**"
+      - "upstream/mmdebstrap/**"
+      - ".github/workflows/lf-02-chrootless-dpkg-root-containment.yml"
+  pull_request:
+    paths:
+      - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/**"
+      - "upstream/mmdebstrap/**"
+      - ".github/workflows/lf-02-chrootless-dpkg-root-containment.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  containment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out scout branch
+        uses: actions/checkout@v4
+
+      - name: Install trace and source dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libdistro-info-perl \
+            libdpkg-perl \
+            strace
+
+      - name: Check probe syntax
+        run: |
+          perl -c upstream/mmdebstrap/mmdebstrap
+          python3 -m py_compile \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/classify-strace.py
+          bash -n \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/run-probe.sh
+          for script in \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/preinst \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/postinst \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/prerm \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/postrm \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/usr/lib/lf-fieldwork-probe/tool; do
+            sh -n "$script"
+          done
+
+      - name: Run chrootless containment probe
+        run: |
+          bash programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/run-probe.sh
+
+      - name: Upload retained traces and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lf-02-chrootless-dpkg-root-containment-${{ github.run_id }}-${{ github.run_attempt }}
+          path: programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/results/
+          if-no-files-found: warn
+          retention-days: 14
