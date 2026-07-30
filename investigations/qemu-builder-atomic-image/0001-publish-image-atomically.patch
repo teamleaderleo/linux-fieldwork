@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
 --- a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
 +++ b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
-@@ -320,1 +320,26 @@
+@@ -320,5 +320,34 @@
  WORKDIR=
 +IMAGE_TMPDIR=
 +IMAGE_TMP=
@@ -28,7 +28,7 @@ diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mm
 +    echo "W: image published but private directory remains: $published_image_tmpdir" >&2
 +  fi
 +}
-@@ -322,3 +347,7 @@
+ 
  cleanup() {
    test -n "$WORKDIR" && rm -Rf "$WORKDIR"
 +  if test -n "${IMAGE_TMPDIR:-}"; then
