@@ -1,0 +1,240 @@
+name: Apply mmdebstrap chrootless environment security fix
+
+on:
+  push:
+    branches:
+      - security/mmdebstrap-chrootless-env
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: security/mmdebstrap-chrootless-env
+          fetch-depth: 0
+
+      - name: Apply security boundary
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('upstream/mmdebstrap/mmdebstrap')
+          source = path.read_text()
+
+          marker = """    return \\@chrootcmd;
+          }
+
+          sub run_essential() {
+          """
+          helpers = """    return \\@chrootcmd;
+          }
+
+          sub chrootless_dpkg_environment() {
+              my @result = ('-i');
+              foreach my $name (
+                  qw(
+                  PATH
+                  DEBIAN_FRONTEND
+                  DEBCONF_NONINTERACTIVE_SEEN
+                  LC_ALL
+                  LANGUAGE
+                  LANG
+                  SOURCE_DATE_EPOCH
+                  QEMU_LD_PREFIX
+                  )
+              ) {
+                  next if !defined $ENV{$name};
+                  push @result, "$name=$ENV{$name}";
+              }
+              return @result;
+          }
+
+          sub chrootless_unsafe_environment() {
+              my %exact = map { $_ => 1 } qw(
+                SSH_AUTH_SOCK
+                SSH_AGENT_PID
+                GPG_AGENT_INFO
+                DBUS_SESSION_BUS_ADDRESS
+                XDG_RUNTIME_DIR
+                KRB5CCNAME
+                KUBECONFIG
+                DOCKER_CONFIG
+                AWS_SHARED_CREDENTIALS_FILE
+                AWS_CONFIG_FILE
+                GOOGLE_APPLICATION_CREDENTIALS
+                AZURE_CONFIG_DIR
+                GNUPGHOME
+                NETRC
+              );
+              return sort grep {
+                  $exact{$_}
+                    || $_ =~ /(?:^|_)(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|PRIVATE_KEY|API_KEY)(?:$|_)/i
+              } keys %ENV;
+          }
+
+          sub run_essential() {
+          """
+          if source.count(marker) != 1:
+              raise SystemExit('unexpected helper insertion marker count')
+          source = source.replace(marker, helpers)
+
+          direct_old = """                ARGV => [
+                              'dpkg',
+                              '--force-not-root',
+          """
+          direct_new = """                ARGV => [
+                              'env',
+                              chrootless_dpkg_environment(),
+                              'dpkg',
+                              '--force-not-root',
+          """
+          if source.count(direct_old) != 1:
+              raise SystemExit('unexpected direct dpkg marker count')
+          source = source.replace(direct_old, direct_new)
+
+          apt_old = """        if (scalar @pkgs_to_install > 0) {
+                      my @chrootless_opts = (
+                          '-oDPkg::Chroot-Directory=',
+          """
+          apt_new = """        if (scalar @pkgs_to_install > 0) {
+                      my @dpkg_environment = chrootless_dpkg_environment();
+                      my @chrootless_opts = (
+                          '-oDir::Bin::dpkg=env',
+                          (map { '-oDPkg::Options::=' . $_ } @dpkg_environment),
+                          '-oDPkg::Options::=dpkg',
+                          '-oDPkg::Chroot-Directory=',
+          """
+          if source.count(apt_old) != 1:
+              raise SystemExit('unexpected apt dpkg marker count')
+          source = source.replace(apt_old, apt_new)
+
+          check_old = """    } elsif ($options->{mode} eq 'chrootless') {
+                  if (any { $_ eq 'check/chrootless' } @{ $options->{skip} }) {
+                      info "skipping check/chrootless as requested";
+                  } else {
+                      my $ischroot = 0 == system 'ischroot';
+                      if (   $EFFECTIVE_USER_ID == 0
+                          && !exists $ENV{FAKEROOTKEY}
+                          && !$ischroot) {
+                          error
+                            "running chrootless mode as root without fakeroot might "
+                            . "damage the host system if not run inside a chroot";
+                      }
+                  }
+              } else {
+          """
+          check_new = """    } elsif ($options->{mode} eq 'chrootless') {
+                  if (any { $_ eq 'check/chrootless' } @{ $options->{skip} }) {
+                      info "skipping check/chrootless as requested";
+                  } else {
+                      my $ischroot = 0 == system 'ischroot';
+                      if (   $EFFECTIVE_USER_ID == 0
+                          && !exists $ENV{FAKEROOTKEY}
+                          && !$ischroot) {
+                          error
+                            "running chrootless mode as root without fakeroot might "
+                            . "damage the host system if not run inside a chroot";
+                      }
+                  }
+                  if (any { $_ eq 'check/chrootless/environment' }
+                      @{ $options->{skip} }) {
+                      info "skipping check/chrootless/environment as requested";
+                  } else {
+                      my @unsafe = chrootless_unsafe_environment();
+                      if (scalar @unsafe > 0) {
+                          error "chrootless mode refuses potentially sensitive "
+                            . "environment variables: "
+                            . (join ', ', @unsafe)
+                            . "; unset them or pass "
+                            . "--skip=check/chrootless/environment to accept the "
+                            . "risk";
+                      }
+                  }
+              } else {
+          """
+          if source.count(check_old) != 1:
+              raise SystemExit('unexpected chrootless check marker count')
+          source = source.replace(check_old, check_new)
+
+          docs_old = """L<chroot(1)>. Make sure to run this mode without superuser privileges and/or
+          inside a throw-away chroot environment like so:
+
+              mmdebstrap --variant=apt --include=mmdebstrap \\
+          """
+          docs_new = """L<chroot(1)>. Make sure to run this mode without superuser privileges and/or
+          inside a throw-away chroot environment.
+
+          By default, B<mmdebstrap> refuses to start chrootless mode when the
+          caller environment contains names commonly used for credentials or host
+          session endpoints. The check reports names but never values. It can be
+          disabled with B<--skip=check/chrootless/environment>. Package maintainer
+          scripts are additionally run with a small environment containing only
+          variables required by dpkg, debconf, locale handling, reproducibility,
+          and foreign-architecture execution. Apt itself retains its environment
+          so that proxy and repository authentication continue to work.
+
+          These checks are defense in depth and do not make chrootless mode a
+          sandbox. Maintainer scripts still execute on the host and may access
+          host files, processes, and sockets available to the invoking user.
+
+          Example:
+
+              mmdebstrap --variant=apt --include=mmdebstrap \\
+          """
+          if source.count(docs_old) != 1:
+              raise SystemExit('unexpected chrootless documentation marker count')
+          source = source.replace(docs_old, docs_new)
+
+          checks_old = """=item * do not allow chrootless mode as root (without fakeroot) unless inside a chroot. This check can be disabled using B<--skip=check/chrootless>
+
+          =item * whether the requested architecture can be executed (requires arch-test) using qemu binfmt_misc support. This requires arch-test and can be disabled using B<--skip=check/qemu>
+          """
+          checks_new = """=item * do not allow chrootless mode as root (without fakeroot) unless inside a chroot. This check can be disabled using B<--skip=check/chrootless>
+
+          =item * refuse chrootless mode when potentially sensitive environment names or host-session endpoints are present. This check can be disabled using B<--skip=check/chrootless/environment>
+
+          =item * whether the requested architecture can be executed (requires arch-test) using qemu binfmt_misc support. This requires arch-test and can be disabled using B<--skip=check/qemu>
+          """
+          if source.count(checks_old) != 1:
+              raise SystemExit('unexpected checks documentation marker count')
+          source = source.replace(checks_old, checks_new)
+
+          path.write_text(source)
+          PY
+
+      - name: Format with current Debian sid perltidy
+        run: |
+          docker run --rm \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            debian:sid-slim \
+            sh -euxc '
+              apt-get update
+              apt-get install --yes --no-install-recommends perltidy
+              perltidy < upstream/mmdebstrap/mmdebstrap > upstream/mmdebstrap/mmdebstrap.tdy
+              mv upstream/mmdebstrap/mmdebstrap.tdy upstream/mmdebstrap/mmdebstrap
+            '
+
+      - name: Validate source
+        run: |
+          perl -c upstream/mmdebstrap/mmdebstrap
+          pod2man upstream/mmdebstrap/mmdebstrap >/dev/null
+          git diff --check
+          test "$(sed -e '/^__END__$/,$d' upstream/mmdebstrap/mmdebstrap | wc --max-line-length)" -le 79
+          grep -F "'-oDir::Bin::dpkg=env'" upstream/mmdebstrap/mmdebstrap
+          grep -F "chrootless_dpkg_environment()" upstream/mmdebstrap/mmdebstrap
+          grep -F "check/chrootless/environment" upstream/mmdebstrap/mmdebstrap
+
+      - name: Commit source fix
+        run: |
+          rm .github/workflows/apply-mmdebstrap-chrootless-env-security.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Harden chrootless maintainer-script environment'
+          git push origin HEAD:security/mmdebstrap-chrootless-env
