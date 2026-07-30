@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/gpgvnoexpkeysig b/upstream/mmdebstrap/gpgvnoexpkeysig
 --- a/upstream/mmdebstrap/gpgvnoexpkeysig
 +++ b/upstream/mmdebstrap/gpgvnoexpkeysig
-@@ -57,30 +57,101 @@
+@@ -57,30 +57,102 @@
  # we need eval because we cannot redirect a variable fd
  FILTER_DIR=$(mktemp -d "${TMPDIR:-/tmp}/gpgvnoexpkeysig.XXXXXXXXXX")
  STATUS_FILE="$FILTER_DIR/status"
@@ -52,7 +52,8 @@ diff --git a/upstream/mmdebstrap/gpgvnoexpkeysig b/upstream/mmdebstrap/gpgvnoexp
 +  status=$1
 +  signum=$2
 +  FILTER_WAS_RUNNING=no
-+  trap - EXIT HUP INT TERM
++  trap - EXIT
++  trap '' HUP INT TERM
 +  capture_starting_pids
 +  if [ -n "$FILTER_PID" ] && kill -0 "$FILTER_PID" 2>/dev/null; then
 +    FILTER_WAS_RUNNING=yes
