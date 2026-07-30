@@ -1,0 +1,60 @@
+[clean-install]
+Selecting previously unselected package lf-script-idempotency-fixture.
+(Reading database ... 0 files and directories currently installed.)
+Preparing to unpack .../lf-script-idempotency-fixture_1.0_all.deb ...
+Unpacking lf-script-idempotency-fixture (1.0) ...
+Setting up lf-script-idempotency-fixture (1.0) ...
+
+[after-state interrupted]
+Selecting previously unselected package lf-script-idempotency-fixture.
+(Reading database ... 0 files and directories currently installed.)
+Preparing to unpack .../lf-script-idempotency-fixture_1.0_all.deb ...
+Unpacking lf-script-idempotency-fixture (1.0) ...
+Setting up lf-script-idempotency-fixture (1.0) ...
+LF fixture: terminating postinst at after-state
+dpkg: error processing package lf-script-idempotency-fixture (--install):
+ installed lf-script-idempotency-fixture package post-installation script subprocess was killed by signal (Terminated)
+Errors were encountered while processing:
+ lf-script-idempotency-fixture
+
+[after-state pre-recovery-status]
+install ok half-configured
+
+[after-state recovery]
+Setting up lf-script-idempotency-fixture (1.0) ...
+
+[after-registry interrupted]
+Selecting previously unselected package lf-script-idempotency-fixture.
+(Reading database ... 0 files and directories currently installed.)
+Preparing to unpack .../lf-script-idempotency-fixture_1.0_all.deb ...
+Unpacking lf-script-idempotency-fixture (1.0) ...
+Setting up lf-script-idempotency-fixture (1.0) ...
+LF fixture: terminating postinst at after-registry
+dpkg: error processing package lf-script-idempotency-fixture (--install):
+ installed lf-script-idempotency-fixture package post-installation script subprocess was killed by signal (Terminated)
+Errors were encountered while processing:
+ lf-script-idempotency-fixture
+
+[after-registry pre-recovery-status]
+install ok half-configured
+
+[after-registry recovery]
+Setting up lf-script-idempotency-fixture (1.0) ...
+
+[after-config interrupted]
+Selecting previously unselected package lf-script-idempotency-fixture.
+(Reading database ... 0 files and directories currently installed.)
+Preparing to unpack .../lf-script-idempotency-fixture_1.0_all.deb ...
+Unpacking lf-script-idempotency-fixture (1.0) ...
+Setting up lf-script-idempotency-fixture (1.0) ...
+LF fixture: terminating postinst at after-config
+dpkg: error processing package lf-script-idempotency-fixture (--install):
+ installed lf-script-idempotency-fixture package post-installation script subprocess was killed by signal (Terminated)
+Errors were encountered while processing:
+ lf-script-idempotency-fixture
+
+[after-config pre-recovery-status]
+install ok half-configured
+
+[after-config recovery]
+Setting up lf-script-idempotency-fixture (1.0) ...
