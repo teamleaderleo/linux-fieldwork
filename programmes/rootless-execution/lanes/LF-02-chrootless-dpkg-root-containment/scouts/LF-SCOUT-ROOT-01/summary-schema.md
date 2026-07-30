@@ -171,7 +171,18 @@ The hosted artifact receipt rechecks the complete generated summary after downlo
 
 ## Validation
 
-Pending exact-head hosted execution.
+Exact correction head before this documentation-only receipt commit: `efe62caefa0a3f6a270b2d3dfad55e0beeb04097`.
+
+Dedicated workflow run `30545542057` passed:
+
+- containment job `90880625223`;
+- downloaded-artifact receipt job `90880923046`.
+
+Artifact `8760553863`, digest `sha256:31e908fa9939114671be5fdce0252a7e094eb2b736b3913666874e97223ab23e`.
+
+The receipt asserted summary schema version 3, provenance schema version 1, exact run identity, typed fixture and tool fields, all six successful phase objects, non-negative observed durations, exact classification category totals, comparison booleans, explicit decision inputs, and paired raw/normalized command views.
+
+Repository-wide `Linux Fieldwork CI` passed Python compilation and all unit tests, including the focused summary-schema regression, then failed in the inherited shell-help step because the old stacked base references an absent repository script. The lane-specific execution and exact artifact receipt are green.
 
 ## Authority
 
