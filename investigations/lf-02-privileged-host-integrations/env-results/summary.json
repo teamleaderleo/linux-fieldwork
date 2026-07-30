@@ -1,0 +1,11 @@
+{
+  "workflow_run": 30530666222,
+  "job": 90831976076,
+  "inherited_env_count": 133,
+  "sanitized_env_count": 19,
+  "fake_credentials_inherited": true,
+  "host_socket_path_inherited": true,
+  "package_script_connected_to_host_socket": true,
+  "sanitized_control_removed_canaries": true,
+  "sanitized_control_skipped_host_socket": true
+}
