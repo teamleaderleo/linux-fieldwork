@@ -1,0 +1,9 @@
+{
+  "source_revision": "6fde999741f4fe1e7bf38079acf29432ef87a35e",
+  "mode": "chrootless",
+  "requested_tmpdir": "/home/runner/work/_temp/linux-fieldwork-mmdebstrap-tmpdir/unwritable",
+  "requested_tmpdir_writable": false,
+  "selected_tmpdir": "/tmp/mmdebstrap.xZqT2ZRG4w",
+  "command_status": 0,
+  "diagnostic_mentions_unwritable_tmpdir": false
+}
