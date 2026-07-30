@@ -113,7 +113,17 @@ Dedicated workflow run `30557757766` completed successfully at head `40c2b1ec89e
 
 Generic Linux Fieldwork CI run `30557757125` passed compilation and all nine inherited tests, then failed because the stacked base carried an older repository workflow that unconditionally invoked `scripts/capture-linux-context.sh`, which is absent from that base. This is a base-composition failure outside the five-file investigation diff.
 
-Helper B added the public-evidence account-name removal at commit `353e963f1200eae7733e8f0814f2e18ccf53270b`. The dedicated workflow removes any `user=` line from `environment.txt` and fails if one remains before upload.
+Helper B added the public-evidence account-name removal at commit `353e963f1200eae7733e8f0814f2e18ccf53270b`. Dedicated workflow run `30577790248` at head `8ee8cad7d1913e9432cba1109dca43fdb5f11fa5` passed the lifecycle matrix, account-name removal, artifact upload, and downloaded-artifact receipt.
+
+That exact artifact reported:
+
+```text
+disposition=retain-mapped-behavior
+failure_recovery: exit=1 failed_status=half-configured recovery_status=installed payload=3.1
+containment: unexpected_mutations=0 service_actions=32 unresolved=0 host_fingerprint_unchanged=true
+```
+
+The lifecycle transition and recovery observations are useful. The `service_actions=32` plus `retain-mapped-behavior` combination confirms the current disposition defect: service actions are recorded but do not affect the decision. Treat this run as repair evidence until precedence is corrected and reviewed.
 
 ## Next step
 
