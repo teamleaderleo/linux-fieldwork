@@ -51,7 +51,8 @@ jobs:
         run: |
           set -euxo pipefail
           work="$RUNNER_TEMP/mmdebstrap-pristine"
-          git -C "$work" diff --name-only | sort >"$RUNNER_TEMP/actual-files"
+          git -C "$work" status --short | cut -c4- | sort \
+            >"$RUNNER_TEMP/actual-files"
           printf '%s\n' \
             coverage.txt \
             mmdebstrap \
