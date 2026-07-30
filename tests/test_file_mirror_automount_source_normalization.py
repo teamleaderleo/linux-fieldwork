@@ -9,9 +9,17 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-PATCH = ROOT / (
-    "investigations/mmdebstrap-file-mirror-containment/"
-    "0001-contain-file-mirror-targets.patch"
+PATCHES = (
+    ROOT
+    / (
+        "investigations/mmdebstrap-file-mirror-containment/"
+        "0001-contain-file-mirror-targets.patch"
+    ),
+    ROOT
+    / (
+        "investigations/mmdebstrap-file-mirror-containment/"
+        "0002-preserve-file-uri-target-path.patch"
+    ),
 )
 SETUP_SOURCE = ROOT / "upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh"
 CLEANUP_SOURCE = ROOT / "upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh"
@@ -27,15 +35,16 @@ class FileMirrorAutomountSourceNormalizationTest(unittest.TestCase):
         hooks.mkdir(parents=True)
         shutil.copy2(SETUP_SOURCE, hooks / "setup00.sh")
         shutil.copy2(CLEANUP_SOURCE, hooks / "customize00.sh")
-        applied = subprocess.run(
-            ["patch", "--batch", "--forward", "-p1", "-i", str(PATCH)],
-            cwd=self.tree,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=30,
-        )
-        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        for patch in PATCHES:
+            applied = subprocess.run(
+                ["patch", "--batch", "--forward", "-p1", "-i", str(patch)],
+                cwd=self.tree,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
         self.setup = hooks / "setup00.sh"
 
         self.fakebin = self.work / "fakebin"
@@ -93,14 +102,14 @@ class FileMirrorAutomountSourceNormalizationTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         canonical_source = repository.resolve()
-        target = root.resolve() / canonical_source.relative_to("/")
+        target = root.resolve() / repository.relative_to("/")
         self.assertEqual(
             self.nul_fields(self.mount_log),
             ["-o", "ro,bind", str(canonical_source), str(target)],
         )
         marker = root / "run/mmdebstrap/file-mirror-automount"
         entries = self.nul_fields(marker)
-        self.assertEqual(entries, [str(canonical_source.relative_to("/"))])
+        self.assertEqual(entries, [str(repository.relative_to("/"))])
         self.assertNotIn("..", pathlib.PurePosixPath(entries[0]).parts)
 
     def test_leading_parent_traversal_remains_rejected_before_action(self) -> None:
