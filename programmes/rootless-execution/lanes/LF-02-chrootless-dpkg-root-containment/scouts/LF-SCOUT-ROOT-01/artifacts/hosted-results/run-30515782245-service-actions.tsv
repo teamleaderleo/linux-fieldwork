@@ -1,0 +1,11 @@
+scope	syscall	path	result	classification
+mmdebstrap-one	connect	/run/dbus/system_bus_socket	0	host system D-Bus socket
+mmdebstrap-one	execve	/usr/lib/needrestart/dpkg-status	0	host restart-management executable
+mmdebstrap-one	mkdir	/run/needrestart	-1 EEXIST	host needrestart runtime action
+mmdebstrap-one	openat	/run/needrestart/unpacked	-1 EACCES	host needrestart marker write attempt
+mmdebstrap-one	utimensat	/run/needrestart/unpacked	-1 ENOENT	host needrestart marker update attempt
+mmdebstrap-two	connect	/run/dbus/system_bus_socket	0	host system D-Bus socket
+mmdebstrap-two	execve	/usr/lib/needrestart/dpkg-status	0	host restart-management executable
+mmdebstrap-two	mkdir	/run/needrestart	-1 EEXIST	host needrestart runtime action
+mmdebstrap-two	openat	/run/needrestart/unpacked	-1 EACCES	host needrestart marker write attempt
+mmdebstrap-two	utimensat	/run/needrestart/unpacked	-1 ENOENT	host needrestart marker update attempt
