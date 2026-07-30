@@ -14,6 +14,7 @@ mm_root_one="$runtime/mmdebstrap-root-one"
 mm_root_two="$runtime/mmdebstrap-root-two"
 source_root="$repo_root/upstream/mmdebstrap"
 classifier="$artifact_dir/classify-strace.py"
+provenance_tool="$artifact_dir/write-provenance.py"
 
 cleanup() {
     if [[ "${KEEP_RUNTIME:-0}" != 1 ]]; then
@@ -36,11 +37,19 @@ for command in dpkg dpkg-deb strace python3 sha256sum find diff perl; do
     need "$command"
 done
 
+capture_provenance() {
+    python3 "$provenance_tool" capture \
+        --repo-root "$repo_root" \
+        --runtime "$runtime" \
+        --result-dir "$result_dir" \
+        --json-output "$result_dir/provenance.json" \
+        --env-output "$result_dir/provenance.env"
+}
+
 capture_environment() {
     {
         printf 'date_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        printf 'repository_head=%s\n' "$(git rev-parse HEAD)"
-        printf 'repository_branch=%s\n' "$(git branch --show-current)"
+        cat "$result_dir/provenance.env"
         printf 'upstream_requested_revision=%s\n' "$(python3 -c 'import json; print(json.load(open("upstream/mmdebstrap/.linux-fieldwork-source.json"))["requested_revision"])')"
         printf 'upstream_resolved_commit=%s\n' "$(python3 -c 'import json; print(json.load(open("upstream/mmdebstrap/.linux-fieldwork-source.json"))["resolved_commit"])')"
         printf 'uid=%s\n' "$(id -u)"
@@ -92,8 +101,15 @@ trace_command() {
     local stdout="$result_dir/$name.stdout"
     local stderr="$result_dir/$name.stderr"
     local prefix="$result_dir/$name.trace"
-    printf '%q ' "$@" > "$result_dir/$name.command"
-    printf '\n' >> "$result_dir/$name.command"
+    local raw_command="$result_dir/$name.command.raw"
+    printf '%q ' "$@" > "$raw_command"
+    printf '\n' >> "$raw_command"
+    python3 "$provenance_tool" normalize \
+        --repo-root "$repo_root" \
+        --runtime "$runtime" \
+        --result-dir "$result_dir" \
+        --input "$raw_command" \
+        --output "$result_dir/$name.command"
     set +e
     strace -ff -qq -yy -s 4096 \
         -e trace=%file,%process,%network \
@@ -284,15 +300,25 @@ import sys
 
 result_dir = pathlib.Path(sys.argv[1])
 summary = {
+    "schema_version": 2,
+    "provenance": json.loads(result_dir.joinpath("provenance.json").read_text(encoding="utf-8")),
     "fixture": result_dir.joinpath("fixture.txt").read_text(encoding="utf-8").splitlines()[-2:],
     "phases": {},
     "classifications": {},
+    "command_views": {},
     "host_fingerprint_unchanged": result_dir.joinpath("host-fingerprint.diff").stat().st_size == 0,
     "mmdebstrap_rerun_script_diff_empty": result_dir.joinpath("mmdebstrap-rerun-script.diff").stat().st_size == 0,
     "mmdebstrap_rerun_alternative_diff_empty": result_dir.joinpath("mmdebstrap-rerun-alternative.diff").stat().st_size == 0,
 }
 for status_path in sorted(result_dir.glob("*.status")):
     summary["phases"][status_path.stem] = int(status_path.read_text(encoding="utf-8").strip())
+for command_path in sorted(result_dir.glob("*.command")):
+    name = command_path.name.removesuffix(".command")
+    raw_path = result_dir.joinpath(f"{name}.command.raw")
+    summary["command_views"][name] = {
+        "normalized": command_path.name,
+        "raw": raw_path.name if raw_path.exists() else None,
+    }
 service_actions = 0
 unexpected_mutations = 0
 for summary_path in sorted(result_dir.glob("*-access.summary.txt")):
@@ -310,6 +336,7 @@ print(json.dumps(summary, indent=2))
 PY
 }
 
+capture_provenance
 capture_environment
 capture_host_dpkg_config
 prepare_fixture
