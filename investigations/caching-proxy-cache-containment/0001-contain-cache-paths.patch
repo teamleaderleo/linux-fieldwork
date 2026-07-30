@@ -1,7 +1,8 @@
 diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_proxy.py
 --- a/upstream/mmdebstrap/caching_proxy.py
 +++ b/upstream/mmdebstrap/caching_proxy.py
-@@ -14,6 +14,17 @@ oldcachedir = None
+@@ -14,6 +14,17 @@
+ oldcachedir = None
  newcachedir = None
  readonly = False
 +
@@ -35,7 +36,7 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
  
          if not readonly:
              newpath.parent.mkdir(parents=True, exist_ok=True)
-@@ -113,3 +128,3 @@ def main():
+@@ -112,4 +127,4 @@ def main():
      print(f"starting caching proxy for {newcachedir}", file=sys.stderr)
      httpd = http.server.ThreadingHTTPServer(
 -        server_address=("", 8080), RequestHandlerClass=ProxyRequestHandler
