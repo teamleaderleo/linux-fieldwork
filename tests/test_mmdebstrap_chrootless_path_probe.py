@@ -10,14 +10,19 @@ class MmdebstrapChrootlessPathProbeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.repo = pathlib.Path(__file__).resolve().parents[1]
-        cls.probe = (
-            cls.repo
-            / "investigations/mmdebstrap-chrootless-env/path_precedence_probe.sh"
+        investigation = cls.repo / "investigations/mmdebstrap-chrootless-env"
+        cls.probes = (
+            investigation / "path_precedence_probe.sh",
+            investigation / "direct_path_probe.sh",
         )
 
-    def check_parent(self, path: pathlib.Path | str) -> subprocess.CompletedProcess[str]:
+    def check_parent(
+        self,
+        probe: pathlib.Path,
+        path: pathlib.Path | str,
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["bash", str(self.probe), "--check-runtime-parent", str(path)],
+            ["bash", str(probe), "--check-runtime-parent", str(path)],
             cwd=self.repo,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -25,33 +30,47 @@ class MmdebstrapChrootlessPathProbeTests(unittest.TestCase):
         )
 
     def test_accepts_explicit_disposable_roots(self) -> None:
-        for path in ("/tmp", "/var/tmp", "/home/runner/work/_temp"):
-            with self.subTest(path=path):
-                completed = self.check_parent(path)
-                self.assertEqual(completed.returncode, 0, completed.stderr)
+        for probe in self.probes:
+            for path in ("/tmp", "/var/tmp", "/home/runner/work/_temp"):
+                with self.subTest(probe=probe.name, path=path):
+                    completed = self.check_parent(probe, path)
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_rejects_root_repository_and_home(self) -> None:
-        for path in ("/", self.repo, pathlib.Path.home()):
-            with self.subTest(path=path):
-                completed = self.check_parent(path)
-                self.assertEqual(completed.returncode, 2)
-                self.assertIn("unsafe runtime parent", completed.stderr)
+        for probe in self.probes:
+            for path in ("/", self.repo, pathlib.Path.home()):
+                with self.subTest(probe=probe.name, path=path):
+                    completed = self.check_parent(probe, path)
+                    self.assertEqual(completed.returncode, 2)
+                    self.assertIn("unsafe runtime parent", completed.stderr)
 
     def test_rejects_parent_component_collapse_outside_disposable_roots(self) -> None:
-        completed = self.check_parent("/tmp/../etc")
-        self.assertEqual(completed.returncode, 2)
-        self.assertIn("unsafe runtime parent: /etc", completed.stderr)
+        for probe in self.probes:
+            with self.subTest(probe=probe.name):
+                completed = self.check_parent(probe, "/tmp/../etc")
+                self.assertEqual(completed.returncode, 2)
+                self.assertIn("unsafe runtime parent: /etc", completed.stderr)
 
     def test_accepts_disposable_subdirectory(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp") as td:
-            completed = self.check_parent(td)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
+            for probe in self.probes:
+                with self.subTest(probe=probe.name):
+                    completed = self.check_parent(probe, td)
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
 
-    def test_probe_does_not_chmod_repository_source(self) -> None:
-        source = self.probe.read_text()
-        self.assertNotIn('chmod 0755 "$source_root/mmdebstrap"', source)
-        self.assertIn('cp --preserve=mode "$source_root/mmdebstrap"', source)
-        self.assertIn("git diff --exit-code -- upstream/mmdebstrap/mmdebstrap", source)
+    def test_probes_do_not_chmod_repository_source(self) -> None:
+        for probe in self.probes:
+            with self.subTest(probe=probe.name):
+                source = probe.read_text()
+                self.assertNotIn('chmod 0755 "$source_root/mmdebstrap"', source)
+                self.assertIn(
+                    'cp --preserve=mode "$source_root/mmdebstrap"',
+                    source,
+                )
+                self.assertIn(
+                    "git diff --exit-code -- upstream/mmdebstrap/mmdebstrap",
+                    source,
+                )
 
 
 if __name__ == "__main__":
