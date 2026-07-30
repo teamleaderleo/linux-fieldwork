@@ -1,0 +1,25 @@
+name: PR72 unit diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pr72-unit-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tail:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run suite and print only the failure tail
+        shell: bash
+        run: |
+          set +e
+          python3 -m unittest discover -s tests -v > /tmp/pr72-unittest.log 2>&1
+          status=$?
+          set -e
+          tail -n 140 /tmp/pr72-unittest.log
+          exit "$status"
