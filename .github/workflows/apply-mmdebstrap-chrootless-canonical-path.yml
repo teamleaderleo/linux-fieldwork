@@ -27,84 +27,68 @@ jobs:
           path = Path('upstream/mmdebstrap/mmdebstrap')
           source = path.read_text(encoding='utf-8')
 
-          replacements = [
-              (
-                  '''sub chrootless_dpkg_environment {
-              my $root   = shift;
-              my $tmpdir = "$root/tmp";
-          ''',
-                  '''sub chrootless_dpkg_environment {
-              my $root     = shift;
-              my $dpkgpath = shift;
-              my $tmpdir   = "$root/tmp";
-
-              if (!defined $dpkgpath || $dpkgpath eq '') {
-                  error "cannot determine chrootless maintainer-script PATH";
-              }
-          ''',
-              ),
-              (
-                  '''    my @names = qw(
-            PATH
-            DEBIAN_FRONTEND
-          ''',
-                  '''    my @names = qw(
-            DEBIAN_FRONTEND
-          ''',
-              ),
-              (
-                  '''    my @result = ('-i', "TMPDIR=$tmpdir");
-          ''',
-                  '''    my @result = ('-i', "PATH=$dpkgpath", "TMPDIR=$tmpdir");
-          ''',
-              ),
-              (
-                  '''                    chrootless_dpkg_environment($options->{root}),
-          ''',
-                  '''                    chrootless_dpkg_environment(
-                              $options->{root}, $options->{dpkgpath}),
-          ''',
-              ),
-              (
-                  '''              = chrootless_dpkg_environment($options->{root});
-          ''',
-                  '''              = chrootless_dpkg_environment(
-                    $options->{root}, $options->{dpkgpath});
-          ''',
-              ),
-              (
-                  '''    my $defaultpath = `eval \\$(apt-config shell v DPkg::Path); printf %s \\$v`;
-              if (length $ENV{PATH}) {
-          ''',
-                  '''    my $defaultpath = `eval \\$(apt-config shell v DPkg::Path); printf %s \\$v`;
-              $options->{dpkgpath} = $defaultpath;
-              if (length $ENV{PATH}) {
-          ''',
-              ),
-              (
-                  '''scripts are additionally run with a small environment containing only
-          variables required by dpkg, debconf, locale handling, reproducibility,
-          and foreign-architecture execution. Apt itself retains its environment
-          so that proxy and repository authentication continue to work.
-          ''',
-                  '''scripts are additionally run with a small environment. Their PATH is
-          apt's configured DPkg::Path rather than the caller's executable search path.
-          The environment also contains the target temporary directory, mmdebstrap's
-          fixed noninteractive debconf and C.UTF-8 locale values, reproducibility
-          controls, foreign-architecture state, and fakeroot state when active. Apt
-          itself retains its environment so that proxy and repository authentication
-          continue to work.
-          ''',
-              ),
-          ]
-
-          for old, new in replacements:
+          def replace_once(old: str, new: str) -> None:
+              global source
               count = source.count(old)
               if count != 1:
                   raise SystemExit(
                       f'unexpected replacement count {count} for marker:\n{old}'
                   )
               source = source.replace(old, new)
+
+          replace_once(
+              "sub chrootless_dpkg_environment {\n"
+              "    my $root   = shift;\n"
+              "    my $tmpdir = \"$root/tmp\";\n",
+              "sub chrootless_dpkg_environment {\n"
+              "    my $root     = shift;\n"
+              "    my $dpkgpath = shift;\n"
+              "    my $tmpdir   = \"$root/tmp\";\n\n"
+              "    if (!defined $dpkgpath || $dpkgpath eq '') {\n"
+              "        error \"cannot determine chrootless maintainer-script PATH\";\n"
+              "    }\n",
+          )
+          replace_once(
+              "    my @names = qw(\n"
+              "      PATH\n"
+              "      DEBIAN_FRONTEND\n",
+              "    my @names = qw(\n"
+              "      DEBIAN_FRONTEND\n",
+          )
+          replace_once(
+              "    my @result = ('-i', \"TMPDIR=$tmpdir\");\n",
+              "    my @result = ('-i', \"PATH=$dpkgpath\", \"TMPDIR=$tmpdir\");\n",
+          )
+          replace_once(
+              "                    chrootless_dpkg_environment($options->{root}),\n",
+              "                    chrootless_dpkg_environment(\n"
+              "                        $options->{root}, $options->{dpkgpath}),\n",
+          )
+          replace_once(
+              "              = chrootless_dpkg_environment($options->{root});\n",
+              "              = chrootless_dpkg_environment(\n"
+              "                $options->{root}, $options->{dpkgpath});\n",
+          )
+          replace_once(
+              "    my $defaultpath = `eval \\$(apt-config shell v DPkg::Path); printf %s \\$v`;\n"
+              "    if (length $ENV{PATH}) {\n",
+              "    my $defaultpath = `eval \\$(apt-config shell v DPkg::Path); printf %s \\$v`;\n"
+              "    $options->{dpkgpath} = $defaultpath;\n"
+              "    if (length $ENV{PATH}) {\n",
+          )
+          replace_once(
+              "scripts are additionally run with a small environment containing only\n"
+              "variables required by dpkg, debconf, locale handling, reproducibility,\n"
+              "and foreign-architecture execution. Apt itself retains its environment\n"
+              "so that proxy and repository authentication continue to work.\n",
+              "scripts are additionally run with a small environment. Their PATH is\n"
+              "apt's configured DPkg::Path rather than the caller's executable search path.\n"
+              "The environment also contains the target temporary directory, mmdebstrap's\n"
+              "fixed noninteractive debconf and C.UTF-8 locale values, reproducibility\n"
+              "controls, foreign-architecture state, and fakeroot state when active. Apt\n"
+              "itself retains its environment so that proxy and repository authentication\n"
+              "continue to work.\n",
+          )
 
           path.write_text(source, encoding='utf-8')
           PY
