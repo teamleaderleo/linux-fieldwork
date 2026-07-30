@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -92,7 +94,35 @@ def require(condition: bool, message: str) -> None:
         raise ValidationError(message)
 
 
-def load_json(path: Path) -> dict[str, Any]:
+def contained_artifact(results: Path, name: str, artifact_name: str) -> Path:
+    """Resolve one regular evidence file without following in-root symlink components."""
+
+    relative = Path(artifact_name)
+    require(not relative.is_absolute(), f"{name}: artifact path must be relative")
+    require(".." not in relative.parts, f"{name}: artifact path contains parent traversal")
+    results_root = results.resolve(strict=True)
+    require(results_root.is_dir(), f"{name}: results root is not a directory")
+
+    candidate = results_root / relative
+    current = candidate
+    while current != results_root:
+        require(
+            not current.is_symlink(),
+            f"{name}: artifact path contains a symlink: {artifact_name}",
+        )
+        current = current.parent
+
+    path = candidate.resolve(strict=True)
+    require(
+        path.is_relative_to(results_root),
+        f"{name}: artifact path escaped results: {artifact_name}",
+    )
+    require(path.is_file(), f"{name}: evidence artifact is not a file: {artifact_name}")
+    return path
+
+
+def load_json(results: Path, name: str, artifact_name: str) -> dict[str, Any]:
+    path = contained_artifact(results, name, artifact_name)
     record = json.loads(path.read_text(encoding="utf-8"))
     require(isinstance(record, dict), f"{path}: expected a JSON object")
     return record
@@ -168,20 +198,6 @@ def mapped_service_action(row: dict[str, str]) -> bool:
     )
 
 
-def contained_artifact(results: Path, name: str, artifact_name: str) -> Path:
-    relative = Path(artifact_name)
-    require(not relative.is_absolute(), f"{name}: artifact path must be relative")
-    require(".." not in relative.parts, f"{name}: artifact path contains parent traversal")
-    results_root = results.resolve(strict=True)
-    path = (results_root / relative).resolve(strict=True)
-    require(
-        path.is_relative_to(results_root),
-        f"{name}: artifact path escaped results: {artifact_name}",
-    )
-    require(path.is_file(), f"{name}: missing classifier event file {artifact_name}")
-    return path
-
-
 def classify_service_actions(
     results: Path, name: str, record: dict[str, Any], expected_count: int
 ) -> tuple[int, int]:
@@ -212,12 +228,12 @@ def classify_service_actions(
 
 
 def build_summary(results: Path, target: str) -> dict[str, Any]:
-    provenance = load_json(results / "provenance.json")
-    fixtures = load_json(results / "fixtures/manifest.json")
+    provenance = load_json(results, "provenance", "provenance.json")
+    fixtures = load_json(results, "fixtures", "fixtures/manifest.json")
 
     phases: dict[str, dict[str, Any]] = {}
     for path in sorted(results.glob("*.phase.json")):
-        record = load_json(path)
+        record = load_json(results, path.name, path.name)
         require(record.get("schema_version") == 1, f"{path.name}: unsupported schema")
         require(record.get("duration_ms", -1) >= 0, f"{path.name}: negative duration")
         name = record.get("name")
@@ -236,7 +252,8 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
 
     snapshots: dict[str, dict[str, Any]] = {}
     for label in SNAPSHOT_EXPECTATIONS:
-        record = load_json(results / f"{label}.snapshot.json")
+        artifact_name = f"{label}.snapshot.json"
+        record = load_json(results, label, artifact_name)
         require(record.get("schema_version") == 1, f"{label}: unsupported schema")
         validate_snapshot(label, record)
         snapshots[label] = record
@@ -273,7 +290,8 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
     mapped_service_actions = 0
     unmapped_service_actions = 0
     for name in PHASE_ORDER:
-        record = load_json(results / f"{name}-access.summary.json")
+        artifact_name = f"{name}-access.summary.json"
+        record = load_json(results, name, artifact_name)
         require(record.get("schema_version") == 1, f"{name}: unsupported classifier schema")
         categories = record.get("categories")
         require(isinstance(categories, dict), f"{name}: categories must be an object")
@@ -302,7 +320,10 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
         for identifier, count in categories.items():
             totals[identifier] += count
 
-    host_diff = (results / "host-fingerprint.diff").read_text(encoding="utf-8")
+    host_diff_path = contained_artifact(
+        results, "host-fingerprint", "host-fingerprint.diff"
+    )
+    host_diff = host_diff_path.read_text(encoding="utf-8")
     host_fingerprint_unchanged = not host_diff
     lifecycle_contract = True
     product_candidate = (
@@ -372,23 +393,47 @@ def build_summary(results: Path, target: str) -> dict[str, Any]:
     }
 
 
+def write_summary(results: Path, summary: dict[str, Any]) -> None:
+    """Publish summary.json atomically without following an existing symlink."""
+
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".summary.json.", suffix=".tmp", dir=results
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(summary, handle, indent=2)
+            handle.write("\n")
+        os.replace(temporary, results / "summary.json")
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--target", required=True)
     args = parser.parse_args()
 
-    results = args.results.resolve()
-    target = str(Path(args.target).resolve())
     try:
+        results = args.results.resolve(strict=True)
+        require(results.is_dir(), "results path is not a directory")
+        target_path = Path(args.target).resolve(strict=True)
+        require(target_path.is_dir(), "target path is not a directory")
+        target = str(target_path)
         summary = build_summary(results, target)
-    except (ValidationError, FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        write_summary(results, summary)
+    except (
+        ValidationError,
+        OSError,
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
         print(f"evidence validation failed: {exc}", file=sys.stderr)
         return 2
 
-    (results / "summary.json").write_text(
-        json.dumps(summary, indent=2) + "\n", encoding="utf-8"
-    )
     print(json.dumps(summary, indent=2))
     return 0
 
