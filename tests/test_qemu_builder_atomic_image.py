@@ -46,8 +46,8 @@ class QemuBuilderAtomicImageTest(unittest.TestCase):
         helper_end = source.index("\ncleanup() {", helper_start)
         helpers = source[helper_start:helper_end] + "\n"
         cleanup_start = helper_end + 1
-        cleanup_end = source.index("\n}\n\ntrap ", cleanup_start) + len("\n}\n")
-        cleanup = source[cleanup_start:cleanup_end]
+        cleanup_end = source.index("\ntrap cleanup ", cleanup_start)
+        cleanup = source[cleanup_start:cleanup_end].rstrip() + "\n"
         return helpers, cleanup
 
     def write_harness(self, root: pathlib.Path, candidate: pathlib.Path) -> pathlib.Path:
