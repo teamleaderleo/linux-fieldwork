@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -12,6 +14,10 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 REPRODUCTION_SCRIPT = REPOSITORY_ROOT / "scripts/reproduce-mmdebstrap-autopkgtest.sh"
 WORKFLOW = REPOSITORY_ROOT / ".github/workflows/linux-fieldwork-ci.yml"
 SOURCE_TESTSUITE = REPOSITORY_ROOT / "upstream/mmdebstrap/debian/tests/testsuite"
+CWD_CHANGING_TEST = (
+    REPOSITORY_ROOT
+    / "upstream/mmdebstrap/tests/cwd-directory-not-accessible-by-unshared-user"
+)
 WRAPPER_PATCH = (
     REPOSITORY_ROOT
     / "investigations/mmdebstrap-autopkgtest-1141078"
@@ -124,11 +130,90 @@ class ReproductionHarnessTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("exec '/usr/bin/mmdebstrap', @ARGV", patched)
-        self.assertIn('CMD="./mmdebstrap --setup-hook=', patched)
+        self.assertIn('CMD="$SRC/mmdebstrap --setup-hook=', patched)
+        self.assertNotIn('CMD="./mmdebstrap --setup-hook=', patched)
         self.assertNotIn("mmdebstrap-under-test", patched)
         self.assertEqual(perl_syntax.returncode, 0, perl_syntax.stderr)
         self.assertEqual(pod.returncode, 0, pod.stderr)
         self.assertIn("proxy to the installed package under test", pod.stdout)
+
+    def test_installed_proxy_survives_a_test_working_directory_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tree = root / "tree"
+            destination = tree / "debian/tests"
+            destination.mkdir(parents=True)
+            shutil.copy2(SOURCE_TESTSUITE, destination / "testsuite")
+            completed = subprocess.run(
+                [
+                    "patch",
+                    "--batch",
+                    "--forward",
+                    "-p1",
+                    "-d",
+                    str(tree),
+                    "-i",
+                    str(WRAPPER_PATCH),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            patched = (destination / "testsuite").read_text(encoding="utf-8")
+            command_match = re.search(
+                r'env CMD="([^"]+)" DEFAULT_DIST=', patched
+            )
+            self.assertIsNotNone(command_match)
+            command = command_match.group(1)
+            expanded_command = command.replace("$SRC", str(tree))
+            rendered_test = CWD_CHANGING_TEST.read_text(encoding="utf-8").replace(
+                "{{ CMD }}", expanded_command
+            )
+            self.assertIn("set -- env --chdir=/tmp/debian-chroot", rendered_test)
+            self.assertIn(
+                f'set -- "$@" {tree}/mmdebstrap --setup-hook=', rendered_test
+            )
+
+            proxy = tree / "mmdebstrap"
+            result_path = root / "proxy-result"
+            proxy.write_text(
+                "#!/bin/sh\n"
+                'printf "%s\\n" "$PWD" >"$PROXY_RESULT"\n'
+                'printf "%s\\n" "$@" >>"$PROXY_RESULT"\n',
+                encoding="utf-8",
+            )
+            proxy.chmod(0o755)
+            changed_directory = root / "changed-directory"
+            changed_directory.mkdir()
+            script = (
+                f"CMD={shlex.quote(expanded_command)}\n"
+                f"set -- env --chdir={shlex.quote(str(changed_directory))}\n"
+                'set -- "$@" $CMD\n'
+                '"$@"\n'
+            )
+            env = os.environ.copy()
+            env["PROXY_RESULT"] = str(result_path)
+            invoked = subprocess.run(
+                ["/bin/sh", "-eu", "-c", script],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+            self.assertEqual(invoked.returncode, 0, invoked.stderr)
+            result = result_path.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result[0], str(changed_directory))
+        self.assertEqual(
+            result[1:],
+            [
+                f"--setup-hook={tree}/debian/tests/sourcesfilter",
+                f"--hook-dir={tree}/hooks/file-mirror-automount",
+            ],
+        )
 
     def test_sourcesfilter_patch_is_preflighted_applied_and_hashed(self) -> None:
         self.assertTrue(SOURCESFILTER_PATCH.is_file())
