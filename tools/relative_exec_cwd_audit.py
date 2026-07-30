@@ -199,10 +199,13 @@ def shell_logical_lines(source: str) -> Iterator[tuple[int, str]]:
 
 
 def env_token_index(tokens: Sequence[str]) -> int | None:
-    for index, token in enumerate(tokens):
-        if token == "env" or token.endswith("/env"):
-            return index
-    return None
+    index = 0
+    while index < len(tokens) and is_environment_assignment(tokens[index]):
+        index += 1
+    if index >= len(tokens):
+        return None
+    token = tokens[index]
+    return index if token == "env" or token.endswith("/env") else None
 
 
 def is_environment_assignment(token: str) -> bool:
