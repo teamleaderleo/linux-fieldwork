@@ -90,11 +90,11 @@ Each phase retains its raw and normalized command, stdout, stderr, status, timin
 
 ## Distinguishing results
 
-- **Product candidate:** successful unexpected host mutation, host package state used as target state, a successful exit for the deliberately failing configure, failure to recover, or conffile behavior contradicting `--force-confold`.
+- **Product candidate:** successful unexpected host mutation, host package state used as target state, a host service action, a successful exit for the deliberately failing configure, failure to recover, or conffile behavior contradicting `--force-confold`.
 - **Mapped behavior:** expected target-local partial state, later recovery, target-local residue, and only fully classified host reads/runtime effects.
 - **Blocked:** unresolved outside access or an environment that cannot distinguish package failure from containment failure.
 
-Host service actions require promotion or a deliberate narrower interpretation; they cannot produce a clean mapped-behavior disposition by default.
+Promotion takes precedence over unresolved classification when both appear. A clean mapped result requires zero unexpected mutations, zero service actions, zero unresolved events, an unchanged host fingerprint, and a satisfied lifecycle contract.
 
 ## Evidence boundary
 
@@ -104,30 +104,44 @@ Host service actions require promotion or a deliberate narrower interpretation; 
 - The first matrix does not yet prove apt-managed upgrade, dependency ordering, triggers, multiarch, or rollback semantics for arbitrary packages.
 - A failed configure is expected evidence when the target status and later recovery match the declared contract.
 - The current runner still needs guarded recursive-deletion roots and cancellation semantics that terminate without resuming later phases.
-- The summary contract still needs explicit validation that behaves identically under normal Python and `python -O`.
-- Conffile sibling sets and contents still need phase-specific validation before the conffile lifecycle can be declared complete.
+
+## Validation contract
+
+The summarizer uses explicit validation errors and exits status 2 for invalid evidence under both normal Python and `python -O`. Synthetic regressions mutate phase status, snapshot state, classifier totals, maintainer-script root/cwd, and conffile siblings; every mutation must fail identically in both modes.
+
+Conffile paths and contents are exact per phase, including `.dpkg-new` during unpack, `.dpkg-dist` after configuration, transition from 2.0 to 3.0 to 3.1 contents, and an empty set after purge. Classifier totals are recomputed from category counts instead of trusting the retained boolean flag.
+
+Disposition precedence is covered for clean, service-action, unexpected-mutation, unresolved-only, mixed service/unresolved, and host-fingerprint-change cases.
 
 ## Results
 
-Dedicated workflow run `30557757766` completed successfully at head `40c2b1ec89e4d8391bbcbe95a14f96a4a87760ca`. Review found the safety and decision-contract gaps listed above, so that run remains exploratory evidence rather than an authoritative receipt.
+Dedicated workflow run `30557757766` completed successfully at head `40c2b1ec89e4d8391bbcbe95a14f96a4a87760ca`. Review found safety and decision-contract gaps, so that run remains exploratory evidence.
 
-Generic Linux Fieldwork CI run `30557757125` passed compilation and all nine inherited tests, then failed because the stacked base carried an older repository workflow that unconditionally invoked `scripts/capture-linux-context.sh`, which is absent from that base. This is a base-composition failure outside the five-file investigation diff.
+Generic Linux Fieldwork CI run `30557757125` passed compilation and all nine inherited tests, then failed because the stacked base carried an older repository workflow that unconditionally invoked `scripts/capture-linux-context.sh`, which is absent from that base. This is a base-composition failure outside the investigation diff.
 
-Helper B added the public-evidence account-name removal at commit `353e963f1200eae7733e8f0814f2e18ccf53270b`. Dedicated workflow run `30577790248` at head `8ee8cad7d1913e9432cba1109dca43fdb5f11fa5` passed the lifecycle matrix, account-name removal, artifact upload, and downloaded-artifact receipt.
+Helper B added public-evidence account-name removal at commit `353e963f1200eae7733e8f0814f2e18ccf53270b`. Run `30577790248` validated the scrub and exposed the prior decision defect by reporting 32 service actions with `retain-mapped-behavior`.
 
-That exact artifact reported:
+Helper B then replaced assertion-only summary validation, added exact conffile sibling/content checks, recomputed classifier totals, and defined disposition precedence. Dedicated workflow run `30578410231` at exact head `6f9f89c432982f1227a1fd3b45ab9236c8ade96c` passed:
+
+- Python compilation and shell syntax;
+- normal and optimized-Python summary regressions;
+- the full upgrade/failure/recovery matrix;
+- account-name removal;
+- artifact upload and downloaded-artifact receipt.
+
+The corrected artifact reported:
 
 ```text
-disposition=retain-mapped-behavior
+disposition=promote-product-candidate
 failure_recovery: exit=1 failed_status=half-configured recovery_status=installed payload=3.1
 containment: unexpected_mutations=0 service_actions=32 unresolved=0 host_fingerprint_unchanged=true
 ```
 
-The lifecycle transition and recovery observations are useful. The `service_actions=32` plus `retain-mapped-behavior` combination confirms the current disposition defect: service actions are recorded but do not affect the decision. Treat this run as repair evidence until precedence is corrected and reviewed.
+The package lifecycle recovered as expected. The 32 classified host service actions now trigger the declared promotion result.
 
 ## Next step
 
-Complete the runtime deletion guard, INT/TERM child handling and exit-status preservation, optimized-Python validation tests, disposition precedence, and conffile sibling contract. Then rerun both the dedicated matrix and the artifact receipt on the exact head. Refresh or restack the base before using the generic repository CI result as a merge signal.
+Complete the runtime deletion guard plus INT/TERM child-process-group forwarding, reaping, and 130/143 exit preservation. Add reduced real-process regressions proving later phases do not resume after cancellation. Then rerun the dedicated matrix and artifact receipt. Refresh or restack the base before using generic repository CI as a merge signal.
 
 ## Authority
 
