@@ -8,45 +8,22 @@ on:
       - "scripts/**"
       - "investigations/**"
       - "notes/**"
+      - "programmes/**"
+      - "targets/**"
       - "upstream/**"
-      - ".github/workflows/**"
-  push:
-    branches:
-      - "investigation/mmdebstrap-autopkgtest-*"
-    paths:
-      - "tools/**"
-      - "tests/**"
-      - "scripts/**"
-      - "investigations/**"
-      - "notes/**"
-      - "upstream/**"
-      - ".github/workflows/**"
-  issue_comment:
-    types: [created]
+      - ".github/workflows/linux-fieldwork-ci.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
-  issues: write
-
-concurrency:
-  group: mmdebstrap-investigation-${{ github.event.issue.number || github.ref }}
-  cancel-in-progress: false
 
 jobs:
   lab-tools:
-    if: >-
-      github.event_name != 'issue_comment' ||
-      (github.actor == 'teamleaderleo' &&
-       github.event.issue.number == 9 &&
-       github.event.comment.body == '/run-mmdebstrap-investigation')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'issue_comment' && 'investigation/mmdebstrap-autopkgtest-1141078' || github.sha }}
 
       - name: Compile Python tools
         run: python3 -m compileall -q tools tests
@@ -63,71 +40,29 @@ jobs:
           python3 tools/debian_bug_report.py --help >/dev/null
           bash scripts/capture-linux-context.sh --help >/dev/null
 
-      - name: Report tool validation
-        if: always() && github.event_name == 'issue_comment'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          body="LINUX FIELDWORK CHECK\n\nTool validation: **${JOB_STATUS}**\n\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          gh api --method POST "repos/${{ github.repository }}/issues/9/comments" -f body="$body"
-
   capture-bug-report:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') ||
-      startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest') ||
-      (github.event_name == 'issue_comment' &&
-       github.actor == 'teamleaderleo' &&
-       github.event.issue.number == 9 &&
-       github.event.comment.body == '/run-mmdebstrap-investigation')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'issue_comment' && 'investigation/mmdebstrap-autopkgtest-1141078' || github.sha }}
 
       - name: Capture Debian bug 1141078
         run: |
           python3 tools/debian_bug_report.py 1141078 \
-            --output-dir investigations/0001-mmdebstrap-autopkgtest/runs/bts-1141078
+            --output-dir investigations/mmdebstrap-autopkgtest-1141078/runs/bts-1141078
 
       - name: Upload BTS capture
         uses: actions/upload-artifact@v4
         with:
           name: debian-bug-1141078
-          path: investigations/0001-mmdebstrap-autopkgtest/runs/bts-1141078/
+          path: investigations/mmdebstrap-autopkgtest-1141078/runs/bts-1141078/
           if-no-files-found: error
           retention-days: 14
 
-      - name: Report BTS capture
-        if: always() && github.event_name == 'issue_comment'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          summary="investigations/0001-mmdebstrap-autopkgtest/runs/bts-1141078/summary.json"
-          if [[ -f "$summary" ]]; then
-            messages=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["message_count"])' "$summary")
-            digest=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["mbox_sha256"])' "$summary")
-            detail="Messages: \`${messages}\`\nMbox SHA-256: \`${digest}\`"
-          else
-            detail="The capture produced no summary artifact."
-          fi
-          body="LINUX FIELDWORK CHECK\n\nDebian BTS capture: **${JOB_STATUS}**\n\n${detail}\n\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          gh api --method POST "repos/${{ github.repository }}/issues/9/comments" -f body="$body"
-
   reproduce-mmdebstrap:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') ||
-      startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest') ||
-      (github.event_name == 'issue_comment' &&
-       github.actor == 'teamleaderleo' &&
-       github.event.issue.number == 9 &&
-       github.event.comment.body == '/run-mmdebstrap-investigation')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest')
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -135,14 +70,12 @@ jobs:
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'issue_comment' && 'investigation/mmdebstrap-autopkgtest-1141078' || github.sha }}
 
       - name: Run Debian sid autopkgtest in a disposable container
         shell: bash
         run: |
           set -uo pipefail
-          run_dir="investigations/0001-mmdebstrap-autopkgtest/runs/$RUN_ID"
+          run_dir="investigations/mmdebstrap-autopkgtest-1141078/runs/$RUN_ID"
           mkdir -p "$run_dir"
           set +e
           docker run --privileged --rm \
@@ -170,33 +103,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mmdebstrap-reproduction-${{ env.RUN_ID }}
-          path: investigations/0001-mmdebstrap-autopkgtest/runs/${{ env.RUN_ID }}/
+          path: investigations/mmdebstrap-autopkgtest-1141078/runs/${{ env.RUN_ID }}/
           if-no-files-found: warn
           retention-days: 14
-
-      - name: Report reproduction result
-        if: always() && github.event_name == 'issue_comment'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          status_file="investigations/0001-mmdebstrap-autopkgtest/runs/$RUN_ID/container-exit-status"
-          status=$(cat "$status_file" 2>/dev/null || printf missing)
-          case "$status" in
-            0) classification=pass ;;
-            77) classification=neutral-or-skipped ;;
-            124|137) classification=timeout ;;
-            missing) classification=setup-failure ;;
-            *) classification=failure ;;
-          esac
-          body="LINUX FIELDWORK CHECK\n\nCurrent Debian sid reproduction job: **${JOB_STATUS}**\n\nContainer exit: \`${status}\`\nClassification: \`${classification}\`\n\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          gh api --method POST "repos/${{ github.repository }}/issues/9/comments" -f body="$body"
 
       - name: Classify reproduction result
         if: always()
         shell: bash
         run: |
-          status=$(cat "investigations/0001-mmdebstrap-autopkgtest/runs/$RUN_ID/container-exit-status")
+          status=$(cat "investigations/mmdebstrap-autopkgtest-1141078/runs/$RUN_ID/container-exit-status")
           case "$status" in
             0)
               echo "The contained autopkgtest passed."
