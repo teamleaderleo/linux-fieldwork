@@ -81,6 +81,7 @@ Autopkgtest uses status 77 for a runtime skip and warns test authors to reserve 
 
 - Debian autopkgtest test specification: https://sources.debian.org/src/debian-policy/4.7.2.0/autopkgtest.md
 - GNU `timeout` exit status: https://www.gnu.org/software/coreutils/timeout
+- Debian `grep-dctrl` exit status: https://manpages.debian.org/trixie/dctrl-tools/grep-dctrl.1.en.html
 
 The broader testing lesson is fixture compatibility: setup should provide the conditions required by the case, instead of consuming the capability the case intentionally removes.
 
@@ -94,6 +95,21 @@ The retained patch changes three temporary source-copy files:
 
 The imported source remains unchanged.
 
+## Second-pass review repair
+
+The package script starts with `set -exu`. The first candidate assigned the `grep-dctrl` output directly and then checked whether the selected test list was empty.
+
+Real `grep-dctrl` returns status 1 when it finds zero matching paragraphs. Under `set -e`, that assignment exits the script before the explicit empty-selection diagnostic. The previous regression used a fake selector that printed an empty string while returning 0, so it missed the real command behavior.
+
+The repaired candidate captures the selector status explicitly:
+
+- status 0 continues with the selected names;
+- status 1 reaches the controlled empty-selection status 1 and diagnostic;
+- status greater than 1 is preserved as a selector-command failure;
+- `timeout` remains uncalled in every selection failure.
+
+The guard regression now models real no-match status 1 and command-error status 2.
+
 ## Executable evidence
 
 The focused regressions prove:
@@ -102,7 +118,8 @@ The focused regressions prove:
 - host-hook exclusion;
 - absence of `sourcesfilter` and `file-mirror-automount` in the hard phase;
 - result mapping `0→0`, `1→1`, `2→2`, and `124→77`;
-- empty selection fails before child execution;
+- real-style empty selection status 1 reaches the controlled diagnostic before child execution;
+- selector command status 2 remains status 2 before child execution;
 - exhausted time returns 77 before child execution;
 - the original `capsh`, `/proc/self/fd`, tar creation, and archive comparisons remain present;
 - patch application, Python compilation, and shell syntax;
