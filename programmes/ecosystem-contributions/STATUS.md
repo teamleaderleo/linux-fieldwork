@@ -15,18 +15,18 @@ This programme turns Linux package collections, runtimes, developer tools, found
 
 ## Retained rounds
 
-- [`2026-07-30 ecosystem candidate scan`](../../research/rounds/2026-07-30-ecosystem-candidate-scan/selection.md) — selections from Nixpkgs, Homebrew, libarchive, systemd, and adjacent Fieldwork queues.
+- [`2026-07-30 ecosystem candidate scan`](../../research/rounds/2026-07-30-ecosystem-candidate-scan/selection.md) — selections, environment gates, live-overlap repair, and active-fix references.
 - [`LF-35 round 001`](lanes/LF-35-package-collection-candidate-harvesting/artifacts/round-001.md) — `gomarkdoc` test restoration, Homebrew recurring intake, AAVMF capability queue, and duplicate stops.
 - [`LF-36 round 001`](lanes/LF-36-downstream-patch-retirement/artifacts/round-001.md) — canonical fixes and exact triggers for future downstream patch removal.
 
 ## First sequence
 
-1. Run the `gomarkdoc` test-restoration matrix in current CI: inherited `GOFLAGS`, working directory, subpackage selection, and known-good versus known-bad nixpkgs revisions.
-2. Select a Homebrew #139929 leaf with current logs and no active pull request.
-3. Retain a small-buffer libarchive PPMd fixture and vary read chunk size.
-4. Queue systemd #43174 in a cgroup-v2 VM and capture ManagedOOM Varlink notifications around a user-manager reload.
-5. Keep AAVMF behind aarch64 QEMU capability.
-6. Recheck active canonical fixes as they land so downstream patches and workarounds can be removed promptly.
+1. Run the `gomarkdoc` test-restoration matrix in investigation #136: inherited `GOFLAGS`, working directory, subpackage selection, and pinned nixpkgs revisions.
+2. Select a leaf from the Homebrew unsolved-formula tracker with current logs and no active equivalent work.
+3. Run systemd-oomd investigation #140 in a cgroup-v2 VM and capture ManagedOOM Varlink notifications around a user-manager reload.
+4. Keep AAVMF behind aarch64 QEMU capability.
+5. Retain libarchive PPMd short reads as an active-fix reference through upstream PR 3340.
+6. Recheck canonical fixes as they land so downstream patches and workarounds can be removed promptly.
 
 ## Candidate target classes
 
@@ -51,6 +51,8 @@ A package symptom stays in this programme during intake. Once evidence identifie
 ## Portfolio discipline
 
 A large intake queue is useful. Active implementation stays bounded by test and review capacity. Every promoted candidate records exact source identity, environment, commands, baseline behavior, consequence, likely owner, overlap checks, and the smallest credible next change.
+
+Promotion expires when a matching pull request, assignee, claim, or equivalent fix appears. Recheck immediately before creating a branch.
 
 ## Authority
 
