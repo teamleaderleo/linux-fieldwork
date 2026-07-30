@@ -1,0 +1,43 @@
+name: Investigate mmdebstrap chrootless PATH precedence
+
+on:
+  pull_request:
+    paths:
+      - 'upstream/mmdebstrap/mmdebstrap'
+      - 'investigations/mmdebstrap-chrootless-env/path_precedence_probe.sh'
+      - '.github/workflows/mmdebstrap-chrootless-path-precedence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out investigation
+        uses: actions/checkout@v4
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libdistro-info-perl \
+            libdpkg-perl \
+            uidmap
+
+      - name: Check probe syntax
+        run: bash -n investigations/mmdebstrap-chrootless-env/path_precedence_probe.sh
+
+      - name: Run PATH precedence probe
+        run: bash investigations/mmdebstrap-chrootless-env/path_precedence_probe.sh
+
+      - name: Upload retained evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmdebstrap-chrootless-path-${{ github.run_id }}-${{ github.run_attempt }}
+          path: investigations/mmdebstrap-chrootless-env/path-results/
+          if-no-files-found: warn
+          retention-days: 14
