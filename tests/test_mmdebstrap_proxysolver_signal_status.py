@@ -32,16 +32,29 @@ class MmdebstrapProxysolverSignalStatusTest(unittest.TestCase):
 
         cls.fake_solver = root / "fake-solver"
         cls.fake_solver.write_text(
-            """#!/bin/sh
-set -eu
-cat >/dev/null
-printf '%s\n' "$$" >"$FAKE_SOLVER_PIDFILE"
-printf '%s' "$FAKE_SOLVER_OUTPUT"
-case "$FAKE_SOLVER_MODE" in
-  exit) exit "$FAKE_SOLVER_STATUS" ;;
-  term) kill -TERM "$$"; sleep 5; exit 99 ;;
-  *) exit 98 ;;
-esac
+            """#!/usr/bin/env python3
+import os
+import signal
+import sys
+import time
+
+sys.stdin.read()
+with open(os.environ["FAKE_SOLVER_PIDFILE"], "w", encoding="utf-8") as stream:
+    stream.write(str(os.getpid()) + "\\n")
+sys.stdout.write(os.environ["FAKE_SOLVER_OUTPUT"])
+sys.stdout.flush()
+mode = os.environ["FAKE_SOLVER_MODE"]
+if mode == "exit":
+    raise SystemExit(int(os.environ["FAKE_SOLVER_STATUS"]))
+if mode == "term":
+    # The wrapper-mask regression deliberately starts with SIGTERM blocked.
+    # Unblock it in the solver so the child still terminates by signal while
+    # the parent retains the inherited blocked mask.
+    signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM})
+    os.kill(os.getpid(), signal.SIGTERM)
+    time.sleep(5)
+    raise SystemExit(99)
+raise SystemExit(98)
 """,
             encoding="utf-8",
         )
@@ -102,6 +115,8 @@ esac
         label: str,
         mode: str,
         status: int = 0,
+        *,
+        block_term_in_wrapper: bool = False,
     ) -> tuple[subprocess.CompletedProcess[str], str, int]:
         root = pathlib.Path(self.work.name)
         dump = root / f"{label}.dump"
@@ -116,8 +131,16 @@ esac
                 "FAKE_SOLVER_PIDFILE": str(pidfile),
             }
         )
+        command = [sys.executable, str(script)]
+        if block_term_in_wrapper:
+            launcher = (
+                "import os, signal, sys; "
+                "signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM}); "
+                "os.execv(sys.executable, [sys.executable, sys.argv[1]])"
+            )
+            command = [sys.executable, "-c", launcher, str(script)]
         result = subprocess.run(
-            [sys.executable, str(script)],
+            command,
             input="Request: EDSP\n\n",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -163,6 +186,19 @@ esac
         self.assert_child_reaped(canonical_pid)
         self.assert_child_reaped(repaired_pid)
 
+    def test_repair_unblocks_inherited_term_before_reraising(self) -> None:
+        repaired, dump, child_pid = self.run_wrapper(
+            self.repaired,
+            "repaired-blocked-term",
+            "term",
+            block_term_in_wrapper=True,
+        )
+
+        self.assertEqual(repaired.returncode, -signal.SIGTERM, repaired.stderr)
+        self.assertEqual(repaired.stdout, OUTPUT)
+        self.assertEqual(dump, OUTPUT)
+        self.assert_child_reaped(child_pid)
+
     def test_ordinary_success_and_failure_statuses_remain_unchanged(self) -> None:
         for status in (0, 7):
             for label, script in (
@@ -177,12 +213,15 @@ esac
                 self.assertEqual(dump, OUTPUT)
                 self.assert_child_reaped(child_pid)
 
-    def test_repaired_source_restores_default_and_signals_itself(self) -> None:
+    def test_repaired_source_restores_unblocks_and_signals_itself(self) -> None:
         canonical = self.canonical.read_text(encoding="utf-8")
         repaired = self.repaired.read_text(encoding="utf-8")
         self.assertNotIn("if returncode < 0", canonical)
         self.assertIn("if returncode < 0", repaired)
         self.assertIn("signal.signal(signum, signal.SIG_DFL)", repaired)
+        self.assertIn(
+            "signal.pthread_sigmask(signal.SIG_UNBLOCK, {signum})", repaired
+        )
         self.assertIn("os.kill(os.getpid(), signum)", repaired)
         self.assertIn("raise SystemExit(returncode)", repaired)
 
