@@ -130,8 +130,9 @@ class ReproductionHarnessTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("exec '/usr/bin/mmdebstrap', @ARGV", patched)
-        self.assertIn('CMD="$SRC/mmdebstrap --setup-hook=', patched)
+        self.assertIn('CMD="$AUTOPKGTEST_TMP/mmdebstrap --setup-hook=', patched)
         self.assertNotIn('CMD="./mmdebstrap --setup-hook=', patched)
+        self.assertNotIn('CMD="$SRC/mmdebstrap --setup-hook=', patched)
         self.assertNotIn("mmdebstrap-under-test", patched)
         self.assertEqual(perl_syntax.returncode, 0, perl_syntax.stderr)
         self.assertEqual(pod.returncode, 0, pod.stderr)
@@ -141,6 +142,8 @@ class ReproductionHarnessTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             tree = root / "tree"
+            autopkgtest_tmp = root / "autopkgtest-tmp"
+            autopkgtest_tmp.mkdir()
             destination = tree / "debian/tests"
             destination.mkdir(parents=True)
             shutil.copy2(SOURCE_TESTSUITE, destination / "testsuite")
@@ -162,21 +165,26 @@ class ReproductionHarnessTest(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             patched = (destination / "testsuite").read_text(encoding="utf-8")
-            command_match = re.search(
-                r'env CMD="([^"]+)" DEFAULT_DIST=', patched
-            )
+            command_match = re.search(r'env CMD="([^"]+)" DEFAULT_DIST=', patched)
             self.assertIsNotNone(command_match)
             command = command_match.group(1)
-            expanded_command = command.replace("$SRC", str(tree))
+            expanded_command = command.replace(
+                "$AUTOPKGTEST_TMP", str(autopkgtest_tmp)
+            ).replace("$SRC", str(tree))
             rendered_test = CWD_CHANGING_TEST.read_text(encoding="utf-8").replace(
                 "{{ CMD }}", expanded_command
             )
             self.assertIn("set -- env --chdir=/tmp/debian-chroot", rendered_test)
             self.assertIn(
-                f'set -- "$@" {tree}/mmdebstrap --setup-hook=', rendered_test
+                f'set -- "$@" {autopkgtest_tmp}/mmdebstrap --setup-hook=',
+                rendered_test,
             )
 
-            proxy = tree / "mmdebstrap"
+            source_decoy = tree / "mmdebstrap"
+            source_decoy.write_text("#!/bin/sh\nexit 97\n", encoding="utf-8")
+            source_decoy.chmod(0o755)
+
+            proxy = autopkgtest_tmp / "mmdebstrap"
             result_path = root / "proxy-result"
             proxy.write_text(
                 "#!/bin/sh\n"
