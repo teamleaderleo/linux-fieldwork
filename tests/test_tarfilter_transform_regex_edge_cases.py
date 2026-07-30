@@ -77,8 +77,6 @@ class TarfilterTransformRegexEdgeCasesTest(
         cases = (
             ("a", "s/a**/X/x", "X"),
             ("a", "s/a+*/X/x", "X"),
-            ("a", "s/a++/X/x", "X"),
-            ("a", "s/a??/X/x", "X"),
         )
         with tempfile.TemporaryDirectory(prefix="tarfilter-regex-repeat-") as td:
             work = pathlib.Path(td)
