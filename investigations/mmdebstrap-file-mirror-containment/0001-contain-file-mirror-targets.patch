@@ -1,7 +1,7 @@
 diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh candidate/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh
 --- base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh	2026-07-30 15:29:41.261301911 +0000
 +++ candidate/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh	2026-07-30 15:31:59.065305058 +0000
-@@ -8,13 +8,41 @@
+@@ -8,13 +8,44 @@
  	set -x
  fi
  
@@ -34,6 +34,7 @@ diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh ca
 +	*) echo "E: file-mirror marker escapes root: $entry" >&2; exit 1 ;;
 +esac
 +case $mode in
++	validate) : ;;
 +	root|unshare)
 +		echo "    $target" >&2
 +		umount "$target"
@@ -46,7 +47,7 @@ diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh ca
  
  case $MMDEBSTRAP_MODE in
  	root|unshare)
-@@ -23,19 +51,8 @@
+@@ -23,19 +54,10 @@
  		echo "removing the following directories:" >&2 ;;
  esac
  
@@ -63,6 +64,8 @@ diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh ca
 -			xargs $xargsopts rm -r "$rootdir/{}"
 -		;;
 -esac
++< "$marker" xargs --null --no-run-if-empty --max-args=1 \
++	sh -c "$cleanup_entry" sh "$rootdir" validate
 +< "$marker" xargs --null --no-run-if-empty --max-args=1 \
 +	sh -c "$cleanup_entry" sh "$rootdir" "$MMDEBSTRAP_MODE"
  
