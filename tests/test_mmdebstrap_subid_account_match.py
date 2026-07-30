@@ -94,6 +94,15 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
                 "old-debci-helper:200000:65536\ndebci:100000:65536\n",
             )
 
+            malformed = tmp_path / "malformed"
+            malformed.write_text("debci\n", encoding="utf-8")
+            result = self.run_block(block, source_path, malformed, "debci")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                malformed.read_text(encoding="utf-8"),
+                "debci\ndebci:100000:65536\n",
+            )
+
             literal = tmp_path / "literal"
             literal.write_text("debci123:200000:65536\n", encoding="utf-8")
             result = self.run_block(block, source_path, literal, "debci.*")
@@ -135,7 +144,7 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
         self.assertEqual(len(differences), 2)
         for _line, before, after in differences:
             self.assertIn('grep "$AUTOPKGTEST_NORMAL_USER"', before)
-            self.assertIn("cut -d: -f1", after)
+            self.assertIn("cut -s -d: -f1", after)
             self.assertIn('grep -Fxq -- "$AUTOPKGTEST_NORMAL_USER"', after)
 
     def test_subuid_exact_match_and_idempotency(self):
