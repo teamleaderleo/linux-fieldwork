@@ -78,6 +78,30 @@ class ManifestToolsTest(unittest.TestCase):
             "etc/example",
         )
 
+    def test_pax_headers_do_not_duplicate_direct_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            archive_path = Path(tmp) / "pax.tar"
+            with tarfile.open(
+                archive_path,
+                "w",
+                format=tarfile.PAX_FORMAT,
+            ) as archive:
+                info = tarfile.TarInfo("example")
+                info.size = 1
+                info.mtime = 2.5
+                info.pax_headers = {
+                    "mtime": "2.5",
+                    "SCHILY.xattr.user.test": "value",
+                }
+                archive.addfile(info, io.BytesIO(b"x"))
+            manifest = self.manifest(archive_path)
+
+        self.assertEqual(manifest["example"]["mtime"], 2.5)
+        self.assertEqual(
+            manifest["example"]["pax_headers"],
+            {"SCHILY.xattr.user.test": "value"},
+        )
+
     def test_diff_can_ignore_timestamp_noise(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             left_path = Path(tmp) / "left.tar"
