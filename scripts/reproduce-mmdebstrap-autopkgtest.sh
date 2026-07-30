@@ -79,14 +79,11 @@ patch -p1 -d "$source_tree" -i "$override_patch" \
   dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
     autopkgtest mmdebstrap perltidy apt dpkg patch 2>&1 || true
   printf 'autopkgtest executable\t%s\n' "$(command -v autopkgtest)"
-  printf '``\n'
+  printf '```\n'
   printf '\n## APT policy\n\n```text\n'
   apt-cache policy base-files mmdebstrap perltidy apt dpkg 2>&1 || true
   printf '```\n'
 } >"$run_dir/provenance.md"
-
-# Fix the accidental two-backtick fence above without hiding the exact generated text.
-sed -i 's/^``$/```/' "$run_dir/provenance.md"
 
 dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
   >"$run_dir/package-versions-before.tsv" 2>"$run_dir/package-query-before.err" || true
