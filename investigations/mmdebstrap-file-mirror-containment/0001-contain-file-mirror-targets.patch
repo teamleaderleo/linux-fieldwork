@@ -75,7 +75,7 @@ diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh ca
 diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh candidate/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh
 --- base/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh	2026-07-30 15:31:59.065305058 +0000
 +++ candidate/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh	2026-07-30 15:31:59.065305058 +0000
-@@ -6,31 +6,76 @@
+@@ -6,31 +6,73 @@
  	set -x
  fi
  
@@ -107,10 +107,7 @@ diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh candid
 +		path=${path%/}
 +	done
 +	case "$path" in
-+		""|/*) return 1 ;;
-+	esac
-+	case "/$path/" in
-+		*"/../"*|*"/./"*|*"//"*) return 1 ;;
++		""|/*|..|../*) return 1 ;;
 +	esac
 +	printf '%s\n' "$path"
 +}
@@ -164,7 +161,7 @@ diff -ruN base/upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh candid
  	done
  
  # process all files given via --include
-@@ -44,30 +89,26 @@
+@@ -44,30 +86,26 @@
  	esac
  	# undo escaping
  	pkg="$(printf '%s' "$pkg" | sed 's/%2C/,/g; s/%25/%/g')"
