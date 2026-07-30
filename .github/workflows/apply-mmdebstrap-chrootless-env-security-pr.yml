@@ -1,0 +1,56 @@
+name: Apply mmdebstrap chrootless security fix on PR
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: security/mmdebstrap-chrootless-env
+          fetch-depth: 0
+
+      - name: Extract and run source transformation
+        run: |
+          awk '
+            /python3 - <<'\''PY'\''/ { inside=1; next }
+            inside && /^          PY$/ { inside=0; exit }
+            inside { sub(/^          /, ""); print }
+          ' .github/workflows/apply-mmdebstrap-chrootless-env-security.yml \
+            >/tmp/apply-security.py
+          python3 /tmp/apply-security.py
+
+      - name: Format with current Debian sid perltidy
+        run: |
+          docker run --rm \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            debian:sid-slim \
+            sh -euxc '
+              apt-get update
+              apt-get install --yes --no-install-recommends perltidy
+              perltidy < upstream/mmdebstrap/mmdebstrap > upstream/mmdebstrap/mmdebstrap.tdy
+              mv upstream/mmdebstrap/mmdebstrap.tdy upstream/mmdebstrap/mmdebstrap
+            '
+
+      - name: Validate and commit
+        run: |
+          perl -c upstream/mmdebstrap/mmdebstrap
+          pod2man upstream/mmdebstrap/mmdebstrap >/dev/null
+          git diff --check
+          test "$(sed -e '/^__END__$/,$d' upstream/mmdebstrap/mmdebstrap | wc --max-line-length)" -le 79
+          rm .github/workflows/apply-mmdebstrap-chrootless-env-security.yml
+          rm .github/workflows/apply-mmdebstrap-chrootless-env-security-pr.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Harden chrootless maintainer-script environment'
+          git push origin HEAD:security/mmdebstrap-chrootless-env
