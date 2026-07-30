@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   focused-regression:
@@ -37,6 +38,28 @@ jobs:
         id: tmpdir
         continue-on-error: true
         run: bash investigations/mmdebstrap-chrootless-env/review-tmpdir-probe.sh
+      - name: Post diagnostic summaries
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          CANDIDATE_OUTCOME: ${{ steps.candidate.outcome }}
+          TMPDIR_OUTCOME: ${{ steps.tmpdir.outcome }}
+        run: |
+          {
+            printf 'Candidate regression outcome: `%s`\n\n' "$CANDIDATE_OUTCOME"
+            printf 'Target temporary-directory probe outcome: `%s`\n\n' "$TMPDIR_OUTCOME"
+            echo '```text'
+            if [[ -f investigations/mmdebstrap-chrootless-env/results/summary.txt ]]; then
+              cat investigations/mmdebstrap-chrootless-env/results/summary.txt
+            fi
+            echo '--- tmpdir review ---'
+            if [[ -f investigations/mmdebstrap-chrootless-env/tmpdir-review-results/summary.txt ]]; then
+              cat investigations/mmdebstrap-chrootless-env/tmpdir-review-results/summary.txt
+            fi
+            echo '```'
+          } > diagnostic-comment.md
+          gh pr comment "$PR_NUMBER" --body-file diagnostic-comment.md
       - name: Upload compact evidence
         if: always()
         uses: actions/upload-artifact@v4
