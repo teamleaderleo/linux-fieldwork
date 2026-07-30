@@ -25,6 +25,7 @@ Those candidates own separate boundaries. No active branch covered transform rep
 - Source owner: `TransformAction` and the transform loop in `main()`
 - Candidate branch: `fix/tarfilter-gnu-transform-semantics`
 - Candidate patch: `tarfilter-gnu-transform-semantics.patch`
+- Pull request: #56
 
 The patch is retained and applied to an exact temporary source copy by the regression. The imported file remains unchanged on this branch.
 
@@ -80,6 +81,14 @@ python3 -m unittest tests.test_tarfilter_transform_semantics -v
 
 The repository CI discovery command also runs the test.
 
+## Validation
+
+Linux Fieldwork CI run `30535166174` passed on Ubuntu 24.04 against candidate code head `640f414cb18cf47b3e803856392c720414bea333`.
+
+The run compiled the test suite, applied the retained patch to an exact temporary source copy, and passed all nine discovered tests. The new transform differential test passed alongside the active no-option passthrough and path-reference regressions. The shell syntax and optional command-help checks also passed.
+
+The first candidate run, `30535026893`, failed before semantic execution because the retained unified diff had an incorrect hunk count. Commit `640f414cb18cf47b3e803856392c720414bea333` corrected that packaging defect; no source-logic change was required.
+
 ## Negative control
 
 The exact unmodified source must produce `b/b` for `s/a/b/` and reject `s/a/b/g`. The candidate matrix can pass only after the patch applies.
@@ -104,6 +113,7 @@ The test uses `TemporaryDirectory`, copies one source file into a disposable can
 - Invalid flags are asserted.
 - Work is separated from the active sparse, path-filter, path-reference, and no-option branches.
 - Claims remain narrower than full sed compatibility.
+- The initial malformed retained patch was caught by CI and corrected before the semantic result was claimed.
 
 ## Disposition
 
