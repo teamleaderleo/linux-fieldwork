@@ -7,12 +7,14 @@ on:
     paths:
       - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/**"
       - "tests/test_lf02_evidence_provenance.py"
+      - "tests/test_lf02_summary_schema.py"
       - "upstream/mmdebstrap/**"
       - ".github/workflows/lf-02-chrootless-dpkg-root-containment.yml"
   pull_request:
     paths:
       - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/**"
       - "tests/test_lf02_evidence_provenance.py"
+      - "tests/test_lf02_summary_schema.py"
       - "upstream/mmdebstrap/**"
       - ".github/workflows/lf-02-chrootless-dpkg-root-containment.yml"
   workflow_dispatch:
@@ -37,13 +39,16 @@ jobs:
             libdpkg-perl \
             strace
 
-      - name: Check probe syntax and provenance contract
+      - name: Check probe syntax and result contracts
         run: |
           perl -c upstream/mmdebstrap/mmdebstrap
           python3 -m py_compile \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/classify-strace.py \
-            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/write-provenance.py
-          python3 -m unittest tests/test_lf02_evidence_provenance.py
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/write-provenance.py \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/summarize-probe.py
+          python3 -m unittest \
+            tests/test_lf02_evidence_provenance.py \
+            tests/test_lf02_summary_schema.py
           bash -n \
             programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/run-probe.sh
           for script in \
@@ -68,14 +73,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  provenance-receipt:
+  artifact-receipt:
     needs: containment
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Assert artifact provenance and normalized command views
+      - name: Assert provenance, summary schema, and normalized views
         shell: bash
         run: |
           set -euo pipefail
@@ -84,6 +89,7 @@ jobs:
             --dir evidence >/dev/null
           python3 - evidence <<'PY'
           import json
+          import os
           import pathlib
           import sys
 
@@ -106,11 +112,11 @@ jobs:
           print(f"github_base_ref={actions['base_ref']}")
           print(f"github_run={actions['run_id']} attempt={actions['run_attempt']}")
 
-          assert summary["schema_version"] == 2
+          assert summary["schema_version"] == 3
           assert provenance["schema_version"] == 1
           assert actions["active"] is True
-          assert actions["run_id"] == str(__import__("os").environ["GITHUB_RUN_ID"])
-          assert actions["run_attempt"] == str(__import__("os").environ["GITHUB_RUN_ATTEMPT"])
+          assert actions["run_id"] == os.environ["GITHUB_RUN_ID"]
+          assert actions["run_attempt"] == os.environ["GITHUB_RUN_ATTEMPT"]
           assert repository["checked_out_head"]
           assert repository["effective_ref"]
           if actions["event_name"] == "pull_request":
@@ -118,6 +124,79 @@ jobs:
               assert actions["head_ref"]
               assert actions["base_ref"]
               assert repository["effective_ref"] == actions["head_ref"]
+
+          fixture = summary["fixture"]
+          print(
+              f"fixture={fixture['package']} version={fixture['version']} "
+              f"architecture={fixture['architecture']} size={fixture['size_bytes']} "
+              f"sha256={fixture['sha256']}"
+          )
+          assert fixture["package"] == "lf-fieldwork-probe"
+          assert fixture["version"] == "1.0"
+          assert fixture["architecture"] == "all"
+          assert fixture["size_bytes"] > 0
+          assert len(fixture["sha256"]) == 64
+
+          for tool, value in summary["tools"].items():
+              print(f"tool={tool} version={value['version']}")
+              assert value["raw"]
+              assert value["version"]
+
+          expected_phases = {
+              "direct-install",
+              "direct-reinstall",
+              "direct-purge",
+              "direct-install-after-purge",
+              "mmdebstrap-one",
+              "mmdebstrap-two",
+          }
+          assert set(summary["phases"]) == expected_phases
+          for name, phase in summary["phases"].items():
+              print(
+                  f"phase={name} exit={phase['exit_status']} "
+                  f"duration_ms={phase['duration_ms']}"
+              )
+              assert phase["exit_status"] == 0
+              assert phase["duration_ms"] >= 0
+              assert phase["started_utc"].endswith("Z")
+              assert phase["finished_utc"].endswith("Z")
+              assert phase["artifacts"]["trace_glob"] == f"{name}.trace*"
+
+          category_ids = {
+              "required_host_read",
+              "harmless_runtime_interaction",
+              "unexpected_mutation",
+              "service_action",
+              "unresolved",
+          }
+          for name, classification in summary["classifications"].items():
+              categories = classification["categories"]
+              print(
+                  f"classification={name} events={classification['outside_access_events']} "
+                  f"categories={categories}"
+              )
+              assert set(categories) == category_ids
+              assert sum(categories.values()) == classification["outside_access_events"]
+              assert classification["category_total_matches_events"] is True
+
+          inputs = summary["decision_inputs"]
+          assert inputs["service_actions"] == sum(
+              value["categories"]["service_action"]
+              for value in summary["classifications"].values()
+          )
+          assert inputs["unexpected_mutations"] == sum(
+              value["categories"]["unexpected_mutation"]
+              for value in summary["classifications"].values()
+          )
+          assert summary["decision"] == (
+              "promote" if inputs["promotion_signal"] else "retain"
+          )
+          print(
+              f"decision={summary['decision']} "
+              f"service_actions={inputs['service_actions']} "
+              f"unexpected_mutations={inputs['unexpected_mutations']} "
+              f"unresolved={inputs['unresolved']}"
+          )
 
           assert summary["command_views"]
           for name, views in summary["command_views"].items():
@@ -130,5 +209,4 @@ jobs:
               assert paths["runtime_root"] not in normalized_text
               assert "<runtime>" in normalized_text or "<repo-root>" in normalized_text
               assert paths["runtime_root"] in raw_text or paths["repository_root"] in raw_text
-              print(f"command={name} normalized={normalized.name} raw={raw.name}")
           PY
