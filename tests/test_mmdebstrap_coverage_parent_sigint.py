@@ -106,6 +106,7 @@ class MmdebstrapCoverageParentSigintTest(unittest.TestCase):
         suite = pathlib.Path(self.work.name) / label
         suite.mkdir()
         shutil.copy2(coverage_source, suite / "coverage.py")
+        (suite / "worker.py").write_text(WORKER, encoding="utf-8")
         (suite / "shared/cache/debian/dists/unstable").mkdir(parents=True)
         (suite / "shared/cache/debian/dists/unstable/InRelease").write_text(
             "Date: Thu, 01 Jan 1970 00:00:00 +0000\n", encoding="utf-8"
