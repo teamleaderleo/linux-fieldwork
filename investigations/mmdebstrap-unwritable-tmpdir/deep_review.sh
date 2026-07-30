@@ -150,8 +150,7 @@ expected = """        my @tempdir_options = (TMPDIR => 1);
         if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne '') {
             @tempdir_options = (DIR => $ENV{TMPDIR});
         }
-        $options->{root}
-          = tempdir('mmdebstrap.XXXXXXXXXX', @tempdir_options);
+        $options->{root} = tempdir('mmdebstrap.XXXXXXXXXX', @tempdir_options);
 """
 if source.count(expected) != 1:
     raise SystemExit("reviewed TMPDIR block differs from the expected readable form")
