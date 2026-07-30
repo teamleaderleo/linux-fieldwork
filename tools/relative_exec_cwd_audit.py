@@ -25,15 +25,8 @@ RUST_COMMAND = re.compile(
     r'(?:std::process::|tokio::process::)?Command::new\(\s*"([^"]+)"\s*,?\s*\)'
 )
 SUPPORTED_SUFFIXES = {".py", ".rs", ".sh", ".bash"}
-ENV_OPTIONS_WITH_VALUE = {
-    "-a",
-    "--argv0",
-    "-S",
-    "--split-string",
-    "-u",
-    "--unset",
-}
-ENV_SHORT_OPTIONS_WITH_ATTACHED_VALUE = ("-a", "-S", "-u")
+ENV_OPTIONS_WITH_VALUE = {"-a", "--argv0", "-u", "--unset"}
+ENV_SHORT_OPTIONS_WITH_ATTACHED_VALUE = ("-a", "-u")
 
 
 @dataclass(frozen=True)
@@ -216,6 +209,12 @@ def is_environment_assignment(token: str) -> bool:
     return re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", token) is not None
 
 
+def is_split_string_option(token: str) -> bool:
+    return token in {"-S", "--split-string"} or token.startswith(
+        ("-S", "--split-string=")
+    )
+
+
 def shell_program_after_env(tokens: Sequence[str]) -> tuple[str, str] | None:
     env_index = env_token_index(tokens)
     if env_index is None:
@@ -248,6 +247,11 @@ def shell_program_after_env(tokens: Sequence[str]) -> tuple[str, str] | None:
             cwd = token[2:]
             index += 1
             continue
+        if not options_ended and is_split_string_option(token):
+            # -S/--split-string creates a second command-parsing layer inside
+            # one argument. This literal token scanner deliberately does not
+            # guess the executable identity inside that string.
+            return None
         if not options_ended and token in ENV_OPTIONS_WITH_VALUE:
             if index + 1 >= len(tokens):
                 return None
