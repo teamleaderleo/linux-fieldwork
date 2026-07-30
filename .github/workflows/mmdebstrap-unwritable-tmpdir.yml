@@ -1,4 +1,4 @@
-name: Reproduce mmdebstrap unwritable TMPDIR
+name: Verify mmdebstrap explicit TMPDIR handling
 
 on:
   push:
@@ -18,39 +18,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-candidate:
-    if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out investigation branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-
-      - name: Apply candidate patch
-        run: |
-          set -euxo pipefail
-          git apply --check patches/mmdebstrap-explicit-tmpdir.patch
-          git apply patches/mmdebstrap-explicit-tmpdir.patch
-          chmod +x upstream/mmdebstrap/tests/fail-with-unwritable-tmpdir
-
-      - name: Commit patched source and regression test
-        run: |
-          set -euxo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add upstream/mmdebstrap/mmdebstrap \
-            upstream/mmdebstrap/coverage.txt \
-            upstream/mmdebstrap/tests/fail-with-unwritable-tmpdir
-          git commit -m "Fail when an explicit TMPDIR is unusable"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
-
   verify:
-    if: github.event_name == 'workflow_dispatch' || github.actor == 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -65,10 +36,16 @@ jobs:
             libdpkg-perl \
             uidmap
 
-      - name: Run focused reproduction
+      - name: Check candidate syntax
+        run: |
+          perl -c upstream/mmdebstrap/mmdebstrap
+          sh -n upstream/mmdebstrap/tests/fail-with-unwritable-tmpdir
+          bash -n investigations/mmdebstrap-unwritable-tmpdir/run.sh
+
+      - name: Verify explicit TMPDIR contract
         run: bash investigations/mmdebstrap-unwritable-tmpdir/run.sh
 
-      - name: Upload reproduction evidence
+      - name: Upload verification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
