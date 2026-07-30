@@ -1,0 +1,53 @@
+{
+  "workflow_run": 30515782245,
+  "artifact_id": 8748803333,
+  "artifact_digest": "sha256:6ab07c15205d33897ec3a58f4781171547f35ec8deb14714c9dce578991ce86f",
+  "artifact_expires_at": "2026-08-13T05:08:38Z",
+  "fixture": {
+    "package": "lf-fieldwork-probe_1.0_all.deb",
+    "size_bytes": 1018,
+    "sha256": "e0c7d467562e79f7e605eb973d7dec385d4910a0a8737a352ba453c0feaab6e8"
+  },
+  "phases": {
+    "direct-install": 0,
+    "direct-reinstall": 0,
+    "direct-purge": 0,
+    "direct-install-after-purge": 0,
+    "mmdebstrap-one": 0,
+    "mmdebstrap-two": 0
+  },
+  "classifications": {
+    "direct": {
+      "trace_files": 105,
+      "outside_access_events": 1187,
+      "required_host_read": 1003,
+      "harmless_runtime_interaction": 170,
+      "unexpected_mutation": 0,
+      "service_action": 14,
+      "unresolved": 0
+    },
+    "mmdebstrap-one": {
+      "trace_files": 84,
+      "outside_access_events": 4690,
+      "required_host_read": 4544,
+      "harmless_runtime_interaction": 141,
+      "unexpected_mutation": 0,
+      "service_action": 5,
+      "unresolved": 0
+    },
+    "mmdebstrap-two": {
+      "trace_files": 84,
+      "outside_access_events": 4691,
+      "required_host_read": 4545,
+      "harmless_runtime_interaction": 141,
+      "unexpected_mutation": 0,
+      "service_action": 5,
+      "unresolved": 0
+    }
+  },
+  "host_fingerprint_unchanged": true,
+  "mmdebstrap_rerun_script_diff_empty": true,
+  "mmdebstrap_rerun_alternative_diff_empty": true,
+  "promotion_signal": true,
+  "decision": "promote"
+}
