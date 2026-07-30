@@ -2,7 +2,27 @@
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-work_dir=${1:-"${TMPDIR:-/tmp}/lf07-maintainer-script-idempotency"}
+tmp_root=$(realpath -m -- "${TMPDIR:-/tmp}")
+work_dir=$(realpath -m -- "${1:-$tmp_root/lf07-maintainer-script-idempotency}")
+case "$tmp_root" in
+    /)
+        echo "refusing unsafe TMPDIR root: $tmp_root" >&2
+        exit 2
+        ;;
+esac
+case "$work_dir" in
+    /|/tmp|/var/tmp|"$tmp_root")
+        echo "refusing unsafe work directory: $work_dir" >&2
+        exit 2
+        ;;
+    /tmp/*|/var/tmp/*|"$tmp_root"/*)
+        ;;
+    *)
+        echo "work directory must be a child of /tmp, /var/tmp, or TMPDIR: $work_dir" >&2
+        exit 2
+        ;;
+esac
+
 fixture_dir="$script_dir/fixture/package"
 package_name=lf-script-idempotency-fixture
 package_dir="$work_dir/package"
@@ -11,7 +31,7 @@ results_dir="$script_dir/results"
 assertions_file="$results_dir/assertions.tsv"
 assertion_failures=0
 
-rm -rf "$work_dir" "$results_dir"
+rm -rf -- "$work_dir" "$results_dir"
 mkdir -p "$work_dir" "$results_dir"
 cp -a "$fixture_dir" "$package_dir"
 chmod 0755 "$package_dir/DEBIAN/postinst"
@@ -88,7 +108,7 @@ copy_binary_with_libs() {
 
 make_root() {
     root=$1
-    rm -rf "$root"
+    rm -rf -- "$root"
     mkdir -p \
         "$root/bin" \
         "$root/etc" \
