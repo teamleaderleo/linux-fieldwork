@@ -20,299 +20,28 @@ jobs:
           ref: fix/chrootless-target-tmpdir
           fetch-depth: 0
 
-      - name: Apply bounded source and regression edits
+      - name: Apply exact edits
+        run: python3 investigations/mmdebstrap-chrootless-target-tmpdir/apply.py
+
+      - name: Capture focused validation
         shell: bash
         run: |
-          set -euo pipefail
-          python3 <<'PY'
-          from pathlib import Path
-
-          def replace_once(path: Path, old: str, new: str) -> None:
-              text = path.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(
-                      f"expected one replacement marker in {path}, found {count}: {old[:80]!r}"
-                  )
-              path.write_text(text.replace(old, new, 1))
-
-          source = Path("upstream/mmdebstrap/mmdebstrap")
-          helper_old = '''sub chrootless_dpkg_environment() {
-              my @names = qw(
-                PATH
-                DEBIAN_FRONTEND
-                DEBCONF_NONINTERACTIVE_SEEN
-                LC_ALL
-                LANGUAGE
-                LANG
-                TZ
-                SOURCE_DATE_EPOCH
-                QEMU_LD_PREFIX
-              );
-
-              if (defined $ENV{FAKEROOTKEY}) {
-                  push @names, qw(FAKEROOTKEY FAKED_MODE FAKEROOT_FD_BASE LD_PRELOAD
-                    LD_LIBRARY_PATH);
-              }
-              my @result = ('-i');
-              foreach my $name (@names) {
-                  next if !defined $ENV{$name};
-                  push @result, "$name=$ENV{$name}";
-              }
-              return @result;
-          }
-          '''
-          helper_new = '''sub chrootless_dpkg_environment() {
-              my $root   = shift;
-              my $tmpdir = "$root/tmp";
-
-              if (-l $tmpdir) {
-                  error "chrootless target temporary directory is a symlink: $tmpdir";
-              }
-              if (!-e $tmpdir) {
-                  make_path($tmpdir, { mode => 01777 });
-              } elsif (!-d $tmpdir) {
-                  error "chrootless target temporary path is not a directory: $tmpdir";
-              }
-              chmod 01777, $tmpdir
-                or error "cannot set mode 01777 on $tmpdir: $!";
-
-              my @names = qw(
-                PATH
-                DEBIAN_FRONTEND
-                DEBCONF_NONINTERACTIVE_SEEN
-                LC_ALL
-                LANGUAGE
-                LANG
-                TZ
-                SOURCE_DATE_EPOCH
-                QEMU_LD_PREFIX
-              );
-
-              if (defined $ENV{FAKEROOTKEY}) {
-                  push @names, qw(FAKEROOTKEY FAKED_MODE FAKEROOT_FD_BASE LD_PRELOAD
-                    LD_LIBRARY_PATH);
-              }
-              my @result = ('-i', "TMPDIR=$tmpdir");
-              foreach my $name (@names) {
-                  next if !defined $ENV{$name};
-                  push @result, "$name=$ENV{$name}";
-              }
-              return @result;
-          }
-          '''
-          replace_once(source, helper_old, helper_new)
-          replace_once(
-              source,
-              "                    chrootless_dpkg_environment(),\n",
-              "                    chrootless_dpkg_environment($options->{root}),\n",
-          )
-          replace_once(
-              source,
-              "            my @dpkg_environment = chrootless_dpkg_environment();\n",
-              "            my @dpkg_environment =\n              chrootless_dpkg_environment($options->{root});\n",
-          )
-
-          harness = Path("investigations/mmdebstrap-chrootless-env/run.sh")
-          replace_once(
-              harness,
-              '''runtime="${RUNNER_TEMP:-/tmp}/mmdebstrap-chrootless-env"
-          fixture="$runtime/fixture"
-          package="$runtime/lf-chrootless-env-probe_1.0_all.deb"
-          server_pid=
-
-          cleanup() {
-          ''',
-              '''runtime_parent="$(realpath -m "${RUNNER_TEMP:-/tmp}")"
-          if [[ "$runtime_parent" == / ]]; then
-            echo "refusing unsafe runtime parent: $runtime_parent" >&2
-            exit 2
-          fi
-          runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-env")"
-          case "$runtime" in
-            "$runtime_parent"/*) ;;
-            *)
-              echo "refusing runtime outside parent: $runtime" >&2
-              exit 2
-              ;;
-          esac
-          result_parent="$(realpath -m "$repo_root/investigations/mmdebstrap-chrootless-env")"
-          result_dir="$(realpath -m "$result_dir")"
-          case "$result_dir" in
-            "$result_parent"/*) ;;
-            *)
-              echo "refusing result directory outside investigation: $result_dir" >&2
-              exit 2
-              ;;
-          esac
-          fixture="$runtime/fixture"
-          package="$runtime/lf-chrootless-env-probe_1.0_all.deb"
-          server_pid=
-
-          cleanup() {
-          ''',
-          )
-          replace_once(
-              harness,
-              "for command in dpkg dpkg-deb dpkg-query perl python3; do\n",
-              "for command in dpkg dpkg-deb dpkg-query perl python3 realpath; do\n",
-          )
-          replace_once(
-              harness,
-              '''    XDG_RUNTIME_DIR \\
-              HOME \\
-              PATH \\
-          ''',
-              '''    XDG_RUNTIME_DIR \\
-              HOME \\
-              TMPDIR \\
-              PATH \\
-          ''',
-          )
-          replace_once(
-              harness,
-              '''  else
-              printf 'agent_socket_connect=unavailable\\n'
-            fi
-          } >"$log"
-          ''',
-              '''  else
-              printf 'agent_socket_connect=unavailable\\n'
-            fi
-            temp_base="${TMPDIR:-/tmp}"
-            created="$(mktemp -d "$temp_base/lf-chrootless-tmp.XXXXXX")"
-            printf 'temp_created=%s\\n' "$created"
-            case "$created" in
-              "$DPKG_ROOT"/tmp/*) printf 'temp_inside_target=yes\\n' ;;
-              *) printf 'temp_inside_target=no\\n' ;;
-            esac
-            rmdir "$created"
-          } >"$log"
-          ''',
-          )
-          replace_once(
-              harness,
-              '''assert_installed() {
-            local target=$1
-            test -f "$target/usr/lib/lf-chrootless-env-probe/payload"
-            dpkg-query --admindir="$target/var/lib/dpkg" \\
-              -W -f='${db:Status-Status}\\n' lf-chrootless-env-probe \\
-              | grep -Fx installed >/dev/null
-          }
-
-          make_command() {
-          ''',
-              '''assert_installed() {
-            local target=$1
-            test -f "$target/usr/lib/lf-chrootless-env-probe/payload"
-            dpkg-query --admindir="$target/var/lib/dpkg" \\
-              -W -f='${db:Status-Status}\\n' lf-chrootless-env-probe \\
-              | grep -Fx installed >/dev/null
-          }
-
-          assert_target_tmpdir() {
-            local target=$1 log=$2 created
-            grep -Fx "TMPDIR=$target/tmp" "$log"
-            grep -Fx 'temp_inside_target=yes' "$log"
-            [[ "$(stat -c %a "$target/tmp")" == 1777 ]]
-            created="$(sed -n 's/^temp_created=//p' "$log")"
-            [[ "$created" == "$target/tmp"/lf-chrootless-tmp.* ]]
-            test ! -e "$created"
-            if find "$target/tmp" -maxdepth 1 -name 'lf-chrootless-tmp.*' \\
-              -print -quit | grep -q .; then
-              echo "temporary probe path survived below target: $target/tmp" >&2
-              exit 1
-            fi
-          }
-
-          make_command() {
-          ''',
-          )
-          replace_once(
-              harness,
-              '''start_server "$direct_socket" "$direct_received" "$direct_stop"
-          env \\
-            PATH=/usr/sbin:/usr/bin:/sbin:/bin \\
-          ''',
-              '''start_server "$direct_socket" "$direct_received" "$direct_stop"
-          env -i \\
-            PATH=/usr/sbin:/usr/bin:/sbin:/bin \\
-          ''',
-          )
-          replace_once(
-              harness,
-              '''grep -Fx 'agent_socket_connect=success' "$direct_log"
-          grep -Fx 'lf-chrootless-package-script' "$direct_received"
-          cp "$direct_log" "$result_dir/direct-environment.log"
-          ''',
-              '''grep -Fx 'agent_socket_connect=success' "$direct_log"
-          grep -Fx 'lf-chrootless-package-script' "$direct_received"
-          grep -Fx 'TMPDIR=<unset>' "$direct_log"
-          grep -Fx 'temp_inside_target=no' "$direct_log"
-          direct_created="$(sed -n 's/^temp_created=//p' "$direct_log")"
-          [[ "$direct_created" == /tmp/lf-chrootless-tmp.* ]]
-          test ! -e "$direct_created"
-          cp "$direct_log" "$result_dir/direct-environment.log"
-          ''',
-          )
-          replace_once(
-              harness,
-              '''grep -F 'DPKG_ADMINDIR=' "$san_log" | grep -F "$sanitized_target"
-          grep -Fx 'http_proxy=http://proxy.invalid:3128' "$apt_env_log"
-          ''',
-              '''grep -F 'DPKG_ADMINDIR=' "$san_log" | grep -F "$sanitized_target"
-          assert_target_tmpdir "$sanitized_target" "$san_log"
-          grep -Fx 'http_proxy=http://proxy.invalid:3128' "$apt_env_log"
-          ''',
-          )
-          replace_once(
-              harness,
-              '''  cp "$target/var/lib/lf-chrootless-env-probe/environment.log" \\
-              "$result_dir/$label-environment.log"
-          done
-          ''',
-              '''  run_log="$target/var/lib/lf-chrootless-env-probe/environment.log"
-            assert_target_tmpdir "$target" "$run_log"
-            cp "$run_log" "$result_dir/$label-environment.log"
-          done
-          ''',
-          )
-          replace_once(
-              harness,
-              '''grep -Fx 'LF_SECRET_CANARY=<unset>' "$fakeroot_log"
-          grep -Fx 'TZ=UTC' "$fakeroot_log"
-          ''',
-              '''grep -Fx 'LF_SECRET_CANARY=<unset>' "$fakeroot_log"
-          grep -Fx 'TZ=UTC' "$fakeroot_log"
-          assert_target_tmpdir "$fakeroot_target" "$fakeroot_log"
-          ''',
-          )
-          replace_once(
-              harness,
-              '''required_dpkg_environment_preserved=yes
-          fakeroot_environment_preserved=yes
-          ''',
-              '''required_dpkg_environment_preserved=yes
-          target_tmpdir_contained=yes
-          target_tmpdir_cleanup=yes
-          fakeroot_environment_preserved=yes
-          ''',
-          )
-          PY
-
-      - name: Validate edited source and focused regression
-        shell: bash
-        run: |
-          set -euo pipefail
-          perl -c upstream/mmdebstrap/mmdebstrap
-          bash -n investigations/mmdebstrap-chrootless-env/run.sh
-          python3 -m unittest tests.test_mmdebstrap_chrootless_tmpdir -v
+          set +e
+          {
+            perl -c upstream/mmdebstrap/mmdebstrap
+            bash -n investigations/mmdebstrap-chrootless-env/run.sh
+            python3 -m unittest tests.test_mmdebstrap_chrootless_tmpdir -v
+          } > investigations/mmdebstrap-chrootless-target-tmpdir/focused-test.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" \
+            > investigations/mmdebstrap-chrootless-target-tmpdir/focused-test.status
+          cat investigations/mmdebstrap-chrootless-target-tmpdir/focused-test.log
 
       - name: Retain patch and commit correction
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p investigations/mmdebstrap-chrootless-target-tmpdir
           git diff -- \
             upstream/mmdebstrap/mmdebstrap \
             investigations/mmdebstrap-chrootless-env/run.sh \
@@ -323,7 +52,11 @@ jobs:
           git add \
             upstream/mmdebstrap/mmdebstrap \
             investigations/mmdebstrap-chrootless-env/run.sh \
-            investigations/mmdebstrap-chrootless-target-tmpdir/0001-target-contained-tmpdir.patch
-          git rm .github/workflows/apply-chrootless-target-tmpdir.yml
+            investigations/mmdebstrap-chrootless-target-tmpdir/0001-target-contained-tmpdir.patch \
+            investigations/mmdebstrap-chrootless-target-tmpdir/focused-test.log \
+            investigations/mmdebstrap-chrootless-target-tmpdir/focused-test.status
+          git rm \
+            .github/workflows/apply-chrootless-target-tmpdir.yml \
+            investigations/mmdebstrap-chrootless-target-tmpdir/apply.py
           git commit -m 'Fix chrootless package temporary containment'
           git push origin HEAD:fix/chrootless-target-tmpdir
