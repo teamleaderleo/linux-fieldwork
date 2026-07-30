@@ -1,0 +1,16 @@
+# Generated Python files
+__pycache__/
+*.py[cod]
+
+# Local Linux campaign artifacts
+campaigns/**/runs/**/*.tar
+campaigns/**/runs/**/*.tar.*
+campaigns/**/runs/**/*.img
+campaigns/**/runs/**/*.raw
+campaigns/**/runs/**/*.qcow2
+campaigns/**/runs/**/*.squashfs
+campaigns/**/runs/**/rootfs/
+
+# Common local scratch
+.tmp/
+tmp/
