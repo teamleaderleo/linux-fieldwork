@@ -79,6 +79,7 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             "  rm -f \"$runtime/cache-state\"\n"
             "}\n"
             "CLEANUP_PROXY_CACHE=yes\n"
+            "CLEANUP_TMPDIR=no\n"
             + functions
             + "touch \"$runtime/cache-state\"\n"
             "sleep 60 &\n"
@@ -218,15 +219,23 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
                 candidate,
             )
             self.assertNotIn(
+                "trap 'kill \"$PROXYPID\" || :;cleanuptmpdir; cleanup_newcachedir' EXIT INT TERM",
+                candidate,
+            )
+            self.assertNotIn(
                 'trap "cleanup_newcachedir" EXIT INT TERM', candidate
             )
+            self.assertNotIn("\nkill $PROXYPID\n", candidate)
+            self.assertNotIn("\n  kill $PROXYPID\n", candidate)
             self.assertIn("trap 'cleanup_owner' EXIT", candidate)
             self.assertIn("trap 'signal_exit 130' INT", candidate)
             self.assertIn("trap 'signal_exit 131' QUIT", candidate)
             self.assertIn("trap 'signal_exit 143' TERM", candidate)
-            self.assertEqual(candidate.count("stop_proxy"), 3)
+            self.assertEqual(candidate.count("stop_proxy"), 4)
             self.assertIn('wait "$PROXYPID" 2>/dev/null || :', candidate)
             self.assertIn("cleanup_owner() {", candidate)
+            self.assertIn("CLEANUP_TMPDIR=yes", candidate)
+            self.assertIn("CLEANUP_TMPDIR=no", candidate)
 
 
 if __name__ == "__main__":
