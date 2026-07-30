@@ -10,7 +10,7 @@ diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_
              assert (res.status, res.reason) == (200, "OK"), (res.status, res.reason)
 +            response_started = True
              self.wfile.write(b"HTTP/1.1 200 OK\r\n")
-@@ -132,2 +134,7 @@ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
+@@ -132,2 +134,6 @@ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
          except Exception as e:
 -            self.send_error(502)
 +            print(f"proxy error: {e!r}", file=sys.stderr)
