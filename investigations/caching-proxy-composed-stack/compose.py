@@ -45,6 +45,23 @@ HEADER_HELPERS = '''HOP_BY_HOP_HEADERS = {
 }
 
 
+def validate_transfer_encoding(response):
+    values = response.headers.get_all("Transfer-Encoding", [])
+    if not values:
+        return
+    tokens = [
+        token.strip().lower()
+        for value in values
+        for token in value.split(",")
+        if token.strip()
+    ]
+    # http.client only gives us a safely decoded representation for the
+    # ordinary, exactly-chunked case. Other transfer codings would be stripped
+    # by downstream_headers() without their bytes being decoded.
+    if tokens != ["chunked"] or not response.chunked:
+        raise ValueError("unsupported upstream Transfer-Encoding")
+
+
 def downstream_headers(response):
     headers = response.getheaders()
     connection_tokens = set()
@@ -130,6 +147,7 @@ def compose(repo_root: pathlib.Path, destination: pathlib.Path) -> pathlib.Path:
 ''',
         '''            res = conn.getresponse()
             assert (res.status, res.reason) == (200, "OK"), (res.status, res.reason)
+            validate_transfer_encoding(res)
             # A Content-Length on a chunked response does not frame the decoded
             # bytes returned by http.client and must not be validated as such.
             expected_length = None if res.chunked else res.getheader("Content-Length")
