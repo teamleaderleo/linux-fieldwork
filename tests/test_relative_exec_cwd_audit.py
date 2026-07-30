@@ -7,7 +7,10 @@ import sys
 import tempfile
 import unittest
 
-from tools.relative_exec_cwd_audit import audit_text
+from tools.relative_exec_cwd_audit import (
+    audit_text,
+    is_relative_program_with_separator,
+)
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -24,6 +27,25 @@ class RelativeExecCwdAuditTest(unittest.TestCase):
         self.assertEqual(findings[0].program, "./proxy")
         self.assertEqual(findings[0].cwd, "work")
 
+    def test_python_keyword_args_and_executable_are_reported(self) -> None:
+        source = """\
+import subprocess
+subprocess.run(args=['./proxy', '--check'], cwd=work)
+subprocess.Popen(['decoy-name'], executable='../real-proxy', cwd=work)
+"""
+        findings = audit_text("sample.py", source)
+        self.assertEqual(
+            [item.program for item in findings], ["./proxy", "../real-proxy"]
+        )
+
+    def test_python_executable_override_controls_identity(self) -> None:
+        source = """\
+import subprocess
+subprocess.Popen(['./decoy'], executable='/usr/bin/real-tool', cwd=work)
+subprocess.Popen(['./decoy'], executable=selected_tool, cwd=work)
+"""
+        self.assertEqual(audit_text("sample.py", source), [])
+
     def test_python_absolute_and_simple_programs_are_controls(self) -> None:
         source = """\
 import subprocess
@@ -32,6 +54,17 @@ subprocess.run(['proxy'], cwd=work)
 subprocess.run(['./proxy'])
 """
         self.assertEqual(audit_text("sample.py", source), [])
+
+    def test_cross_platform_absolute_paths_are_controls(self) -> None:
+        for program in (
+            "/usr/bin/tool",
+            r"C:\Windows\System32\tool.exe",
+            r"\Windows\System32\tool.exe",
+            r"\\server\share\tool.exe",
+        ):
+            with self.subTest(program=program):
+                self.assertFalse(is_relative_program_with_separator(program))
+        self.assertTrue(is_relative_program_with_separator(r"C:relative\tool.exe"))
 
     def test_rust_relative_program_with_current_dir_is_reported(self) -> None:
         source = """\
@@ -44,6 +77,19 @@ let output = Command::new("./../nuget.exe")
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].program, "./../nuget.exe")
         self.assertEqual(findings[0].cwd, "renderer_path")
+
+    def test_rust_multiline_program_literal_is_reported(self) -> None:
+        source = """\
+let output = Command::new(
+    "./tools/renderer",
+)
+.current_dir(renderer_path)
+.output()?;
+"""
+        findings = audit_text("build.rs", source, language="rust")
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].program, "./tools/renderer")
+        self.assertEqual(findings[0].line, 1)
 
     def test_rust_absolute_and_simple_programs_are_controls(self) -> None:
         source = """\
@@ -58,6 +104,18 @@ Command::new("./tool").output()?;
         findings = audit_text("probe.sh", source)
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].program, "./proxy")
+        self.assertEqual(findings[0].cwd, "/tmp/target")
+
+    def test_shell_short_chdir_and_absolute_env_are_reported(self) -> None:
+        source = "/usr/bin/env -u OLD_VALUE -C /tmp/target ../proxy --check\n"
+        findings = audit_text("probe.sh", source)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].program, "../proxy")
+        self.assertEqual(findings[0].cwd, "/tmp/target")
+
+    def test_shell_attached_short_chdir_is_reported(self) -> None:
+        findings = audit_text("probe.sh", "env -C/tmp/target ./proxy\n")
+        self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].cwd, "/tmp/target")
 
     def test_shell_assignments_and_separator_are_parsed(self) -> None:
