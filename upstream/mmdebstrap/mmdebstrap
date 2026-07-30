@@ -4159,9 +4159,9 @@ sub run_install() {
 
     if ($options->{mode} eq 'chrootless') {
         if (scalar @pkgs_to_install > 0) {
-            my @dpkg_environment =
-              chrootless_dpkg_environment($options->{root});
-            my @chrootless_opts  = (
+            my @dpkg_environment
+              = chrootless_dpkg_environment($options->{root});
+            my @chrootless_opts = (
                 '-oDir::Bin::dpkg=env',
                 (map { '-oDPkg::Options::=' . $_ } @dpkg_environment),
                 '-oDPkg::Options::=dpkg',

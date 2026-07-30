@@ -145,7 +145,7 @@ index 767b4b7..5b9f019 100644
  safe_launch_succeeded=yes
  clean_rerun_succeeded=yes
 diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
-index bbe2b64..c2a27fb 100644
+index bbe2b64..f50b8e6 100644
 --- a/upstream/mmdebstrap/mmdebstrap
 +++ b/upstream/mmdebstrap/mmdebstrap
 @@ -3902,7 +3902,21 @@ sub run_prepare {
@@ -189,13 +189,15 @@ index bbe2b64..c2a27fb 100644
                      'dpkg',
                      '--force-not-root',
                      '--force-script-chrootless',
-@@ -4145,7 +4159,8 @@ sub run_install() {
+@@ -4145,8 +4159,9 @@ sub run_install() {
  
      if ($options->{mode} eq 'chrootless') {
          if (scalar @pkgs_to_install > 0) {
 -            my @dpkg_environment = chrootless_dpkg_environment();
-+            my @dpkg_environment =
-+              chrootless_dpkg_environment($options->{root});
-             my @chrootless_opts  = (
+-            my @chrootless_opts  = (
++            my @dpkg_environment
++              = chrootless_dpkg_environment($options->{root});
++            my @chrootless_opts = (
                  '-oDir::Bin::dpkg=env',
                  (map { '-oDPkg::Options::=' . $_ } @dpkg_environment),
+                 '-oDPkg::Options::=dpkg',
