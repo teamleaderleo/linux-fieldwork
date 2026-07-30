@@ -1,0 +1,112 @@
+diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
+--- a/upstream/mmdebstrap/tarfilter
++++ b/upstream/mmdebstrap/tarfilter
+@@ -104,6 +104,58 @@ class TransformAction(argparse.Action):
+         setattr(namespace, "trans", items)
+ 
+ 
++class SparseFileReader:
++    def __init__(self, fileobj, sparse):
++        self.fileobj = fileobj
++        self.sparse = [(offset, size) for offset, size in sparse if size]
++        sparse_map = (
++            f"{len(self.sparse)}\n"
++            + "".join(
++                f"{offset}\n{size}\n" for offset, size in self.sparse
++            )
++        ).encode("ascii")
++        padding = (-len(sparse_map)) % tarfile.BLOCKSIZE
++        self.prefix = sparse_map + b"\0" * padding
++        self.prefix_offset = 0
++        self.extent_index = 0
++        self.extent_offset = 0
++        self.size = len(self.prefix) + sum(size for _, size in self.sparse)
++        self.position = 0
++
++    def read(self, size=-1):
++        if size is None or size < 0:
++            size = self.size - self.position
++        else:
++            size = min(size, self.size - self.position)
++        chunks = []
++        if size and self.prefix_offset < len(self.prefix):
++            amount = min(size, len(self.prefix) - self.prefix_offset)
++            chunks.append(
++                self.prefix[self.prefix_offset : self.prefix_offset + amount]
++            )
++            self.prefix_offset += amount
++            self.position += amount
++            size -= amount
++        while size and self.extent_index < len(self.sparse):
++            offset, length = self.sparse[self.extent_index]
++            remaining = length - self.extent_offset
++            self.fileobj.seek(offset + self.extent_offset)
++            chunk = self.fileobj.read(min(size, remaining))
++            if not chunk:
++                raise tarfile.ReadError("unexpected end of sparse member data")
++            chunks.append(chunk)
++            amount = len(chunk)
++            self.extent_offset += amount
++            self.position += amount
++            size -= amount
++            if self.extent_offset == length:
++                self.extent_index += 1
++                self.extent_offset = 0
++        if size:
++            raise tarfile.ReadError("unexpected end of sparse member map")
++        return b"".join(chunks)
++
++
+ def main():
+     parser = argparse.ArgumentParser(
+         formatter_class=argparse.RawDescriptionHelpFormatter,
+@@ -295,7 +347,48 @@ def main():
+                 for r, s in args.trans:
+                     member.name = r.sub(s, member.name)
+             if member.isfile():
+                 with in_tar.extractfile(member) as file:
+-                    out_tar.addfile(member, file)
++                    if member.sparse is None:
++                        out_tar.addfile(member, file)
++                        continue
++                    sparse_headers = (
++                        "GNU.sparse.major",
++                        "GNU.sparse.minor",
++                        "GNU.sparse.name",
++                        "GNU.sparse.realsize",
++                    )
++                    if any(
++                        pax_filter_should_skip(header)
++                        for header in sparse_headers
++                    ):
++                        # The caller explicitly removed metadata required to
++                        # represent a sparse member. Emit valid dense data
++                        # instead of stale or incomplete sparse metadata.
++                        member.sparse = None
++                        member.pax_headers = {
++                            key: value
++                            for key, value in member.pax_headers.items()
++                            if not key.startswith("GNU.sparse.")
++                        }
++                        out_tar.addfile(member, file)
++                        continue
++                    logical_size = member.size
++                    sparse_file = SparseFileReader(file.raw, member.sparse)
++                    member.size = sparse_file.size
++                    member.pax_headers = {
++                        key: value
++                        for key, value in member.pax_headers.items()
++                        if not key.startswith("GNU.sparse.")
++                    }
++                    member.pax_headers.update(
++                        {
++                            "GNU.sparse.major": "1",
++                            "GNU.sparse.minor": "0",
++                            "GNU.sparse.name": member.name,
++                            "GNU.sparse.realsize": str(logical_size),
++                        }
++                    )
++                    member.sparse = None
++                    out_tar.addfile(member, sparse_file)
+             else:
+                 out_tar.addfile(member)
