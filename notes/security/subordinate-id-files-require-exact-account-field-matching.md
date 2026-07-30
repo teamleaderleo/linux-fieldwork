@@ -19,10 +19,12 @@ For subordinate-ID checks:
 A suitable shell form is:
 
 ```sh
-cut -d: -f1 /etc/subuid | grep -Fxq -- "$user"
+cut -s -d: -f1 /etc/subuid | grep -Fxq -- "$user"
 ```
 
-The `--` protects usernames beginning with `-`, `-F` disables regex interpretation, `-x` requires the whole extracted field, and `-q` keeps the check quiet.
+The `-s` option suppresses delimiter-free malformed records, `--` protects
+usernames beginning with `-`, `-F` disables regex interpretation, `-x`
+requires the whole extracted field, and `-q` keeps the check quiet.
 
 ## Counterexample
 
@@ -42,6 +44,7 @@ The regression executes the exact patched shell blocks against temporary files a
 
 - exact account present;
 - username appearing only inside another account;
+- username appearing alone on a delimiter-free malformed line;
 - regex-significant input treated literally;
 - empty file;
 - absent file;
