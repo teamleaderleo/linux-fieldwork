@@ -6,7 +6,7 @@ Tracking: issue #194 follow-on review, PR #222, motivating PR #72, and closed re
 
 A relative executable containing `/` or `\` can change identity when a child also changes its working directory. PR #72 demonstrated both consequences: a temporary installed-package proxy disappeared after `env --chdir`, and an apparently stable source path would have executed the wrong subject.
 
-PR #222 adds a literal-pattern review scanner for Python, Rust, and shell. Repeated peer review has repaired eleven executable-identity errors. The current focused matrix contains 23 tests and passes locally on Python 3.13.5. Exact-head repository and Windows workflows remain required.
+PR #222 adds a literal-pattern review scanner for Python, Rust, and shell. Repeated peer review has repaired twelve executable-identity errors. The current focused matrix contains 23 tests and passes locally on Python 3.13.5. Exact-head repository and Windows workflows remain required.
 
 Findings are prompts for source review, not automatic defects. The RPFM Windows hypothesis did not reproduce on the tested runner and remains a retained negative result.
 
@@ -113,6 +113,7 @@ The scanner improved through several independent passes.
 9. An `env` token used as argument text to `printf` or `logger` was treated as an executed command.
 10. A repository-local binary named `./env` or `tools/env` was assumed to have GNU `env` semantics merely because its basename matched.
 11. One Rust `Command::new` could borrow `.current_dir()` from another command later in the same statement. During the same review, Python 3.13.5 exposed that `ntpath.isabs()` no longer classifies a single-backslash Windows rooted path as absolute, so the scanner now handles that form explicitly.
+12. Python `cwd=None` was rendered as a directory change to the literal text `None`, even though it explicitly leaves the child's working directory unchanged.
 
 Direct positive and negative controls cover every listed repair.
 
