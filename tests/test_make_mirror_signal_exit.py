@@ -42,27 +42,31 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
         return destination.read_text(encoding="utf-8")
 
     @staticmethod
-    def candidate_block(source: str) -> str:
-        start = source.index("PROXYPID=\nCLEANUP_PROXY_CACHE=no\n")
-        end = source.index('./caching_proxy.py "$oldcachedir" "$newcachedir" &', start)
-        functions = source[start:end]
-        trap_start = source.index("trap 'stop_proxy' EXIT", end)
+    def candidate_blocks(source: str) -> tuple[str, str]:
+        function_start = source.index("stop_proxy() {\n")
+        function_end = source.index(
+            './caching_proxy.py "$oldcachedir" "$newcachedir" &', function_start
+        )
+        functions = source[function_start:function_end]
+        trap_start = source.index("trap 'stop_proxy' EXIT", function_end)
         trap_end = source.index("\n\nfor i in", trap_start)
-        return functions + source[trap_start:trap_end] + "\n"
+        traps = source[trap_start:trap_end] + "\n"
+        return functions, traps
 
     @staticmethod
-    def baseline_block(source: str) -> str:
+    def baseline_blocks(source: str) -> tuple[str, str]:
         trap = "trap 'kill \"$PROXYPID\" || :' EXIT INT TERM"
         if source.count(trap) != 1:
             raise AssertionError("baseline cleanup-only trap changed")
-        return trap + "\n"
+        return "", trap + "\n"
 
     def write_harness(
         self,
         root: pathlib.Path,
         label: str,
-        trap_block: str,
+        blocks: tuple[str, str],
     ) -> pathlib.Path:
+        functions, traps = blocks
         runtime = root / label
         runtime.mkdir()
         script = runtime / "harness.sh"
@@ -74,11 +78,13 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             "  printf 'cleanup\\n' >>\"$runtime/cleanup.log\"\n"
             "  rm -f \"$runtime/cache-state\"\n"
             "}\n"
-            "touch \"$runtime/cache-state\"\n"
+            "CLEANUP_PROXY_CACHE=yes\n"
+            + functions
+            + "touch \"$runtime/cache-state\"\n"
             "sleep 60 &\n"
             "PROXYPID=$!\n"
             "printf '%s\\n' \"$PROXYPID\" >\"$runtime/proxy.pid\"\n"
-            + trap_block
+            + traps
             + "printf 'ready\\n' >\"$runtime/ready\"\n"
             "sleep 0.5\n"
             "printf 'after\\n' >\"$runtime/after\"\n",
@@ -90,7 +96,9 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
     def shell_quote(value: str) -> str:
         return "'" + value.replace("'", "'\\''") + "'"
 
-    def run_signaled(self, script: pathlib.Path) -> tuple[subprocess.Popen, pathlib.Path, int]:
+    def run_signaled(
+        self, script: pathlib.Path
+    ) -> tuple[subprocess.Popen, pathlib.Path, int]:
         runtime = script.parent
         process = subprocess.Popen(
             ["sh", str(script)],
@@ -103,7 +111,9 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
         while time.monotonic() < deadline and not (runtime / "ready").exists():
             if process.poll() is not None:
                 stdout, stderr = process.communicate()
-                self.fail(f"harness exited before ready: {process.returncode}: {stdout}{stderr}")
+                self.fail(
+                    f"harness exited before ready: {process.returncode}: {stdout}{stderr}"
+                )
             time.sleep(0.01)
         self.assertTrue((runtime / "ready").exists(), "harness did not become ready")
         proxy_pid = int((runtime / "proxy.pid").read_text().strip())
@@ -130,10 +140,10 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             candidate_source = self.prepare_candidate(root)
 
             baseline_script = self.write_harness(
-                root, "baseline", self.baseline_block(baseline_source)
+                root, "baseline", self.baseline_blocks(baseline_source)
             )
             candidate_script = self.write_harness(
-                root, "candidate", self.candidate_block(candidate_source)
+                root, "candidate", self.candidate_blocks(candidate_source)
             )
 
             baseline_process, baseline_runtime, _baseline_proxy = self.run_signaled(
@@ -163,7 +173,7 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             root = pathlib.Path(tmp)
             candidate_source = self.prepare_candidate(root)
             script = self.write_harness(
-                root, "rerun", self.candidate_block(candidate_source)
+                root, "rerun", self.candidate_blocks(candidate_source)
             )
             completed = subprocess.run(
                 ["sh", str(script)],
@@ -183,14 +193,23 @@ class MakeMirrorSignalExitTest(unittest.TestCase):
             proxy_pid = int((runtime / "proxy.pid").read_text().strip())
             self.assertFalse(self.process_exists(proxy_pid))
 
-    def test_candidate_replaces_every_cleanup_only_signal_trap(self) -> None:
+    def test_candidate_replaces_top_level_cleanup_only_signal_traps(self) -> None:
         with tempfile.TemporaryDirectory(prefix="make-mirror-source-") as tmp:
             candidate = self.prepare_candidate(pathlib.Path(tmp))
-            self.assertNotIn("EXIT INT TERM", candidate)
+            self.assertNotIn(
+                "trap 'kill \"$PROXYPID\" || :' EXIT INT TERM", candidate
+            )
+            self.assertNotIn(
+                "trap 'kill \"$PROXYPID\" || :;cleanup_newcachedir' EXIT INT TERM",
+                candidate,
+            )
+            self.assertNotIn(
+                'trap "cleanup_newcachedir" EXIT INT TERM', candidate
+            )
             self.assertIn("trap 'signal_exit 130' INT", candidate)
             self.assertIn("trap 'signal_exit 131' QUIT", candidate)
             self.assertIn("trap 'signal_exit 143' TERM", candidate)
-            self.assertEqual(candidate.count("stop_proxy"), 5)
+            self.assertEqual(candidate.count("stop_proxy"), 4)
             self.assertIn('wait "$PROXYPID" 2>/dev/null || :', candidate)
 
 
