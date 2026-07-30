@@ -1,0 +1,81 @@
+name: Import mmdebstrap from Debian Salsa
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Debian tag, branch, or commit to import
+        required: false
+        default: debian/1.5.7-3
+  push:
+    paths:
+      - .github/clone-mmdebstrap.trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: import-mmdebstrap
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    env:
+      UPSTREAM_URL: https://salsa.debian.org/debian/mmdebstrap.git
+    steps:
+      - name: Check out Linux Fieldwork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select upstream revision
+        id: source
+        shell: bash
+        run: |
+          revision='${{ inputs.revision }}'
+          if [[ -z "$revision" ]]; then
+            revision='debian/1.5.7-3'
+          fi
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Clone Debian mmdebstrap
+        id: clone
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/mmdebstrap-upstream
+          git clone "$UPSTREAM_URL" /tmp/mmdebstrap-upstream
+          git -C /tmp/mmdebstrap-upstream checkout --detach '${{ steps.source.outputs.revision }}'
+          sha="$(git -C /tmp/mmdebstrap-upstream rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Copy complete source tree
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf upstream/mmdebstrap
+          mkdir -p upstream/mmdebstrap
+          rsync -a --exclude='.git/' /tmp/mmdebstrap-upstream/ upstream/mmdebstrap/
+          cat > upstream/mmdebstrap/.linux-fieldwork-source.json <<EOF
+          {
+            "upstream_url": "$UPSTREAM_URL",
+            "requested_revision": "${{ steps.source.outputs.revision }}",
+            "resolved_commit": "${{ steps.clone.outputs.sha }}",
+            "imported_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      - name: Commit imported source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add upstream/mmdebstrap
+          if git diff --cached --quiet; then
+            echo 'The requested source revision is already imported.'
+            exit 0
+          fi
+          git commit -m "Import mmdebstrap ${{ steps.clone.outputs.sha }}"
+          git push origin HEAD:main
