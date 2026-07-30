@@ -45,6 +45,7 @@ jobs:
             '
           status=$?
           set -e
+          sudo chown -R "$(id -u):$(id -g)" "$EVIDENCE"
           printf '%s\n' "$status" >"$EVIDENCE/container-exit-status"
           exit 0
 
