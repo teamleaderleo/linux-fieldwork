@@ -10,6 +10,17 @@ on:
       - "notes/**"
       - "upstream/**"
       - ".github/workflows/**"
+  push:
+    branches:
+      - "investigation/mmdebstrap-autopkgtest-*"
+    paths:
+      - "tools/**"
+      - "tests/**"
+      - "scripts/**"
+      - "investigations/**"
+      - "notes/**"
+      - "upstream/**"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 permissions:
@@ -39,7 +50,7 @@ jobs:
           bash scripts/capture-linux-context.sh --help >/dev/null
 
   capture-bug-report:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') || startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -60,7 +71,7 @@ jobs:
           retention-days: 14
 
   reproduce-mmdebstrap:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') || startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
