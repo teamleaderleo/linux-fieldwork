@@ -43,6 +43,7 @@ def main() -> None:
     parser.add_argument("--new-cache", type=pathlib.Path, required=True)
     parser.add_argument("--status", type=int, required=True)
     parser.add_argument("--body", required=True)
+    parser.add_argument("--requests", type=int, default=1)
     args = parser.parse_args()
 
     body = args.body.encode("utf-8")
@@ -75,19 +76,27 @@ def main() -> None:
 
     proxy = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Proxy)
 
+    responses = []
     with running_server(origin), running_server(proxy):
         host = f"127.0.0.1:{origin.server_address[1]}"
         target = f"http://{host}/pool/object.deb"
-        connection = http.client.HTTPConnection(
-            "127.0.0.1", proxy.server_address[1], timeout=5
-        )
-        connection.request(
-            "GET", target, headers={"Host": host, "Connection": "close"}
-        )
-        response = connection.getresponse()
-        downstream = response.read()
-        response_status = response.status
-        connection.close()
+        for _ in range(args.requests):
+            connection = http.client.HTTPConnection(
+                "127.0.0.1", proxy.server_address[1], timeout=5
+            )
+            connection.request(
+                "GET", target, headers={"Host": host, "Connection": "close"}
+            )
+            response = connection.getresponse()
+            downstream = response.read()
+            responses.append(
+                {
+                    "status": response.status,
+                    "sha256": hashlib.sha256(downstream).hexdigest(),
+                    "text": downstream.decode("utf-8", errors="replace"),
+                }
+            )
+            connection.close()
 
     cached = args.new_cache / "pool/object.deb"
     cached_bytes = cached.read_bytes() if cached.exists() else b""
@@ -102,9 +111,7 @@ def main() -> None:
                 "optimized": not __debug__,
                 "origin_status": args.status,
                 "origin_requests": origin.request_count,
-                "downstream_status": response_status,
-                "downstream_sha256": hashlib.sha256(downstream).hexdigest(),
-                "downstream_text": downstream.decode("utf-8", errors="replace"),
+                "responses": responses,
                 "cache_exists": cached.exists(),
                 "cache_sha256": hashlib.sha256(cached_bytes).hexdigest(),
                 "cache_text": cached_bytes.decode("utf-8", errors="replace"),
