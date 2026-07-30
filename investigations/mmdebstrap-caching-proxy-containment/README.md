@@ -1,18 +1,24 @@
-# mmdebstrap caching proxy cache-root containment
+# mmdebstrap caching proxy request validation and cache containment
 
 ## In simple words
 
-`caching_proxy.py` turns an HTTP proxy request target directly into a filesystem path. A client can supply an absolute path, percent-encoded `..`, or a cache-internal symlink and make the helper read or write outside its configured cache directories.
+`caching_proxy.py` turns an HTTP proxy request target directly into a filesystem path. A client can supply an absolute path, percent-encoded traversal, or a cache-internal symlink and make the helper read or write outside its configured cache directories.
 
-The helper also binds port 8080 on every interface. It is development and CI mirror tooling rather than an installed mmdebstrap service, but any client that can reach it can choose the request target while it runs.
+The same decode-before-cache behavior also aliases distinct origin paths. For example, an encoded reserved character and its literal spelling can populate and read one cache entry even when the origin distinguishes them. The imported handler additionally uses Python `assert` for request validation, so `python -O` removes those checks.
+
+The helper binds port 8080 on every interface. It is development and CI mirror tooling rather than an installed mmdebstrap service, but any client that can reach it can choose the request target while it runs.
 
 ## Canonical records
 
-- issue: #42
+- request-validation issue: #150
+- original containment issue: #93
 - source: `upstream/mmdebstrap/caching_proxy.py`
 - imported blob: `e57a8516a0c76167894b05fc56be0e3165535488`
 - candidate: `0001-confine-cache-paths.patch`
-- regression: `tests/test_mmdebstrap_caching_proxy_containment.py`
+- regressions:
+  - `tests/test_mmdebstrap_caching_proxy_containment.py`
+  - `tests/test_mmdebstrap_caching_proxy_cache_key_distinctions.py`
+  - `tests/test_mmdebstrap_caching_proxy_optimized_validation.py`
 - reusable note: `notes/filesystems/url-cache-keys-must-not-be-filesystem-paths.md`
 
 ## Exact source boundary
@@ -20,6 +26,8 @@ The helper also binds port 8080 on every interface. It is development and CI mir
 The unmodified handler performs:
 
 ```python
+assert int(self.headers.get("Content-Length", 0)) == 0
+assert self.headers["Host"]
 sanitizedpath = urllib.parse.unquote(self.path.removeprefix(pathprefix))
 oldpath = oldcachedir / sanitizedpath
 newpath = newcachedir / sanitizedpath
@@ -29,56 +37,76 @@ A decoded leading slash causes `pathlib` to discard the cache root. A decoded `.
 
 The first cache-hit branch serves any existing path before the `.deb`/`by-hash` restriction, so an absolute request target can read an arbitrary file allowed by the proxy process's credentials. The download branch can write origin-controlled bytes to an arbitrary writable path.
 
+Decoding also loses origin-visible distinctions. A first request for `a%3Bb.deb` can be cached as `a;b.deb`; a later literal `a;b.deb` request then receives the first object without reaching an origin that treats the two paths differently. Invalid UTF-8 percent bytes can also collapse through replacement decoding.
+
+Under `python -O`, the imported assertions disappear. An origin-form absolute host path can then become an absolute `pathlib` operand and be served as a cache hit.
+
 `main()` creates `ThreadingHTTPServer(("", 8080), ...)`, exposing that request surface on all interfaces.
 
-## End-to-end negative controls
+## Candidate policy
 
-The regression imports the exact unmodified helper and runs real loopback origin and proxy servers on ephemeral ports.
+The retained patch validates the HTTP request before cache lookup, directory creation, file access, or origin contact.
 
-It requires the baseline to reproduce:
+`cache_path()`:
 
-1. **absolute write escape** — an origin response is written to an absolute path outside `newcachedir`;
-2. **encoded traversal write** — `%2e%2e/escaped` writes beside the cache root;
-3. **absolute read escape** — an existing outside file is returned as an HTTP 200 cache hit;
-4. **symlink escape** — `newcachedir/link -> outside` redirects the downloaded file.
+- parses the absolute-form request target and `Host` independently;
+- requires HTTP, no userinfo, one matching hostname/effective port, no query or fragment, and an absolute URL path;
+- compares DNS hostnames case-insensitively;
+- rejects every percent escape for this Debian archive helper instead of inventing a partial URL canonicalizer;
+- rejects literal backslash, NUL, empty paths, doubled or trailing separators, and `.`/`..` components;
+- constructs the relative path only from the still-raw component spelling;
+- resolves each candidate against the cache root and requires a strict descendant, catching existing symlink escapes.
 
-All outside paths remain inside a disposable `TemporaryDirectory`; the test never targets a persistent host path.
+The handler:
 
-## Candidate
-
-The retained patch:
-
-- parses the absolute request URI with `urllib.parse.urlsplit()`;
-- compares normalized DNS hostname plus effective HTTP port with the `Host` authority, while rejecting credentials or extra authority syntax;
-- inspects decoded slash-separated components before `PurePosixPath` can normalize them;
-- rejects queries, fragments, empty paths, encoded slash/backslash, NULs, doubled or trailing separators, and literal or encoded `.`/`..` components;
-- resolves each candidate against the cache root and requires `candidate.is_relative_to(root)`;
-- rejects an existing symlink that resolves outside the cache;
-- returns HTTP 400 rather than relying on assertions for malformed request structure;
+- requires exactly one `Host` field;
+- permits at most one `Content-Length` and requires its parsed value to be zero;
+- rejects every `Transfer-Encoding` field;
+- returns HTTP 400 rather than relying on assertions;
 - binds the standalone helper to `127.0.0.1` only.
 
 A normal Debian pool request remains a 200 response and is cached at the same relative path. A request-target hostname and `Host` hostname that differ only by ASCII case are accepted with the same effective port.
 
-The regression also requires literal dot, encoded dot, doubled-separator, and trailing-separator aliases to be rejected before any origin request or cache descendant is created.
+## Executable matrix
+
+The real loopback tests require the imported baseline to reproduce:
+
+1. absolute write escape;
+2. encoded traversal write;
+3. absolute read escape;
+4. existing-symlink escape;
+5. encoded-reserved/literal-reserved cache poisoning;
+6. optimized-Python assertion bypass.
+
+The candidate must then prove:
+
+- all demonstrated filesystem escapes return 400;
+- encoded, invalid-byte, dot, doubled-separator, trailing-separator, and literal-backslash aliases return 400 before origin contact or cache mutation;
+- the literal reserved path remains independently fetchable and cacheable;
+- duplicate Host, duplicate Content-Length, and Transfer-Encoding requests return 400 before origin contact;
+- legitimate pool caching and case-insensitive hostname authority still work;
+- ordinary and optimized source compile;
+- loopback servers, subprocesses, and temporary roots are reaped.
 
 ## Severity and exposure
 
 **Medium-high for the helper, approximately 7/10; lower for the installed package as a whole.**
 
-The primitive permits arbitrary read of existing files and arbitrary write of origin-controlled bytes within the helper process's permissions. The all-interface bind increases reachability. The helper is not installed as the default mmdebstrap command or service; it is used by mirror generation, coverage, and autopkgtest workflows.
+The primitive permits arbitrary read of existing files and arbitrary write of origin-controlled bytes within the helper process's permissions. Cache-key aliasing can serve one origin object for a different request target. The all-interface bind increases reachability. The helper is not installed as the default mmdebstrap command or service; it is used by mirror generation, coverage, and autopkgtest workflows.
 
 ## Evidence limits
 
 - Linux/POSIX pathname semantics only.
-- The regression covers literal absolute paths, encoded dot segments, cache-key alias components, and an existing symlink escape.
+- The supported candidate path subset deliberately excludes percent escapes; this is narrower than general HTTP URI syntax and matches the tested Debian archive use.
 - The `resolve()` check closes the demonstrated paths but is not a same-UID adversarial race-proof `openat(2)` sandbox. A process that can replace cache path components between validation and open remains outside this candidate.
+- Origin request credential/hop-header filtering is owned by merged PR #139.
+- Response framing and publication are separate composed boundaries.
 - The proxy intentionally permits local HTTP forwarding; SSRF policy is not changed here.
-- No external network or privileged port is used by the regression.
 
-## Cleanup and rerun
+## Cleanup and authority
 
-Every server runs on loopback with an ephemeral port. Context managers call `shutdown()`, `server_close()`, and join the serving thread. Temporary roots are deleted by `TemporaryDirectory`. A legitimate request is executed through both baseline and candidate as a compatibility control.
+Every server runs on loopback with an ephemeral port. Context managers call `shutdown()`, `server_close()`, and join the serving thread. Optimized subprocesses are terminated and waited. Temporary roots are deleted by `TemporaryDirectory`. No external network, privileged port, package mutation, or persistent host path is used.
 
 ## Disposition
 
-Retain the candidate and executable regression for internal review. No Debian or external upstream issue, patch, email, merge request, comment, or review is authorized or created.
+Retain the candidate and executable regressions for internal review. No Debian or external upstream issue, patch, email, merge request, comment, or review is authorized or created.
