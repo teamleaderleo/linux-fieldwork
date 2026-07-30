@@ -55,7 +55,7 @@ diff --git a/tests/fail-with-unwritable-tmpdir b/tests/fail-with-unwritable-tmpd
 new file mode 100755
 --- /dev/null
 +++ b/tests/fail-with-unwritable-tmpdir
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,41 @@
 +#!/bin/sh
 +set -eu
 +export LC_ALL=C.UTF-8
