@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import pathlib
 import shutil
 import subprocess
@@ -21,6 +22,14 @@ def paragraph(text: str, name: str) -> str:
     start = text.index(marker)
     end = text.find("\n\n", start)
     return text[start:] if end == -1 else text[start:end]
+
+
+def string_constants(source: str) -> set[str]:
+    return {
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
 
 
 class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
@@ -54,6 +63,7 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
         self.candidate_coverage = (self.tree / "coverage.txt").read_text(
             encoding="utf-8"
         )
+        self.baseline_driver = (SOURCE / "coverage.py").read_text(encoding="utf-8")
         self.candidate_driver = (self.tree / "coverage.py").read_text(
             encoding="utf-8"
         )
@@ -81,6 +91,19 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
         self.assertIn("and use_host_apt_config", self.candidate_driver)
         self.assertIn(
             '("skip", "test cannot use host apt config")', self.candidate_driver
+        )
+
+    def test_candidate_metadata_is_accepted_by_the_config_parser(self) -> None:
+        baseline_constants = string_constants(self.baseline_driver)
+        candidate_constants = string_constants(self.candidate_driver)
+        self.assertNotIn("Needs-Hook-Free-APT-Config", baseline_constants)
+        self.assertIn("Needs-Hook-Free-APT-Config", candidate_constants)
+
+        whitelist_anchor = '                    "Needs-APT-Config",\n'
+        self.assertIn(whitelist_anchor, self.baseline_driver)
+        self.assertIn(
+            whitelist_anchor + '                    "Needs-Hook-Free-APT-Config",\n',
+            self.candidate_driver,
         )
 
     def test_hard_phase_is_hook_free_and_precedes_soft_transition_phase(self) -> None:
