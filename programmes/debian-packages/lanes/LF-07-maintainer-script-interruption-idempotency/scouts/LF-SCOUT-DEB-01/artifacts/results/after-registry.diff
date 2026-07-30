@@ -1,0 +1,12 @@
+--- clean.snapshot
++++ after-registry.snapshot
+@@ -6,7 +6,8 @@
+ [filesystem]
+ var/lib/lf-script-idempotency-fixture/state|file|mode=644|sha256=103b92e45253890820db806383c5f4c25ae009d8cbada5f175afac93ddd445d1
+   schema=1
+-var/lib/lf-script-idempotency-fixture/registry|file|mode=644|sha256=960c8bf6cedaff043fdda56c0fb7dd68cdfaa18f35e9486fe318fe2f699e3290
++var/lib/lf-script-idempotency-fixture/registry|file|mode=644|sha256=25cc056b94ba657af2ff6598c69e301688a46a06bc3d291727a744e4068c9d97
++  payload=/usr/share/lf-script-idempotency-fixture/payload.txt
+   payload=/usr/share/lf-script-idempotency-fixture/payload.txt
+ etc/lf-script-idempotency-fixture/generated.conf|file|mode=644|sha256=ef775f7ab12e1eca97d1752306c2aaec349f6193b319bd082b7978d54af47a86
+   package=lf-script-idempotency-fixture

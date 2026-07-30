@@ -1,0 +1,8 @@
+Package: lf-script-idempotency-fixture
+Version: 1.0
+Section: misc
+Priority: optional
+Architecture: all
+Maintainer: Linux Fieldwork <noreply@example.invalid>
+Description: Purpose-built maintainer-script interruption fixture
+ A local-only fixture for testing dpkg postinst rerun convergence.

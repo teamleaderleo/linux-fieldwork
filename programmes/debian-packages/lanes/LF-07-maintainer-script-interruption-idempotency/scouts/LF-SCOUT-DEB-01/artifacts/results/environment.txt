@@ -1,0 +1,7 @@
+run_utc=2026-07-30T09:08:03Z
+uid=0
+kernel=Linux 6.12.13 x86_64 GNU/Linux
+os="Debian GNU/Linux 13 (trixie)"
+Debian 'dpkg' package management program version 1.22.22 (amd64).
+Debian 'dpkg-deb' package archive backend version 1.22.22 (amd64).
+BusyBox v1.37.0 (Debian 1:1.37.0-6+b7) multi-call binary.
