@@ -16,6 +16,7 @@ Does preserving the `TMPDIR` value established by `run_setup()` keep chrootless 
 - Review finding: issue #69.
 - Exact diagnostic: PR #65.
 - Superseded stacked candidate: PR #70.
+- Replacement candidate: PR #73.
 - Existing TMPDIR PRs #1, #2, #4, #8, and #26 concern mmdebstrap's own temporary rootfs workspace, not package-script temporary paths.
 - Repository searches found no prior package-script target-TMPDIR record.
 
@@ -26,6 +27,7 @@ Does preserving the `TMPDIR` value established by `run_setup()` keep chrootless 
 - Resolved upstream commit: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
 - Merged environment-hardening commit: `09e2c5ef74683723cca9cf70c1162dec0328750d`
 - Merged PR #57 head: `5ebb8095288c7b3c11a4d23e2a329d6424f6a96e`
+- Executed candidate head: `43005ead9bd5967470a2095fd2c55914744e524e`
 - Local source: `upstream/mmdebstrap/mmdebstrap`
 - Candidate patch: `mmdebstrap-chrootless-target-tmpdir.patch`
 - Candidate branch: `fix/mmdebstrap-chrootless-target-tmpdir-main`
@@ -109,19 +111,35 @@ It also requires the created directory not to survive, then repeats the candidat
 
 ## Results
 
-The first stacked candidate run `30536534715` passed against the PR #57 stack. A replacement branch was created directly from current `main` after PR #57 merged; exact-head replacement validation is pending.
+Replacement head `43005ead9bd5967470a2095fd2c55914744e524e` passed all three exact-head workflows:
+
+- target-TMPDIR run `30536852201`, job `90852098465`;
+- Linux Fieldwork CI run `30536852205`;
+- chrootless environment security run `30536852182`.
+
+The focused artifact is `8757007293`, digest `sha256:c1246052455824d008d04a61b77fb2acc0b7c6a7baa0da301f56c7cb7729594b`.
+
+The executable result established:
+
+- merged main reproduces `TMPDIR=<unset>` and host `/tmp` creation;
+- the candidate receives exactly `<target>/tmp`, not the caller path;
+- `mktemp` creates beneath the target;
+- target `/tmp` is mode `1777`;
+- the package-created directory is removed;
+- a fresh candidate run succeeds;
+- fakeroot preserves the same target-derived invariant.
 
 ## Cleanup and rerun
 
-The runner validates its disposable runtime path before recursive deletion. Every package-created temporary directory is removed by the maintainer script. The candidate is immediately rerun into a fresh target. Final exact-head replacement results remain pending.
+The runner validates its disposable runtime path before recursive deletion. Every package-created temporary directory is removed by the maintainer script. The candidate immediately reran into a fresh target and passed. The workflow artifact retained compact logs and summaries; no package-created host temporary path survived.
 
 ## Interpretation
 
-Source review and the first candidate run establish that preserving `TMPDIR` here is not equivalent to inheriting an arbitrary shell environment. `run_setup()` has already normalized it to the selected target and created the directory with Debian `/tmp` permissions.
+The evidence establishes that preserving `TMPDIR` here is not equivalent to inheriting an arbitrary shell environment. `run_setup()` has already normalized it to the selected target and created the directory with Debian `/tmp` permissions. The one-line allowlist repair restores the intended target-contained default without weakening the credential scrub.
 
 ## Evidence boundary
 
-- The executable probe currently reaches the apt-managed local-package path.
+- The executable probe reaches the apt-managed local-package path.
 - `run_essential()` uses the same helper, but a full essential-package transaction remains a separate dynamic control.
 - The fixture uses `mktemp`; packages with custom temporary-location logic remain outside this probe.
 - Chrootless maintainer scripts remain host-executing code and this repair is not a sandbox.
@@ -129,15 +147,17 @@ Source review and the first candidate run establish that preserving `TMPDIR` her
 ## Self-review
 
 - Candidate source delta: one allowlist entry.
+- Complete five-file diff inspected against merged main.
 - Negative control is retained and asserted against merged main.
 - Caller `TMPDIR` differs from the target-derived value.
 - Cleanup and fresh rerun are asserted.
-- Fakeroot is included when available.
+- Fakeroot is included and passed.
+- Repository CI and the original security matrix remain green.
 - No real credential, external socket, package repository, or upstream contact is used.
 
 ## Peer review
 
-Pending exact-head review of the replacement pull request based on current `main`.
+Pending exact-head peer review of PR #73 after this result-recording update reruns.
 
 ## Reusable notes
 
@@ -145,7 +165,7 @@ Related note: `notes/packaging/chrootless-maintainer-script-tmpdir.md`.
 
 ## Next step
 
-Run the replacement exact-head workflow, record the run IDs and artifact digest, and request review before merging the one-line repair into `main`.
+Rerun the documentation-updated exact head, mark PR #73 ready for review, and merge only after exact-head peer review.
 
 ## Authority
 
