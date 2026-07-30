@@ -27,6 +27,9 @@ diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirro
 +  trap 'update_cache_signal_exit 130' INT
 +  trap 'update_cache_signal_exit 131' QUIT
 +  trap 'update_cache_signal_exit 143' TERM
+ 
+   for p in /etc/apt/apt.conf.d /etc/apt/sources.list.d /etc/apt/preferences.d /var/cache/apt/archives /var/lib/apt/lists/partial /var/lib/dpkg; do
+     mkdir -p "$rootdir/$p"
 @@ -254,5 +271,5 @@ update_cache() (
  
    # this function is run in its own process, so we unset all traps before
