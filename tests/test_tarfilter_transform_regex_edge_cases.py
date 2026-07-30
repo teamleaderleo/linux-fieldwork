@@ -73,12 +73,39 @@ class TarfilterTransformRegexEdgeCasesTest(
                         {expected_name: ("file", "")},
                     )
 
-    def test_extended_stacked_repetition_is_normalized(self) -> None:
+    def test_repeated_simple_quantifiers_match_gnu_nested_semantics(self) -> None:
         cases = (
             ("a", "s/a**/X/x", "X"),
-            ("a", "s/a+*/X/x", "X"),
+            ("0", "s/a+*/X/x", "X0"),
+            ("0", "s/a*+/X/x", "X0"),
+            ("aa", "s/a++/X/x", "X"),
+            ("b", "s/a+?/X/x", "Xb"),
+            ("b", r"s/a\?\+/X/", "Xb"),
         )
         with tempfile.TemporaryDirectory(prefix="tarfilter-regex-repeat-") as td:
+            work = pathlib.Path(td)
+            candidate = self.prepare_candidate(
+                work / "candidate-work", include_regex_patch=True
+            )
+            for member_name, expression, expected_name in cases:
+                with self.subTest(member=member_name, expression=expression):
+                    self.assert_matches_gnu(
+                        candidate,
+                        work / expression.encode().hex(),
+                        member_name,
+                        expression,
+                        {expected_name: ("file", "")},
+                    )
+
+    def test_repeated_intervals_remain_nested_in_both_dialects(self) -> None:
+        cases = (
+            ("aaaaa", "s/a{2}{2,3}/X/x", "Xa"),
+            ("aaaaa", r"s/a\{2\}\{2,3\}/X/", "Xa"),
+            ("aaa", "s/a{1,2}+/X/x", "X"),
+            ("aaa", "s/a+{1,2}/X/x", "X"),
+            ("b", "s/a{1,2}*/X/x", "Xb"),
+        )
+        with tempfile.TemporaryDirectory(prefix="tarfilter-regex-interval-") as td:
             work = pathlib.Path(td)
             candidate = self.prepare_candidate(
                 work / "candidate-work", include_regex_patch=True
@@ -99,14 +126,16 @@ class TarfilterTransformRegexEdgeCasesTest(
                 pathlib.Path(td), include_regex_patch=True
             )
             source = candidate.read_text(encoding="utf-8")
-            self.assertIn("def _normalize_extended_repetition", source)
+            self.assertIn("def _quantifier_at", source)
+            self.assertIn("def _normalize_repeated_quantifiers", source)
             self.assertIn('if escaped == "0":', source)
             self.assertIn(
                 'if not extended and char == "*" and branch_start:', source
             )
             self.assertIn(
-                'if extended and char in "*+?" and not branch_start:', source
+                'return _normalize_repeated_quantifiers("".join(result))', source
             )
+            self.assertIn('result[atom_start:] = ["(?:" + nested + ")"]', source)
 
 
 if __name__ == "__main__":
