@@ -1,61 +1,96 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -163,2 +163,21 @@ def _copy_bracket_expression(pattern, start):
+@@ -156,1 +156,73 @@ def _copy_bracket_expression(pattern, start):
      return pattern[start:], len(pattern)
- 
-+def _normalize_extended_repetition(operators):
-+    minimum = 1
-+    maximum = 1
-+
-+    for operator in operators:
-+        if operator == "*":
-+            minimum = 0
-+            maximum = None
-+        elif operator == "+":
-+            if maximum == 1:
-+                maximum = None
-+        else:
-+            minimum = 0
-+
-+    if maximum is None:
-+        return "+" if minimum else "*"
-+    return "?"
 +
 +
-@@ -189,5 +208,11 @@ def _translate_pattern(pattern, extended):
- 
++def _quantifier_at(pattern, index):
++    char = pattern[index]
++    if char in "*+?":
++        return char, index + 1
++    if char != "{":
++        return None, index
++    match = re.match(
++        r"\{(?:[0-9]+(?:,[0-9]*)?|,[0-9]+)\}",
++        pattern[index:],
++    )
++    if match is None:
++        return None, index
++    token = match.group(0)
++    return token, index + len(token)
++
++
++def _normalize_repeated_quantifiers(pattern):
++    result = []
++    group_starts = []
++    atom_start = None
++    repeated = False
++    index = 0
++    while index < len(pattern):
++        char = pattern[index]
++        if char == "\\":
++            end = min(index + 2, len(pattern))
++            result.append(pattern[index:end])
++            atom_start = len(result) - 1
++            repeated = False
++            index = end
++            continue
++        if char == "[":
++            expression, index = _copy_bracket_expression(pattern, index)
++            result.append(expression)
++            atom_start = len(result) - 1
++            repeated = False
++            continue
++        if char == "(":
++            group_starts.append(len(result))
++            result.append(char)
++            atom_start = None
++            repeated = False
++            index += 1
++            continue
++        if char == ")":
++            result.append(char)
++            atom_start = group_starts.pop() if group_starts else len(result) - 1
++            repeated = False
++            index += 1
++            continue
++        if char == "|":
++            result.append(char)
++            atom_start = None
++            repeated = False
++            index += 1
++            continue
++        quantifier, next_index = _quantifier_at(pattern, index)
++        if quantifier is not None:
++            if atom_start is not None and repeated:
++                nested = "".join(result[atom_start:])
++                result[atom_start:] = ["(?:" + nested + ")"]
++            result.append(quantifier)
++            repeated = True
++            index = next_index
++            continue
++        result.append(char)
++        atom_start = len(result) - 1
++        repeated = False
++        index += 1
++    return "".join(result)
+@@ -181,1 +253,6 @@ def _translate_pattern(pattern, extended):
              escaped = pattern[index + 1]
 +            if escaped == "0":
 +                result.append("0")
 +                branch_start = False
 +                index += 2
 +                continue
-+
-             if escaped in unsupported_alpha_escapes and escaped not in "123456789":
-                 raise ValueError(
-                     "unsupported alphabetic regex escape: \\%s" % escaped
-@@ -224,6 +249,23 @@ def _translate_pattern(pattern, extended):
-             index += 1
-             continue
- 
+@@ -202,1 +279,7 @@ def _translate_pattern(pattern, extended):
+-        if char == "^":
 +        if not extended and char == "*" and branch_start:
 +            result.append("\\*")
 +            branch_start = False
 +            index += 1
 +            continue
 +
-+        if extended and char in "*+?" and not branch_start:
-+            end = index + 1
-+            while end < len(pattern) and pattern[end] in "*+?":
-+                end += 1
-+            result.append(
-+                _normalize_extended_repetition(pattern[index:end])
-+            )
-+            branch_start = False
-+            index = end
-+            continue
-+
-         if not extended and char in basic_operators:
-             result.append("\\" + char)
-             branch_start = False
++        if char == "^":
+@@ -231,1 +314,1 @@ def _translate_pattern(pattern, extended):
+-    return "".join(result)
++    return _normalize_repeated_quantifiers("".join(result))
