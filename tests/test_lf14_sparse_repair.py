@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import pathlib
 import shutil
@@ -17,6 +18,45 @@ def sha256(path: pathlib.Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def run_tarfilter(tarfilter: pathlib.Path, archive: bytes, *args: str) -> bytes:
+    result = subprocess.run(
+        [sys.executable, str(tarfilter), *args],
+        input=archive,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stderr.decode("utf-8", errors="replace"))
+    return result.stdout
+
+
+def path_fixture() -> bytes:
+    output = io.BytesIO()
+    entries = (
+        ("./foo", b"", tarfile.DIRTYPE),
+        ("./foo/bar", b"bar", tarfile.REGTYPE),
+        ("./.secret", b"dot", tarfile.REGTYPE),
+        ("./secret", b"plain", tarfile.REGTYPE),
+        ("../etc/passwd", b"not-host", tarfile.REGTYPE),
+    )
+    with tarfile.open(fileobj=output, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        for name, content, member_type in entries:
+            member = tarfile.TarInfo(name)
+            member.type = member_type
+            member.mode = 0o755 if member_type == tarfile.DIRTYPE else 0o644
+            member.size = 0 if member_type == tarfile.DIRTYPE else len(content)
+            archive.addfile(
+                member,
+                None if member_type == tarfile.DIRTYPE else io.BytesIO(content),
+            )
+    return output.getvalue()
+
+
+def member_names(archive: bytes) -> set[str]:
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:*") as handle:
+        return {member.name for member in handle}
 
 
 class LF14SparseRepairTest(unittest.TestCase):
@@ -152,6 +192,39 @@ class LF14SparseRepairTest(unittest.TestCase):
             dense_path = dense_target / ".sparse-source"
             self.assertEqual(sha256(dense_path), sha256(direct_path))
             self.assertGreater(dense_archive.stat().st_size, direct_file["size"])
+
+            tarfilter = upstream / "tarfilter"
+            fixture = path_fixture()
+            self.assertEqual(run_tarfilter(tarfilter, fixture), fixture)
+            self.assertEqual(run_tarfilter(tarfilter, fixture, "--idshift", "0"), fixture)
+
+            names = member_names(
+                run_tarfilter(tarfilter, fixture, "--path-exclude=/.secret")
+            )
+            self.assertNotIn("./.secret", names)
+            self.assertIn("./secret", names)
+
+            names = member_names(
+                run_tarfilter(tarfilter, fixture, "--path-exclude=/secret")
+            )
+            self.assertNotIn("./secret", names)
+            self.assertIn("./.secret", names)
+
+            names = member_names(
+                run_tarfilter(
+                    tarfilter,
+                    fixture,
+                    "--path-exclude=/*",
+                    "--path-include=/foo/bar",
+                )
+            )
+            self.assertIn("./foo", names)
+            self.assertIn("./foo/bar", names)
+
+            names = member_names(
+                run_tarfilter(tarfilter, fixture, "--path-exclude=/etc/passwd")
+            )
+            self.assertIn("../etc/passwd", names)
 
 
 if __name__ == "__main__":
