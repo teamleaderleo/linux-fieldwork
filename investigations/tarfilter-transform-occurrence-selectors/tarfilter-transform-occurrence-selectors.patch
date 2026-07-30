@@ -30,7 +30,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
          supported = {"g", "i", "r", "R", "s", "S", "h", "H"}
 -        unsupported = sorted(set(flag_text) - supported)
 +        unsupported = sorted(
-+            set(flag for flag in flag_text if not flag.isdigit()) - supported
++            set(flag for flag in flag_text if flag not in "0123456789") - supported
 +        )
          if unsupported:
              raise ValueError("unsupported transform flags: %s" % "".join(unsupported))
@@ -44,7 +44,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +        number_text = ""
          scopes = {"r": True, "s": True, "h": True}
          for flag in flag_text:
-+            if flag.isdigit():
++            if flag in "0123456789":
 +                number_text += flag
 +                continue
 +            if number_text:
