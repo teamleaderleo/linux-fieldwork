@@ -1,0 +1,41 @@
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+
+[ "$(id -u)" -eq 0 ]
+
+if ! id "${SUDO_USER:-user}" >/dev/null 2>&1; then
+  if [ ! -e /mmdebstrap-testenv ]; then
+    echo "this test modifies the system and should only be run inside a container" >&2
+    exit 1
+  fi
+  useradd --home-dir "/home/${SUDO_USER:-user}" --create-home "${SUDO_USER:-user}"
+fi
+prefix="runuser -u ${SUDO_USER:-user} --"
+homedir=$($prefix sh -c 'cd && pwd')
+tmpdir="$homedir/mmdebstrap-unwritable-tmpdir"
+$prefix mkdir "$tmpdir"
+chmod 0555 "$tmpdir"
+trap 'chmod 0700 "$tmpdir"; rm -rf "$tmpdir"' EXIT INT TERM
+
+if $prefix touch "$tmpdir/should-fail" 2>/dev/null; then
+  echo "test setup failed: TMPDIR is writable" >&2
+  exit 1
+fi
+
+ret=0
+output="$($prefix env TMPDIR="$tmpdir" {{ CMD }} \
+  --dry-run --mode={{ MODE }} --variant=apt \
+  {{ DIST }} /dev/null {{ MIRROR }} 2>&1)" || ret=$?
+
+if [ "$ret" = 0 ]; then
+  echo "expected failure but got exit $ret" >&2
+  exit 1
+fi
+
+printf '%s\n' "$output" | grep -F "$tmpdir"
+
+if printf '%s\n' "$output" | grep -F 'I: using /tmp/mmdebstrap.'; then
+  echo "mmdebstrap silently fell back to /tmp" >&2
+  exit 1
+fi

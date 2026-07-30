@@ -1,0 +1,111 @@
+diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
+--- a/upstream/mmdebstrap/mmdebstrap
++++ b/upstream/mmdebstrap/mmdebstrap
+@@ -1207,6 +1207,38 @@ sub error {
+     }
+ }
+ 
++sub check_tmpdir {
++    return
++      if !exists $ENV{TMPDIR}
++      || !defined $ENV{TMPDIR}
++      || $ENV{TMPDIR} eq '';
++
++    my $tmpdir = $ENV{TMPDIR};
++    if (!-d $tmpdir) {
++        error "TMPDIR \"$tmpdir\" is not a directory";
++    }
++
++    my ($fh, $filename);
++    my $success = eval {
++        ($fh, $filename) = tempfile(
++            "mmdebstrap.tmpdir-check.XXXXXXXXXXXX",
++            DIR    => $tmpdir,
++            UNLINK => 0
++        );
++        1;
++    };
++    if (!$success) {
++        chomp(my $msg = $@ || "$!");
++        error "cannot use TMPDIR \"$tmpdir\": $msg";
++    }
++
++    close $fh
++      or error "cannot close temporary file in TMPDIR \"$tmpdir\": $!";
++    unlink $filename
++      or error "cannot remove temporary file in TMPDIR \"$tmpdir\": $!";
++    return;
++}
++
+ # The encoding of dev_t is MMMM Mmmm mmmM MMmm, where M is a hex digit of
+ # the major number and m is a hex digit of the minor number.
+ sub major {
+@@ -5847,6 +5879,8 @@ sub main() {
+         open(STDERR, '>', $logfile) or error "cannot open $logfile: $!";
+     }
+ 
++    check_tmpdir();
++
+     foreach my $arg (@{ $options->{noop} }) {
+         info "the option --$arg is a no-op. It only exists for compatibility"
+           . " with some debootstrap wrappers.";
+diff --git a/upstream/mmdebstrap/coverage.txt b/upstream/mmdebstrap/coverage.txt
+--- a/upstream/mmdebstrap/coverage.txt
++++ b/upstream/mmdebstrap/coverage.txt
+@@ -114,6 +114,10 @@ Test: custom-tmpdir
+ Needs-Root: true
+ Modes: unshare
+ 
++Test: fail-with-unwritable-tmpdir
++Needs-Root: true
++Modes: chrootless
++
+ Test: xz-compressed-tarball
+ 
+ Test: directory-ending-in-tar
+diff --git a/upstream/mmdebstrap/tests/fail-with-unwritable-tmpdir b/upstream/mmdebstrap/tests/fail-with-unwritable-tmpdir
+new file mode 100755
+--- /dev/null
++++ b/upstream/mmdebstrap/tests/fail-with-unwritable-tmpdir
+@@ -0,0 +1,41 @@
++#!/bin/sh
++set -eu
++export LC_ALL=C.UTF-8
++
++[ "$(id -u)" -eq 0 ]
++
++if ! id "${SUDO_USER:-user}" >/dev/null 2>&1; then
++  if [ ! -e /mmdebstrap-testenv ]; then
++    echo "this test modifies the system and should only be run inside a container" >&2
++    exit 1
++  fi
++  useradd --home-dir "/home/${SUDO_USER:-user}" --create-home "${SUDO_USER:-user}"
++fi
++prefix="runuser -u ${SUDO_USER:-user} --"
++homedir=$($prefix sh -c 'cd && pwd')
++tmpdir="$homedir/mmdebstrap-unwritable-tmpdir"
++$prefix mkdir "$tmpdir"
++chmod 0555 "$tmpdir"
++trap 'chmod 0700 "$tmpdir"; rm -rf "$tmpdir"' EXIT INT TERM
++
++if $prefix touch "$tmpdir/should-fail" 2>/dev/null; then
++  echo "test setup failed: TMPDIR is writable" >&2
++  exit 1
++fi
++
++ret=0
++output="$($prefix env TMPDIR="$tmpdir" {{ CMD }} \
++  --dry-run --mode={{ MODE }} --variant=apt \
++  {{ DIST }} /dev/null {{ MIRROR }} 2>&1)" || ret=$?
++
++if [ "$ret" = 0 ]; then
++  echo "expected failure but got exit $ret" >&2
++  exit 1
++fi
++
++printf '%s\n' "$output" | grep -F "$tmpdir"
++
++if printf '%s\n' "$output" | grep -F 'I: using /tmp/mmdebstrap.'; then
++  echo "mmdebstrap silently fell back to /tmp" >&2
++  exit 1
++fi

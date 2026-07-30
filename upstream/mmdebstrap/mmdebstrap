@@ -1207,6 +1207,38 @@ sub error {
     }
 }
 
+sub check_tmpdir {
+    return
+      if !exists $ENV{TMPDIR}
+      || !defined $ENV{TMPDIR}
+      || $ENV{TMPDIR} eq '';
+
+    my $tmpdir = $ENV{TMPDIR};
+    if (!-d $tmpdir) {
+        error "TMPDIR \"$tmpdir\" is not a directory";
+    }
+
+    my ($fh, $filename);
+    my $success = eval {
+        ($fh, $filename) = tempfile(
+            "mmdebstrap.tmpdir-check.XXXXXXXXXXXX",
+            DIR    => $tmpdir,
+            UNLINK => 0
+        );
+        1;
+    };
+    if (!$success) {
+        chomp(my $msg = $@ || "$!");
+        error "cannot use TMPDIR \"$tmpdir\": $msg";
+    }
+
+    close $fh
+      or error "cannot close temporary file in TMPDIR \"$tmpdir\": $!";
+    unlink $filename
+      or error "cannot remove temporary file in TMPDIR \"$tmpdir\": $!";
+    return;
+}
+
 # The encoding of dev_t is MMMM Mmmm mmmM MMmm, where M is a hex digit of
 # the major number and m is a hex digit of the minor number.
 sub major {
@@ -5835,6 +5867,8 @@ sub main() {
     if (defined($logfile)) {
         open(STDERR, '>', $logfile) or error "cannot open $logfile: $!";
     }
+
+    check_tmpdir();
 
     foreach my $arg (@{ $options->{noop} }) {
         info "the option --$arg is a no-op. It only exists for compatibility"

@@ -112,6 +112,10 @@ Test: custom-tmpdir
 Needs-Root: true
 Modes: unshare
 
+Test: fail-with-unwritable-tmpdir
+Needs-Root: true
+Modes: chrootless
+
 Test: xz-compressed-tarball
 
 Test: directory-ending-in-tar
