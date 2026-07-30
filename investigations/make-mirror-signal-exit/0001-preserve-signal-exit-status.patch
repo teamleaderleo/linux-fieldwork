@@ -1,0 +1,55 @@
+diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirror.sh
+--- a/upstream/mmdebstrap/make_mirror.sh
++++ b/upstream/mmdebstrap/make_mirror.sh
+@@ -326,5 +326,31 @@ if [ "$FORCE_UPDATE" != "yes" ] && [ -e "$oldmirrordir/dists/$DEFAULT_DI
+ fi
+ 
++PROXYPID=
++CLEANUP_PROXY_CACHE=no
++
++stop_proxy() {
++  if [ -n "${PROXYPID:-}" ]; then
++    if kill -0 "$PROXYPID" 2>/dev/null; then
++      kill "$PROXYPID" 2>/dev/null || :
++    fi
++    wait "$PROXYPID" 2>/dev/null || :
++    PROXYPID=
++  fi
++  if [ "${CLEANUP_PROXY_CACHE:-no}" = yes ]; then
++    cleanup_newcachedir || :
++  fi
++}
++
++signal_exit() {
++  status=$1
++  trap - EXIT INT QUIT TERM
++  stop_proxy
++  exit "$status"
++}
++
+ ./caching_proxy.py "$oldcachedir" "$newcachedir" &
+ PROXYPID=$!
+-trap 'kill "$PROXYPID" || :' EXIT INT TERM
++trap 'stop_proxy' EXIT
++trap 'signal_exit 130' INT
++trap 'signal_exit 131' QUIT
++trap 'signal_exit 143' TERM
+@@ -338,7 +364,7 @@ if [ ! -s "$newmirrordir/dists/$DEFAULT_DIST/InRelease" ]; then
+   exit 1
+ fi
+ 
+-trap 'kill "$PROXYPID" || :;cleanup_newcachedir' EXIT INT TERM
++CLEANUP_PROXY_CACHE=yes
+ 
+ mkdir -p "$newcachedir"
+ touch "$newcachedir/mmdebstrapcache"
+@@ -566,9 +592,8 @@ if [ "$HAVE_QEMU" = "yes" ]; then
+     "$mirror"
+ 
+-  kill $PROXYPID
++  stop_proxy
+   cleanuptmpdir
+-  trap "cleanup_newcachedir" EXIT INT TERM
+ fi
+ 
+ # delete possibly leftover symlink
