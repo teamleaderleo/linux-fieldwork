@@ -14,34 +14,46 @@ status_file="$run_dir/exit-status"
 console_log="$run_dir/autopkgtest-console.log"
 output_dir="$run_dir/autopkgtest-output"
 
+finish_early() {
+  local status=$1
+  shift
+  local reason=$*
+  printf '%s\n' "$reason" >&2
+  printf '%s\n' "$status" >"$status_file"
+  printf '%s\n' "$reason" >"$run_dir/preflight-error.txt"
+  {
+    printf '# Reproduction result\n\n'
+    printf -- '- Finished: `%s`\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf -- '- Exit status: `%s`\n' "$status"
+    if [[ $status -eq 77 ]]; then
+      printf -- '- Classification: `neutral-or-skipped`\n'
+    else
+      printf -- '- Classification: `infrastructure-failure`\n'
+    fi
+    printf -- '- Preflight reason: `%s`\n' "$reason"
+  } >"$run_dir/result.md"
+  exit "$status"
+}
+
 if [[ $(id -u) -ne 0 ]]; then
-  printf 'reproduction requires root inside a disposable test environment\n' >&2
-  printf '77\n' >"$status_file"
-  exit 77
+  finish_early 77 "reproduction requires root inside a disposable test environment"
 fi
 for command in autopkgtest patch; do
   if ! command -v "$command" >/dev/null 2>&1; then
-    printf '%s is unavailable\n' "$command" >&2
-    printf '77\n' >"$status_file"
-    exit 77
+    finish_early 77 "$command is unavailable"
   fi
 done
 if [[ ! -f $imported_source/debian/tests/control ]]; then
-  printf 'imported mmdebstrap source tree is missing\n' >&2
-  printf '2\n' >"$status_file"
-  exit 2
+  finish_early 2 "imported mmdebstrap source tree is missing"
 fi
 if [[ ! -f $override_patch ]]; then
-  printf 'installed-command wrapper patch is missing\n' >&2
-  printf '2\n' >"$status_file"
-  exit 2
+  finish_early 2 "installed-command wrapper patch is missing"
 fi
 
 work_root=$(mktemp -d "${TMPDIR:-/tmp}/lf-mmdebstrap-autopkgtest.XXXXXXXX")
 case "$work_root" in
   /|/tmp|/var/tmp)
-    printf 'refusing unsafe temporary source root: %s\n' "$work_root" >&2
-    exit 2
+    finish_early 2 "refusing unsafe temporary source root: $work_root"
     ;;
 esac
 trap 'rm -rf -- "$work_root"' EXIT INT TERM
@@ -59,7 +71,7 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
   printf -- '- Timeout: `%s`\n' "$timeout_duration"
   printf -- '- Imported source path: `%s`\n' "upstream/mmdebstrap"
   printf -- '- Execution source: temporary copy with the recorded installed-command wrapper patch\n'
-  printf -- '- Wrapper purpose: execute `/usr/bin/mmdebstrap` while bypassing only the source-style check that current perltidy applies to the older packaged script\n'
+  printf -- '- Wrapper purpose: execute `/usr/bin/mmdebstrap` while bypassing source-preflight checks that current tooling applies to the older packaged script\n'
   if [[ -f $imported_source/.linux-fieldwork-source.json ]]; then
     printf '\n## Imported source\n\n```json\n'
     cat "$imported_source/.linux-fieldwork-source.json"
@@ -114,7 +126,7 @@ dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
     124|137) printf -- '- Classification: `timeout`\n' ;;
     *) printf -- '- Classification: `failure`\n' ;;
   esac
-  printf -- '- Style-gate override: `installed-command-wrapper.patch`\n'
+  printf -- '- Source-preflight override: `installed-command-wrapper.patch`\n'
   if [[ -f $console_log ]]; then
     printf -- '- Console SHA-256: `%s`\n' "$(sha256sum "$console_log" | cut -d' ' -f1)"
   fi
