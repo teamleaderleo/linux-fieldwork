@@ -118,6 +118,18 @@ result: FAILURE
         self.assertEqual(result["phase"], "unknown")
         self.assertTrue(result["wrapper_failure_only"])
 
+    def test_wrapper_failure_cannot_be_overwritten_by_later_pass_text(self):
+        result = MODULE.classify_text(
+            """
+testsuite FAIL non-zero exit status 1
+testsuite PASS
+"""
+        )
+        self.assertEqual(result["phase"], "unknown")
+        self.assertTrue(result["wrapper_failure_only"])
+        self.assertIn("autopkgtest wrapper reported failure", result["signals"])
+        self.assertIn("autopkgtest reported PASS", result["signals"])
+
     def test_earlier_mirror_failure_is_not_overridden_by_later_case(self):
         result = MODULE.classify_text(
             """
@@ -154,6 +166,19 @@ result: FAILURE
         self.assertEqual(result["phase"], "coverage-preflight")
         self.assertEqual(result["first_failure_signal"], "perlcritic")
         self.assertEqual(result["first_failed_test"]["name"], "later-case")
+
+    def test_preflight_words_inside_named_case_do_not_reclassify_body_failure(self):
+        result = MODULE.classify_text(
+            """
+(4/10) shell-tool-case
+command output: shellcheck failed for generated fixture
+result: FAILURE
+testsuite FAIL non-zero exit status 1
+"""
+        )
+        self.assertEqual(result["phase"], "coverage-case")
+        self.assertEqual(result["first_failed_test"]["name"], "shell-tool-case")
+        self.assertNotIn("shellcheck", result["signals"])
 
     def test_completed_success_clears_active_test_before_stray_failure_text(self):
         result = MODULE.classify_text(
