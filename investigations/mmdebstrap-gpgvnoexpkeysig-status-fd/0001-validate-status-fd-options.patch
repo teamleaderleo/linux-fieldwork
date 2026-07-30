@@ -1,0 +1,48 @@
+diff --git a/upstream/mmdebstrap/gpgvnoexpkeysig b/upstream/mmdebstrap/gpgvnoexpkeysig
+--- a/upstream/mmdebstrap/gpgvnoexpkeysig
++++ b/upstream/mmdebstrap/gpgvnoexpkeysig
+@@ -31,14 +31,35 @@ set -eu
+ 
+ find_gpgv_status_fd() {
++  status_fd=1
+   while [ "$#" -gt 0 ]; do
+-    if [ "$1" = '--status-fd' ]; then
+-      echo "$2"
+-      return 0
+-    fi
+-    shift
++    case $1 in
++      --status-fd)
++        if [ "$#" -lt 2 ]; then
++          return 1
++        fi
++        candidate=$2
++        shift 2
++        ;;
++      --status-fd=*)
++        candidate=${1#--status-fd=}
++        shift
++        ;;
++      *)
++        shift
++        continue
++        ;;
++    esac
++    case $candidate in
++      '' | *[!0-9]*) return 1 ;;
++    esac
++    # Match ordinary command-line option precedence: the last valid occurrence
++    # selects the status descriptor passed through to gpgv.
++    status_fd=$candidate
+   done
+-  # default fd is stdout
+-  echo 1
++  echo "$status_fd"
+ }
+-GPGSTATUSFD="$(find_gpgv_status_fd "$@")"
++if ! GPGSTATUSFD="$(find_gpgv_status_fd "$@")"; then
++  echo "invalid --status-fd argument" >&2
++  exit 1
++fi
+ 
+ case $GPGSTATUSFD in
