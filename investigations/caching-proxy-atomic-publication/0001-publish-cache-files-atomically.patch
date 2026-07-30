@@ -1,0 +1,68 @@
+diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_proxy.py
+--- a/upstream/mmdebstrap/caching_proxy.py
++++ b/upstream/mmdebstrap/caching_proxy.py
+@@ -8,12 +8,46 @@
+ from io import StringIO
+ import pathlib
+ import urllib.parse
++import contextlib
++import secrets
+ 
+ oldcachedir = None
+ newcachedir = None
+ readonly = False
+ 
+ 
++def new_cache_temporary(path):
++    for _ in range(100):
++        temporary = path.with_name(
++            f".{path.name}.{secrets.token_hex(12)}"
++        )
++        try:
++            descriptor = os.open(
++                temporary,
++                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
++                0o666,
++            )
++        except FileExistsError:
++            continue
++        return descriptor, temporary
++    raise FileExistsError(f"unable to allocate temporary cache file for {path}")
++
++
++@contextlib.contextmanager
++def cache_destination(path):
++    if path == pathlib.Path("/dev/null"):
++        with path.open(mode="wb") as cache:
++            yield cache
++        return
++    descriptor, temporary = new_cache_temporary(path)
++    try:
++        with os.fdopen(descriptor, mode="wb") as cache:
++            yield cache
++        os.replace(temporary, path)
++    finally:
++        temporary.unlink(missing_ok=True)
++
++
+ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
+     def do_GET(self):
+         assert int(self.headers.get("Content-Length", 0)) == 0
+@@ -56,7 +90,7 @@
+             self.wfile.write(b"HTTP/1.1 200 OK\r\n")
+             self.send_header("Content-Length", oldpath.stat().st_size)
+             self.end_headers()
+-            with oldpath.open(mode="rb") as old, newpath.open(mode="wb") as new:
++            with oldpath.open(mode="rb") as old, cache_destination(newpath) as new:
+                 # we are not using shutil.copyfileobj() because we want to
+                 # write to two file objects simultaneously
+                 while True:
+@@ -82,7 +116,7 @@
+                     continue
+                 self.send_header(k, v)
+             self.end_headers()
+-            with newpath.open(mode="wb") as f:
++            with cache_destination(newpath) as f:
+                 # we are not using shutil.copyfileobj() because we want to
+                 # write to two file objects simultaneously and throttle the
+                 # writing speed to 1024 kB/s
