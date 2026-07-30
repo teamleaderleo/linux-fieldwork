@@ -1,7 +1,11 @@
 #!/bin/sh
 set -eu
 : "${DPKG_ROOT:?DPKG_ROOT missing}"
-mkdir -p "$DPKG_ROOT/var/lib/lf-fieldwork-probe"
+mkdir -p \
+  "$DPKG_ROOT/etc/alternatives" \
+  "$DPKG_ROOT/usr/bin" \
+  "$DPKG_ROOT/var/lib/dpkg/alternatives" \
+  "$DPKG_ROOT/var/lib/lf-fieldwork-probe"
 {
   printf 'phase=postinst\n'
   printf 'arg1=%s\n' "${1-}"
