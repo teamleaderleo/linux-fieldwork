@@ -1,0 +1,33 @@
+# LF-02 privileged host integrations follow-up
+
+This follow-up starts from LF-SCOUT-ROOT-01's promoted chrootless `DPKG_ROOT` result and tests the two strongest adjacent host effects under a disposable privileged caller.
+
+## Questions
+
+1. Does Ubuntu's host dpkg `status-logger` successfully modify `/run/needrestart/unpacked` when the chrootless transaction has root authority?
+2. Does `DPkg::Inhibit-Shutdown "false"` remove apt's host system-D-Bus/logind interaction without changing target package state?
+3. When both apt inhibitors and the host `needrestart` dpkg configuration are disabled, does the same target transaction complete without either observed host-service action?
+
+## Matrix
+
+The workflow runs the imported `mmdebstrap` source three times in `chrootless` mode with the LF-02 local package fixture:
+
+| Case | Apt shutdown/sleep inhibitors | Host dpkg needrestart logger |
+|---|---|---|
+| `default-root` | enabled | enabled |
+| `no-inhibit-root` | disabled with target apt options | enabled |
+| `isolated-root` | disabled | temporarily moved aside and restored |
+
+Every case uses a fresh target, `--variant=custom`, the local `.deb`, `--skip=update,check/chrootless`, and syscall tracing. The runner compares normalized maintainer-script and alternatives state across all three cases.
+
+## Host safety
+
+The GitHub-hosted runner is disposable. Even so, the script snapshots and restores `/run/needrestart/unpacked`, restores `/etc/dpkg/dpkg.cfg.d/needrestart` through an exit trap, and confines package payload effects to fresh target directories. No external project is contacted.
+
+## Run
+
+```sh
+sudo -E bash investigations/lf-02-privileged-host-integrations/run.sh
+```
+
+Results are written to `investigations/lf-02-privileged-host-integrations/results/` and uploaded by the dedicated workflow.
