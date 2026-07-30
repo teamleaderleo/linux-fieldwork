@@ -22,6 +22,11 @@ SOURCESFILTER_PATCH = (
     / "investigations/mmdebstrap-autopkgtest-1141078"
     / "sourcesfilter-deb822.patch"
 )
+CAPABILITY_PATCH = (
+    REPOSITORY_ROOT
+    / "investigations/mmdebstrap-root-without-cap-sys-admin-scheduling"
+    / "0001-run-capability-case-without-host-apt-hooks.patch"
+)
 
 
 def extract_mmdebstrap_proxy(testsuite: str) -> str:
@@ -140,6 +145,25 @@ class ReproductionHarnessTest(unittest.TestCase):
         self.assertIn('"$source_tree/debian/tests/sourcesfilter"', self.script)
         self.assertIn(
             'Source compatibility override: `sourcesfilter-deb822.patch`',
+            self.script,
+        )
+
+    def test_capability_scheduling_patch_is_applied_and_hashed(self) -> None:
+        self.assertTrue(CAPABILITY_PATCH.is_file())
+        self.assertIn(
+            'capability_patch="$repo_root/investigations/'
+            'mmdebstrap-root-without-cap-sys-admin-scheduling/'
+            '0001-run-capability-case-without-host-apt-hooks.patch"',
+            self.script,
+        )
+        self.assertIn('if [[ ! -f $capability_patch ]]', self.script)
+        self.assertIn(
+            'patch --batch --forward -p1 -d "$source_tree" -i "$capability_patch"',
+            self.script,
+        )
+        self.assertIn('"$source_tree/coverage.txt"', self.script)
+        self.assertIn(
+            'Test scheduling override: `0001-run-capability-case-without-host-apt-hooks.patch`',
             self.script,
         )
 
