@@ -9,6 +9,7 @@ Linux Fieldwork is a lab notebook and working copy for learning how Linux system
 ## Enter here
 
 - [`START_HERE.md`](START_HERE.md) — choose the right kind of work and record it consistently.
+- [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md) — lightweight ownership, dispatch, review, branching, and quiet external-reference guidance.
 - [`RESEARCH_LANES.md`](RESEARCH_LANES.md) — current shortlist of formally mapped lanes.
 - [`programmes/`](programmes/) — long-lived Linux research directions, lane registry, and formal lane directories.
 - [`targets/`](targets/) — recurring upstream projects and subsystem maps.
@@ -54,6 +55,7 @@ Negative results belong here too. A careful result that supports existing behavi
 
 ## Repository map
 
+- [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md) — adaptable coordination and third-party GitHub backlink policy.
 - [`programmes/registry.yml`](programmes/registry.yml) — canonical programme and lane inventory.
 - [`programmes/`](programmes/) — programme status files and formal lane directories.
 - [`targets/registry.yml`](targets/registry.yml) — recurring target inventory.
