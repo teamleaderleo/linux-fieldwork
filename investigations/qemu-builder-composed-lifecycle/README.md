@@ -4,7 +4,7 @@
 
 The QEMU image builder now creates its disk image under a private sibling directory, publishes it with one final rename, and exits with the correct signal-derived status after cleanup. The combined candidate landed on `main` through PR #195 as commit `a0ec62f64fd6a9ff2cc20b28142ec876c52a5145`.
 
-The retained regressions prove existing-output preservation, one-time cleanup, HUP/INT/QUIT/TERM results, post-publication safety, cleanup-error precedence, trailing-slash rejection, and immediate reruns. A heavier builder run with real image tools remains a separate integration step.
+The retained regressions execute HUP, INT, and TERM lifecycle cases and source-check the QUIT trap. They also prove existing-output preservation, one-time cleanup, post-publication safety, cleanup-error precedence, trailing-slash rejection, and immediate reruns. A heavier builder run with real image tools remains a separate integration step.
 
 ## Explain like I'm five
 
@@ -96,13 +96,14 @@ Complete-diff review then found the trailing-slash reinterpretation. Final sourc
 Evidence classification:
 
 - source ownership and command routing: demonstrated by source inspection and exact patch assertions;
-- lifecycle, signal, cleanup, publication, mode, path, and rerun behavior: demonstrated by reduced real-shell models;
+- lifecycle, HUP/INT/TERM status, cleanup, publication, mode, path, and rerun behavior: demonstrated by reduced real-shell models;
+- QUIT status and trap separation: demonstrated by source-contract assertions;
 - repository regression compatibility: demonstrated by the named Linux Fieldwork CI gate;
 - full QEMU image construction: open integration boundary.
 
 ## Cleanup and rerun result
 
-Ordinary failure and every pre-publication signal remove the work directory and active private image state once. The same output path succeeds on the immediate next run. Signals after publication leave the completed final image intact.
+Ordinary failure and every executed pre-publication signal remove the work directory and active private image state once. The same output path succeeds on the immediate next run. The executed post-publication TERM case leaves the completed final image intact.
 
 Injected cleanup failure intentionally leaves disposable harness residue for the enclosing temporary directory to remove. The trailing-slash control creates zero private image state.
 
