@@ -1,0 +1,53 @@
+name: Probe LF-02 privileged host integrations
+
+on:
+  pull_request:
+    paths:
+      - "investigations/lf-02-privileged-host-integrations/**"
+      - "programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/**"
+      - "upstream/mmdebstrap/**"
+      - ".github/workflows/lf-02-privileged-host-integrations.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  privileged-host-integrations:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out investigation branch
+        uses: actions/checkout@v4
+
+      - name: Install probe dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libdistro-info-perl \
+            libdpkg-perl \
+            strace
+
+      - name: Check probe syntax
+        run: |
+          perl -c upstream/mmdebstrap/mmdebstrap
+          bash -n investigations/lf-02-privileged-host-integrations/run.sh
+          for script in \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/preinst \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/postinst \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/prerm \
+            programmes/rootless-execution/lanes/LF-02-chrootless-dpkg-root-containment/scouts/LF-SCOUT-ROOT-01/artifacts/fixture/DEBIAN/postrm; do
+            sh -n "$script"
+          done
+
+      - name: Run privileged host integration matrix
+        run: sudo -E bash investigations/lf-02-privileged-host-integrations/run.sh
+
+      - name: Upload traces and summaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lf-02-privileged-host-integrations-${{ github.run_id }}-${{ github.run_attempt }}
+          path: investigations/lf-02-privileged-host-integrations/results/
+          if-no-files-found: warn
+          retention-days: 14
