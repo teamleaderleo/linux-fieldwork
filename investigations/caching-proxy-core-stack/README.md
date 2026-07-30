@@ -10,11 +10,11 @@ This investigation provides one combined candidate and one real-HTTP matrix for 
 
 - atomic final-name publication: #95 / merged PR #96;
 - downstream response framing and hop headers: #116 / merged PR #120;
-- declared-length validation: #101 / PR #103;
+- declared-length validation: #101 / PR #103 and clean PR #137;
 - integration owner: #145;
-- request-side headers: #127 / PR #139, not yet included;
+- request-side headers: #127 / merged PR #139, not yet included;
 - cache-root containment: #93 / PR #94, not yet included;
-- post-header error signaling: #132, not yet included.
+- post-header error signaling: #132 / PR #147, not yet included.
 
 No existing test applied the merged atomic and response fixes plus declared-length validation to one exact imported source.
 
@@ -28,7 +28,9 @@ The combined candidate starts from the unchanged imported `upstream/mmdebstrap/c
 4. removal of upstream chunk framing after `http.client` decoding;
 5. explicit downstream close delimiting;
 6. received-byte validation for non-chunked responses with a declared length;
-7. transfer-coding precedence: a `Content-Length` accompanying a chunked response is ignored for both downstream framing and cache-integrity counting.
+7. rejection of negative declared lengths before downstream commitment;
+8. preservation of EOF-framed responses without `Content-Length`;
+9. transfer-coding precedence: a `Content-Length` accompanying a chunked response is ignored for both downstream framing and cache-integrity counting.
 
 ## Negative integration finding
 
@@ -50,6 +52,8 @@ It requires:
 - a second request to reach the origin and recover with the complete object;
 - a chunked response with conflicting length and hop headers to be accepted using transfer framing;
 - no downstream chunked or conflicting length header after decoding;
+- an EOF-framed response without declared length to remain cacheable;
+- a negative declared length to return 502 before cache publication;
 - retained end-to-end response headers and exact cache bytes;
 - source compilation and presence of every merged core invariant.
 
@@ -57,9 +61,9 @@ It requires:
 
 This stack proves one source state for atomic visibility, effective file mode, response framing, and fixed-length cache validation. It does not yet include:
 
-- request-side proxy credential and hop-header filtering (#127 / PR #139);
+- request-side proxy credential and hop-header filtering (#127 / merged PR #139);
 - URL/cache-root containment (#93 / PR #94);
-- post-header error signaling (#132);
+- post-header error signaling (#132 / PR #147);
 - miss coalescing;
 - fsync crash durability;
 - checksum or package-signature validation;
@@ -81,4 +85,4 @@ Internal Linux Fieldwork integration candidate only. Imported source remains unc
 
 ## Next step
 
-Run exact-head CI. If green, use this composed source as the base for restacking #103 and for adding the separately proven request-header, containment, and post-header-error boundaries.
+Run exact-head CI. If green, treat this composed source as the core cache base, close the superseded standalone length carriers, and add the separately proven request-header, containment, and post-header-error boundaries through a later full-stack gate.
