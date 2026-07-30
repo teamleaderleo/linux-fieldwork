@@ -48,7 +48,7 @@ diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mm
 @@ -477,1 +507,1 @@ EOF
 -dd if="$WORKDIR/fat" of="$IMAGE" conv=notrunc,sparse bs=512 "seek=$FAT_OFFSET_SECTORS" status=none
 +dd if="$WORKDIR/fat" of="$IMAGE_TMP" conv=notrunc,sparse bs=512 "seek=$FAT_OFFSET_SECTORS" status=none
-@@ -486,1 +516,3 @@ if test -n "$VMFPKG" && test "$(dpkg-query -f '${db:Status-Status}' -W "$VMFPKG")" != installed; then
+@@ -486,3 +516,5 @@
  fi
  
 +publish_image
