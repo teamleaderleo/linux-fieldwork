@@ -62,7 +62,7 @@ Record a meaningful scope change or transfer. Do not force a useful investigatio
 
 Use a note when the durable value is an explanation, command, workflow, source-reading lesson, or small demonstration. Notes do not need scout identities, formal review, promotion decisions, research metadata, or a full evidence packet.
 
-Add ordinary links when they help the reader understand the subject or find a related local record. The external-GitHub rule below concerns cross-reference backlinks to third-party projects; it is not a ban on useful links between Linux Fieldwork notes.
+Add ordinary links when they help the reader understand the subject or find a related record. Notes and other repository files do not create GitHub autolinked issue or pull-request references, so they do not need an automated backlink check.
 
 ## Formal lanes give direction, not scripts
 
@@ -100,9 +100,9 @@ Keep the broad report as orientation. Link the focused work from it. Preserve pa
 
 ## External GitHub backlinks
 
-Quiet research must not create accidental backlinks or notifications in third-party official repositories.
+Quiet coordination should not create accidental backlinks or notifications in third-party official repositories.
 
-For third-party GitHub issues, pull requests, discussions, and commits, use backlink-suppressing references:
+Apply backlink suppression to GitHub interaction text: issue and pull-request titles and bodies, comments, reviews, discussions, and intentional issue references in commit messages. In those surfaces, use:
 
 ```text
 https://redirect.github.com/OWNER/REPOSITORY/issues/NUMBER
@@ -111,9 +111,13 @@ https://redirect.github.com/OWNER/REPOSITORY/discussions/NUMBER
 https://redirect.github.com/OWNER/REPOSITORY/commit/SHA
 ```
 
-Do not use bare third-party shorthand such as `OWNER/REPO#123` in prose. Direct links among controlled `teamleaderleo/*` repositories are fine. Repository homepages, documentation sites, specifications, package registries, and release pages may be linked normally.
+Do not use bare third-party shorthand such as `OWNER/REPO#123` in interaction prose. Direct links among controlled `teamleaderleo/*` repositories are fine.
 
-Use a direct third-party issue, pull-request, discussion, or commit link only when it records an explicitly authorized upstream interaction.
+Repository notes, reports, maps, and other tracked files may link directly to third-party GitHub work because GitHub does not create autolinked issue or pull-request references in repository files. Those files do not need an automated reference scanner.
+
+Repository homepages, documentation sites, specifications, package registries, release pages, and ordinary web sources may be linked normally.
+
+Use a direct third-party issue, pull-request, discussion, or commit link in interaction text only when it records an explicitly authorized upstream interaction.
 
 This link rule does not itself authorize contact. Issues, email, merge requests, patches, comments, and reviews in an upstream project still require a deliberate decision.
 
