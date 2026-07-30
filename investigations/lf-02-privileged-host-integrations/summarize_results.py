@@ -103,6 +103,14 @@ def build_summary(root: pathlib.Path) -> dict[str, Any]:
                 cases["default-root"]["system_bus_connect"]
                 and not cases["no-inhibit-root"]["system_bus_connect"]
             ),
+            "default_inhibitor_fd_received": (
+                cases["default-root"]["logind_result"]
+                == "inhibitor-fd-received"
+            ),
+            "inhibit_controls_have_no_logind_call": (
+                cases["no-inhibit-root"]["logind_result"] == "not-observed"
+                and cases["isolated-root"]["logind_result"] == "not-observed"
+            ),
             "disabling_host_dpkg_logger_removes_needrestart": (
                 cases["no-inhibit-root"]["needrestart_exec"]
                 and not cases["isolated-root"]["needrestart_exec"]
@@ -124,6 +132,8 @@ def summary_passes(summary: dict[str, Any]) -> bool:
         and summary["target_alternatives_state_equal"]
         and findings["privileged_needrestart_host_mutation"]
         and findings["inhibit_option_removes_system_bus_call"]
+        and findings["default_inhibitor_fd_received"]
+        and findings["inhibit_controls_have_no_logind_call"]
         and findings["disabling_host_dpkg_logger_removes_needrestart"]
         and findings["isolated_control_has_no_observed_host_service_action"]
     )
