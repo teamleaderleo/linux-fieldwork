@@ -12,6 +12,7 @@ This branch records the missing grammar and the already-working repeated-option 
 
 - Parent transform record: #36.
 - Bounded expression-list issue: #117.
+- Characterization pull request: #122.
 - Regex-dialect issue: #108 / PR #113.
 - Numeric occurrence issue: #98 / PR #102.
 - Characterization branch: `investigation/tarfilter-transform-expression-lists`.
@@ -136,7 +137,8 @@ python3 -m unittest discover -s tests -v
 
 The characterization requires:
 
-- one rejected semicolon list paired with successful repeated-option and GNU equivalents;
+- comma-delimited and pipe-delimited ordered lists rejected by the predecessor and accepted by GNU tar;
+- successful repeated-option and GNU equivalence for the same two substitutions;
 - eight persistent scope-set cases;
 - five persistent reset or local-amendment cases;
 - semicolon delimiter and replacement-data controls;
@@ -144,11 +146,19 @@ The characterization requires:
 - non-scope `flags=` rejection;
 - exact PR #68 patch application.
 
+## Validation
+
+Initial characterization head `5b857b192339ff3f30a4f9f8f621b83b8bca8e42` passed Linux Fieldwork CI run `30544867577`, job `90878360310`. Repository discovery ran 45 tests in 6.006 seconds; all five expression-list test methods passed.
+
+Complete-diff review found that the investigation named a top-level statement separator following a pipe-delimited substitution, while the executable list case used comma delimiters only. Head `f873832910b4ca6cd72b8d24ef99226675b83f74` adds the exact `s|^prefix/||;s|^target$|final|` case, requires predecessor rejection, and compares the ordered archive with GNU tar. Linux Fieldwork CI run `30545495935`, job `90880465470`, passed.
+
+This validation-record commit requires one final exact-head CI receipt before independent review.
+
 ## Cleanup and evidence limits
 
 All copied sources, files, hard links, symlinks, and archives live under `TemporaryDirectory`. The test accepts no caller-selected cleanup root and performs no privileged operation.
 
-This record establishes expression-list parsing and target-scope state. It does not implement the correction. Regex dialect translation stays in #108, replacement case conversion stays under #36, and broader locale/POSIX regex behavior remains separate.
+This record establishes expression-list parsing and target-scope state. It does not implement the correction. Regex dialect translation stays in #108, replacement case conversion stays in #125, the GNU tar case-conversion crash stays in #124, and broader locale/POSIX regex behavior remains separate.
 
 ## Handoff
 
