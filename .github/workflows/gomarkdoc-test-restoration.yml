@@ -9,7 +9,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Keep a cancelled stale receipt from blocking a newer exact head. Jobs for
+  # one SHA still replace their own stale attempts.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 permissions:
@@ -54,7 +56,9 @@ jobs:
           retention-days: 14
 
   artifact-receipt:
-    if: always()
+    # A cancelled matrix may never have produced an artifact. Do not create a
+    # download job that keeps the cancelled SHA's concurrency group occupied.
+    if: ${{ always() && needs.matrix.result != 'cancelled' }}
     needs: matrix
     runs-on: ubuntu-24.04
     timeout-minutes: 10
