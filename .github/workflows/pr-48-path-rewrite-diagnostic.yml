@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   focused-test:
@@ -17,6 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run focused regression verbosely
+        id: focused
+        continue-on-error: true
         run: |
           set -o pipefail
           python3 -m unittest -v tests.test_tarfilter_path_rewrite_metadata 2>&1 | tee pr-48-test.log
@@ -27,6 +30,22 @@ jobs:
             python3 --version
             tar --version | head -n 1
           } | tee pr-48-environment.log
+      - name: Post focused result to this diagnostic PR
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo 'Focused PR #48 diagnostic result:'
+            echo
+            echo '```text'
+            cat pr-48-test.log
+            echo '--- environment ---'
+            cat pr-48-environment.log
+            echo '```'
+          } > diagnostic-comment.md
+          gh pr comment "$PR_NUMBER" --body-file diagnostic-comment.md
       - name: Upload diagnostic logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -35,3 +54,6 @@ jobs:
           path: |
             pr-48-test.log
             pr-48-environment.log
+      - name: Preserve focused test status
+        if: steps.focused.outcome != 'success'
+        run: exit 1
