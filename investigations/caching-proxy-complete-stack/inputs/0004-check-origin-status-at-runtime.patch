@@ -1,0 +1,14 @@
+diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_proxy.py
+--- a/upstream/mmdebstrap/caching_proxy.py
++++ b/upstream/mmdebstrap/caching_proxy.py
+@@ -76,7 +76,10 @@ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
+             conn = http.client.HTTPConnection(self.headers["Host"], timeout=5)
+             conn.request("GET", self.path, None, dict(self.headers))
+             res = conn.getresponse()
+-            assert (res.status, res.reason) == (200, "OK"), (res.status, res.reason)
++            if res.status != 200:
++                raise http.client.HTTPException(
++                    f"unexpected upstream response: {res.status} {res.reason}"
++                )
+             self.wfile.write(b"HTTP/1.1 200 OK\r\n")
+             for k, v in res.getheaders():
