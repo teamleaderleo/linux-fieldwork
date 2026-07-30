@@ -6,6 +6,15 @@ This is the practical companion to the repository rules. It records the habits t
 
 Use this guide while planning, implementing, self-reviewing, or peer-reviewing work. Update it when a new recurring lesson appears.
 
+## Relationship to the working rules
+
+[`START_HERE.md`](START_HERE.md) routes work to the smallest useful record.
+[`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md) is the canonical
+coordination, ownership, review, and external-contact contract. This field
+guide is its practical companion: it supplies review questions, examples, and
+recurring failure patterns without creating a second ownership or review
+workflow.
+
 ## Core rule
 
 A convincing report is not the goal. The goal is a bounded technical claim that survives source review, a distinguishing probe, a negative control, exact-head execution, cleanup, rerun, and peer challenge.
