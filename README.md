@@ -8,6 +8,7 @@ Linux Fieldwork is a lab notebook and working copy for learning how Linux system
 
 ## Enter here
 
+- [`AGENTS.md`](AGENTS.md) — repository-wide source-first, notes, review, safety, and completion contract.
 - [`START_HERE.md`](START_HERE.md) — choose the right kind of work and record it consistently.
 - [`RESEARCH_LANES.md`](RESEARCH_LANES.md) — current shortlist of formally mapped lanes.
 - [`programmes/`](programmes/) — long-lived Linux research directions, lane registry, and formal lane directories.
@@ -26,9 +27,9 @@ Linux Fieldwork is a lab notebook and working copy for learning how Linux system
 
 **Research rounds survey broad territory.** They retain selection reasoning and source orientation after their lane inventory has moved into programmes and targets.
 
-**Notes capture reusable understanding.** Use them for concepts, commands, operational recipes, source-reading lessons, and behavior that can be demonstrated without a full research record.
+**Notes capture reusable understanding.** Use them for concepts, commands, operational recipes, source-reading lessons, and behavior that can be demonstrated without a full research record. Material code investigations must link a reusable note or explicitly explain why no note applies.
 
-**Investigations test bounded questions.** They record source revisions, environments, baseline behavior, hypotheses or candidate changes, reproduction commands, results, interpretation, evidence boundaries, and next steps.
+**Investigations test bounded questions.** They record source revisions, environments, source and test maps, baseline behavior, hypotheses or candidate changes, reproduction commands, asserted results, negative controls, cleanup, self-review, peer review, interpretation, evidence boundaries, reusable notes, and next steps.
 
 **Imported source trees support real code work.** They provide preserved upstream revisions for reading, testing, and candidate changes.
 
@@ -44,11 +45,16 @@ Durable technical claims should record:
 
 1. the exact source revision or retrieval boundary;
 2. the relevant environment, privileges, distribution, kernel, shell, and tool versions;
-3. commands or steps another person can repeat;
-4. baseline and candidate behavior when a change is involved;
-5. observed results separated from interpretation;
-6. the limits of the evidence;
-7. whether any upstream contact has been authorized or made.
+3. the owning code path and adjacent tests;
+4. commands or steps another person can repeat;
+5. baseline and candidate behavior when a change is involved;
+6. assertions and a negative control for new regression harnesses;
+7. observed results separated from interpretation;
+8. cleanup and immediate rerun behavior;
+9. self-review and exact-head peer review;
+10. the limits of the evidence;
+11. a related reusable note or an explicit `Notes: not applicable` rationale;
+12. whether any upstream contact has been authorized or made.
 
 Negative results belong here too. A careful result that supports existing behavior can save future work.
 
