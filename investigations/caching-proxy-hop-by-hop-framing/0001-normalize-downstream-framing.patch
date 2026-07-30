@@ -1,0 +1,61 @@
+diff --git a/upstream/mmdebstrap/caching_proxy.py b/upstream/mmdebstrap/caching_proxy.py
+--- a/upstream/mmdebstrap/caching_proxy.py
++++ b/upstream/mmdebstrap/caching_proxy.py
+@@ -14,6 +14,41 @@ oldcachedir = None
+ newcachedir = None
+ readonly = False
+ 
++HOP_BY_HOP_HEADERS = {
++    "connection",
++    "keep-alive",
++    "proxy-authenticate",
++    "proxy-authorization",
++    "proxy-connection",
++    "te",
++    "trailer",
++    "transfer-encoding",
++    "upgrade",
++}
++
++
++def downstream_headers(response):
++    headers = response.getheaders()
++    connection_tokens = set()
++    for name, value in headers:
++        if name.lower() == "connection":
++            connection_tokens.update(
++                token.strip().lower()
++                for token in value.split(",")
++                if token.strip()
++            )
++    blocked = HOP_BY_HOP_HEADERS | connection_tokens
++    if response.chunked:
++        # http.client removes upstream chunk framing from read(). A forwarded
++        # Content-Length would therefore conflict with the framing that owned
++        # the upstream message when both headers were present.
++        blocked = blocked | {"content-length"}
++    return [
++        (name, value)
++        for name, value in headers
++        if name.lower() not in blocked
++    ]
++
+ 
+ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
+     def do_GET(self):
+@@ -79,11 +114,11 @@ class ProxyRequestHandler(http.server.BaseHTTPRequestHandler):
+             conn.request("GET", self.path, None, dict(self.headers))
+             res = conn.getresponse()
+             assert (res.status, res.reason) == (200, "OK"), (res.status, res.reason)
++            headers = downstream_headers(res)
+             self.wfile.write(b"HTTP/1.1 200 OK\r\n")
+-            for k, v in res.getheaders():
+-                # do not allow a persistent connection
+-                if k == "connection":
+-                    continue
++            for k, v in headers:
+                 self.send_header(k, v)
++            self.send_header("Connection", "close")
++            self.close_connection = True
+             self.end_headers()
+             with newpath.open(mode="wb") as f:
