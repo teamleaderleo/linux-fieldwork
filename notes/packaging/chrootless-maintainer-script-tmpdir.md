@@ -35,7 +35,8 @@ Environment sanitization tests should include a filesystem consequence. Proving 
 - Merged hardening commit: `09e2c5ef74683723cca9cf70c1162dec0328750d`
 - Investigation: `investigations/mmdebstrap-chrootless-env/TMPDIR.md`
 - Issue: #69
-- Original candidate: PR #57
+- Original hardening: PR #57
+- Repair candidate: PR #73
 
 ## Example
 
@@ -68,9 +69,15 @@ The second `/tmp` is part of the target path on the host, not the host's top-lev
 
 The PR #65 diagnostic ran the credential/socket mitigation successfully and then deliberately failed a target-containment assertion. The package script observed `TMPDIR=<unset>` and created below host `/tmp`.
 
-The retained candidate regression applies a one-line allowlist patch to a temporary source copy, requires merged main to reproduce host `/tmp`, and requires the candidate to use `<target>/tmp`, mode `1777`, with cleanup, fresh rerun, and fakeroot coverage.
+PR #73's retained candidate regression applies a one-line allowlist patch to a temporary source copy, requires merged main to reproduce host `/tmp`, and requires the candidate to use `<target>/tmp`, mode `1777`, with cleanup, fresh rerun, and fakeroot coverage.
 
-The first stacked candidate workflow run `30536534715` passed. Replacement validation from current `main` remains the authoritative merge gate.
+Executed candidate head `43005ead9bd5967470a2095fd2c55914744e524e` passed:
+
+- target-TMPDIR run `30536852201`, job `90852098465`;
+- Linux Fieldwork CI run `30536852205`;
+- chrootless environment security run `30536852182`.
+
+Artifact `8757007293` has digest `sha256:c1246052455824d008d04a61b77fb2acc0b7c6a7baa0da301f56c7cb7729594b`.
 
 ## Environment and assumptions
 
@@ -89,5 +96,6 @@ Other temporary variables (`TMP`, `TEMP`), package-specific cache directories, l
 
 - Related issue: #69
 - Related hardening: PR #57
+- Related repair: PR #73
 - Related diagnostic: PR #65
 - Related workspace TMPDIR work: PRs #1, #2, #4, #8, and #26
