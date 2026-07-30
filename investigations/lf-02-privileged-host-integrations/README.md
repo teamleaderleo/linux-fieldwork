@@ -8,6 +8,12 @@ This follow-up starts from LF-SCOUT-ROOT-01's promoted chrootless `DPKG_ROOT` re
 2. Does `DPkg::Inhibit-Shutdown "false"` remove apt's host system-D-Bus/logind interaction without changing target package state?
 3. When both apt inhibitors and the host `needrestart` dpkg configuration are disabled, does the same target transaction complete without either observed host-service action?
 
+## Why this control exists
+
+APT acquires a systemd-logind inhibition lock while running dpkg. Its supported boolean controls are `DPkg::Inhibit-Shutdown` and, in newer APT releases, `DPkg::Inhibit-Sleep`. The first LF-02 trace decoded the exact D-Bus call as a blocking shutdown inhibitor requested by `APT` for the reason `APT is installing or removing packages`.
+
+The `needrestart` effect comes through a separate path: Ubuntu's host `/etc/dpkg/dpkg.cfg.d/needrestart` configures `/usr/lib/needrestart/dpkg-status` as dpkg's `status-logger`. Chrootless dpkg reads host configuration before command-line root options, so the logger executes on the host side.
+
 ## Matrix
 
 The workflow runs the imported `mmdebstrap` source three times in `chrootless` mode with the LF-02 local package fixture:
