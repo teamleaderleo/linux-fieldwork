@@ -1,0 +1,150 @@
+name: Apply mmdebstrap chrootless canonical PATH
+
+on:
+  push:
+    branches:
+      - fix/mmdebstrap-chrootless-canonical-path
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out candidate branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/mmdebstrap-chrootless-canonical-path
+          fetch-depth: 0
+
+      - name: Apply source and documentation change
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('upstream/mmdebstrap/mmdebstrap')
+          source = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  '''sub chrootless_dpkg_environment {
+              my $root   = shift;
+              my $tmpdir = "$root/tmp";
+          ''',
+                  '''sub chrootless_dpkg_environment {
+              my $root     = shift;
+              my $dpkgpath = shift;
+              my $tmpdir   = "$root/tmp";
+
+              if (!defined $dpkgpath || $dpkgpath eq '') {
+                  error "cannot determine chrootless maintainer-script PATH";
+              }
+          ''',
+              ),
+              (
+                  '''    my @names = qw(
+            PATH
+            DEBIAN_FRONTEND
+          ''',
+                  '''    my @names = qw(
+            DEBIAN_FRONTEND
+          ''',
+              ),
+              (
+                  '''    my @result = ('-i', "TMPDIR=$tmpdir");
+          ''',
+                  '''    my @result = ('-i', "PATH=$dpkgpath", "TMPDIR=$tmpdir");
+          ''',
+              ),
+              (
+                  '''                    chrootless_dpkg_environment($options->{root}),
+          ''',
+                  '''                    chrootless_dpkg_environment(
+                              $options->{root}, $options->{dpkgpath}),
+          ''',
+              ),
+              (
+                  '''              = chrootless_dpkg_environment($options->{root});
+          ''',
+                  '''              = chrootless_dpkg_environment(
+                    $options->{root}, $options->{dpkgpath});
+          ''',
+              ),
+              (
+                  '''    my $defaultpath = `eval \\$(apt-config shell v DPkg::Path); printf %s \\$v`;
+              if (length $ENV{PATH}) {
+          ''',
+                  '''    my $defaultpath = `eval \\$(apt-config shell v DPkg::Path); printf %s \\$v`;
+              $options->{dpkgpath} = $defaultpath;
+              if (length $ENV{PATH}) {
+          ''',
+              ),
+              (
+                  '''scripts are additionally run with a small environment containing only
+          variables required by dpkg, debconf, locale handling, reproducibility,
+          and foreign-architecture execution. Apt itself retains its environment
+          so that proxy and repository authentication continue to work.
+          ''',
+                  '''scripts are additionally run with a small environment. Their PATH is
+          apt's configured DPkg::Path rather than the caller's executable search path.
+          The environment also contains the target temporary directory, mmdebstrap's
+          fixed noninteractive debconf and C.UTF-8 locale values, reproducibility
+          controls, foreign-architecture state, and fakeroot state when active. Apt
+          itself retains its environment so that proxy and repository authentication
+          continue to work.
+          ''',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f'unexpected replacement count {count} for marker:\n{old}'
+                  )
+              source = source.replace(old, new)
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Format and validate with Debian sid
+        run: |
+          docker run --rm \
+            --volume "$PWD:/work" \
+            --workdir /work/upstream/mmdebstrap \
+            debian:sid-slim \
+            sh -euxc '
+              apt-get update
+              apt-get install --yes --no-install-recommends \
+                libperl-critic-perl \
+                perltidy
+              perltidy < mmdebstrap > /tmp/mmdebstrap.tdy
+              mv /tmp/mmdebstrap.tdy mmdebstrap
+              perl -c mmdebstrap
+              perlcritic --severity 4 --verbose 8 mmdebstrap
+              pod2man mmdebstrap >/dev/null
+              test "$(sed -e "/^__END__$/,\$d" mmdebstrap | wc --max-line-length)" -le 79
+            '
+          git diff --check
+
+      - name: Verify exact source boundary
+        run: |
+          grep -F '"PATH=$dpkgpath"' upstream/mmdebstrap/mmdebstrap
+          grep -F '$options->{dpkgpath} = $defaultpath;' upstream/mmdebstrap/mmdebstrap
+          test "$(grep -F 'chrootless_dpkg_environment(' upstream/mmdebstrap/mmdebstrap | wc -l)" -eq 2
+          if sed -n '/sub chrootless_dpkg_environment/,/sub chrootless_unsafe_environment/p' \
+            upstream/mmdebstrap/mmdebstrap | grep -F '      PATH'; then
+            echo 'caller PATH remains in the chrootless allowlist' >&2
+            exit 1
+          fi
+
+      - name: Commit candidate source
+        run: |
+          rm .github/workflows/apply-mmdebstrap-chrootless-canonical-path.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Canonicalize chrootless maintainer-script PATH'
+          git push origin HEAD:fix/mmdebstrap-chrootless-canonical-path
