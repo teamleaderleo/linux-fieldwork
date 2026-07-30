@@ -1,12 +1,17 @@
 diff --git a/upstream/mmdebstrap/gpgvnoexpkeysig b/upstream/mmdebstrap/gpgvnoexpkeysig
 --- a/upstream/mmdebstrap/gpgvnoexpkeysig
 +++ b/upstream/mmdebstrap/gpgvnoexpkeysig
-@@ -57,32 +57,75 @@
+@@ -57,32 +57,84 @@
  # we need eval because we cannot redirect a variable fd
  FILTER_DIR=$(mktemp -d "${TMPDIR:-/tmp}/gpgvnoexpkeysig.XXXXXXXXXX")
  STATUS_FILE="$FILTER_DIR/status"
 +GPGV_PID=
 +FILTER_PID=
++
++start_filter() {
++  eval 'sed "s/^\[GNUPG:\] EXPKEYSIG /[GNUPG:] GOODSIG /" <"$STATUS_FILE" >&'"$GPGSTATUSFD" &
++  FILTER_PID=$!
++}
  
  cleanup() {
 +  if [ -n "$GPGV_PID" ] && kill -0 "$GPGV_PID" 2>/dev/null; then
@@ -30,16 +35,21 @@ diff --git a/upstream/mmdebstrap/gpgvnoexpkeysig b/upstream/mmdebstrap/gpgvnoexp
 +signal_exit() {
 +  status=$1
 +  signum=$2
++  FILTER_WAS_RUNNING=no
 +  trap - EXIT HUP INT TERM
++  if [ -n "$FILTER_PID" ] && kill -0 "$FILTER_PID" 2>/dev/null; then
++    FILTER_WAS_RUNNING=yes
++    kill -"$signum" "$FILTER_PID" 2>/dev/null || :
++  fi
 +  if [ -n "$GPGV_PID" ] && kill -0 "$GPGV_PID" 2>/dev/null; then
 +    kill -"$signum" "$GPGV_PID" 2>/dev/null || :
-+  fi
-+  if [ -n "$FILTER_PID" ] && kill -0 "$FILTER_PID" 2>/dev/null; then
-+    kill -"$signum" "$FILTER_PID" 2>/dev/null || :
 +  fi
 +  if [ -n "$GPGV_PID" ]; then
 +    wait "$GPGV_PID" 2>/dev/null || :
 +    GPGV_PID=
++  fi
++  if [ "$FILTER_WAS_RUNNING" = no ] && [ -s "$STATUS_FILE" ]; then
++    start_filter
 +  fi
 +  if [ -n "$FILTER_PID" ]; then
 +    wait "$FILTER_PID" 2>/dev/null || :
@@ -72,8 +82,7 @@ diff --git a/upstream/mmdebstrap/gpgvnoexpkeysig b/upstream/mmdebstrap/gpgvnoexp
 +GPGV_PID=
  
 -if eval 'sed "s/^\[GNUPG:\] EXPKEYSIG /[GNUPG:] GOODSIG /" <"$STATUS_FILE" >&'"$GPGSTATUSFD"; then
-+eval 'sed "s/^\[GNUPG:\] EXPKEYSIG /[GNUPG:] GOODSIG /" <"$STATUS_FILE" >&'"$GPGSTATUSFD" &
-+FILTER_PID=$!
++start_filter
 +if wait "$FILTER_PID"; then
    FILTER_STATUS=0
  else
