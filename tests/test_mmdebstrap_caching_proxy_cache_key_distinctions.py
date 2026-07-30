@@ -10,6 +10,7 @@ import socket
 import subprocess
 import tempfile
 import threading
+import time
 import types
 import unittest
 import uuid
@@ -127,6 +128,22 @@ class CachingProxyCacheKeyDistinctionsTest(unittest.TestCase):
         return status, body
 
     @staticmethod
+    def wait_for_cache_publication(path: pathlib.Path, expected_size: int) -> None:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                if path.stat().st_size == expected_size:
+                    return
+            except FileNotFoundError:
+                pass
+            time.sleep(0.01)
+        observed = path.stat().st_size if path.exists() else None
+        raise AssertionError(
+            f"cache publication did not complete: path={path} "
+            f"expected={expected_size} observed={observed}"
+        )
+
+    @staticmethod
     def raw_request(proxy_port: int, target: str, headers: list[str]) -> bytes:
         request = (
             f"GET {target} HTTP/1.1\r\n"
@@ -159,14 +176,14 @@ class CachingProxyCacheKeyDistinctionsTest(unittest.TestCase):
                 new_cache,
             ):
                 first = self.proxy_get(int(proxy.server_address[1]), encoded, host)
+                cached = new_cache / "debian/pool/a;b.deb"
+                self.wait_for_cache_publication(cached, len(ENCODED_BODY))
                 second = self.proxy_get(int(proxy.server_address[1]), literal, host)
 
         self.assertEqual(first, (200, ENCODED_BODY))
         self.assertEqual(second, (200, ENCODED_BODY))
         self.assertEqual(origin.request_count, 1)
-        self.assertEqual(
-            (new_cache / "debian/pool/a;b.deb").read_bytes(), ENCODED_BODY
-        )
+        self.assertEqual(cached.read_bytes(), ENCODED_BODY)
 
     def test_candidate_rejects_encoded_path_and_keeps_literal_distinct(self) -> None:
         with running_server(DistinguishingOrigin) as origin:
