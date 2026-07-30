@@ -46,16 +46,46 @@ jobs:
           git apply "$patch_file"
           git diff --check
 
-      - name: Confirm the patch reproduces the reviewed tree
+      - name: Confirm the patch owns the intended source boundary
         shell: bash
         run: |
           set -euxo pipefail
           work="$RUNNER_TEMP/mmdebstrap-pristine"
-          cmp "$work/mmdebstrap" upstream/mmdebstrap/mmdebstrap
-          cmp "$work/coverage.txt" upstream/mmdebstrap/coverage.txt
-          cmp "$work/tests/fail-with-unwritable-tmpdir" \
-            upstream/mmdebstrap/tests/fail-with-unwritable-tmpdir
+          git -C "$work" status --short | cut -c4- | sort \
+            >"$RUNNER_TEMP/actual-files"
+          printf '%s\n' \
+            coverage.txt \
+            mmdebstrap \
+            tests/fail-with-unwritable-tmpdir \
+            >"$RUNNER_TEMP/expected-files"
+          cmp "$RUNNER_TEMP/expected-files" "$RUNNER_TEMP/actual-files"
           test -x "$work/tests/fail-with-unwritable-tmpdir"
+          python3 - "$work" <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path(sys.argv[1])
+          source = (root / "mmdebstrap").read_text(encoding="utf-8")
+          coverage = (root / "coverage.txt").read_text(encoding="utf-8")
+          test = (root / "tests/fail-with-unwritable-tmpdir").read_text(
+              encoding="utf-8"
+          )
+
+          for line in (
+              "my @tempdir_options = (TMPDIR => 1);",
+              "if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne '') {",
+              "@tempdir_options = (DIR => $ENV{TMPDIR});",
+              "$options->{root} = tempdir('mmdebstrap.XXXXXXXXXX', @tempdir_options);",
+          ):
+              assert source.count(line) == 1, line
+          documentation = (
+              "For the C<tar>, C<squashfs>, C<ext2>, C<ext4>, and C<null> formats,"
+          )
+          assert source.count(documentation) == 1
+          assert coverage.count("Test: fail-with-unwritable-tmpdir") == 1
+          assert "TMPDIR=\"$tmpdir\"" in test
+          assert "grep -F 'I: using /tmp/mmdebstrap.'" in test
+          PY
 
       - name: Check syntax and focused runtime behaviour
         shell: bash
@@ -66,13 +96,14 @@ jobs:
           sh -n "$work/tests/fail-with-unwritable-tmpdir"
           bash investigations/mmdebstrap-unwritable-tmpdir/run.sh
 
-      - name: Check the mail packet
+      - name: Check the sent mail record
         shell: bash
         run: |
           set -euxo pipefail
           packet=investigations/mmdebstrap-unwritable-tmpdir/submission
           grep -Fx 'To: 1135727@bugs.debian.org' "$packet/email.txt"
-          grep -Fx 'Cc: mh+debian-packages@zugschlus.de' "$packet/email.txt"
+          grep -Fx 'Cc: 1135727-submitter@bugs.debian.org' "$packet/email.txt"
           grep -Fx 'Control: tags -1 + patch' "$packet/email.txt"
           grep -F 'The complete 283-case source matrix and Debian autopkgtest were not run.' \
             "$packet/email.txt"
+          python3 "$packet/verify_submission_record.py"
