@@ -178,7 +178,12 @@ assert_target_state() {
     find "$root" -xdev -printf '%P\t%y\t%m\t%s\t%l\n' | LC_ALL=C sort \
         > "$result_dir/$label-tree.tsv"
     cp "$root/var/lib/lf-fieldwork-probe/script.log" "$result_dir/$label-script.log"
-    cp "$root/var/log/dpkg.log" "$result_dir/$label-dpkg.log"
+    if [[ -f "$root/var/log/dpkg.log" ]]; then
+        cp "$root/var/log/dpkg.log" "$result_dir/$label-dpkg.log"
+    else
+        printf 'target dpkg log removed during caller cleanup\n' \
+            > "$result_dir/$label-dpkg.log.absent"
+    fi
     cp "$root/var/lib/dpkg/alternatives/lf-fieldwork-probe" "$result_dir/$label-alternative-state"
 }
 
