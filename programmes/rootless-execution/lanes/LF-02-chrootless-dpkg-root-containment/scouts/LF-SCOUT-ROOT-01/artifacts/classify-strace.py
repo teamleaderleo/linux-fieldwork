@@ -7,6 +7,7 @@ import argparse
 import ast
 import collections
 import glob
+import json
 import os
 import re
 from pathlib import Path
@@ -28,6 +29,13 @@ AT_SINGLE = {
 SERVICE_EXECUTABLES = {
     "systemctl", "service", "invoke-rc.d", "deb-systemd-invoke",
     "deb-systemd-helper", "start-stop-daemon", "initctl",
+}
+CATEGORY_IDS = {
+    "required host read": "required_host_read",
+    "harmless runtime interaction": "harmless_runtime_interaction",
+    "unexpected mutation": "unexpected_mutation",
+    "service action": "service_action",
+    "unresolved": "unresolved",
 }
 
 
@@ -260,22 +268,44 @@ def main() -> int:
             handle.write("\t".join(row[column].replace("\t", " ") for column in columns) + "\n")
 
     counts = collections.Counter(row["category"] for row in rows)
-    categories = (
-        "required host read", "harmless runtime interaction",
-        "unexpected mutation", "service action", "unresolved",
-    )
-    summary = output.with_suffix(".summary.txt")
-    with summary.open("w", encoding="utf-8") as handle:
+    categories = tuple(CATEGORY_IDS)
+    text_summary = output.with_suffix(".summary.txt")
+    with text_summary.open("w", encoding="utf-8") as handle:
         handle.write(f"target={target}\n")
         handle.write(f"trace_files={len(files)}\n")
         handle.write(f"outside_access_events={len(rows)}\n")
         for kind in categories:
             handle.write(f"category[{kind}]={counts.get(kind, 0)}\n")
 
+    structured = {
+        "schema_version": 1,
+        "target": target,
+        "trace_files": len(files),
+        "outside_access_events": len(rows),
+        "categories": {
+            identifier: counts.get(label, 0)
+            for label, identifier in CATEGORY_IDS.items()
+        },
+        "artifacts": {
+            "events": output.name,
+            "text_summary": text_summary.name,
+            "structured_summary": output.with_suffix(".summary.json").name,
+        },
+    }
+    structured["category_total"] = sum(structured["categories"].values())
+    structured["category_total_matches_events"] = (
+        structured["category_total"] == structured["outside_access_events"]
+    )
+    output.with_suffix(".summary.json").write_text(
+        json.dumps(structured, indent=2) + "\n", encoding="utf-8"
+    )
+
     bad = [row for row in rows if row["category"] == "unexpected mutation"]
-    print(summary.read_text(encoding="utf-8"), end="")
+    print(text_summary.read_text(encoding="utf-8"), end="")
     for row in bad[:20]:
         print("unexpected mutation:", row)
+    if not structured["category_total_matches_events"]:
+        return 2
     return 1 if bad else 0
 
 
