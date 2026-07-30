@@ -46,6 +46,16 @@ subprocess.Popen(['./decoy'], executable=selected_tool, cwd=work)
 """
         self.assertEqual(audit_text("sample.py", source), [])
 
+    def test_python_shell_true_uses_the_shell_identity(self) -> None:
+        source = """\
+import subprocess
+subprocess.run('./decoy --check', cwd=work, shell=True)
+subprocess.run('./decoy --check', cwd=work, shell=use_shell)
+subprocess.run('./decoy --check', cwd=work, shell=True, executable='../custom-shell')
+"""
+        findings = audit_text("sample.py", source)
+        self.assertEqual([item.program for item in findings], ["../custom-shell"])
+
     def test_python_absolute_and_simple_programs_are_controls(self) -> None:
         source = """\
 import subprocess
@@ -123,6 +133,13 @@ Command::new("./tool").output()?;
         findings = audit_text("probe.sh", source)
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].program, "../proxy")
+
+    def test_shell_assignment_after_option_separator_is_parsed(self) -> None:
+        source = "env --chdir /tmp/target -- FLAG=yes ../proxy --check\n"
+        findings = audit_text("probe.sh", source)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].program, "../proxy")
+        self.assertEqual(findings[0].cwd, "/tmp/target")
 
     def test_shell_absolute_and_simple_programs_are_controls(self) -> None:
         source = """\
