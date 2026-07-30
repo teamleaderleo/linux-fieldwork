@@ -61,7 +61,7 @@ diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirro
 +stop_proxy
  
  # Create some symlinks so that we can trick apt into accepting multiple apt
-@@ -454,10 +487,9 @@ if [ "$HAVE_QEMU" = "yes" ]; then
+@@ -454,11 +487,10 @@ if [ "$HAVE_QEMU" = "yes" ]; then
    done
    if [ ! -s "$newmirrordir/dists/$DEFAULT_DIST/InRelease" ]; then
      echo "failed to start proxy" >&2
