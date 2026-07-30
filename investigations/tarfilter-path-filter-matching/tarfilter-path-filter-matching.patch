@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -33,7 +33,7 @@ class PathFilterAction(argparse.Action):
+@@ -33,6 +33,6 @@ class PathFilterAction(argparse.Action):
          items = getattr(namespace, "pathfilter", [])
          regex = re.compile(fnmatch.translate(values))
 -        items.append((self.dest, regex))
@@ -9,7 +9,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
          setattr(namespace, "pathfilter", items)
  
  
-@@ -213,30 +213,44 @@ def main():
+@@ -213,28 +213,39 @@ def main():
          copyfileobj(sys.stdin.buffer, sys.stdout.buffer)
          exit()
  
