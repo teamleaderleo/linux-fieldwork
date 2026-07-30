@@ -23,6 +23,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
+            fakeroot \
             libdistro-info-perl \
             libdpkg-perl \
             uidmap
@@ -30,7 +31,21 @@ jobs:
       - name: Check syntax
         run: |
           perl -c upstream/mmdebstrap/mmdebstrap
+          pod2man upstream/mmdebstrap/mmdebstrap >/dev/null
           bash -n investigations/mmdebstrap-chrootless-env/run.sh
+
+      - name: Check current Debian sid formatting
+        run: |
+          docker run --rm \
+            --volume "$PWD:/work" \
+            --workdir /work/upstream/mmdebstrap \
+            debian:sid-slim \
+            sh -euxc '
+              apt-get update
+              apt-get install --yes --no-install-recommends perltidy
+              perltidy < mmdebstrap > /tmp/mmdebstrap.tdy
+              cmp mmdebstrap /tmp/mmdebstrap.tdy
+            '
 
       - name: Run security regression
         run: bash investigations/mmdebstrap-chrootless-env/run.sh
