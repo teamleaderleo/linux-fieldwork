@@ -1,0 +1,78 @@
+name: Verify Debian bug 1135727 submission
+
+on:
+  pull_request:
+    paths:
+      - "investigations/mmdebstrap-unwritable-tmpdir/submission/**"
+      - ".github/workflows/verify-mmdebstrap-1135727-submission.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out Linux Fieldwork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install focused runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libdistro-info-perl \
+            libdpkg-perl \
+            uidmap
+
+      - name: Apply patch to the pristine imported revision
+        shell: bash
+        run: |
+          set -euxo pipefail
+          work="$RUNNER_TEMP/mmdebstrap-pristine"
+          mkdir -p "$work"
+          git archive 51c8480d7e61b3e31d74f69864042a3fc8c1d772 upstream/mmdebstrap \
+            | tar -x -C "$work" --strip-components=2
+          cd "$work"
+          git init
+          git add -A
+          git -c user.name=CI -c user.email=ci@example.invalid \
+            commit -m pristine
+          patch_file="$GITHUB_WORKSPACE/investigations/mmdebstrap-unwritable-tmpdir/submission/0001-honor-explicit-tmpdir.patch"
+          git apply --check "$patch_file"
+          git apply "$patch_file"
+          git diff --check
+
+      - name: Confirm the patch reproduces the reviewed tree
+        shell: bash
+        run: |
+          set -euxo pipefail
+          work="$RUNNER_TEMP/mmdebstrap-pristine"
+          cmp "$work/mmdebstrap" upstream/mmdebstrap/mmdebstrap
+          cmp "$work/coverage.txt" upstream/mmdebstrap/coverage.txt
+          cmp "$work/tests/fail-with-unwritable-tmpdir" \
+            upstream/mmdebstrap/tests/fail-with-unwritable-tmpdir
+          test -x "$work/tests/fail-with-unwritable-tmpdir"
+
+      - name: Check syntax and focused runtime behaviour
+        shell: bash
+        run: |
+          set -euxo pipefail
+          work="$RUNNER_TEMP/mmdebstrap-pristine"
+          perl -c "$work/mmdebstrap"
+          sh -n "$work/tests/fail-with-unwritable-tmpdir"
+          bash investigations/mmdebstrap-unwritable-tmpdir/run.sh
+
+      - name: Check the mail packet
+        shell: bash
+        run: |
+          set -euxo pipefail
+          packet=investigations/mmdebstrap-unwritable-tmpdir/submission
+          grep -Fx 'To: 1135727@bugs.debian.org' "$packet/email.txt"
+          grep -Fx 'Cc: mh+debian-packages@zugschlus.de' "$packet/email.txt"
+          grep -Fx 'Control: tags -1 + patch' "$packet/email.txt"
+          grep -F 'The complete 283-case source matrix and Debian autopkgtest were not run.' \
+            "$packet/email.txt"

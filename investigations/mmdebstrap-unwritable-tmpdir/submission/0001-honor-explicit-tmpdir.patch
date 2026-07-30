@@ -1,0 +1,99 @@
+diff --git a/mmdebstrap b/mmdebstrap
+--- a/mmdebstrap
++++ b/mmdebstrap
+@@ -6868,7 +6868,12 @@
+         }
+         # since the output is a tarball, we create the rootfs in a temporary
+         # directory
+-        $options->{root} = tempdir('mmdebstrap.XXXXXXXXXX', TMPDIR => 1);
++        my @tempdir_options = (TMPDIR => 1);
++        if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne '') {
++            @tempdir_options = (DIR => $ENV{TMPDIR});
++        }
++        $options->{root}
++          = tempdir('mmdebstrap.XXXXXXXXXX', @tempdir_options);
+         info "using $options->{root} as tempdir";
+         # add an flock on the temporary directory to prevent cleanup by systemd
+         # see section Age in tmpfiles.d(5)
+@@ -8970,11 +8975,16 @@
+ 
+ =item C<TMPDIR>
+ 
+-When creating a tarball, a temporary directory is populated with the rootfs
+-before the tarball is packed. The location of that temporary directory will be
+-in F</tmp> or the location pointed to by C<TMPDIR> if that environment variable
+-is set. Setting C<TMPDIR> to a different directory than F</tmp> is useful if
+-you have F</tmp> on a tmpfs that is too small for your rootfs.
++For the C<tar>, C<squashfs>, C<ext2>, C<ext4>, and C<null> formats,
++B<mmdebstrap> populates a temporary directory with the root filesystem before
++creating or discarding the requested output.
++
++If C<TMPDIR> is unset or empty, the directory is created in the system
++temporary location, usually F</tmp>. If C<TMPDIR> is set to a non-empty value,
++B<mmdebstrap> creates the temporary root below that directory and exits with an
++error if it cannot do so. Setting C<TMPDIR> to a different directory than
++F</tmp> is useful if F</tmp> is on a tmpfs that is too small for the root
++filesystem.
+ 
+ If you set C<TMPDIR> in B<unshare> mode, then the unshared user must be able to
+ access the directory. This means that the directory itself must be
+diff --git a/coverage.txt b/coverage.txt
+--- a/coverage.txt
++++ b/coverage.txt
+@@ -114,6 +114,10 @@ Test: custom-tmpdir
+ Needs-Root: true
+ Modes: unshare
+ 
++Test: fail-with-unwritable-tmpdir
++Needs-Root: true
++Modes: chrootless
++
+ Test: xz-compressed-tarball
+ 
+ Test: directory-ending-in-tar
+diff --git a/tests/fail-with-unwritable-tmpdir b/tests/fail-with-unwritable-tmpdir
+new file mode 100755
+--- /dev/null
++++ b/tests/fail-with-unwritable-tmpdir
+@@ -0,0 +1,41 @@
++#!/bin/sh
++set -eu
++export LC_ALL=C.UTF-8
++
++[ "$(id -u)" -eq 0 ]
++
++if ! id "${SUDO_USER:-user}" >/dev/null 2>&1; then
++  if [ ! -e /mmdebstrap-testenv ]; then
++    echo "this test modifies the system and should only be run inside a container" >&2
++    exit 1
++  fi
++  useradd --home-dir "/home/${SUDO_USER:-user}" --create-home "${SUDO_USER:-user}"
++fi
++prefix="runuser -u ${SUDO_USER:-user} --"
++homedir=$($prefix sh -c 'cd && pwd')
++tmpdir="$homedir/mmdebstrap-unwritable-tmpdir"
++$prefix mkdir "$tmpdir"
++chmod 0555 "$tmpdir"
++trap 'chmod 0700 "$tmpdir"; rm -rf "$tmpdir"' EXIT INT TERM
++
++if $prefix touch "$tmpdir/should-fail" 2>/dev/null; then
++  echo "test setup failed: TMPDIR is writable" >&2
++  exit 1
++fi
++
++ret=0
++output="$($prefix env TMPDIR="$tmpdir" {{ CMD }} \
++  --dry-run --mode={{ MODE }} --variant=apt \
++  {{ DIST }} /dev/null {{ MIRROR }} 2>&1)" || ret=$?
++
++if [ "$ret" = 0 ]; then
++  echo "expected failure but got exit $ret" >&2
++  exit 1
++fi
++
++printf '%s\n' "$output" | grep -F "$tmpdir"
++
++if printf '%s\n' "$output" | grep -F 'I: using /tmp/mmdebstrap.'; then
++  echo "mmdebstrap silently fell back to /tmp" >&2
++  exit 1
++fi
