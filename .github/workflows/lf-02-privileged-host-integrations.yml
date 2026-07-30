@@ -123,3 +123,7 @@ jobs:
               assert (pair["difference_lines"] == 0) is pair["equal"]
               assert (summary_path.parent / pair["diff_artifact"]).is_file()
           PY
+          for diff in "$(dirname "$summary")"/*-tree.diff; do
+            echo "--- $(basename "$diff") ---"
+            cat "$diff"
+          done
