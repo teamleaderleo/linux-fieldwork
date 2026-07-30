@@ -20,11 +20,12 @@ jobs:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
 
-      - name: Run the deterministic cancellation matrix
+      - name: Run the deterministic cancellation and repair matrices
         shell: bash
         run: |
           set -euo pipefail
           probe="programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/cancellation_harness.py"
+          repair_probe="programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/run_progress_repair_probe.py"
           docker run --privileged --rm \
             --volume "$PWD:/work" \
             --workdir /work \
@@ -34,9 +35,10 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
               apt-get install -y --no-install-recommends \
-                iproute2 perl procps python3 tar util-linux
+                iproute2 patch perl procps python3 tar util-linux
               apt-get clean
               python3 "'$probe'"
+              python3 "'$repair_probe'"
             '
 
       - name: Upload cancellation evidence
@@ -44,6 +46,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lf-23-cancellation-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/
+          path: |
+            programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run/
+            programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/ci-run-repair/
           if-no-files-found: warn
           retention-days: 14
