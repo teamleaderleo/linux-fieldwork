@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import pathlib
 import signal
@@ -53,6 +54,32 @@ class CanonicalGpgvNoExpKeySigTest(unittest.TestCase):
         if syntax.returncode != 0:
             cls.work.cleanup()
             raise AssertionError(syntax.stdout + syntax.stderr)
+
+    def test_recorded_candidate_identity_matches_applied_bytes(self) -> None:
+        source = self.source.read_bytes()
+        candidate = self.candidate.read_bytes()
+        source_blob = hashlib.sha1(
+            f"blob {len(source)}\0".encode() + source
+        ).hexdigest()
+        candidate_blob = hashlib.sha1(
+            f"blob {len(candidate)}\0".encode() + candidate
+        ).hexdigest()
+        candidate_sha256 = hashlib.sha256(candidate).hexdigest()
+        patch = self.patch.read_text(encoding="utf-8")
+        record = self.patch.with_name("README.md").read_text(encoding="utf-8")
+
+        self.assertIn(
+            f"index {source_blob[:7]}..{candidate_blob[:7]} 100755",
+            patch,
+        )
+        self.assertIn(
+            f"applied candidate SHA-256: `{candidate_sha256}`",
+            record,
+        )
+        self.assertIn(
+            f"applied candidate Git blob: `{candidate_blob}`",
+            record,
+        )
 
     @classmethod
     def tearDownClass(cls) -> None:
