@@ -10,9 +10,13 @@ The repository had three independently green fixes for the same `caching_proxy.p
 - Atomic publication: #95 / merged PR #96
 - Downstream framing: #116 / merged PR #120
 - Declared-length validation: #101 / merged PR #137
+- Unsupported transfer codings: #173
 - Imported source: `upstream/mmdebstrap/caching_proxy.py`
 - Composer: `compose.py`
-- Regression: `tests/test_caching_proxy_composed_stack.py`
+- Regressions:
+  - `tests/test_caching_proxy_composed_stack.py`
+  - `tests/test_caching_proxy_composed_stack_extended.py`
+  - `tests/test_caching_proxy_transfer_coding_rejection.py`
 
 ## Composition order
 
@@ -20,6 +24,7 @@ The repository had three independently green fixes for the same `caching_proxy.p
 2. Add the downstream hop-by-hop/framing helper from PR #120 to that source.
 3. Add declared-length validation from PR #137 to the same fresh-download loop.
 4. Resolve one semantic integration point: an upstream `Content-Length` that accompanies `Transfer-Encoding: chunked` does not describe the decoded bytes returned by `http.client`, so the composed source validates declared length only for non-chunked responses.
+5. Validate transfer codings before downstream commitment. Python `http.client` safely removes the ordinary, exactly-`chunked` framing used by the candidate; it does not decode arbitrary codings such as `gzip`, and compound chains such as `gzip, chunked` cannot be made correct by merely deleting the header. The composer rejects every unsupported or compound coding before cache publication.
 
 The composer verifies that all three canonical patch artifacts still contain their defining mechanisms before producing the candidate. Exact replacement anchors make source drift fail loudly instead of silently dropping a repair.
 
@@ -31,25 +36,36 @@ The composed candidate requires:
 - cache files to retain the baseline `0666 & umask` creation contract;
 - fixed-length bodies and end-to-end headers to survive;
 - hop-by-hop and connection-token headers to be removed;
-- decoded chunked bodies to be close-delimited without a conflicting length;
+- an exactly chunked body to be dechunked and close-delimited without a conflicting length;
+- unsupported `gzip` and compound `gzip, chunked` transfer codings to fail with one pre-commit 502 and no cache state;
 - premature EOF under a real declared length to publish neither final nor temporary cache state;
-- a retry after the failed fill to reach upstream and publish a complete object.
+- a retry after the failed fill to reach upstream and publish a complete object;
+- EOF-framed responses without a declared length to remain supported.
 
-## Negative integration finding
+## Negative integration findings
+
+### Conflicting chunked length
 
 The isolated declared-length candidate reads `Content-Length` unconditionally. The isolated framing candidate intentionally permits a chunked response with conflicting `Content-Length` by removing that field after dechunking. Directly combining those mechanisms would reject a response that the framing repair was designed to normalize. The composed source therefore sets the expected byte count to `None` when `HTTPResponse.chunked` is true.
 
-This is a real semantic conflict, not only a patch-hunk conflict.
+### Unsupported transfer codings
+
+The framing helper removes `Transfer-Encoding` because hop-by-hop metadata cannot be forwarded unchanged after a proxy transforms the message. That is correct only when the bytes have actually been decoded. `http.client` handles ordinary chunk framing, not arbitrary transfer codings. Stripping `gzip` from still-gzip bytes would silently misdescribe the representation, and a compound chain may leave framing or coding bytes intact. The composed source therefore accepts only the exact transfer-coding sequence it can prove was decoded: `chunked`.
+
+These are semantic conflicts, not only patch-hunk conflicts.
 
 ## Validation
 
 Run:
 
 ```sh
-python3 -m unittest tests.test_caching_proxy_composed_stack -v
+python3 -m unittest \
+  tests.test_caching_proxy_composed_stack \
+  tests.test_caching_proxy_composed_stack_extended \
+  tests.test_caching_proxy_transfer_coding_rejection -v
 ```
 
-The repository CI discovery command also runs this test.
+The repository CI discovery command also runs these tests.
 
 ## Cleanup and safety
 
@@ -57,8 +73,8 @@ All servers bind loopback ephemeral ports. Candidate source, cache roots, origin
 
 ## Evidence boundary
 
-This stack composes only atomic publication, response framing, and declared-length validation. Cache-root containment (#93 / PR #94), request-header sanitization (#127 / merged PR #139), post-header error behavior (#132), descriptor-level path-race protection, request coalescing, fsync durability, and checksum validation remain separate boundaries until their own carriers are proven and added deliberately.
+This stack composes only atomic publication, response framing, declared-length validation, and the transfer-coding acceptance boundary needed to make those three mechanisms correct together. Cache-root containment/request-target validation (#150 / PR #118), request-header sanitization (#127 / merged PR #139), post-header error behavior (#132), descriptor-level path-race protection, request coalescing, fsync durability, and checksum validation remain separate boundaries until their own carriers are proven and added deliberately.
 
 ## Disposition
 
-Use this composer and regression as the merge gate for the three canonical repairs. A later upstream packet should be generated from the composed source state rather than concatenating the isolated diffs. No Debian or external upstream contact is included or authorized.
+Use this composer and regression as the merge gate for the canonical core repairs. A later upstream packet should be generated from the composed source state rather than concatenating the isolated diffs. No Debian or external upstream contact is included or authorized.
