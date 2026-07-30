@@ -10,6 +10,7 @@ import importlib.util
 import json
 import pathlib
 import threading
+import time
 import types
 
 
@@ -34,6 +35,23 @@ def running_server(server):
         thread.join(timeout=5)
         if thread.is_alive():
             raise RuntimeError("server thread survived shutdown")
+
+
+def wait_for_cache_publication(path: pathlib.Path, expected_size: int) -> None:
+    """Wait until the threaded handler has closed the completed cache file."""
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            if path.stat().st_size == expected_size:
+                return
+        except FileNotFoundError:
+            pass
+        time.sleep(0.01)
+    observed = path.stat().st_size if path.exists() else None
+    raise RuntimeError(
+        f"cache publication did not complete: path={path} "
+        f"expected={expected_size} observed={observed}"
+    )
 
 
 def main() -> None:
@@ -76,12 +94,13 @@ def main() -> None:
             return
 
     proxy = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Proxy)
+    cached = args.new_cache / "pool/object.deb"
 
     responses = []
     with running_server(origin), running_server(proxy):
         host = f"127.0.0.1:{origin.server_address[1]}"
         target = f"http://{host}/pool/object.deb"
-        for _ in range(args.requests):
+        for request_index in range(args.requests):
             connection = http.client.HTTPConnection(
                 "127.0.0.1", proxy.server_address[1], timeout=5
             )
@@ -99,7 +118,12 @@ def main() -> None:
             )
             connection.close()
 
-    cached = args.new_cache / "pool/object.deb"
+            # Reading a declared-length response can finish before the threaded
+            # proxy handler has closed the cache writer. Do not race the next
+            # cache-hit request against that in-progress publication.
+            if request_index + 1 < args.requests and response.status == 200:
+                wait_for_cache_publication(cached, len(body))
+
     cached_bytes = cached.read_bytes() if cached.exists() else b""
     temporaries = sorted(
         str(path.relative_to(args.new_cache))
