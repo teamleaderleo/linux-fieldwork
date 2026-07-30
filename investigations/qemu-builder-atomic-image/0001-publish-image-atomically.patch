@@ -30,8 +30,8 @@ diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mm
 +}
 @@ -323,1 +348,5 @@ cleanup() {
    test -n "$WORKDIR" && rm -Rf "$WORKDIR"
-+  if test -n "$IMAGE_TMPDIR"; then
-+    rm -f -- "$IMAGE_TMP"
++  if test -n "${IMAGE_TMPDIR:-}"; then
++    rm -f -- "${IMAGE_TMP:-}"
 +    rmdir "$IMAGE_TMPDIR" 2>/dev/null || :
 +  fi
 @@ -328,1 +357,2 @@ trap cleanup EXIT INT TERM QUIT
