@@ -61,13 +61,13 @@ jobs:
         run: |
           docker run --rm \
             --volume "$PWD:/work" \
-            --workdir /work \
+            --workdir /work/upstream/mmdebstrap \
             debian:sid-slim \
             sh -euxc '
               apt-get update
               apt-get install --yes --no-install-recommends perltidy
-              perltidy < upstream/mmdebstrap/mmdebstrap > upstream/mmdebstrap/mmdebstrap.tdy
-              mv upstream/mmdebstrap/mmdebstrap.tdy upstream/mmdebstrap/mmdebstrap
+              perltidy < mmdebstrap > mmdebstrap.tdy
+              mv mmdebstrap.tdy mmdebstrap
             '
 
       - name: Validate and commit
