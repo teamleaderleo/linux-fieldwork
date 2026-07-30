@@ -50,7 +50,7 @@ cp -a "$imported_source" "$source_tree"
 patch -p1 -d "$source_tree" -i "$override_patch" \
   >"$run_dir/override-patch.stdout" 2>"$run_dir/override-patch.stderr"
 
-"$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
+bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
 
 {
   printf '# Reproduction provenance\n\n'
