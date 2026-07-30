@@ -3,6 +3,11 @@ name: Linux Fieldwork CI
 on:
   pull_request:
     paths:
+      - "AGENTS.md"
+      - "README.md"
+      - "START_HERE.md"
+      - "RESEARCH_LANES.md"
+      - "templates/**"
       - "tools/**"
       - "tests/**"
       - "scripts/**"
@@ -66,7 +71,7 @@ jobs:
           fi
 
   capture-bug-report:
-    if: startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') || startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')
+    if: github.head_ref == 'investigation/mmdebstrap-autopkgtest-1141078' || github.ref_name == 'investigation/mmdebstrap-autopkgtest-1141078'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -87,7 +92,7 @@ jobs:
           retention-days: 14
 
   reproduce-mmdebstrap:
-    if: startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') || startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')
+    if: github.head_ref == 'investigation/mmdebstrap-autopkgtest-1141078' || github.ref_name == 'investigation/mmdebstrap-autopkgtest-1141078'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
