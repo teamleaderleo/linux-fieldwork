@@ -15,6 +15,7 @@ mm_root_two="$runtime/mmdebstrap-root-two"
 source_root="$repo_root/upstream/mmdebstrap"
 classifier="$artifact_dir/classify-strace.py"
 provenance_tool="$artifact_dir/write-provenance.py"
+summary_tool="$artifact_dir/summarize-probe.py"
 
 cleanup() {
     if [[ "${KEEP_RUNTIME:-0}" != 1 ]]; then
@@ -110,6 +111,9 @@ trace_command() {
         --result-dir "$result_dir" \
         --input "$raw_command" \
         --output "$result_dir/$name.command"
+    python3 "$summary_tool" phase-start \
+        --result-dir "$result_dir" \
+        --name "$name"
     set +e
     strace -ff -qq -yy -s 4096 \
         -e trace=%file,%process,%network \
@@ -118,6 +122,10 @@ trace_command() {
     local status=$?
     set -e
     printf '%s\n' "$status" > "$result_dir/$name.status"
+    python3 "$summary_tool" phase-finish \
+        --result-dir "$result_dir" \
+        --name "$name" \
+        --exit-status "$status"
     if [[ $status -ne 0 ]]; then
         echo "$name failed with status $status" >&2
         cat "$stderr" >&2
@@ -293,47 +301,10 @@ run_mmdebstrap_probe() {
 }
 
 write_summary() {
-    python3 - "$result_dir" <<'PY'
-import json
-import pathlib
-import sys
-
-result_dir = pathlib.Path(sys.argv[1])
-summary = {
-    "schema_version": 2,
-    "provenance": json.loads(result_dir.joinpath("provenance.json").read_text(encoding="utf-8")),
-    "fixture": result_dir.joinpath("fixture.txt").read_text(encoding="utf-8").splitlines()[-2:],
-    "phases": {},
-    "classifications": {},
-    "command_views": {},
-    "host_fingerprint_unchanged": result_dir.joinpath("host-fingerprint.diff").stat().st_size == 0,
-    "mmdebstrap_rerun_script_diff_empty": result_dir.joinpath("mmdebstrap-rerun-script.diff").stat().st_size == 0,
-    "mmdebstrap_rerun_alternative_diff_empty": result_dir.joinpath("mmdebstrap-rerun-alternative.diff").stat().st_size == 0,
-}
-for status_path in sorted(result_dir.glob("*.status")):
-    summary["phases"][status_path.stem] = int(status_path.read_text(encoding="utf-8").strip())
-for command_path in sorted(result_dir.glob("*.command")):
-    name = command_path.name.removesuffix(".command")
-    raw_path = result_dir.joinpath(f"{name}.command.raw")
-    summary["command_views"][name] = {
-        "normalized": command_path.name,
-        "raw": raw_path.name if raw_path.exists() else None,
-    }
-service_actions = 0
-unexpected_mutations = 0
-for summary_path in sorted(result_dir.glob("*-access.summary.txt")):
-    values = {}
-    for line in summary_path.read_text(encoding="utf-8").splitlines():
-        key, value = line.split("=", 1)
-        values[key] = int(value) if value.isdigit() else value
-    summary["classifications"][summary_path.name.removesuffix("-access.summary.txt")] = values
-    service_actions += int(values.get("category[service action]", 0))
-    unexpected_mutations += int(values.get("category[unexpected mutation]", 0))
-summary["promotion_signal"] = service_actions > 0 or unexpected_mutations > 0
-summary["decision"] = "promote" if summary["promotion_signal"] else "retain"
-result_dir.joinpath("summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-print(json.dumps(summary, indent=2))
-PY
+    python3 "$summary_tool" build \
+        --result-dir "$result_dir" \
+        --package "$package" \
+        --source-root "$source_root"
 }
 
 capture_provenance
