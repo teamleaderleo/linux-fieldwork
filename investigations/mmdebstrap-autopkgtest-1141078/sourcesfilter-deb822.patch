@@ -1,7 +1,7 @@
 diff --git a/debian/tests/sourcesfilter b/debian/tests/sourcesfilter
 --- a/debian/tests/sourcesfilter
 +++ b/debian/tests/sourcesfilter
-@@ -2,7 +2,7 @@
+@@ -2,5 +2,5 @@
  
 -from aptsources.sourceslist import SourcesList, Deb822SourceEntry
 +from aptsources.sourceslist import SourcesList
