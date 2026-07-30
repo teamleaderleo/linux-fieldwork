@@ -2,6 +2,8 @@
 
 This follow-up starts from LF-SCOUT-ROOT-01's promoted chrootless `DPKG_ROOT` result and tests the two strongest adjacent host effects under a disposable privileged caller. Draft PR #22 targets a CI-only base branch containing the workflow definition, leaving the review-ready LF-02 branch unchanged.
 
+The post-run correctness and evidence-quality review is retained in [`AUDIT.md`](AUDIT.md). It records one medium-severity raw-summary bug, lower-severity provenance/schema improvements, and informational coverage limits. The central host-mutation and inhibitor findings remain unchanged.
+
 ## Questions
 
 1. Does Ubuntu's host dpkg `status-logger` successfully modify `/run/needrestart/unpacked` when the chrootless transaction has root authority?
