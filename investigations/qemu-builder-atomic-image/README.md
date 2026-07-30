@@ -39,16 +39,17 @@ Every image mutation uses `IMAGE_TMP`:
 - GPT creation;
 - FAT partition copy.
 
-`publish_image()` performs:
+`publish_image()` first performs the one committing operation:
 
 ```sh
 mv --no-target-directory -- "$IMAGE_TMP" "$IMAGE"
-rmdir "$IMAGE_TMPDIR"
 ```
 
-and clears the temporary state. Because the private directory is a sibling of the final pathname, publication uses same-filesystem rename semantics.
+It then clears active temporary-image ownership and attempts to remove the now-empty private directory. Directory cleanup after the rename is best effort. If unexpected residue prevents `rmdir`, the command emits a warning but keeps the successful publication result truthful. It does not report image-build failure after the final pathname already contains the completed image.
 
-Ordinary cleanup removes only the private temporary image and directory. It never removes or restores the caller's final image.
+Because the private directory is a sibling of the final pathname, publication uses same-filesystem rename semantics.
+
+Ordinary pre-publication cleanup removes only the private temporary image and directory. It never removes or restores the caller's final image.
 
 ## Negative control and regression
 
@@ -60,7 +61,8 @@ Required cases:
 - absent final + injected failure: final remains absent;
 - success: complete bytes atomically replace the old image, effective mode is 0644 under umask 022, no temporary state;
 - final symlink: publication replaces the symlink itself while preserving its referent byte-for-byte;
-- source contract: all four mutation commands target `IMAGE_TMP`, exactly one publication precedes the success message.
+- unexpected post-rename residue: final image is complete, status remains success, a warning names the retained private directory, and the published image is absent from that directory;
+- source contract: all four mutation commands target `IMAGE_TMP`, exactly one publication precedes the success message, and publication precedes active-state clearing.
 
 ## Compatibility and security boundary
 
@@ -70,9 +72,11 @@ A successful build still replaces an existing final pathname. When that pathname
 
 The candidate does not preserve the mode, ownership, ACLs, or xattrs of a replaced existing image; the new image has normal newly-created-file metadata. It does not fsync the file or parent directory, lock the destination, detect concurrent publishers, or validate the final image contents.
 
+An unexpected file appearing inside the private directory after image creation is not recursively deleted after publication. The directory is mode-restricted and retained with a warning for diagnosis. The successful final image remains authoritative.
+
 ## Signal composition
 
-PR #172 changes signal exit semantics. The final combined source must ensure signal cleanup removes only `IMAGE_TMPDIR` and never deletes an existing `IMAGE`. Parent-only signal promptness and child forwarding remain separate from publication atomicity.
+PR #172 changes signal exit semantics. The final combined source must ensure signal cleanup removes only active pre-publication `IMAGE_TMPDIR` state and never deletes an existing `IMAGE`. Parent-only signal promptness and child forwarding remain separate from publication atomicity.
 
 ## Cleanup and safety
 
