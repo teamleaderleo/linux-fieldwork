@@ -33,10 +33,13 @@ Near the QEMU path it installs another cleanup-only signal trap. None of those s
 
 The candidate introduces:
 
-- `stop_proxy()`: signal the child if alive, `wait` for it even if already exited, clear the PID, and run cache cleanup only when the workflow has crossed the readiness boundary;
-- `signal_exit STATUS`: disable all traps, perform cleanup once, and exit with the conventional signal-derived status;
+- `stop_proxy()`: signal the child if alive, `wait` for it even if already exited, and clear the PID;
+- `cleanup_owner()`: call `stop_proxy()` and remove the incomplete new cache only after the workflow has crossed the readiness boundary;
+- `signal_exit STATUS`: disable all traps, call `cleanup_owner()` once, and exit with the conventional signal-derived status;
 - separate traps for `EXIT`, `INT`, `QUIT`, and `TERM`;
-- reuse of `stop_proxy()` at the existing normal proxy-stop point.
+- reuse of `stop_proxy()` at the existing normal proxy-stop point without deleting the completed cache.
+
+Separating child shutdown from cache cleanup is essential: normal successful mirror completion stops the proxy before atomically switching the finished cache into place. Calling failure cleanup from that normal stop point would delete the result.
 
 Cleanup errors are contained with `|| :` so they cannot replace the cancellation status.
 
@@ -49,7 +52,7 @@ A parent-PID-only `SIGTERM` is delivered while the shell waits for a foreground 
 - baseline: the deferred cleanup-only trap runs, later work executes, and the owner exits 0;
 - candidate: cleanup runs once, later work is absent, the owner exits 143, and the proxy child is reaped.
 
-An unsignaled candidate rerun must finish 0, execute the later marker, stop and reap the proxy, and clean exactly once.
+An unsignaled candidate rerun must finish 0, execute the later marker, stop and reap the proxy, and clean exactly once through the ordinary EXIT path.
 
 The source assertion requires all three top-level cleanup-only signal traps to disappear while leaving unrelated nested `update_cache()` trap behavior outside this patch.
 
