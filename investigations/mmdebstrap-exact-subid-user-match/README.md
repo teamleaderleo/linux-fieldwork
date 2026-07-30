@@ -9,6 +9,7 @@ The candidate compares field 1 exactly and literally for both `/etc/subuid` and 
 ## Coordination and duplicate search
 
 - focused issue: #80
+- current-main carrier: PR #215
 - historical candidate: PR #92
 - central mmdebstrap investigation: #53
 - related reusable tooling: PR #72
