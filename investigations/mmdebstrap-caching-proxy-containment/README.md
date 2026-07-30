@@ -49,14 +49,17 @@ All outside paths remain inside a disposable `TemporaryDirectory`; the test neve
 The retained patch:
 
 - parses the absolute request URI with `urllib.parse.urlsplit()`;
-- requires an exact HTTP authority match with the `Host` header;
-- rejects queries, fragments, empty paths, encoded slash/backslash, NULs, doubled separators, absolute decoded paths, and `.`/`..` components;
+- compares normalized DNS hostname plus effective HTTP port with the `Host` authority, while rejecting credentials or extra authority syntax;
+- inspects decoded slash-separated components before `PurePosixPath` can normalize them;
+- rejects queries, fragments, empty paths, encoded slash/backslash, NULs, doubled or trailing separators, and literal or encoded `.`/`..` components;
 - resolves each candidate against the cache root and requires `candidate.is_relative_to(root)`;
 - rejects an existing symlink that resolves outside the cache;
 - returns HTTP 400 rather than relying on assertions for malformed request structure;
 - binds the standalone helper to `127.0.0.1` only.
 
-A normal Debian pool request remains a 200 response and is cached at the same relative path.
+A normal Debian pool request remains a 200 response and is cached at the same relative path. A request-target hostname and `Host` hostname that differ only by ASCII case are accepted with the same effective port.
+
+The regression also requires literal dot, encoded dot, doubled-separator, and trailing-separator aliases to be rejected before any origin request or cache descendant is created.
 
 ## Severity and exposure
 
@@ -67,7 +70,7 @@ The primitive permits arbitrary read of existing files and arbitrary write of or
 ## Evidence limits
 
 - Linux/POSIX pathname semantics only.
-- The regression covers literal absolute paths, encoded dot segments, and an existing symlink escape.
+- The regression covers literal absolute paths, encoded dot segments, cache-key alias components, and an existing symlink escape.
 - The `resolve()` check closes the demonstrated paths but is not a same-UID adversarial race-proof `openat(2)` sandbox. A process that can replace cache path components between validation and open remains outside this candidate.
 - The proxy intentionally permits local HTTP forwarding; SSRF policy is not changed here.
 - No external network or privileged port is used by the regression.
