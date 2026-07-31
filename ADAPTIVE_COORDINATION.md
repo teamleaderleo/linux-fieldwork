@@ -112,6 +112,38 @@ An issue may declare an autonomous multi-helper push for a bounded batch. In tha
 8. Link records instead of copying large reports between them. The tracked record carries commands, fixtures, results, interpretation, and evidence limits; the issue or pull request carries routing, review state, and the current decision.
 9. Leave the repository sufficient for another person or agent to understand, reproduce, review, and continue the work even when the helper chat receives no follow-up message.
 
+## Recover from interrupted or blocked interaction
+
+A chat response, connector call, local command, hosted job, or safety check can stop while repository work remains valid. Treat the interruption as a coordination event. It does not by itself establish a product defect, test result, or permission decision.
+
+When this happens:
+
+1. Stop adding speculative detail or repeated retries.
+2. Write a concise factual checkpoint in a durable surface already owned by the work whenever repository writes remain available.
+3. Include the work unit, exact branch and head, changed paths, completed gates, first incomplete step, failure owner, cleanup state, evidence boundary, authority state, and next safe action.
+4. On resumption, reload [`README.md`](README.md), [`START_HERE.md`](START_HERE.md), this guide, [`FIELD_GUIDE.md`](FIELD_GUIDE.md), the owning issue or pull request, the tracked record, and the exact source. Reconstruct the state from commits, raw artifacts, logs, and receipts rather than chat narration.
+5. Classify the interruption separately as product, fixture or harness, tool or connector, environment, hosted execution, or interaction and safety. Do not edit product code until the owner of the first incomplete or failing step is known.
+6. For benign safety-sensitive work, prefer synthetic fixtures, disposable directories, fake destructive commands, no real credentials, no public targets, and no external contact. Describe the component, exact input and action, observed result, practical consequence, selected design, evidence limit, and next decision.
+7. If a task genuinely requires higher-risk operational detail or crosses the declared authority boundary, stop, record `HOLD`, and request a specific human decision. Do not disguise, fragment, or rephrase prohibited work to force it through.
+
+Use this compact checkpoint:
+
+```text
+INTERRUPTION CHECKPOINT
+Unit:
+Exact head:
+Changed paths:
+Completed gates:
+First incomplete step:
+Failure owner:
+Cleanup state:
+Evidence boundary:
+Authority:
+Resume with:
+```
+
+Safety checks and platform policies still apply. This protocol preserves bounded benign work; it is not a workaround for those checks.
+
 ## Notes stay lightweight
 
 Use a note when the durable value is an explanation, command, workflow, source-reading lesson, or small demonstration. Notes do not need scout identities, formal review, promotion decisions, research metadata, or a full evidence packet.

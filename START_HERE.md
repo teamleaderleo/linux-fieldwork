@@ -97,7 +97,13 @@ Say exactly what the work establishes and where the conclusion ends. Mention ski
 
 When the distinction could be unclear, label a conclusion as demonstrated behavior, plausible consequence, design choice, or open question.
 
-## 7. Decide the next step
+## 7. Preserve progress across interruption
+
+If a chat response, connector call, command, hosted job, or safety check stops, separate that interruption from product behavior. Use the `INTERRUPTION CHECKPOINT` in [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md), then resume from the exact repository head, raw artifacts, current receipts, and tracked records rather than chat narration.
+
+For benign safety-sensitive work, keep fixtures synthetic and disposable, avoid real credentials or public targets, and preserve the external-contact boundary. If higher-risk operational detail is genuinely required, record `HOLD` and request a specific human decision instead of broadening the work silently.
+
+## 8. Decide the next step
 
 Choose one:
 
