@@ -1,0 +1,178 @@
+name: Verify mmdebstrap Packet B focused capability case
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/mmdebstrap-packet-b-focused.yml'
+      - 'investigations/mmdebstrap-packet-b-focused/**'
+      - 'investigations/mmdebstrap-root-without-cap-sys-admin-hard-failure/0001-run-hook-free-capability-case-as-hard-failure.patch'
+      - 'investigations/mmdebstrap-unwritable-tmpdir/runtime_guard.sh'
+      - 'scripts/run_mmdebstrap_packet_b_focused.sh'
+      - 'tools/audit_pr_evidence_identity.py'
+      - 'tools/mmdebstrap_autopkgtest_log.py'
+      - 'tools/prepare_mmdebstrap_packet_b_focused.py'
+      - 'tools/verify_mmdebstrap_packet_b_focused.py'
+      - 'tests/test_mmdebstrap_packet_b_focused_harness.py'
+      - 'tests/test_prepare_mmdebstrap_packet_b_focused.py'
+      - 'tests/test_verify_mmdebstrap_packet_b_focused.py'
+      - 'upstream/mmdebstrap/.linux-fieldwork-source.json'
+      - 'upstream/mmdebstrap/coverage.py'
+      - 'upstream/mmdebstrap/coverage.txt'
+      - 'upstream/mmdebstrap/debian/tests/control'
+      - 'upstream/mmdebstrap/debian/tests/testsuite'
+
+permissions:
+  contents: read
+
+jobs:
+  focused-sid:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+      FOCUSED_TIMEOUT: 85m
+      FIELDWORK_EVENT_NAME: ${{ github.event_name }}
+      FIELDWORK_EVENT_SHA: ${{ github.sha }}
+      FIELDWORK_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      FIELDWORK_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      FIELDWORK_REF: ${{ github.ref }}
+      FIELDWORK_HEAD_REF: ${{ github.head_ref }}
+      FIELDWORK_BASE_REF: ${{ github.base_ref }}
+      FIELDWORK_RUN_ID: ${{ github.run_id }}
+      FIELDWORK_RUN_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check focused carrier syntax and unit controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/prepare_mmdebstrap_packet_b_focused.py \
+            tools/verify_mmdebstrap_packet_b_focused.py \
+            tests/test_mmdebstrap_packet_b_focused_harness.py \
+            tests/test_prepare_mmdebstrap_packet_b_focused.py \
+            tests/test_verify_mmdebstrap_packet_b_focused.py
+          bash -n scripts/run_mmdebstrap_packet_b_focused.sh
+          python3 -m unittest -v \
+            tests/test_mmdebstrap_packet_b_focused_harness.py \
+            tests/test_prepare_mmdebstrap_packet_b_focused.py \
+            tests/test_verify_mmdebstrap_packet_b_focused.py
+
+      - name: Retain exact generated-merge identity before privileged work
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_dir="investigations/mmdebstrap-packet-b-focused/runs/$RUN_ID"
+          mkdir -p "$run_dir"
+          git rev-list --parents -n 1 HEAD >"$run_dir/repository-rev-list.txt"
+          python3 - "$run_dir" <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          run_dir = pathlib.Path(sys.argv[1])
+          revision = (run_dir / "repository-rev-list.txt").read_text(
+              encoding="utf-8"
+          ).split()
+          if len(revision) != 3:
+              raise SystemExit(
+                  f"expected generated merge plus two parents, observed {revision!r}"
+              )
+          payload = {
+              "checkout_sha": revision[0],
+              "parents": revision[1:],
+              "head_sha": os.environ["FIELDWORK_PR_HEAD_SHA"],
+              "base_sha": os.environ["FIELDWORK_PR_BASE_SHA"],
+              "event_sha": os.environ["FIELDWORK_EVENT_SHA"],
+              "event_name": os.environ["FIELDWORK_EVENT_NAME"],
+              "ref": os.environ["FIELDWORK_REF"],
+              "head_ref": os.environ["FIELDWORK_HEAD_REF"],
+              "base_ref": os.environ["FIELDWORK_BASE_REF"],
+              "run_id": os.environ["FIELDWORK_RUN_ID"],
+              "run_attempt": os.environ["FIELDWORK_RUN_ATTEMPT"],
+              "expected": "synthetic-merge-ref",
+          }
+          (run_dir / "repository-identity-input.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          python3 tools/audit_pr_evidence_identity.py \
+            "$run_dir/repository-identity-input.json" \
+            --output "$run_dir/repository-identity.json" \
+            >"$run_dir/repository-identity.stdout" \
+            2>"$run_dir/repository-identity.stderr"
+          sha256sum "$run_dir/repository-identity.json" \
+            >"$run_dir/repository-identity.sha256"
+
+      - name: Run only the focused producer and capability consumer in sid
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_dir="investigations/mmdebstrap-packet-b-focused/runs/$RUN_ID"
+          set +e
+          docker run --privileged --rm \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            --env RUN_ID \
+            --env FOCUSED_TIMEOUT \
+            debian:sid-slim \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install --yes --no-install-recommends \
+                autopkgtest ca-certificates patch python3 procps util-linux
+              apt-get clean
+              bash scripts/run_mmdebstrap_packet_b_focused.sh
+            '
+          container_status=$?
+          set -e
+          printf '%s\n' "$container_status" >"$run_dir/container-exit-status"
+          exit 0
+
+      - name: Upload exact focused evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmdebstrap-packet-b-focused-${{ env.RUN_ID }}
+          path: investigations/mmdebstrap-packet-b-focused/runs/${{ env.RUN_ID }}/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Require focused completion
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_dir="investigations/mmdebstrap-packet-b-focused/runs/$RUN_ID"
+          carrier_status=$(cat "$run_dir/carrier-exit-status")
+          container_status=$(cat "$run_dir/container-exit-status")
+          if [[ "$carrier_status" != "$container_status" ]]; then
+            echo "carrier/container status mismatch: $carrier_status/$container_status" >&2
+            exit 2
+          fi
+          if [[ "$carrier_status" -ne 0 ]]; then
+            echo "focused Packet B carrier did not complete: $carrier_status" >&2
+            exit "$carrier_status"
+          fi
+          python3 - "$run_dir/focused-verification.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          receipt = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert receipt["raw_status"] == 0
+          assert receipt["named_test_count"] == 2
+          assert receipt["producer"]["name"] == "create-directory"
+          assert receipt["producer"]["outcome"] == "success"
+          assert receipt["consumer"]["name"] == "root-without-cap-sys-admin"
+          assert receipt["consumer"]["outcome"] == "success"
+          assert receipt["later_named_tests"] == []
+          print(json.dumps(receipt, indent=2, sort_keys=True))
+          PY
