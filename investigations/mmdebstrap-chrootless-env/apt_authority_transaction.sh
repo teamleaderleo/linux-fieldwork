@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 source_root="$repo_root/upstream/mmdebstrap"
 result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/apt-authority-results"
+env_classifier="$repo_root/investigations/mmdebstrap-chrootless-env/classify_env_invocations.py"
 
 validate_runtime_parent() {
   local requested=$1 canonical
@@ -74,6 +75,10 @@ for command_name in \
     exit 2
   }
 done
+[[ -f "$env_classifier" ]] || {
+  echo "missing env invocation classifier: $env_classifier" >&2
+  exit 2
+}
 
 rm -rf "$runtime" "$result_dir"
 mkdir -p "$runtime/fixture/DEBIAN" "$runtime/fake-bin" "$runtime/home"
@@ -139,34 +144,45 @@ cat >"$runtime/fake-bin/env" <<'EOF'
 #!/bin/sh
 set -eu
 : "${OUTER_ENV_LOG:?}"
-printf '%s\n' "$*" >>"$OUTER_ENV_LOG"
+/usr/bin/python3 -c '
+import json
+import os
+import sys
+
+payload = (
+    json.dumps(sys.argv[2:], ensure_ascii=True, separators=(",", ":")) + "\n"
+).encode("utf-8")
+fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+try:
+    os.write(fd, payload)
+finally:
+    os.close(fd)
+' "$OUTER_ENV_LOG" "$@"
 exec /usr/bin/env "$@"
 EOF
 chmod 0755 "$runtime/fake-bin/env"
 
+classify_env_invocations() {
+  local log_file=$1
+  local expectation=$2
+  local summary_file="${log_file%.log}.classification.json"
+  python3 "$env_classifier" \
+    "$log_file" \
+    --governed-dpkg "$expectation" \
+    --summary "$summary_file" \
+    >"$summary_file.stdout"
+}
+
 assert_version_probe_only() {
   local log_file=$1
-  grep -Fx -- '--version' "$log_file" >/dev/null
-  if grep -F -- '-i PATH=' "$log_file" >/dev/null; then
-    echo "unexpected apt-managed sanitizer launch through caller PATH: $log_file" >&2
-    return 1
-  fi
-  if grep -vFx -- '--version' "$log_file" | grep -q .; then
-    echo "unexpected caller-path env invocation: $log_file" >&2
-    return 1
-  fi
+  grep -Fx -- '["--version"]' "$log_file" >/dev/null
+  classify_env_invocations "$log_file" forbid
 }
 
 assert_version_probe_and_sanitizer() {
   local log_file=$1
-  grep -Fx -- '--version' "$log_file" >/dev/null
-  grep -F -- '-i PATH=' "$log_file" >/dev/null
-  if grep -vFx -- '--version' "$log_file" \
-    | grep -vF -- '-i PATH=' \
-    | grep -q .; then
-    echo "unexpected caller-path env invocation class: $log_file" >&2
-    return 1
-  fi
+  grep -Fx -- '["--version"]' "$log_file" >/dev/null
+  classify_env_invocations "$log_file" require
 }
 
 make_hook() {
@@ -331,19 +347,22 @@ repository_source_unchanged=yes
 candidate_tainted_status=$(cat "$result_dir/candidate-tainted.status")
 candidate_tainted_path=$candidate_tainted_path
 candidate_tainted_fake_inner_command=no
-candidate_tainted_caller_env_host_probe=version-only
+candidate_tainted_caller_env_receipt=lossless-jsonl
+candidate_tainted_caller_env_host_probe=present
 candidate_tainted_caller_env_sanitizer_launch=no
 candidate_clean_status=$(cat "$result_dir/candidate-clean.status")
 candidate_clean_path=$candidate_clean_path
 inner_mutation_status=$(cat "$result_dir/inner-mutation-tainted.status")
 inner_mutation_path=$inner_path
 inner_mutation_fake_inner_command=yes
-inner_mutation_caller_env_host_probe=version-only
+inner_mutation_caller_env_receipt=lossless-jsonl
+inner_mutation_caller_env_host_probe=present
 inner_mutation_caller_env_sanitizer_launch=no
 outer_mutation_status=$(cat "$result_dir/outer-mutation-tainted.status")
 outer_mutation_path=$outer_path
 outer_mutation_fake_inner_command=no
-outer_mutation_caller_env_host_probe=version-only
+outer_mutation_caller_env_receipt=lossless-jsonl
+outer_mutation_caller_env_host_probe=present
 outer_mutation_caller_env_sanitizer_launch=yes
 configured_authority_path=$configured_authority_path
 configured_authority_fake_inner_command=yes
@@ -352,7 +371,7 @@ empty_dpkg_path_status=$empty_status
 empty_dpkg_path_failed_closed=yes
 empty_dpkg_path_maintainer_script_ran=no
 candidate_mutation_package_sets_equal=yes
-interpretation=apt-managed run_install requires absolute sanitizer authority and configured inner DPkg::Path while honoring explicit non-empty apt configuration; host dependency probes remain caller-PATH based and outside this patch boundary
+interpretation=apt-managed run_install requires absolute sanitizer authority and configured inner DPkg::Path while honoring explicit non-empty apt configuration; non-governed caller-PATH env invocations remain explicit in per-case classification receipts and outside this patch boundary
 EOF
 
 cat "$result_dir/summary.txt"
