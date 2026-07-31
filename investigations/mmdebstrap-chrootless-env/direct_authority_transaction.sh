@@ -162,6 +162,31 @@ EOF
   chmod 0755 "$runtime/fake-bin/dpkg"
 }
 
+assert_version_probe_only() {
+  local log_file=$1
+  grep -Fx -- '--version' "$log_file" >/dev/null
+  if grep -F -- '-i PATH=' "$log_file" >/dev/null; then
+    echo "unexpected chrootless sanitizer launch through caller PATH: $log_file" >&2
+    return 1
+  fi
+  if grep -vFx -- '--version' "$log_file" | grep -q .; then
+    echo "unexpected caller-path env invocation: $log_file" >&2
+    return 1
+  fi
+}
+
+assert_version_probe_and_sanitizer() {
+  local log_file=$1
+  grep -Fx -- '--version' "$log_file" >/dev/null
+  grep -F -- '-i PATH=' "$log_file" >/dev/null
+  if grep -vFx -- '--version' "$log_file" \
+    | grep -vF -- '-i PATH=' \
+    | grep -q .; then
+    echo "unexpected caller-path env invocation class: $log_file" >&2
+    return 1
+  fi
+}
+
 run_case() {
   local label=$1
   local mmdebstrap_path=$2
@@ -225,9 +250,9 @@ done
 grep -F -- '--force-script-chrootless' \
   "$result_dir/inner-mutation-dpkg-wrapper.log"
 
-[[ ! -s "$result_dir/candidate-outer-env.log" ]]
-[[ ! -s "$result_dir/inner-mutation-outer-env.log" ]]
-grep -F -- '-i PATH=' "$result_dir/outer-mutation-outer-env.log"
+assert_version_probe_only "$result_dir/candidate-outer-env.log"
+assert_version_probe_only "$result_dir/inner-mutation-outer-env.log"
+assert_version_probe_and_sanitizer "$result_dir/outer-mutation-outer-env.log"
 
 canonical_path=/usr/sbin:/usr/bin:/sbin:/bin
 candidate_path="$(cat "$result_dir/candidate-maintainer-script/path.txt")"
@@ -258,17 +283,20 @@ candidate_transaction_status=$(cat "$result_dir/candidate.status")
 candidate_direct_run_essential_reached=yes
 candidate_maintainer_script_path=$candidate_path
 candidate_caller_dpkg_received_chrootless_args=no
-candidate_fake_outer_env_executed=no
+candidate_caller_env_host_probe=version-only
+candidate_caller_env_sanitizer_launch=no
 inner_mutation_transaction_status=$(cat "$result_dir/inner-mutation.status")
 inner_mutation_maintainer_script_path=$inner_path
 inner_mutation_caller_dpkg_received_chrootless_args=yes
-inner_mutation_fake_outer_env_executed=no
+inner_mutation_caller_env_host_probe=version-only
+inner_mutation_caller_env_sanitizer_launch=no
 outer_mutation_transaction_status=$(cat "$result_dir/outer-mutation.status")
 outer_mutation_maintainer_script_path=$outer_path
 outer_mutation_caller_dpkg_received_chrootless_args=no
-outer_mutation_fake_outer_env_executed=yes
+outer_mutation_caller_env_host_probe=version-only
+outer_mutation_caller_env_sanitizer_launch=yes
 candidate_mutation_package_sets_equal=yes
-interpretation=direct run_essential requires both absolute outer env authority and configured inner DPkg::Path
+interpretation=direct run_essential requires both absolute sanitizer authority and configured inner DPkg::Path; host dependency probes remain caller-PATH based and outside this patch boundary
 EOF
 
 cat "$result_dir/summary.txt"
