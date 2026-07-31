@@ -20,7 +20,7 @@ testsuite PASS
 
 
 class PacketBFocusedVerificationTest(unittest.TestCase):
-    def test_accepts_exact_completed_pair_and_no_later_case(self) -> None:
+    def test_accepts_exact_completed_pair_and_no_other_case(self) -> None:
         receipt = verify_console(PASSING, raw_status=0)
         self.assertEqual(receipt.raw_status, 0)
         self.assertEqual(receipt.producer.name, "create-directory")
@@ -73,12 +73,17 @@ testsuite PASS
         with self.assertRaisesRegex(VerificationError, "exactly one create-directory"):
             verify_console(console, raw_status=0)
 
+    def test_rejects_unrelated_named_case_before_producer(self) -> None:
+        console = "(1/284) help\nresult: SUCCESS\n" + PASSING
+        with self.assertRaisesRegex(VerificationError, "exactly two named focused tests"):
+            verify_console(console, raw_status=0)
+
     def test_rejects_later_broad_case_even_when_it_passes(self) -> None:
         console = PASSING.replace(
             "testsuite PASS",
             "(1/284) help\nresult: SUCCESS\ntestsuite PASS",
         )
-        with self.assertRaisesRegex(VerificationError, "executed after focused consumer"):
+        with self.assertRaisesRegex(VerificationError, "exactly two named focused tests"):
             verify_console(console, raw_status=0)
 
     def test_rejects_wrapper_failure_after_success_markers(self) -> None:
