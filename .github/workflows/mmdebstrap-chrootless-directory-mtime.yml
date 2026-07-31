@@ -1,0 +1,74 @@
+name: Verify mmdebstrap chrootless directory mtime boundaries
+
+on:
+  pull_request:
+    paths:
+      - 'investigations/mmdebstrap-chrootless-directory-mtime/**'
+      - 'tests/test_mmdebstrap_chrootless_directory_mtime.py'
+      - 'tests/test_mmdebstrap_chrootless_directory_mtime_real_probe.py'
+      - '.github/workflows/mmdebstrap-chrootless-directory-mtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-metadata-boundaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Install focused metadata tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes acl libcap2-bin
+
+      - name: Check focused syntax and synthetic matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n \
+            investigations/mmdebstrap-chrootless-directory-mtime/real_metadata_probe.sh
+          python3 -m py_compile \
+            tests/test_mmdebstrap_chrootless_directory_mtime.py \
+            tests/test_mmdebstrap_chrootless_directory_mtime_real_probe.py
+          python3 tests/test_mmdebstrap_chrootless_directory_mtime.py -v
+          python3 tests/test_mmdebstrap_chrootless_directory_mtime_real_probe.py -v
+
+      - name: Run real mount ACL and capability matrix twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          result_dir="investigations/mmdebstrap-chrootless-directory-mtime/real-boundary-results"
+          runtime="$RUNNER_TEMP/mmdebstrap-chrootless-directory-mtime-real"
+          rm -rf "$result_dir"
+          for label in first rerun; do
+            RESULT_LABEL="$label" \
+              bash \
+                investigations/mmdebstrap-chrootless-directory-mtime/real_metadata_probe.sh
+            test ! -e "$runtime"
+            if findmnt -rn -M "$runtime/tree/foreign-device" >/dev/null 2>&1; then
+              echo "mount survived $label cleanup" >&2
+              exit 1
+            fi
+          done
+          test -s "$result_dir/first.txt"
+          test -s "$result_dir/rerun.txt"
+          for receipt in "$result_dir/first.txt" "$result_dir/rerun.txt"; do
+            grep -Fx 'schema_version=1' "$receipt"
+            grep -Fx 'acl_preserved=yes' "$receipt"
+            grep -Fx 'capability_preserved=yes' "$receipt"
+            grep -Fx 'mount_remained_active=yes' "$receipt"
+            grep -Fx 'foreign_sentinel_preserved=yes' "$receipt"
+          done
+
+      - name: Upload real metadata receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmdebstrap-chrootless-directory-mtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: investigations/mmdebstrap-chrootless-directory-mtime/real-boundary-results/
+          if-no-files-found: warn
+          retention-days: 14
