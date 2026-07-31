@@ -14,7 +14,7 @@ That creates several ways to get the wrong result:
 - half a parcel can become visible as though it were complete;
 - a broken response can contain one `200` followed by a second `502` status line.
 
-This work makes the mailroom check the address, remove private delivery instructions, verify the supplier's answer, receive the full parcel into a hidden temporary location, and reveal it only after completion.
+The merged composition makes the mailroom check the address, remove private delivery instructions, verify the supplier's answer, receive the full parcel into a hidden temporary location, and reveal it only after completion.
 
 ## Why should anyone care?
 
@@ -22,17 +22,17 @@ This helper sits in mmdebstrap development and CI workflows that fetch and cache
 
 The exposure is bounded: this is a development/CI helper, and the candidate binds its standalone listener to loopback. The consequences inside that boundary remain concrete: incorrect package bytes, cached error pages, truncated downloads, leaked proxy credentials, confusing HTTP streams, and misleading test results.
 
-## What happens if we leave it alone?
+## What happened before the repair?
 
-The focused fixes can each pass while the combined handler still fails. The overlaps occur in the same request path, so patch order can silently remove or bypass another repair.
+The focused fixes could each pass while the combined handler still failed. The overlaps occur in the same request path, so patch order could silently remove or bypass another repair.
 
 Without one composed gate:
 
-1. optimized Python can erase `assert` checks and accept requests or origin failures that ordinary Python rejects;
-2. malformed or conflicting message lengths can reach downstream clients or the cache;
-3. concurrent misses can observe a final cache name before the file is complete;
-4. late failures can append a second HTTP response after the first one already began;
-5. a retry can reuse corrupted cache state instead of recovering from the origin.
+1. optimized Python could erase `assert` checks and accept requests or origin failures that ordinary Python rejected;
+2. malformed or conflicting message lengths could reach downstream clients or the cache;
+3. concurrent misses could observe a final cache name before the file was complete;
+4. late failures could append a second HTTP response after the first one already began;
+5. a retry could reuse corrupted cache state instead of recovering from the origin.
 
 ## Was the old behavior intentional?
 
@@ -40,13 +40,13 @@ The original file reads like a compact workflow helper written around friendly i
 
 The unsafe combination does not form a coherent product requirement. HTTP has long treated proxies as trust boundaries, Python documents that optimized mode removes assertions, and pathname-containment guidance treats canonicalization plus descendant checks as standard defensive practice.
 
-A few restrictions in the candidate are deliberate design choices:
+A few restrictions in the merged candidate are deliberate design choices:
 
 - the accepted URL-path language is narrower than general HTTP and rejects percent escapes because this Debian archive helper does not need them and decoding would create cache-key aliases;
 - misses remain uncoalesced, so two clients may fetch the same object concurrently;
 - the imported source remains preserved; the repository generates a candidate source for evidence and review.
 
-## The proposed fix in plain terms
+## The fix in plain terms
 
 The generated handler follows one receiving checklist:
 
@@ -77,10 +77,10 @@ These references show a long-running design lesson: proxies, caches, and filesys
 
 - push packet: issue #194, Packet D
 - integration owner: issue #188
-- helper: D
-- current integration branch: `integration/caching-proxy-complete-stack`
-- pull request: #198
-- exact validated head: `00caba3d753536dd9a3a68fc6f110c75e338ec08`
+- canonical pull request: merged PR #198
+- final source head: `5e69cd25e62d0e86364459d97c9df8568ff84187`
+- merge commit: `8d9f7fa92f0cb2f553ca3578b78d7e04f4e4167f`
+- predecessor composed-source head: `00caba3d753536dd9a3a68fc6f110c75e338ec08`
 - external-contact authority: internal repository work only
 
 ## Source boundary
@@ -93,7 +93,7 @@ These references show a long-running design lesson: proxies, caches, and filesys
 - optimized-interpreter runner: `run_case.py`
 - full gate: `../../tests/test_caching_proxy_complete_stack.py`
 
-The imported upstream file stays unchanged. Inputs already present on `main` are referenced directly. Reviewed mechanisms that still live on open focused branches are snapshotted under `inputs/` so the exact PR checkout carries every composition input.
+The imported upstream file stays unchanged. Inputs already present on `main` are referenced directly. Reviewed mechanisms that lived on focused branches are snapshotted under `inputs/` so the exact source checkout carries every composition input.
 
 ## Executed gates
 
@@ -109,12 +109,17 @@ Ran 7 tests in 15.297s
 OK
 ```
 
-Final current-main-aligned repository gate:
+Hosted exact-head receipts:
 
 ```text
-head: 00caba3d753536dd9a3a68fc6f110c75e338ec08
+predecessor head: 00caba3d753536dd9a3a68fc6f110c75e338ec08
 workflow: Linux Fieldwork CI
 run: 30578916643 / 572
+result: success
+
+final head: 5e69cd25e62d0e86364459d97c9df8568ff84187
+workflow: Linux Fieldwork CI
+run: 30580697438 / 612
 result: success
 ```
 
@@ -135,6 +140,10 @@ The candidate intentionally leaves these separate questions open:
 
 ## Current disposition
 
-`READY FOR FINAL HUMAN CHECK` at `00caba3d753536dd9a3a68fc6f110c75e338ec08`, with Linux Fieldwork CI run 572 successful.
+`CLOSED — MERGED LOCALLY`
 
-The human decision is whether this nine-file internal evidence unit explains and proves the combined behavior well enough to merge. External submission remains a separate decision. No Debian or other external contact is included or authorized.
+PR #198 merged the complete nine-file evidence unit at exact source head `5e69cd25e62d0e86364459d97c9df8568ff84187` after Linux Fieldwork CI run 612 succeeded. The imported source remains unchanged. Any future source candidate or public proposal requires a fresh current-source review and separate authorization.
+
+## External-contact state
+
+No Debian or other external contact was made or authorized.

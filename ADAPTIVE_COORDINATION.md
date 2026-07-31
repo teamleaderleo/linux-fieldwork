@@ -2,7 +2,7 @@
 
 ## In simple words
 
-Linux Fieldwork should coordinate people and agents without turning research into a rigid workflow. Keep enough structure to prevent duplicated work, unclear responsibility, lost evidence, and accidental upstream interaction. Let the actual investigation change shape when the source and experiments reveal a better boundary.
+Linux Fieldwork should coordinate people and agents without turning research into a rigid workflow. Keep enough structure to make parallel work legible, preserve evidence, and prevent accidental upstream interaction. Duplicate or competing work is an acceptable cost when it produces faster learning or a better candidate. Let the actual investigation change shape when the source and experiments reveal a better boundary.
 
 The normal progression remains:
 
@@ -17,7 +17,7 @@ Not every piece of work must pass through every stage.
 Substantial work should make these facts discoverable:
 
 - the bounded question or intended outcome;
-- one current owner or worker identity;
+- the current worker identities, branches, or competing variants when they matter;
 - the relevant lane, issue, branch, source revision, or package version;
 - what evidence exists and where it stops;
 - the next useful action;
@@ -34,7 +34,7 @@ Question:
 Why this is worth checking:
 Useful starting points:
 Known boundaries:
-Owner:
+Active workers or variants:
 ```
 
 Use issue comments for short checkpoints, blockers, transfers, review requests, and next actions. Put commands, fixtures, source maps, results, interpretation, and evidence limits in the repository or a coherent pull request.
@@ -47,16 +47,17 @@ A release desk needs one stable front-door issue whose body changes rarely. Put
 the rules, links, and card format in that body. Put each live release unit in
 one top-level comment on the desk.
 
-The worker edits that unit's comment in place as the head, evidence, owner, or
-disposition changes. Other workers update different comments, so routine
-progress does not create competing edits to one large issue body.
+The current editor updates that unit's comment in place as the head, evidence,
+worker, or disposition changes. Other workers normally update different
+comments. When two people need the same mutable card, use the brief mutable-
+surface lease below rather than treating the release unit itself as reserved.
 
 Every live card should contain:
 
 ```text
 STATUS CARD
 Unit:
-Owner:
+Worker or variant:
 State: DRAFTING | REPAIR | REVIEW 1 | REVIEW 2 | RELEASE CANDIDATE | HOLD
 Exact head:
 TL;DR:
@@ -79,22 +80,27 @@ Long commands, transcripts, fixtures, and interpretation remain in tracked
 fieldwork records. A status card points to that evidence; it does not duplicate
 it.
 
-## Identity and ownership
+## Identity, attribution, and overlap
 
 Humans may use their GitHub identity. Agents and temporary workers may use a short stable callsign such as `LF-R01` for attribution during active work.
 
 The identity tells reviewers who produced or reviewed evidence. It does not create a permanent role, exclusive lane ownership, competence claim, or authority grant.
 
-Keep one current owner for a coherent piece of work. That owner may:
+A claim, assignment, issue comment, branch name, assignee, or status card is an advisory visibility signal. It does not reserve the question, source area, investigation, or candidate design. Several workers may independently reproduce, review, rewrite, or replace the same work. Check overlap to reuse evidence and understand competing decisions, not to ask permission to continue.
 
-- change methods;
-- split independent findings into focused investigations;
-- ask for specialist help;
-- transfer the work;
-- stop after a sound negative result;
-- continue into a candidate fix when the evidence supports it.
+Use separate branches, pull requests, records, or exact commits for competing variants. A later variant may supersede an earlier one. It is acceptable to discard work after preserving the exact head and any unique evidence, failed hypothesis, fixture, or design lesson worth retaining.
 
-Record a meaningful scope change or transfer. Do not force a useful investigation to remain inside an obsolete initial assignment.
+Only a shared mutable surface may receive a brief lease. Examples are force-updating the same branch, editing the same live status comment, rewriting the same issue body, merging, or changing a shared release pointer. A lease:
+
+- names the exact mutable surface and current worker;
+- lasts no more than ten minutes unless renewed with a fresh timestamp and concrete progress;
+- does not reserve the underlying problem or prevent parallel branches;
+- expires automatically and needs no handoff ceremony;
+- never authorizes deleting an unrecorded head or overwriting unseen changes.
+
+Before a destructive or replacing write, refresh the surface, preserve the prior exact head or content identity, and compare what changed. Prefer superseding commits and branches over force-pushing. When replacement is useful, make the surviving evidence and decision clear rather than preserving every implementation indefinitely.
+
+Record meaningful scope changes, competing variants, and supersession when they affect review. Do not force useful work to remain inside an obsolete assignment or wait for a nominal owner.
 
 ## Autonomous push work
 
@@ -105,7 +111,7 @@ An issue may declare an autonomous multi-helper push for a bounded batch. In tha
 3. Begin useful work immediately. Do not wait for a coordinator, schedule, claim, reviewer assignment, or another packet when the next safe action is available.
 4. Make bounded repository changes, execute focused gates, inspect the complete current diff, rerun after cleanup, and review the exact head being recommended. Careful self-review is valid for reversible internal work; higher-consequence work still deserves stronger independent review.
 5. After completing the initial packet, inspect adjacent packets and the current open work. Continue with useful review, repair, evidence transfer, or closeout rather than ending solely because the initial packet is complete.
-6. Keep ownership discoverable while allowing overlap. A short claim or transfer comment records who is acting; it never locks the work.
+6. Keep active variants discoverable while allowing overlap. A short claim or transfer comment records who is acting; it never locks the work. Do not stop solely because another worker or branch exists; compare, reuse, compete, or supersede as the evidence warrants.
 7. Record substantial completed work in at least two durable surfaces:
    - the owning issue or pull request, with the disposition, exact head, executed gates, caveats, authority state, and next human decision;
    - the relevant tracked fieldwork record, such as an investigation README or results file, scout report or artifact, reusable note, programme status, research selection record, or target map.
@@ -137,7 +143,7 @@ Use this compact form:
 ```text
 LIVE CHECKPOINT
 Unit:
-Owner:
+Worker or variant:
 Exact head:
 Question:
 Observed so far:
@@ -163,7 +169,7 @@ When this happens:
 4. On resumption, reload [`README.md`](README.md), [`START_HERE.md`](START_HERE.md), this guide, [`FIELD_GUIDE.md`](FIELD_GUIDE.md), the owning issue or pull request, the tracked record, and the exact source. Reconstruct the state from commits, raw artifacts, logs, and receipts rather than chat narration.
 5. Classify the interruption separately as product, fixture or harness, tool or connector, environment, hosted execution, or interaction and safety. Do not edit product code until the owner of the first incomplete or failing step is known.
 6. For benign safety-sensitive work, prefer synthetic fixtures, disposable directories, fake destructive commands, no real credentials, no public targets, and no external contact. Describe the component, exact input and action, observed result, practical consequence, selected design, evidence limit, and next decision.
-7. If a task genuinely requires higher-risk operational detail or crosses the declared authority boundary, stop, record `HOLD`, and request a specific human decision. Do not disguise, fragment, or rephrase prohibited work to force it through.
+7. If the interruption exposes a genuinely higher-risk or authority-crossing direction, switch to **RECONVENE** mode below instead of trying to continue through the same interaction.
 
 Use this compact checkpoint:
 
@@ -182,6 +188,36 @@ Resume with:
 ```
 
 Safety checks and platform policies still apply. This protocol preserves bounded benign work; it is not a workaround for those checks.
+
+## Switch to RECONVENE mode for unexpectedly sensitive findings
+
+A normal investigation can unexpectedly reach a boundary with materially different consequence or authority. Examples include real secrets or private data, a live public target, an authentication or authorization bypass, destructive or persistent capability, a high-impact vulnerability whose operational details exceed the current synthetic fixture, or any result that cannot safely be carried in the current public record.
+
+At that point, do not keep deepening the same path. Switch the unit to `RECONVENE`:
+
+1. Stop expanding reproduction, target enumeration, exploitability, persistence, destructive action, or operational detail.
+2. Preserve the exact repository state, raw artifact identity, first distinguishing observation, cleanup state, and evidence class. Do not delete valid evidence merely because the conclusion became sensitive.
+3. Finish safe cleanup and verify that no process, mount, credential, temporary service, public target, or modified external state remains under the worker's control.
+4. Put only public-safe facts in the ordinary issue or pull request: the affected component, broad failure class, exact internal head, evidence boundary, authority state, and the decision needed. Do not publish secrets, identifying private data, live target details, or step-by-step operational instructions.
+5. Ask for one specific human decision: continue with a sanitized synthetic reduction, move the work into an explicitly authorized private security process, contact a named upstream destination, or stop and retain the result.
+6. Resume only after the selected scope, storage surface, reviewer, and contact authority are explicit.
+
+Use this compact handoff:
+
+```text
+RECONVENE CHECKPOINT
+Unit:
+Exact head:
+Broad finding class:
+Evidence retained:
+Public-safe summary:
+Cleanup state:
+Current authority:
+Decision required:
+Permitted next step:
+```
+
+Sanitizing a report means removing secrets, private identifiers, and unnecessary operational detail while preserving the technical truth and evidence boundary. It does not mean disguising, fragmenting, encoding, or euphemizing work to evade safety, review, or authority controls.
 
 ## Notes stay lightweight
 
@@ -221,7 +257,7 @@ Review the exact evidence and current head, not merely the prose or the original
 
 Broad reconnaissance is useful when it creates concrete next branches. Once a specific behavior, failure, compatibility boundary, or candidate change appears, prefer a focused investigation over extending one giant scout report indefinitely.
 
-Keep the broad report as orientation. Link the focused work from it. Preserve passing cases and failed hypotheses because they prevent future duplicate work.
+Keep the broad report as orientation. Link focused and competing work from it. Preserve passing cases and failed hypotheses when they save future effort, but do not treat duplication itself as a failure. Independent implementations and reviews can expose hidden assumptions; retain the strongest result and the evidence needed to understand why other variants were superseded.
 
 ## External GitHub backlinks
 
@@ -248,6 +284,6 @@ This link rule does not itself authorize contact. Issues, email, merge requests,
 
 ## Working rule
 
-> Coordinate only enough to preserve responsibility, evidence, recoverability, and upstream safety. Adapt the rest to the work.
+> Coordinate only enough to preserve attribution, evidence, recoverability, safe mutation, and upstream safety. Parallel work is allowed; adapt the rest to the work.
 
-When a rule repeatedly causes stalled work, duplicate effort, misleading ownership, or unnecessary review ceremony, improve the rule rather than teaching everyone to work around it.
+When a rule repeatedly causes stalled work, misleading ownership, avoidable information loss, or unnecessary review ceremony, improve the rule rather than teaching everyone to work around it.

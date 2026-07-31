@@ -12,6 +12,18 @@ Explain the component and its job with ordinary words. Include one literal input
 
 Name the affected file, bytes, process, privilege, package, user, or decision and describe the concrete consequence.
 
+## Current state
+
+Keep this block short and update it while the work changes. Put transcripts and detailed interpretation in the sections below.
+
+- State: `SCOPING | EXECUTING | REPAIR | REVIEW | HOLD | COMPLETE`
+- Exact working head:
+- Latest authoritative gate or artifact:
+- First incomplete step:
+- Cleanup state:
+- Next safe action:
+- External-contact state:
+
 ## Intent and precedent
 
 State what source or history shows about intent. Separate evidence from interpretation, and link the primary sources that govern the behavior.

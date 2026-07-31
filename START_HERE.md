@@ -21,7 +21,7 @@ Search, in order:
 5. `investigations/` for active or retained evidence;
 6. the relevant imported tree under `upstream/`.
 
-Link related records instead of repeating them.
+Link related records instead of repeating them. Existing work is context, not permission: a claim, assignee, branch, or pull request does not reserve the question. Parallel reproduction, review, and competing candidates are allowed. Use separate exact heads, compare the results, and retain the evidence that explains which variant survived.
 
 ## 2. Choose the work type
 
@@ -97,11 +97,13 @@ Say exactly what the work establishes and where the conclusion ends. Mention ski
 
 When the distinction could be unclear, label a conclusion as demonstrated behavior, plausible consequence, design choice, or open question.
 
-## 7. Preserve progress across interruption
+## 7. Preserve progress and reconvene when needed
 
 If a chat response, connector call, command, hosted job, or safety check stops, separate that interruption from product behavior. Use the `INTERRUPTION CHECKPOINT` in [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md), then resume from the exact repository head, raw artifacts, current receipts, and tracked records rather than chat narration.
 
-For benign safety-sensitive work, keep fixtures synthetic and disposable, avoid real credentials or public targets, and preserve the external-contact boundary. If higher-risk operational detail is genuinely required, record `HOLD` and request a specific human decision instead of broadening the work silently.
+For benign safety-sensitive work, keep fixtures synthetic and disposable, avoid real credentials or public targets, and preserve the external-contact boundary.
+
+If the investigation unexpectedly reaches real secrets or private data, a live public target, an authorization bypass, destructive or persistent capability, materially higher-impact vulnerability detail, or any result that cannot safely be carried in the current public record, switch to `RECONVENE`. Preserve a public-safe checkpoint, finish cleanup, stop deepening operational detail, and request a specific human decision about sanitized continuation, private handling, upstream contact, or stopping.
 
 ## 8. Decide the next step
 
