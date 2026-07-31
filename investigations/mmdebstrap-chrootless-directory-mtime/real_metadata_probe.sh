@@ -133,6 +133,10 @@ for command_name in \
   }
 done
 
+if mountpoint -q "$mount_dir" 2>/dev/null; then
+  echo "refusing stale mount before runtime reset: $mount_dir" >&2
+  exit 2
+fi
 rm -rf "$runtime"
 mkdir -p "$tree/ordinary" "$tree/acl-directory" "$mount_dir" "$result_dir"
 
