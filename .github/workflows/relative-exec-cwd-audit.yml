@@ -5,6 +5,7 @@ on:
     paths:
       - "tools/relative_exec_cwd_audit.py"
       - "tests/test_relative_exec_cwd_audit.py"
+      - "tests/test_relative_exec_cwd_audit_receipt.py"
       - "investigations/relative-exec-cwd-audit/**"
       - ".github/workflows/relative-exec-cwd-audit.yml"
   workflow_dispatch:
@@ -22,7 +23,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run focused regressions
-        run: python3 -m unittest tests.test_relative_exec_cwd_audit -v
+        run: |
+          python3 -m unittest -v \
+            tests.test_relative_exec_cwd_audit \
+            tests.test_relative_exec_cwd_audit_receipt
 
       - name: Inventory current repository findings
         shell: bash
@@ -41,18 +45,25 @@ jobs:
           findings = json.loads(path.read_text(encoding="utf-8"))
           if not isinstance(findings, list):
               raise SystemExit("audit output must be a JSON list")
+          required = {
+              "path",
+              "line",
+              "language",
+              "kind",
+              "program",
+              "cwd",
+              "explanation",
+          }
           for item in findings:
-              required = {
-                  "path",
-                  "line",
-                  "language",
-                  "kind",
-                  "program",
-                  "cwd",
-                  "explanation",
-              }
               if not isinstance(item, dict) or set(item) != required:
                   raise SystemExit(f"invalid finding: {item!r}")
+              if type(item["line"]) is not int:
+                  raise SystemExit(f"finding line must be an exact integer: {item!r}")
+              for field in required - {"line"}:
+                  if not isinstance(item[field], str):
+                      raise SystemExit(
+                          f"finding {field} must be a string: {item!r}"
+                      )
           print(f"relative executable / cwd findings: {len(findings)}")
           for item in findings:
               print(
@@ -185,6 +196,27 @@ jobs:
           findings = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
           if not isinstance(findings, list):
               raise SystemExit("downloaded audit output must be a JSON list")
+          required = {
+              "path",
+              "line",
+              "language",
+              "kind",
+              "program",
+              "cwd",
+              "explanation",
+          }
+          for item in findings:
+              if not isinstance(item, dict) or set(item) != required:
+                  raise SystemExit(f"invalid downloaded finding: {item!r}")
+              if type(item["line"]) is not int:
+                  raise SystemExit(
+                      f"downloaded finding line must be an exact integer: {item!r}"
+                  )
+              for field in required - {"line"}:
+                  if not isinstance(item[field], str):
+                      raise SystemExit(
+                          f"downloaded finding {field} must be a string: {item!r}"
+                      )
           print(f"downloaded_findings={len(findings)}")
           PY
 
@@ -204,17 +236,53 @@ jobs:
             --dir evidence >/dev/null
           python3 - evidence/summary.json <<'PY'
           import json
+          import ntpath
           import pathlib
           import sys
 
           summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
+          required = {
+              "schema_version",
+              "runner_os",
+              "runner_arch",
+              "rustc",
+              "caller",
+              "child_cwd",
+              "relative_program",
+              "repository_candidate",
+              "child_relative_candidate",
+              "relative_identity",
+              "absolute_identity",
+              "missing_child_candidate_identity",
+              "relative_launch",
+              "absolute_launch",
+              "missing_launch",
+          }
+          if not isinstance(summary, dict) or set(summary) != required:
+              raise SystemExit(f"invalid Windows evidence schema: {summary!r}")
           if type(summary.get("schema_version")) is not int:
               raise SystemExit("schema_version must be an exact integer")
           if summary["schema_version"] != 1:
               raise SystemExit(
                   f"unsupported schema_version: {summary['schema_version']!r}"
               )
-          if summary.get("absolute_identity") != summary.get("repository_candidate"):
+          nullable_strings = {
+              "relative_identity",
+              "missing_child_candidate_identity",
+          }
+          for field in required - {"schema_version"}:
+              value = summary[field]
+              if field in nullable_strings and value is None:
+                  continue
+              if not isinstance(value, str):
+                  raise SystemExit(f"Windows evidence {field} must be a string")
+          absolute_identity = ntpath.normcase(
+              ntpath.normpath(summary["absolute_identity"])
+          )
+          repository_candidate = ntpath.normcase(
+              ntpath.normpath(summary["repository_candidate"])
+          )
+          if absolute_identity != repository_candidate:
               raise SystemExit(
                   "absolute-path control identity differs from repository candidate"
               )
