@@ -109,6 +109,24 @@ class ChrootlessDirectoryMtimeRealProbeContractTest(unittest.TestCase):
         self.assertLess(timestamp_setup, capability_setup)
         self.assertLess(capability_setup, capability_receipt)
 
+    def test_workflow_requires_owned_exact_branch_before_privilege(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        job_start = source.index("  real-metadata-boundaries:\n")
+        checkout = source.index("      - name: Check out proposed repository state")
+        guard = source[job_start:checkout]
+        self.assertIn("github.event_name == 'pull_request'", guard)
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name == github.repository",
+            guard,
+        )
+        self.assertIn(
+            "github.head_ref == 'repair/chrootless-dir-mtime-real-boundaries-v2'",
+            guard,
+        )
+        self.assertLess(guard.index("if: >-"), guard.index("runs-on:"))
+        self.assertEqual(source.count("sudo mount -t tmpfs"), 0)
+        self.assertEqual(PROBE.read_text(encoding="utf-8").count("sudo mount -t tmpfs"), 1)
+
     def test_workflow_runs_rerun_and_retains_receipts_read_only(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("permissions:\n  contents: read", source)
