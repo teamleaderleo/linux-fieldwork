@@ -21,6 +21,7 @@ CLASSIFICATIONS = (
     "sanitizer-dpkg",
     "other-host",
 )
+CHROOTLESS_DPKG_FLAG = "--force-script-chrootless"
 
 
 @dataclass(frozen=True)
@@ -109,8 +110,13 @@ def classify_argv(argv: Sequence[str], *, path: str = "<memory>") -> ArgvRecord:
     command_index, ignore_environment = _next_command(values)
     command = values[command_index] if command_index is not None else None
     basename = os.path.basename(command) if command else None
+    command_argv = values[command_index + 1 :] if command_index is not None else ()
 
-    if ignore_environment and basename == "dpkg":
+    if (
+        ignore_environment
+        and basename == "dpkg"
+        and CHROOTLESS_DPKG_FLAG in command_argv
+    ):
         classification = "sanitizer-dpkg"
     elif (
         basename == "sh"
