@@ -71,7 +71,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
  class TransformAction(argparse.Action):
      def __call__(self, parser, namespace, values, option_string=None):
          items = getattr(namespace, "trans", [])
-@@ -75,30 +138,48 @@ class TransformAction(argparse.Action):
+@@ -75,28 +138,46 @@ class TransformAction(argparse.Action):
          if len(values) <= 4:
              # minimum regex: s/x//
              raise ValueError("invalid regex (too short)")
