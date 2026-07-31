@@ -69,7 +69,7 @@ class FieldGuideTest(unittest.TestCase):
             "## Use comment cards for live release work",
             "one stable front-door issue",
             "one top-level comment",
-            "edits that unit's comment in place",
+            "updates that unit's comment in place",
             "The set of live card comments is the board",
             "remove the live card",
             "ARCHIVED",
