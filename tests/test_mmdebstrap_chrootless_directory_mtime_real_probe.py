@@ -132,8 +132,6 @@ class ChrootlessDirectoryMtimeRealProbeContractTest(unittest.TestCase):
             'root_device="$(stat -c \'%d\' "$tree")"',
             'mount_device="$(stat -c \'%d\' "$mount_dir")"',
             '[[ "$root_device" != "$mount_device" ]]',
-            "from test_mmdebstrap_chrootless_directory_mtime import normalize_directory_mtimes",
-            "normalize_directory_mtimes(tree, timestamp)",
             'acl_before="$(getfacl -cp "$tree/acl-directory" "$acl_file")"',
             'cap_before="$(getcap -n "$cap_file")"',
             '[[ "$acl_after" == "$acl_before" ]]',
@@ -175,13 +173,21 @@ class ChrootlessDirectoryMtimeRealProbeContractTest(unittest.TestCase):
         self.assertEqual(source.count("sudo mount -t tmpfs"), 0)
         self.assertEqual(PROBE.read_text(encoding="utf-8").count("sudo mount -t tmpfs"), 1)
 
-    def test_workflow_runs_candidate_rerun_and_retains_receipts_read_only(self) -> None:
+    def test_workflow_runs_candidate_rerun_and_uses_sid_formatting(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("permissions:\n  contents: read", source)
-        self.assertIn(
+        self.assertIn("sudo apt-get install --yes acl libcap2-bin", source)
+        self.assertNotIn(
             "sudo apt-get install --yes acl libcap2-bin perltidy",
             source,
         )
+        self.assertIn("debian:sid-slim", source)
+        self.assertIn(
+            "apt-get install --yes --no-install-recommends patch perl perltidy",
+            source,
+        )
+        self.assertIn("perltidy <", source)
+        self.assertIn("cmp \"$candidate/upstream/mmdebstrap/mmdebstrap\"", source)
         self.assertIn(
             "tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py -v",
             source,
@@ -189,6 +195,7 @@ class ChrootlessDirectoryMtimeRealProbeContractTest(unittest.TestCase):
         self.assertIn("for label in first rerun; do", source)
         self.assertIn('test ! -e "$runtime"', source)
         self.assertIn('findmnt -rn -M "$runtime/tree/foreign-device"', source)
+        self.assertIn("normalizer=extracted-product-perl-helper", source)
         self.assertIn("acl_preserved=yes", source)
         self.assertIn("capability_preserved=yes", source)
         self.assertIn("actions/upload-artifact@v4", source)
