@@ -71,30 +71,43 @@ def discover_suite(
     )
 
 
+def defining_test_class(
+    test_class: type[unittest.TestCase], method_name: str
+) -> type[unittest.TestCase] | None:
+    """Return the first base class that defines one inherited test method."""
+
+    for owner in test_class.__mro__[1:]:
+        if method_name in owner.__dict__:
+            return owner
+    return None
+
+
 def apply_discovery_policy(
     suite: unittest.TestSuite,
     *,
     policy_classes: frozenset[str] = LOCAL_METHOD_ONLY_CLASSES,
     require_all_policy_classes: bool = True,
 ) -> tuple[unittest.TestSuite, DiscoverySummary]:
-    retained: list[unittest.TestCase] = []
-    removed_ids: list[str] = []
+    tests = list(iter_tests(suite))
     observed_policy_classes: set[str] = set()
-    discovered = 0
+    decisions: list[
+        tuple[unittest.TestCase, str, str, bool]
+    ] = []
 
-    for test in iter_tests(suite):
-        discovered += 1
+    for test in tests:
         test_class = type(test)
         class_id = f"{test_class.__module__}.{test_class.__name__}"
         method_name = getattr(test, "_testMethodName", None)
+        if not isinstance(method_name, str):
+            raise DiscoveryPolicyError(
+                f"discovered test has no method identity: {test.id()}"
+            )
 
+        remove = False
         if class_id in policy_classes:
             observed_policy_classes.add(class_id)
-            if method_name not in test_class.__dict__:
-                removed_ids.append(test.id())
-                continue
-
-        retained.append(test)
+            remove = method_name not in test_class.__dict__
+        decisions.append((test, class_id, method_name, remove))
 
     if require_all_policy_classes:
         missing = sorted(policy_classes - observed_policy_classes)
@@ -103,8 +116,32 @@ def apply_discovery_policy(
                 "discovery policy class was not found: " + ", ".join(missing)
             )
 
+    retained = [test for test, _class_id, _method, remove in decisions if not remove]
+    retained_contracts = {
+        (type(test), method_name)
+        for test, _class_id, method_name, remove in decisions
+        if not remove
+    }
+    removed_ids: list[str] = []
+
+    for test, _class_id, method_name, remove in decisions:
+        if not remove:
+            continue
+        owner = defining_test_class(type(test), method_name)
+        if owner is None or (owner, method_name) not in retained_contracts:
+            owner_id = (
+                "not-found"
+                if owner is None
+                else f"{owner.__module__}.{owner.__name__}.{method_name}"
+            )
+            raise DiscoveryPolicyError(
+                "cannot remove inherited test without a retained defining-class "
+                f"counterpart: removed={test.id()} counterpart={owner_id}"
+            )
+        removed_ids.append(test.id())
+
     summary = DiscoverySummary(
-        discovered=discovered,
+        discovered=len(tests),
         retained=len(retained),
         removed=len(removed_ids),
         removed_ids=tuple(sorted(removed_ids)),
