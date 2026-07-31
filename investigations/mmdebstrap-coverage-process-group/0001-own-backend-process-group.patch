@@ -9,8 +9,7 @@ diff --git a/upstream/mmdebstrap/coverage.py b/upstream/mmdebstrap/coverage.py
  import subprocess
  import argparse
  import time
-@@ -411,10 +412,14 @@ def main():
-             argv = ["./run_null.sh"]
+@@ -412,9 +413,13 @@ def main():
          before = time.time()
 -        proc = subprocess.Popen(argv)
 +        proc = subprocess.Popen(argv, start_new_session=True)
