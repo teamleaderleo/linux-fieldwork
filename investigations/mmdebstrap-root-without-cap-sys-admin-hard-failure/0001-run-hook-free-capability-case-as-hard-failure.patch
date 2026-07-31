@@ -1,0 +1,76 @@
+diff --git a/coverage.txt b/coverage.txt
+--- a/coverage.txt
++++ b/coverage.txt
+@@ -24,6 +24,7 @@
+ 
+ Test: create-directory
+ Needs-Root: true
++Needs-Hook-Free-APT-Config: true
+ 
+ Test: unshare-as-root-user
+ Needs-Root: true
+@@ -52,6 +53,7 @@
+ 
+ Test: root-without-cap-sys-admin
+ Needs-Root: true
++Needs-Hook-Free-APT-Config: true
+ 
+ Test: mount-is-missing
+ Needs-QEMU: true
+diff --git a/coverage.py b/coverage.py
+--- a/coverage.py
++++ b/coverage.py
+@@ -95,6 +95,7 @@ def parse_config(confname):
+                     "Needs-QEMU",
+                     "Needs-Root",
+                     "Needs-APT-Config",
++                    "Needs-Hook-Free-APT-Config",
+                 ]:
+                     print(f"Unknown field name {k} in test {name}")
+                     exit(1)
+@@ -268,10 +269,11 @@ def main():
+             skipreason = skip(test.get("Skip-If"), dist, mode, variant, fmt)
+             if skipreason:
+                 tt = ("skip", skipreason)
+             elif (
+-                test.get("Needs-APT-Config", "false") == "true" and use_host_apt_config
+-            ):
++                test.get("Needs-APT-Config", "false") == "true"
++                or test.get("Needs-Hook-Free-APT-Config", "false") == "true"
++            ) and use_host_apt_config:
+                 tt = ("skip", "test cannot use host apt config")
+             elif have_qemu:
+                 tt = "qemu"
+             elif test.get("Needs-QEMU", "false") == "true":
+diff --git a/debian/tests/testsuite b/debian/tests/testsuite
+--- a/debian/tests/testsuite
++++ b/debian/tests/testsuite
+@@ -205,6 +205,28 @@ if [ "$ret" -ne 0 ]; then
+ # subtract 10 seconds to account for the inaccuracy in measuring time
+ TIMEOUT=$((10000-$(date +%s)+$TIME_BEGIN-10))
+ 
++# run hook-free tests whose failures remain authoritative for the package test
++HOOK_FREE_HARD_TESTS=$(grep-dctrl --exact-match --field Needs-Hook-Free-APT-Config true --no-field-names --show-field=Test < coverage.txt)
++if [ -z "$HOOK_FREE_HARD_TESTS" ]; then
++	echo "no hook-free hard-failure tests were selected" >&2
++	exit 1
++fi
++if [ "$TIMEOUT" -le 0 ]; then
++	echo "no time remains for hook-free hard-failure tests" >&2
++	exit 77
++fi
++ret=0
++timeout $TIMEOUT runuser -u "$AUTOPKGTEST_NORMAL_USER" -- env CMD="mmdebstrap" DEFAULT_DIST=$DEFAULT_DIST RUN_MA_SAME_TESTS=no HAVE_QEMU=no HAVE_BINFMT=no http_proxy= "$SRC/coverage.py" --exitfirst $HOOK_FREE_HARD_TESTS || ret=$?
++if [ "$ret" -eq 124 ]; then
++	echo "hook-free hard-failure tests timed out after $TIMEOUT seconds" >&2
++	exit 77
++elif [ "$ret" -ne 0 ]; then
++	exit "$ret"
++fi
++
++# subtract 10 seconds to account for the inaccuracy in measuring time
++TIMEOUT=$((10000-$(date +%s)+$TIME_BEGIN-10))
++
+ # run only those tests that were skipped because of USE_HOST_APT_CONFIG=yes but
+ # ignore if any of them fails
+ # failures here are irrelevant for transition testing because they cannot
