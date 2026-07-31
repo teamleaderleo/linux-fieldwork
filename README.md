@@ -42,6 +42,8 @@ Imported upstream projects live under `upstream/`. Their original files, licensi
 
 ## Evidence discipline
 
+Chat narration, tool output, and local memory are transient. The repository must carry enough current state for another worker to resume from exact commits, artifacts, and records without the conversation.
+
 Durable technical claims should record:
 
 1. the exact source revision or retrieval boundary;
