@@ -262,26 +262,26 @@ normalize_directory_mtimes($root, $ARGV[1]);
 
         body = """
 sysopen(my $parent, $ARGV[0], O_RDONLY | O_DIRECTORY) or die $!;
-+my $parent_fd = fileno $parent;
-+opendir(my $dh, "/dev/fd/$parent_fd") or die $!;
-+my @entries = grep { $_ ne '.' and $_ ne '..' } readdir $dh;
-+closedir $dh or die $!;
-+grep { $_ eq 'child' } @entries or die "child was not enumerated";
-+my $path = "$ARGV[0]/child";
-+rmdir($path) or die $!;
-+if ($ARGV[1] eq 'symlink') {
-+    symlink($ARGV[2], $path) or die $!;
-+} elsif ($ARGV[1] eq 'regular') {
-+    open my $replacement, '>', $path or die $!;
-+    print {$replacement} "regular\\n" or die $!;
-+    close $replacement or die $!;
-+    utime($ARGV[3], $ARGV[3], $path) == 1 or die $!;
-+} else {
-+    die "unknown replacement mode";
-+}
-+my $opened = open_child_directory($parent, 'child');
-+exit 9 if defined $opened;
-""".replace("\n+", "\n")
+my $parent_fd = fileno $parent;
+opendir(my $dh, "/dev/fd/$parent_fd") or die $!;
+my @entries = grep { $_ ne '.' and $_ ne '..' } readdir $dh;
+closedir $dh or die $!;
+grep { $_ eq 'child' } @entries or die "child was not enumerated";
+my $path = "$ARGV[0]/child";
+rmdir($path) or die $!;
+if ($ARGV[1] eq 'symlink') {
+    symlink($ARGV[2], $path) or die $!;
+} elsif ($ARGV[1] eq 'regular') {
+    open my $replacement, '>', $path or die $!;
+    print {$replacement} "regular\\n" or die $!;
+    close $replacement or die $!;
+    utime($ARGV[3], $ARGV[3], $path) == 1 or die $!;
+} else {
+    die "unknown replacement mode";
+}
+my $opened = open_child_directory($parent, 'child');
+exit 9 if defined $opened;
+"""
 
         result = run_helpers(
             self.helpers, body, parent, "symlink", outside, PACKAGE_MTIME
