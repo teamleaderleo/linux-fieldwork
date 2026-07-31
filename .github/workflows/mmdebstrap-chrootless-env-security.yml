@@ -5,9 +5,11 @@ on:
     paths:
       - 'upstream/mmdebstrap/mmdebstrap'
       - 'investigations/mmdebstrap-chrootless-env/**'
+      - 'investigations/mmdebstrap-unwritable-tmpdir/runtime_guard.sh'
       - 'tools/classify_env_argv.py'
       - 'tests/test_classify_env_argv.py'
       - 'tests/test_direct_authority_argv_receipt.py'
+      - 'tests/test_chrootless_authority_runtime_guard.py'
       - '.github/workflows/mmdebstrap-chrootless-env-security.yml'
   workflow_dispatch:
 
@@ -40,12 +42,18 @@ jobs:
             investigations/mmdebstrap-chrootless-env/prepare_authority_candidates.py \
             tools/classify_env_argv.py \
             tests/test_classify_env_argv.py \
-            tests/test_direct_authority_argv_receipt.py
+            tests/test_direct_authority_argv_receipt.py \
+            tests/test_chrootless_authority_runtime_guard.py
           bash -n investigations/mmdebstrap-chrootless-env/run.sh
           bash -n \
             investigations/mmdebstrap-chrootless-env/direct_authority_transaction.sh
           bash -n \
             investigations/mmdebstrap-chrootless-env/apt_authority_transaction.sh
+
+      - name: Check authority runtime cleanup guards
+        run: |
+          python3 -m unittest -v \
+            tests/test_chrootless_authority_runtime_guard.py
 
       - name: Check current Debian sid formatting
         run: |
