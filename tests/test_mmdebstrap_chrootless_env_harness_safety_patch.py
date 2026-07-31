@@ -55,10 +55,13 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
         *,
         cwd: pathlib.Path = REPOSITORY_ROOT,
         home: pathlib.Path | None = None,
+        extra_environment: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         if home is not None:
             environment["HOME"] = str(home)
+        if extra_environment is not None:
+            environment.update(extra_environment)
         return subprocess.run(
             ["bash", str(script), "--check-runtime-parent", str(path)],
             cwd=cwd,
@@ -110,6 +113,50 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
                     completed = self.check_parent(script, path)
                     self.assertEqual(completed.returncode, 2)
                     self.assertIn("refusing", completed.stderr)
+
+    def test_rejects_repository_root_identity_with_allowed_parent(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="lf-fake-root-git-") as temporary:
+            root = pathlib.Path(temporary)
+            script = self.apply_patch(root / "patch-tree")
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_git = fake_bin / "git"
+            fake_git.write_text(
+                "#!/bin/sh\n"
+                "if [ \"${1:-}\" = rev-parse ] "
+                "&& [ \"${2:-}\" = --show-toplevel ]; then\n"
+                "  printf '/\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 97\n",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            completed = self.check_parent(
+                script,
+                "/tmp",
+                home=pathlib.Path("/home/tester"),
+                extra_environment={
+                    "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}"
+                },
+            )
+        self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertIn("repository root", completed.stderr)
+        self.assertEqual(completed.stdout, "")
+
+    def test_rejects_home_root_identity_for_generic_and_hosted_parents(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            script = self.apply_patch(pathlib.Path(temporary))
+            for parent in ("/tmp", "/home/runner/work/_temp"):
+                with self.subTest(parent=parent):
+                    completed = self.check_parent(
+                        script,
+                        parent,
+                        home=pathlib.Path("/"),
+                    )
+                    self.assertEqual(completed.returncode, 2, completed.stderr)
+                    self.assertIn("home root", completed.stderr)
+                    self.assertEqual(completed.stdout, "")
 
     def test_rejects_runtime_that_contains_or_is_inside_repository(self) -> None:
         with tempfile.TemporaryDirectory(prefix="lf-runtime-overlap-") as temporary:
