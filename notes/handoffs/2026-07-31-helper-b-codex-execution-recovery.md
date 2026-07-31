@@ -158,6 +158,38 @@ The same class is likely where a command is constructed in one directory and exe
 - artifacts whose classifier reads a summary instead of preserving the first raw failure;
 - absolute paths that name a preserved source artifact while execution belongs to a generated or installed copy.
 
+## 2026-08-01 resumption checkpoint
+
+A later interaction stopped while two useful but unfinished paths were visible in chat:
+
+- PR #361's Debian sid run `30640356619` was still in progress;
+- a classifier-only branch, `repair/chrootless-env-lossless-invocation-receipts`, had reached `aad79ca2556f45a01c1dc7dfaf3f4c2143a79641` while repairing PR #349's lossy fake-`env` receipt.
+
+The repository and hosted receipts, not the interrupted narration, determine the current state.
+
+### Recovered remote state
+
+1. Run `30640356619` later completed with container status 6 and uploaded artifact `8798679560`, digest `sha256:50d8ab7a20cb241ff9821b35329508ecdb0c58cbd3dec348c18d68d1dfe7a244`. Status 6 alone did not identify the first failing case.
+2. A later exact source run, `30641621084`, produced the canonical retained artifact interpreted by merged PR #376. Its typed receipt shows broad `(242/284) chrootless` failed before `root-without-cap-sys-admin` completed. The focus appears only in the skipped inventory and remains `unresolved`.
+3. Packet B therefore remains `HOLD FOR FOCUSED EXECUTION`. The artifact neither proves a focused pass nor a focused failure.
+4. Historical PR #349 is retired. Its unique receipt defects moved through PRs #367 and #369 into current-main PR #368, which merged the two product patches, lossless direct/APT argv receipts, and exact runtime cleanup guards.
+5. The partial classifier branch at `aad79ca...` is abandoned provenance only. Do not resume or promote it; its useful idea already landed through the canonical current-main carrier.
+6. Current main at the resumption check is `1ac6aadf884ca69935c2f763b9788476a313645c`, after the landed chrootless authority stack, Packet B typed receipt, and a further APT sanitizer-class tightening.
+
+### Resumption rules added by this interruption
+
+- A local timeout or interrupted chat does not imply that a hosted job, merge, or remote write stopped. Refresh the exact head, run, artifact, and canonical carrier before retrying.
+- Do not interpret a package status such as 6 without the retained first-event transcript and typed focus state.
+- When a newer current-main carrier already contains the useful bytes and gates, retire the older branch instead of replaying it.
+- Preserve partial branch identity when it explains provenance, but do not let it remain an apparent live fix.
+- Update the durable checkpoint before switching work units, especially while a long job is running or a classifier is being repaired.
+
+### Next safe action
+
+Review the current-main Packet B artifact-metadata identity follow-up before any new package rerun. Keep Packet B on hold until one focused execution guarantees that `root-without-cap-sys-admin` actually completes and records its own outcome. Treat the broad `chrootless` failure as a separate investigation.
+
+External contact remains unauthorized and none was made.
+
 ## Authority
 
 Internal Linux Fieldwork process note only. No OpenAI, Codex, Debian, or other external report, issue, email, comment, or review was sent or authorized.
