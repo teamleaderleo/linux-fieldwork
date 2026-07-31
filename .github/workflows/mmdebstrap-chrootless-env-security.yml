@@ -14,7 +14,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
@@ -38,6 +38,8 @@ jobs:
           bash -n investigations/mmdebstrap-chrootless-env/run.sh
           bash -n \
             investigations/mmdebstrap-chrootless-env/direct_authority_transaction.sh
+          bash -n \
+            investigations/mmdebstrap-chrootless-env/apt_authority_transaction.sh
 
       - name: Check current Debian sid formatting
         run: |
@@ -60,6 +62,11 @@ jobs:
           bash \
             investigations/mmdebstrap-chrootless-env/direct_authority_transaction.sh
 
+      - name: Run apt-managed authority transaction
+        run: |
+          bash \
+            investigations/mmdebstrap-chrootless-env/apt_authority_transaction.sh
+
       - name: Upload retained evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -68,5 +75,6 @@ jobs:
           path: |
             investigations/mmdebstrap-chrootless-env/results/
             investigations/mmdebstrap-chrootless-env/direct-authority-results/
+            investigations/mmdebstrap-chrootless-env/apt-authority-results/
           if-no-files-found: warn
           retention-days: 14
