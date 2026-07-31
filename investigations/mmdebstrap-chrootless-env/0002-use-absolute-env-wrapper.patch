@@ -32,7 +32,7 @@ diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
                      chrootless_dpkg_environment(
                          $options->{root}, $options->{dpkgpath}
                      ),
-@@ -4169,6 +4185,6 @@ sub run_install() {
+@@ -4169,7 +4185,7 @@ sub run_install() {
                = chrootless_dpkg_environment($options->{root},
                  $options->{dpkgpath});
              my @chrootless_opts = (
