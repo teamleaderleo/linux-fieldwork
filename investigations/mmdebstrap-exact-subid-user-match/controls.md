@@ -2,17 +2,18 @@
 
 ## TL;DR
 
-Merged PR #92 fixed `/etc/subuid` and `/etc/subgid` account detection by comparing field 1 literally and exactly. This follow-up strengthens the proof without changing the product patch:
+Merged PR #92 fixed `/etc/subuid` and `/etc/subgid` account detection by comparing field 1 literally and exactly. This follow-up strengthens the proof and repairs the retained patch carrier:
 
 - a username beginning with `-` remains an exact existing record, proving `grep --` prevents option parsing;
-- the complete patched Debian testsuite passes `/bin/sh -n` after exact patch application;
-- the source fence rejects line insertion or deletion instead of comparing only the shared `zip()` prefix.
+- the complete patched Debian testsuite passes `/bin/sh -n` after zero-fuzz patch application;
+- the source fence rejects line insertion or deletion instead of comparing only the shared `zip()` prefix;
+- the retained patch now declares the exact nine-line hunk it supplies.
 
-The stale proof carrier PR #218 passed Linux Fieldwork CI run `30581822309` but later became non-mergeable. This current-main carrier preserves only its unique proof content.
+Linux Fieldwork CI `30598944690` / 797 correctly rejected the previous carrier before behavioral execution. Its hunk header declared ten old/new lines while the body supplied nine, so GNU `patch` required fuzz 1. Exact head `69073f20a7f044bb05d5dc5c787d8be2e9a8f775` corrects the header from `-153,10 +153,10` to `-152,9 +152,9`.
 
 ## Explain like I'm five
 
-The fix asks a list whether a person already has an entry. A name beginning with `-` can look like a command option unless the command uses an explicit “options stop here” marker.
+The fix asks a list whether a person already has an entry. A name beginning with `-` can look like a command option unless the command uses an explicit options boundary.
 
 ```text
 file entry: -debci:200000:65536
@@ -21,41 +22,46 @@ candidate action: grep -Fxq -- -debci
 required result: existing entry is found; no duplicate is appended
 ```
 
-The proof also compares the complete package-test script before and after patching. It must have the same number of lines and exactly two changed conditions.
+The proof instructions also have to fit the exact source. The old instruction card said its replacement block covered ten lines while it actually contained nine. Approximate patching hid that bookkeeping error; zero-fuzz application exposed it.
 
 ## Why care
 
-The merged source already contains `--`, but the original regression did not execute a leading-hyphen identity. A source assertion alone can survive while option handling or quoting changes elsewhere.
+The merged source already contains `--`, while the original regression never executed a leading-hyphen identity. A source assertion can survive while option handling or quoting changes elsewhere.
 
-The earlier diff check used ordinary `zip()`. If a malformed carrier removed or added trailing lines, `zip()` would silently ignore the unmatched tail. A test claiming “only two conditions changed” must reject every insertion or deletion as well as unexpected replacements.
+The earlier diff check used ordinary `zip()`. A malformed carrier could remove or add trailing lines and `zip()` would silently ignore the unmatched tail. A test claiming “only two conditions changed” must reject every insertion, deletion, and unexpected replacement.
+
+Patch packaging is part of the proof. A patch that needs fuzz can bind to neighboring source after drift and make a green test certify a candidate different from the reviewed diff.
 
 ## Question
 
-Do the merged exact-account conditions preserve literal leading-hyphen identities, leave the full Debian testsuite syntactically valid, and change exactly the intended two source lines?
+Do the merged exact-account conditions preserve literal leading-hyphen identities, leave the full Debian testsuite syntactically valid, change exactly the intended two source lines, and apply with zero fuzz to the exact imported source?
 
 ## Source
 
 - merged product carrier: PR #92;
 - completed issue: #80;
-- product patch: `0001-match-subid-user-field-exactly.patch`;
+- retained product patch: `0001-match-subid-user-field-exactly.patch`;
 - executable matrix: `tests/test_mmdebstrap_subid_account_match.py`;
 - stale proof carrier: PR #218, exact head `cde9d361d659357527d2c06a634b42c5b8070169`;
-- stale-head gate: Linux Fieldwork CI run `30581822309`, success;
-- current-main proof branch: `test/mmdebstrap-exact-subid-controls-current-main-v2`.
+- stale-head gate: Linux Fieldwork CI `30581822309`, success;
+- first zero-fuzz gate: `30598944690` / 797, failed at patch application as intended;
+- repaired branch: `test/mmdebstrap-exact-subid-controls-current-main-v2`;
+- repaired exact head: `69073f20a7f044bb05d5dc5c787d8be2e9a8f775`.
 
 ## Candidate
 
-The follow-up modifies only the regression and this record:
+The repaired proof unit contains three files:
 
-1. retain the patched testsuite path;
+1. correct the retained patch hunk start/count while preserving the two source replacements;
 2. run `/bin/sh -n` on the complete patched file;
 3. add `-debci:200000:65536` as an exact-present case;
 4. invoke the real patched block with `AUTOPKGTEST_NORMAL_USER=-debci`;
 5. require byte-identical file content and status 0;
 6. require candidate and baseline line counts to match;
-7. compare with `zip(..., strict=True)` and require exactly two replacement lines.
+7. compare with `zip(..., strict=True)` and require exactly two replacement lines;
+8. require `patch --fuzz=0` and reject any fuzzy-application output.
 
-The merged patch and imported source remain unchanged.
+The imported source remains unchanged.
 
 ## Reproduction
 
@@ -63,23 +69,23 @@ The merged patch and imported source remain unchanged.
 python3 -m unittest -v tests/test_mmdebstrap_subid_account_match.py
 ```
 
-The full matrix covers exact presence, substring collision, malformed delimiter-free input, regex-significant literal input, leading-hyphen identity, empty and absent files, subuid/subgid parity, immediate rerun idempotency, exact patch application, complete shell syntax, and the full source-diff fence.
+The matrix covers exact presence, substring collision, malformed delimiter-free input, regex-significant literal input, leading-hyphen identity, empty and absent files, subuid/subgid parity, immediate rerun idempotency, zero-fuzz patch application, complete shell syntax, and the full source-diff fence.
 
 ## Interpretation
 
-**Observed:** the merged patch spells `grep -Fxq --` for both files.
+**Established:** the first hardened gate found a malformed retained hunk before any behavioral result could be claimed.
 
-**Design choice:** retain executable identity and complete-diff controls rather than relying only on source text.
+**Candidate:** the corrected hunk applies exactly to the imported testsuite and preserves the same two intended replacements.
 
-**Open question:** exact-head current-main CI must confirm the repaired proof before merge.
+**Pending:** fresh exact-head repository CI and complete three-file review.
 
 ## Evidence boundary
 
 This follow-up does not validate subordinate range overlap, numeric bounds, conflicting duplicate records, account-name policy, or allocation strategy. It creates no users, namespaces, mounts, packages, or persistent host state.
 
-## Next step
+## Disposition
 
-The reviewer is deciding whether the two-file current-main proof is sufficient to merge locally after exact-head CI and complete diff review.
+`REPAIR COMPLETE — EXECUTE EXACT HEAD`, then merge locally as durable proof and retire stale proof carriers.
 
 ## Authority
 
