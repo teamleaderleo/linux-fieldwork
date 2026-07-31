@@ -26,7 +26,15 @@ class RunQemuResultPrecedenceTest(unittest.TestCase):
         destination.parent.mkdir(parents=True)
         destination.write_text(SOURCE.read_text(encoding="utf-8"), encoding="utf-8")
         applied = subprocess.run(
-            ["patch", "--batch", "--forward", "-p1", "-i", str(PATCH)],
+            [
+                "patch",
+                "--batch",
+                "--forward",
+                "--fuzz=0",
+                "-p1",
+                "-i",
+                str(PATCH),
+            ],
             cwd=tree,
             text=True,
             stdout=subprocess.PIPE,
