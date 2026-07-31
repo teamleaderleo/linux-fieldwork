@@ -1,17 +1,17 @@
 # Signals during update_cache cleanup
 
-State: `stacked repair prepared — exact-head execution pending`
+State: `current-main successor — exact-head execution pending`
 
 ## TL;DR
 
-PR #286 correctly repairs ownership, result precedence, duplicate cleanup, and direct INT/QUIT/TERM handling before cleanup begins. Its finalizer still clears handled signals to their defaults before `cleanupapt` runs.
+PR #286 landed the `update_cache()` ownership, direct-signal, result-precedence, and once-only cleanup baseline. Its finalizer still clears handled signals to their default behavior before `cleanupapt` runs.
 
 That leaves two cleanup-time conditions:
 
 - after explicit TERM selects 143, a later INT/QUIT/TERM can replace the first result and interrupt cleanup;
 - during ordinary success or implicit EXIT cleanup, the first INT/QUIT/TERM receives default termination instead of explicit 130/131/143 handling and can interrupt cleanup.
 
-The stacked repair records the first signal that arrives during ordinary cleanup, ignores later handled signals after any signal is selected, completes bounded cleanup, and applies:
+PR #324 is the clean current-main successor. It records the first signal that arrives during ordinary cleanup, ignores later handled signals after any signal is selected, completes bounded cleanup, and applies:
 
 ```text
 existing ordinary or explicit-signal failure
@@ -22,15 +22,28 @@ existing ordinary or explicit-signal failure
 
 ## Explain like I'm five
 
-The worker starts putting away its temporary APT desk. The first candidate unlocks all three stop buttons before the desk is clean. A button press can knock the worker over, or a second button can replace the first stop reason.
+The worker starts putting away its temporary APT desk. The landed baseline unlocks the stop buttons before the desk is clean. A button press can knock the worker over, or a second button can replace the first stop reason.
 
-The repair writes down the first stop request, disables later stop buttons, finishes putting the desk away, and reports the most useful reason.
+The successor writes down the first stop request, disables later stop buttons, finishes putting the desk away, and reports the strongest result.
 
 ## Why care
 
 A partial `cleanupapt` can leave state that changes the next mirror run. Replacing TERM 143 with a later signal also misclassifies why the worker stopped.
 
-The predecessor evidence remains valid for signals delivered before cleanup. This is a distinct lifecycle boundary newly owned by the finalizer.
+The PR #286 evidence remains authoritative for signals delivered before cleanup. This record owns only the later boundary created by the finalizer itself.
+
+## Exact current carrier
+
+- landed baseline: PR #286, merge `782774b01002abf37878d834a54d0bbf8b226397`;
+- historical stacked successor: PR #305 at `0a6b9cc404bcc5e463964be7cbcf74d710528d86`;
+- clean current-main carrier: PR #324;
+- branch: `repair/make-mirror-update-cache-cleanup-signals-current-main`;
+- base: the PR #286 merge on `main`;
+- direct unit: this record, patch 0002, and one focused regression;
+- imported source: unchanged;
+- external contact: unauthorized and none.
+
+PR #305 remains historical construction evidence. It replayed the squashed PR #286 files when compared to `main`; PR #324 transfers only its three successor blobs.
 
 ## Repair mechanism
 
@@ -44,9 +57,9 @@ After cleanup, the finalizer ignores handled signals before evaluating precedenc
 
 ## Deterministic regression
 
-`tests/test_make_mirror_update_cache_cleanup_signals.py` applies the PR #286 patch and optionally the stacked repair with zero fuzz, then uses real `/bin/sh` and a barrier inside `cleanupapt`.
+`tests/test_make_mirror_update_cache_cleanup_signals.py` applies the landed patch and this successor with zero fuzz, then uses real `/bin/sh` and a barrier inside `cleanupapt`.
 
-Prepared controls require:
+The controls require:
 
 1. predecessor TERM then INT during cleanup exits by SIGINT after only cleanup `start` and retains APT state;
 2. predecessor ordinary cleanup plus TERM exits by SIGTERM after only `start` and retains APT state;
@@ -62,10 +75,10 @@ Prepared controls require:
 
 The regression uses real shell processes, signals, disposable files, and a deterministic cleanup barrier. It does not run APT, network downloads, a mirror loop, root operations, or process-group delivery.
 
-It assumes cleanup is bounded and should complete after the first handled signal. TERM-to-KILL escalation, HUP, hostile descendants, and a permanently blocking cleanup action remain outside the repair.
+It assumes cleanup is bounded and should complete after the first handled signal. TERM-to-KILL escalation, HUP, hostile descendants, and permanently blocking cleanup remain outside the repair.
 
 ## Disposition
 
-Execute exact-head repository CI, review the three-file stacked delta, then compose it into PR #286 only if the predecessor and repaired controls behave as stated.
+PR #324 must receive exact-head repository CI and complete three-file review. A green unchanged head may advance this bounded internal successor to local landing.
 
 Internal Linux Fieldwork work only. External contact authorized: `false`.
