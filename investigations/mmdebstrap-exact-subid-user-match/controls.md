@@ -9,7 +9,7 @@ Merged PR #92 fixed `/etc/subuid` and `/etc/subgid` account detection by compari
 - the source fence rejects line insertion or deletion instead of comparing only the shared `zip()` prefix;
 - the retained patch now declares the exact nine-line hunk it supplies.
 
-Linux Fieldwork CI `30598944690` / 797 correctly rejected the previous carrier before behavioral execution. Its hunk header declared ten old/new lines while the body supplied nine, so GNU `patch` required fuzz 1. Exact head `69073f20a7f044bb05d5dc5c787d8be2e9a8f775` corrects the header from `-153,10 +153,10` to `-152,9 +152,9`.
+Linux Fieldwork CI `30598944690` / 797 correctly rejected the previous carrier before behavioral execution. Its hunk header declared ten old/new lines while the body supplied nine, so GNU `patch` required fuzz 1. Repair commit `69073f20a7f044bb05d5dc5c787d8be2e9a8f775` changed the header from `-153,10 +153,10` to `-152,9 +152,9`; PR #291 carries that repair on current-main branch `restack/mmdebstrap-exact-subid-proof-current-main-v3`.
 
 ## Explain like I'm five
 
@@ -45,8 +45,8 @@ Do the merged exact-account conditions preserve literal leading-hyphen identitie
 - stale proof carrier: PR #218, exact head `cde9d361d659357527d2c06a634b42c5b8070169`;
 - stale-head gate: Linux Fieldwork CI `30581822309`, success;
 - first zero-fuzz gate: `30598944690` / 797, failed at patch application as intended;
-- repaired branch: `test/mmdebstrap-exact-subid-controls-current-main-v2`;
-- repaired exact head: `69073f20a7f044bb05d5dc5c787d8be2e9a8f775`.
+- repair commit: `69073f20a7f044bb05d5dc5c787d8be2e9a8f775`;
+- current restack carrier and exact head: PR #291.
 
 ## Candidate
 
