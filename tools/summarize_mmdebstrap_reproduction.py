@@ -106,6 +106,14 @@ def _parse_named_tests(text: str) -> list[dict[str, Any]]:
     return records
 
 
+def _first_wrapper_failure_line(lines: Sequence[str]) -> int | None:
+    for line_number, line in enumerate(lines, start=1):
+        lower = line.lower()
+        if "testsuite fail" in lower or "non-zero exit status" in lower:
+            return line_number
+    return None
+
+
 def _context(lines: list[str], line_number: int | None, radius: int = 5) -> list[str]:
     if line_number is None:
         return lines[-min(len(lines), 30) :]
@@ -178,9 +186,7 @@ def summarize_artifact(
             f"expected {expected_checkout}, observed {rebuilt.checkout_sha}"
         )
     if rebuilt.parents != (expected_base, expected_head):
-        raise ArtifactSummaryError(
-            f"ordered parent mismatch: {rebuilt.parents!r}"
-        )
+        raise ArtifactSummaryError(f"ordered parent mismatch: {rebuilt.parents!r}")
     if rebuilt.run_id != expected_run_id:
         raise ArtifactSummaryError(
             f"run id mismatch: expected {expected_run_id}, observed {rebuilt.run_id}"
@@ -227,21 +233,33 @@ def summarize_artifact(
     else:
         focus_state = "unresolved"
 
-    first_failure_line = classifier["first_failure_line"]
+    console_lines = console_text.splitlines()
+    first_meaningful_failure_line = classifier["first_failure_line"]
+    first_wrapper_failure_line = _first_wrapper_failure_line(console_lines)
+    ordering_failure_line = (
+        first_meaningful_failure_line
+        if first_meaningful_failure_line is not None
+        else first_wrapper_failure_line
+    )
     focus_first_line = focus_records[0]["line"] if focus_records else None
+    focus_success_lines = [
+        record["outcome_line"]
+        for record in focus_records
+        if record["outcome"] == "success" and record["outcome_line"] is not None
+    ]
+    focus_success_line = min(focus_success_lines) if focus_success_lines else None
     focus_before_first_failure = (
         focus_first_line is not None
-        and first_failure_line is not None
-        and focus_first_line < first_failure_line
+        and ordering_failure_line is not None
+        and focus_first_line < ordering_failure_line
     )
     focus_completed_before_first_failure = (
         focus_state == "passed"
-        and focus_records[0]["outcome_line"] is not None
-        and first_failure_line is not None
-        and focus_records[0]["outcome_line"] < first_failure_line
+        and focus_success_line is not None
+        and ordering_failure_line is not None
+        and focus_success_line < ordering_failure_line
     )
 
-    console_lines = console_text.splitlines()
     phase_order_text = phase_order_path.read_text(
         encoding="utf-8", errors="replace"
     ).strip()
@@ -264,7 +282,9 @@ def summarize_artifact(
             "line_count": len(console_lines),
             "named_test_count": len(named_tests),
             "classifier": classifier,
-            "failure_context": _context(console_lines, first_failure_line),
+            "first_wrapper_failure_line": first_wrapper_failure_line,
+            "ordering_failure_line": ordering_failure_line,
+            "failure_context": _context(console_lines, ordering_failure_line),
             "tail": console_lines[-min(len(console_lines), 30) :],
         },
         "focus_case": {
