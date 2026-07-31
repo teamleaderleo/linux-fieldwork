@@ -176,6 +176,33 @@ class UnwritableTmpdirRuntimeGuardTest(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("repository", result.stderr)
 
+    def test_existing_runtime_leaf_symlink_is_rejected_and_target_preserved(self) -> None:
+        leaf = "linux-fieldwork-mmdebstrap-tmpdir"
+        with tempfile.TemporaryDirectory(
+            prefix="lf-tmpdir-runtime-symlink-", dir="/tmp"
+        ) as td:
+            root = pathlib.Path(td).resolve()
+            parent = root / "parent"
+            target = parent / "victim"
+            target.mkdir(parents=True)
+            sentinel = target / "sentinel"
+            sentinel.write_text("preserve\n", encoding="utf-8")
+            runtime = parent / leaf
+            runtime.symlink_to(target, target_is_directory=True)
+
+            result = self.run_guard(
+                root / "repository",
+                root / "home",
+                parent,
+                leaf,
+            )
+
+            self.assertEqual(result.returncode, 2, result.stdout)
+            self.assertIn("symlink runtime leaf", result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertTrue(runtime.is_symlink())
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "preserve\n")
+
     def test_home_overlap_and_hosted_exception_are_explicit(self) -> None:
         leaf = "linux-fieldwork-mmdebstrap-tmpdir"
         with tempfile.TemporaryDirectory(
@@ -278,6 +305,40 @@ class UnwritableTmpdirRuntimeGuardTest(unittest.TestCase):
                         "preserve\n",
                     )
 
+    def test_each_harness_refuses_runtime_leaf_symlink_and_preserves_target(self) -> None:
+        for source_script, leaf in SCRIPTS:
+            with self.subTest(script=source_script.name):
+                with tempfile.TemporaryDirectory(
+                    prefix=f"lf-{source_script.stem}-leaf-symlink-", dir="/tmp"
+                ) as td:
+                    root = pathlib.Path(td).resolve()
+                    repository = root / "repository"
+                    copied_script = self.make_checkout(
+                        root, source_script, repository
+                    )
+                    parent = root / "parent"
+                    target = parent / "victim"
+                    target.mkdir(parents=True)
+                    sentinel = target / "sentinel"
+                    sentinel.write_text("preserve\n", encoding="utf-8")
+                    runtime = parent / leaf
+                    runtime.symlink_to(target, target_is_directory=True)
+
+                    result = self.run_check_mode(
+                        copied_script,
+                        repository,
+                        parent,
+                        root / "home",
+                    )
+
+                    self.assertEqual(result.returncode, 2, result.stdout)
+                    self.assertIn("symlink runtime leaf", result.stderr)
+                    self.assertTrue(runtime.is_symlink())
+                    self.assertEqual(
+                        sentinel.read_text(encoding="utf-8"),
+                        "preserve\n",
+                    )
+
     def test_check_mode_is_side_effect_free_and_repeatable(self) -> None:
         for source_script, leaf in SCRIPTS:
             with self.subTest(script=source_script.name):
@@ -332,6 +393,7 @@ class UnwritableTmpdirRuntimeGuardTest(unittest.TestCase):
                 )
 
         guard_source = GUARD.read_text(encoding="utf-8")
+        self.assertIn('if [[ -L "$runtime_path" ]]', guard_source)
         self.assertNotIn("rm -rf", guard_source)
         self.assertNotIn("chmod", guard_source)
         subprocess.run(
