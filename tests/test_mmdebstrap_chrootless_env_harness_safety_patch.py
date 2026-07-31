@@ -175,6 +175,34 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
                     self.assertEqual(completed.returncode, 2, completed.stderr)
                     self.assertIn("hosted runtime containing home", completed.stderr)
 
+    def test_check_mode_works_from_repository_subdirectory(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="lf-chrootless-subdir-") as temporary:
+            root = pathlib.Path(temporary)
+            script = self.apply_patch(root / "patch-tree")
+            repository = root / "repository"
+            nested = repository / "nested" / "review"
+            nested.mkdir(parents=True)
+            initialized = subprocess.run(
+                ["git", "init", "-q"],
+                cwd=repository,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+            self.assertEqual(
+                initialized.returncode,
+                0,
+                initialized.stdout + initialized.stderr,
+            )
+            completed = self.check_parent(
+                script,
+                root / "runtime-parent",
+                cwd=nested,
+                home=root / "home",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_candidate_executes_a_preserved_runtime_copy(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             script = self.apply_patch(pathlib.Path(temporary))
@@ -195,7 +223,7 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
         for before in (
             'source_mode_before="$(stat -c %a "$source_root/mmdebstrap")"',
             'source_hash_before="$(git hash-object "$source_root/mmdebstrap")"',
-            'source_status_before="$(git status --short -- '
+            'source_status_before="$(git -C "$repo_root" status --short -- '
             'upstream/mmdebstrap/mmdebstrap)"',
         ):
             self.assertIn(before, source)
@@ -211,8 +239,12 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            '[[ "$(git status --short -- upstream/mmdebstrap/mmdebstrap)" '
-            '== "$source_status_before" ]]',
+            '[[ "$(git -C "$repo_root" status --short -- '
+            'upstream/mmdebstrap/mmdebstrap)" == "$source_status_before" ]]',
+            source,
+        )
+        self.assertNotIn(
+            'source_status_before="$(git status --short -- ',
             source,
         )
         self.assertNotIn("git diff --exit-code -- upstream/mmdebstrap/mmdebstrap", source)
