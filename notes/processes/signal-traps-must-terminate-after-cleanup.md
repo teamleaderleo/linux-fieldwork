@@ -48,6 +48,23 @@ A robust helper should:
 - clear the stored PID to avoid acting on a reused number;
 - be idempotent because EXIT and signal paths can converge.
 
+## Register a child before dispatching cancellation
+
+An asynchronous launch and its `$!` assignment are separate shell commands:
+
+```sh
+helper &
+child_pid=$!
+```
+
+The shell can run a trap between them. Cleanup then sees the old or empty PID while the new child already exists.
+
+Keep the existing terminating traps active until the launch begins. During the launch, use a temporary handler that records only the first INT, QUIT, or TERM. Before PID ownership it records and returns; after `$!` is stored it dispatches the retained first status through the ordinary cleanup path. Restore the ordinary terminating traps only after confirming that no signal is pending. This gives cleanup an owned child PID before it acts and prevents a later signal from overtaking the first signal during trap handoff.
+
+Exercise this interval directly. Freeze the owner after child creation and before PID assignment, signal only the owner, release it, and require the child to be stopped and reaped. Repeat the control for every relaunch after a prior stop cleared the stored PID. Add a competing-signal control that delivers one signal before PID assignment and a different signal after assignment but before ordinary trap restoration; require the first status to win.
+
+Track owner cleanup, child stopping, and resource deletion separately. A launch can own its child before it owns a newly created cache or temporary directory. The signal path should always stop the owned child, while resource deletion must follow the actual ownership state at that point. If an interrupted pre-readiness resource is deliberately retained, test that an immediate rerun detects and handles it.
+
 ## Regression shape
 
 A useful reduced harness should:
@@ -62,8 +79,11 @@ A useful reduced harness should:
 - assert signal-derived status;
 - assert no child survives;
 - run once without a signal as a clean control.
+- repeat at each child launch and relaunch registration seam.
+- count owner cleanup, child stops, and state-specific resource deletion independently.
+- prove first-signal precedence with two different signals across the registration handoff.
 
 ## Related record
 
 - `investigations/make-mirror-signal-exit/README.md`
-- Issue #157
+- Issues #157 and #221
