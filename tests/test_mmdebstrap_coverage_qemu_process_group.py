@@ -241,7 +241,29 @@ class MmdebstrapCoverageQemuProcessGroupTest(unittest.TestCase):
         self.assertGreaterEqual(len(before), 2)
 
         os.kill(process.pid, signal.SIGINT)
-        status = process.wait(timeout=10)
+        if expect_survivors:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                process.wait(timeout=0.5)
+            live = (
+                process_group.MmdebstrapCoverageProcessGroupTest.live_group_members(
+                    worker_pgid
+                )
+            )
+            self.assertTrue(live, before)
+            self.assertFalse((suite / "qemu-later").exists())
+            process_group.MmdebstrapCoverageProcessGroupTest.release_test(suite)
+            self.wait_for_qemu_later(suite)
+            status = process.wait(timeout=10)
+        else:
+            status = process.wait(timeout=10)
+            live = (
+                process_group.MmdebstrapCoverageProcessGroupTest.live_group_members(
+                    worker_pgid
+                )
+            )
+            self.assertFalse(live, live)
+            self.assertFalse((suite / "qemu-later").exists())
+
         stdout.close()
         stderr.close()
         self.assertEqual(
@@ -249,20 +271,6 @@ class MmdebstrapCoverageQemuProcessGroupTest(unittest.TestCase):
             expected_status,
             (suite / "coverage.stderr").read_text(errors="replace"),
         )
-
-        live = (
-            process_group.MmdebstrapCoverageProcessGroupTest.live_group_members(
-                worker_pgid
-            )
-        )
-        if expect_survivors:
-            self.assertTrue(live, before)
-            self.assertFalse((suite / "qemu-later").exists())
-            process_group.MmdebstrapCoverageProcessGroupTest.release_test(suite)
-            self.wait_for_qemu_later(suite)
-        else:
-            self.assertFalse(live, live)
-            self.assertFalse((suite / "qemu-later").exists())
         process_group.MmdebstrapCoverageProcessGroupTest.wait_for_no_live_group(
             worker_pgid
         )
