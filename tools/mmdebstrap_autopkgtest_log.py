@@ -13,15 +13,20 @@ from typing import Any, Iterable
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 TEST_RE = re.compile(r"\((?P<index>\d+)/(?P<total>\d+)\)\s+(?P<name>[A-Za-z0-9_.+-]+)")
 DETAIL_RE = re.compile(r"\b(?P<key>dist|mode|variant|format):\s*(?P<value>\S+)")
+SHELLCHECK_CODE_RE = re.compile(r"\bSC\d{4}\b", re.IGNORECASE)
+TOOL_DIAGNOSTIC_RE = re.compile(
+    r"\b(?P<tool>perlcritic|pod2man|shellcheck|shfmt)\b"
+    r"(?:\s+(?:failed|failure|error)|\s*:)",
+    re.IGNORECASE,
+)
 
-PREFLIGHT_MARKERS = (
-    "perltidy failed",
-    "exceeded maximum line length",
-    "perlcritic",
-    "pod2man",
-    "black would reformat",
-    "shellcheck",
-    "shfmt",
+# Tool names alone are not failure signals. They appear in apt package lists,
+# dependency summaries, and version inventories before coverage.py starts.
+# Keep only phrases or output shapes that actually establish a failed gate.
+PREFLIGHT_PHRASES = (
+    ("perltidy failed", "perltidy failed"),
+    ("exceeded maximum line length", "exceeded maximum line length"),
+    ("black would reformat", "black would reformat"),
 )
 
 
@@ -32,6 +37,30 @@ def _clean(line: str) -> str:
 def _append_signal(signals: list[str], signal: str) -> None:
     if signal not in signals:
         signals.append(signal)
+
+
+def _preflight_signal(line: str) -> str | None:
+    lower = line.lower()
+    for phrase, signal in PREFLIGHT_PHRASES:
+        if phrase in lower:
+            return signal
+
+    # Standard Black output is usually "would reformat PATH" without the
+    # executable name. Require the diagnostic verb at the start of the
+    # cleaned line so package prose cannot match it accidentally.
+    if lower.strip().startswith("would reformat "):
+        return "black would reformat"
+
+    # ShellCheck's native output carries SCxxxx identifiers even when the word
+    # "shellcheck" is absent. Those codes are substantially more specific than
+    # the package name.
+    if SHELLCHECK_CODE_RE.search(line):
+        return "shellcheck"
+
+    match = TOOL_DIAGNOSTIC_RE.search(line)
+    if match is not None:
+        return match.group("tool").lower()
+    return None
 
 
 def classify_lines(lines: Iterable[str]) -> dict[str, Any]:
@@ -92,9 +121,7 @@ def classify_lines(lines: Iterable[str]) -> dict[str, Any]:
             saw_mirror_failure = True
             _append_signal(signals, "make_mirror.sh failed")
 
-        matched_preflight = next(
-            (marker for marker in PREFLIGHT_MARKERS if marker in lower), None
-        )
+        matched_preflight = _preflight_signal(line)
         if matched_preflight is not None and not saw_named_test:
             if not saw_preflight_failure:
                 failure_events.append(
