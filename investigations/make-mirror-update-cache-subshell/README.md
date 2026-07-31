@@ -8,7 +8,7 @@ State: `landed baseline — cleanup-time signal successor active`
 
 The focused repair landed through PR #286. The worker now cleans only its APT root, leaves proxy stop/wait to the top-level owner, reports INT/QUIT/TERM as 130/131/143, routes every completion path through one finalizer, runs cleanup once, and preserves ordinary or signal failure over cleanup failure.
 
-Signals arriving *during* that bounded cleanup are a separate lifecycle boundary. PR #305 carries that successor investigation and must be reviewed and landed independently.
+Signals arriving *during* that bounded cleanup are a separate lifecycle boundary. Clean current-main PR #324 carries that successor investigation and must be reviewed and landed independently.
 
 ## Explain like I'm five
 
@@ -102,7 +102,7 @@ Exact-head CI for PR #286 established:
 
 ## Cleanup-time signal successor
 
-PR #305 adds three files on top of the landed PR #286 source generation:
+PR #324 adds three files directly on the landed PR #286 source generation:
 
 - `0002-retain-signals-through-cleanup.patch`;
 - `CLEANUP_SIGNALS.md`;
@@ -110,7 +110,9 @@ PR #305 adds three files on top of the landed PR #286 source generation:
 
 That successor asks whether the first INT/QUIT/TERM arriving during ordinary cleanup should be retained while later handled signals are ignored and bounded cleanup completes. It also checks whether an already-selected ordinary or explicit-signal failure remains ahead of a cleanup-time signal.
 
-PR #305 is separate from the landed baseline. Its current branch is stacked on the pre-merge PR #286 branch and therefore needs a current-`main` composition, exact-head execution, and complete review before any landing decision.
+Historical PR #305 prepared the same three blobs on the pre-merge PR #286 branch. Retargeting it replayed the squashed baseline, so it was closed after exact transfer to PR #324.
+
+PR #324 is separate from the landed baseline. It requires exact-head execution, complete three-file review, and a clean current-main landing decision.
 
 ## Cleanup and safety
 
@@ -122,6 +124,6 @@ Foreground descendant cancellation latency was investigated separately in issue 
 
 The landed reductions prove shell trap behavior, result precedence, cleanup ownership, proxy reaping, and immediate rerun for the extracted worker lifecycle. They do not run the full mirror loop, prove prompt foreground-descendant cancellation, cover permanently blocking cleanup, or settle signals arriving during cleanup itself.
 
-The next useful action is to restack PR #305's three-file successor directly onto current `main`, run its deterministic signal matrix with zero-fuzz two-patch composition, and review the complete composed source state.
+The next useful action is exact-head CI and complete review for PR #324's zero-fuzz two-patch composition and deterministic signal matrix.
 
 Internal Linux Fieldwork work only. External contact authorized: `false`.
