@@ -1,14 +1,14 @@
 # Relative executable after child cwd changes
 
-State: `repair-complete — exact-head audit pending`
+State: `reviewed — documentation refresh pending exact gates`
 
-Tracking: issue #194 follow-on review, PR #222, motivating PR #72, and closed research issue #223.
+Tracking: issue #194 follow-on review, predecessor PR #222, current-main carrier PR #285, motivating PR #72, and closed research issue #223.
 
 ## TL;DR
 
 A relative executable containing `/` or `\` can change identity when a child also changes its working directory. PR #72 demonstrated both consequences: a temporary proxy disappeared after a cwd transition, and a plausible alternate repair could have executed the wrong subject.
 
-PR #222 adds a literal-pattern review scanner for Python, Rust, and GNU-style `env`. Repeated review repaired executable-identity, parser, platform, artifact-receipt, and dedicated-workflow gaps. Exact head `e588f2178f8037119f47c021677e35fd0cfdd6dc` contains seven files and requires fresh repository CI plus the dedicated Linux/Windows audit workflow.
+The retained seven-file unit adds a literal-pattern review scanner for Python, Rust, and GNU-style `env`. Repeated review repaired executable-identity, parser, platform, artifact-receipt, and dedicated-workflow gaps. The current carrier is PR #285 on branch `restack/relative-exec-cwd-audit-current-main-v2`; its PR body carries the exact live head.
 
 Findings are source-review prompts. The retained Windows probe produced a negative result for the motivating RPFM hypothesis.
 
@@ -120,22 +120,29 @@ The checker recognizes literal high-signal syntax. It does not execute findings,
 
 The inventory is a review aid and does not fail merely because findings exist unless a caller selects `--fail-on-findings`.
 
-## Current gates
+## Gate history
 
-Prior head `e498a7a989967fec8d1d0ea33984491dc647ca8f` passed Linux Fieldwork CI `30592552612` / 730. Its dedicated audit `30592552608` / 19 was queued when the workflow repair changed the head.
+Predecessor PR #222 head `06ed175d15829d7840c241a3b9d6e6b859e5e0d7` passed Linux Fieldwork CI `30598820991` / 796 and dedicated audit `30598820954` / 22.
 
-That prior CI does not clear the new workflow and receipt changes.
+Current-main restack head `b4ce9c5fd8496072f1c5e81a56a0ee6ca2f050df` passed:
 
-Current exact head: `e588f2178f8037119f47c021677e35fd0cfdd6dc`.
+- Linux Fieldwork CI `30623361983` / 821, including 262 repository tests;
+- dedicated audit `30623362015` / 23;
+- Linux inventory job;
+- Windows Rust identity probe;
+- downloaded Linux artifact receipt;
+- downloaded Windows receipt.
 
-Required:
+A complete seven-file review found no mechanism blocker. This documentation refresh corrects stale routing language only and therefore requires fresh exact-head repository and dedicated workflow receipts before landing.
 
-1. Linux Fieldwork CI on the exact head;
-2. dedicated audit and Windows jobs on the exact head;
-3. artifact and Windows receipt jobs complete successfully;
-4. complete seven-file review;
-5. repository inventory interpretation remains explicit;
-6. branch relation remains suitable for internal landing.
+## Landing rule
+
+1. the PR body names the exact current head;
+2. Linux Fieldwork CI passes on that head;
+3. the dedicated audit, Windows probe, and both receipt jobs pass on that head;
+4. the direct diff remains the declared seven-file unit;
+5. any main-side drift is reviewed before merge;
+6. no external contact is made.
 
 ## Authority
 
