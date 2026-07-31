@@ -22,16 +22,21 @@ case "$runtime_parent" in
     ;;
 esac
 
-runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-directory-mtime-real")"
-case "$runtime" in
+runtime="$runtime_parent/mmdebstrap-chrootless-directory-mtime-real"
+if [[ -L "$runtime" ]]; then
+  echo "refusing symlink runtime leaf: $runtime" >&2
+  exit 2
+fi
+runtime_canonical="$(realpath -m "$runtime")"
+case "$runtime_canonical" in
   "$runtime_parent"/*) ;;
   *)
-    echo "refusing runtime outside parent: $runtime" >&2
+    echo "refusing runtime outside parent: $runtime_canonical" >&2
     exit 2
     ;;
 esac
-[[ "$runtime" != / && "$runtime" != "$runtime_parent" ]] || {
-  echo "refusing unsafe runtime: $runtime" >&2
+[[ "$runtime_canonical" != / && "$runtime_canonical" != "$runtime_parent" ]] || {
+  echo "refusing unsafe runtime: $runtime_canonical" >&2
   exit 2
 }
 
@@ -44,15 +49,15 @@ for protected in "$repo_canonical" "$home_canonical"; do
   }
 done
 
-case "$runtime" in
+case "$runtime_canonical" in
   "$repo_canonical"|"$repo_canonical"/*)
-    echo "refusing runtime inside repository: $runtime" >&2
+    echo "refusing runtime inside repository: $runtime_canonical" >&2
     exit 2
     ;;
 esac
 case "$repo_canonical" in
-  "$runtime"|"$runtime"/*)
-    echo "refusing runtime containing repository: $runtime" >&2
+  "$runtime_canonical"|"$runtime_canonical"/*)
+    echo "refusing runtime containing repository: $runtime_canonical" >&2
     exit 2
     ;;
 esac
@@ -62,27 +67,40 @@ case "$runtime_parent" in
     # Hosted Actions places RUNNER_TEMP below /home/runner. That placement is
     # accepted, but the runtime must never equal or contain HOME.
     case "$home_canonical" in
-      "$runtime"|"$runtime"/*)
-        echo "refusing runtime containing home: $runtime" >&2
+      "$runtime_canonical"|"$runtime_canonical"/*)
+        echo "refusing runtime containing home: $runtime_canonical" >&2
         exit 2
         ;;
     esac
     ;;
   *)
-    case "$runtime" in
+    case "$runtime_canonical" in
       "$home_canonical"|"$home_canonical"/*)
-        echo "refusing runtime inside home: $runtime" >&2
+        echo "refusing runtime inside home: $runtime_canonical" >&2
         exit 2
         ;;
     esac
     case "$home_canonical" in
-      "$runtime"|"$runtime"/*)
-        echo "refusing runtime containing home: $runtime" >&2
+      "$runtime_canonical"|"$runtime_canonical"/*)
+        echo "refusing runtime containing home: $runtime_canonical" >&2
         exit 2
         ;;
     esac
     ;;
 esac
+
+if [[ ${1-} == --check-runtime-parent ]]; then
+  [[ $# -eq 1 ]] || {
+    echo 'usage: real_metadata_probe.sh --check-runtime-parent' >&2
+    exit 2
+  }
+  printf '%s\n' "$runtime"
+  exit
+fi
+[[ $# -eq 0 ]] || {
+  echo 'usage: real_metadata_probe.sh [--check-runtime-parent]' >&2
+  exit 2
+}
 
 result_dir="$repo_root/investigations/mmdebstrap-chrootless-directory-mtime/real-boundary-results"
 tree="$runtime/tree"
