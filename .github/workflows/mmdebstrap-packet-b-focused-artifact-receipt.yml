@@ -1,0 +1,160 @@
+name: Inspect retained Packet B focused artifact
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/mmdebstrap-packet-b-focused-artifact-receipt.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'evidence/packet-b-focused-run14-receipt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SOURCE_RUN_ID: '30656784376'
+      SOURCE_ARTIFACT_ID: '8803973329'
+      SOURCE_ARTIFACT_NAME: mmdebstrap-packet-b-focused-gha-30656784376-1
+      SOURCE_ARTIFACT_DIGEST: sha256:938de98236230f2050bb50f4a3d9f9b58f683e94bc6cc7281c42b50808461543
+    steps:
+      - name: Check out receipt implementation
+        uses: actions/checkout@v4
+
+      - name: Verify exact source artifact metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          raw="$RUNNER_TEMP/source-artifact-metadata.json"
+          verified="$RUNNER_TEMP/source-artifact-metadata-receipt.json"
+          gh api \
+            --method GET \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts/$SOURCE_ARTIFACT_ID" \
+            >"$raw"
+          python3 tools/verify_github_artifact_metadata.py \
+            "$raw" \
+            --expected-id "$SOURCE_ARTIFACT_ID" \
+            --expected-name "$SOURCE_ARTIFACT_NAME" \
+            --expected-run-id "$SOURCE_RUN_ID" \
+            --expected-digest "$SOURCE_ARTIFACT_DIGEST" \
+            --output "$verified"
+
+      - name: Download exact retained artifact
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ env.SOURCE_ARTIFACT_ID }}
+          path: ${{ runner.temp }}/packet-b-focused
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+
+      - name: Build focused run receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/packet-b-focused" "$RUNNER_TEMP/packet-b-focused-run14-receipt.json" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          output = pathlib.Path(sys.argv[2])
+
+          def unique(name: str, *, required: bool = True) -> pathlib.Path | None:
+              matches = [path for path in root.rglob(name) if path.is_file()]
+              if not matches and not required:
+                  return None
+              if len(matches) != 1:
+                  raise SystemExit(
+                      f"expected exactly one {name!r}, observed {[str(p) for p in matches]!r}"
+                  )
+              return matches[0]
+
+          def text(name: str, *, required: bool = True) -> str | None:
+              path = unique(name, required=required)
+              if path is None:
+                  return None
+              return path.read_text(encoding="utf-8", errors="replace")
+
+          def exact_integer(name: str) -> int:
+              value = text(name)
+              assert value is not None
+              stripped = value.strip()
+              if not stripped.isdigit():
+                  raise SystemExit(f"{name} is not a nonnegative integer: {stripped!r}")
+              return int(stripped)
+
+          console_path = unique("autopkgtest-console.log")
+          assert console_path is not None
+          console = console_path.read_text(encoding="utf-8", errors="replace")
+          named_lines = [
+              line
+              for line in console.splitlines()
+              if "create-directory" in line
+              or "root-without-cap-sys-admin" in line
+              or "testsuite PASS" in line
+              or "testsuite FAIL" in line
+          ]
+
+          verification_text = text("focused-verification.json", required=False)
+          verification = None
+          if verification_text is not None:
+              verification = json.loads(verification_text)
+              if type(verification) is not dict:
+                  raise SystemExit("focused-verification.json must contain an object")
+
+          receipt = {
+              "schema_version": 1,
+              "source": {
+                  "run_id": int("30656784376"),
+                  "artifact_id": int("8803973329"),
+                  "artifact_name": "mmdebstrap-packet-b-focused-gha-30656784376-1",
+                  "artifact_digest": "sha256:938de98236230f2050bb50f4a3d9f9b58f683e94bc6cc7281c42b50808461543",
+              },
+              "statuses": {
+                  "container": exact_integer("container-exit-status"),
+                  "carrier": exact_integer("carrier-exit-status"),
+                  "autopkgtest": exact_integer("autopkgtest-exit-status"),
+                  "verifier": exact_integer("verifier-exit-status"),
+              },
+              "result_markdown": text("result.md"),
+              "preflight_error": text("preflight-error.txt", required=False),
+              "verification": verification,
+              "verification_stdout": text(
+                  "focused-verification.stdout", required=False
+              ),
+              "verification_stderr": text(
+                  "focused-verification.stderr", required=False
+              ),
+              "named_console_lines": named_lines,
+              "console_sha256": hashlib.sha256(console_path.read_bytes()).hexdigest(),
+              "console_tail": console.splitlines()[-80:],
+          }
+          output.write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(receipt, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload typed focused receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: packet-b-focused-run14-receipt
+          path: |
+            ${{ runner.temp }}/source-artifact-metadata.json
+            ${{ runner.temp }}/source-artifact-metadata-receipt.json
+            ${{ runner.temp }}/packet-b-focused-run14-receipt.json
+          if-no-files-found: error
+          retention-days: 14
