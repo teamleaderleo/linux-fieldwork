@@ -112,7 +112,6 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
  Package: lf-chrootless-env-probe
 @@ -197,7 +276,7 @@
    printf -v hook 'mkdir -p "$1%s"; cp "%s" "$1%s"' \
-     "$package_dir" "$package" "$1%s"' \
      "$package_dir" "$package" "$package"
    command=(
 -    "$source_root/mmdebstrap"
