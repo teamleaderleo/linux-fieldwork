@@ -167,12 +167,33 @@ jobs:
           import sys
 
           receipt = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-          assert receipt["raw_status"] == 0
-          assert receipt["named_test_count"] == 2
-          assert receipt["producer"]["name"] == "create-directory"
-          assert receipt["producer"]["outcome"] == "success"
-          assert receipt["consumer"]["name"] == "root-without-cap-sys-admin"
-          assert receipt["consumer"]["outcome"] == "success"
-          assert receipt["later_named_tests"] == []
+          if type(receipt) is not dict:
+              raise SystemExit("focused receipt must be an object")
+          producer = receipt.get("producer")
+          consumer = receipt.get("consumer")
+          if type(producer) is not dict or type(consumer) is not dict:
+              raise SystemExit("focused receipt producer/consumer must be objects")
+          checks = (
+              (receipt.get("schema_version") == 1, "schema version is not 1"),
+              (type(receipt.get("raw_status")) is int and receipt["raw_status"] == 0,
+               "raw status is not exact integer zero"),
+              (type(receipt.get("named_test_count")) is int
+               and receipt["named_test_count"] == 2,
+               "named test count is not exact integer two"),
+              (producer.get("name") == "create-directory",
+               "producer identity mismatch"),
+              (producer.get("outcome") == "success",
+               "producer outcome is not success"),
+              (consumer.get("name") == "root-without-cap-sys-admin",
+               "consumer identity mismatch"),
+              (consumer.get("outcome") == "success",
+               "consumer outcome is not success"),
+              (type(receipt.get("later_named_tests")) is list
+               and receipt["later_named_tests"] == [],
+               "later named tests are present or malformed"),
+          )
+          for condition, message in checks:
+              if not condition:
+                  raise SystemExit(f"focused receipt validation failed: {message}")
           print(json.dumps(receipt, indent=2, sort_keys=True))
           PY
