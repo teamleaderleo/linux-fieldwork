@@ -10,9 +10,9 @@ The repository must remain understandable while the work is still moving. Exact 
 
 ## What worked well
 
-### Start with one owner and one result boundary
+### Start with one technical result owner and one result boundary
 
-The strongest investigations named the operation that owned the result before changing code.
+The strongest investigations named the operation or component that owned the result before changing code.
 
 Examples included:
 
@@ -22,6 +22,8 @@ Examples included:
 - a pipeline's final PID is not necessarily the identity of the whole pipeline job.
 
 This made the first fixture small and prevented a broad process-lifecycle rewrite from becoming the default answer.
+
+This is technical ownership, not exclusive human ownership. Several workers and variants may investigate the same boundary, reuse evidence, contradict one another, or produce competing candidates.
 
 ### Preserve the first surprising observation before explaining it
 
@@ -69,7 +71,8 @@ Long investigations frequently crossed concurrent repository changes. The reliab
 - treat any semantic head movement as expiring the review;
 - inspect the one-commit delta instead of assuming it is harmless;
 - regenerate byte-identical patch and test blobs on current `main` when the landing base moves;
-- keep historical heads as evidence, not as competing canonical carriers;
+- allow parallel carriers while selection is open, retaining every exact head that carries unique evidence;
+- after selection, keep historical heads as evidence rather than presenting every variant as the canonical successor;
 - collapse incremental repair commits into one clean source generation before final review.
 
 This preserved technical evidence without pretending that an old green run or old review authorized a newer branch.
@@ -86,15 +89,17 @@ Queued hosted jobs did not justify repeated status polling. Useful work continue
 
 This kept progress real while preserving the exact queued run as the only authoritative hosted gate for its head.
 
-### Leave one canonical carrier and retire the rest
+### Select one canonical carrier at closeout
 
-Exploration may produce stacked, stale, and current-main variants. That is acceptable during learning. It becomes harmful when several remain presented as current.
+Exploration may produce stacked, stale, current-main, and independently rewritten variants. Several active carriers are acceptable while they can still change the decision. They become harmful only when the decision has settled and several remain presented as current.
+
+Canonicalization is a closeout result, not admission control. It must not prevent parallel reproduction, competing implementation, or deliberate replacement while evidence is still developing.
 
 The useful closeout pattern was:
 
-- one canonical implementation or stopped record;
+- one selected implementation or stopped record;
 - exact historical heads retained for unique evidence;
-- stale carriers explicitly retired or closed;
+- stale carriers explicitly superseded, retired, or closed;
 - issue and finding pointers updated to the successor;
 - one clearing gate and one next transition.
 
@@ -102,16 +107,16 @@ The useful closeout pattern was:
 
 Use this loop while a rabbit hole remains productive:
 
-1. **Pin** — exact source, branch, environment, owner, claim, authority, and stop condition.
+1. **Pin** — exact source, branch, environment, technical result owner, worker or variant map, claim, authority, and stop condition.
 2. **Checkpoint** — write the live state before expensive or surprising work.
 3. **Distinguish** — build a baseline failure and a passing control.
 4. **Compare** — instantiate the smallest plausible alternatives.
 5. **Eliminate** — run controls that can make each alternative lose.
 6. **Adversarially review** — search for changed grammar, status, bytes, metadata, ownership, cleanup, and rerun behavior.
-7. **Reconcile** — refresh the exact head, current base, competing work, and canonical pointers.
+7. **Reconcile** — refresh the exact head, current base, competing work, and current decision pointers.
 8. **Select or stop** — choose the best-supported bounded mechanism, or retain the negative result with reopening triggers.
-9. **Clean the carrier** — one auditable current-main generation, exact tests, exact review, exact gate.
-10. **Transfer** — update the owning issue and durable record; retire stale surfaces.
+9. **Clean the carrier** — after selection, produce one auditable current-main generation with exact tests, exact review, and an exact gate.
+10. **Transfer** — update the owning issue and durable record; supersede stale surfaces without erasing unique evidence.
 
 Do not deepen the same branch merely because more experiments are imaginable. Deepen it when the next experiment can change selection, claim scope, promotion state, or the reopening condition.
 
@@ -122,7 +127,7 @@ Stop and restate the bounded question when:
 - every new test passes but no alternative can lose;
 - the candidate grows several helpers without a measured consequence;
 - the only remaining uncertainty is a policy or authority decision already outside the lane;
-- branch and issue prose disagree about the canonical head;
+- branch and issue prose disagree about the current decision or exact head;
 - queued CI is being polled instead of independent work continuing;
 - a synthetic model is being described as target-native execution;
 - a setup or harness failure is pulling product code into scope;
@@ -141,7 +146,7 @@ A stopped investigation should retain:
 - the accepted behavior that remains;
 - concrete evidence that would justify reopening.
 
-This prevents duplicate research while leaving future workers a precise path when conditions change.
+This makes later duplicate or competing research informed rather than blind, while leaving future workers a precise path when conditions change.
 
 ## Compact checkpoint for a research bender
 
@@ -150,7 +155,8 @@ RESEARCH BENDER CHECKPOINT
 Unit:
 Exact head and base:
 Bounded question:
-Current owner map:
+Technical result owner:
+Active workers or variants:
 First distinguishing result:
 Alternatives still alive:
 Alternatives eliminated:
@@ -168,4 +174,4 @@ External-contact state:
 
 > Go as deep as the next discriminator, not as deep as the topic permits.
 
-A good research bender leaves a smaller decision surface, a cleaner canonical carrier, reusable negative controls, and a repository that explains both why the selected change is justified and why the tempting larger change was not.
+A good research bender leaves a smaller decision surface, a selected carrier only when selection is justified, reusable negative controls, and a repository that explains both why the selected change is justified and why the tempting larger change was not.
