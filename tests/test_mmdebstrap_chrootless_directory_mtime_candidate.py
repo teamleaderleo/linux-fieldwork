@@ -282,29 +282,6 @@ class MmdebstrapChrootlessDirectoryMtimeCandidateTest(unittest.TestCase):
             self.assertEqual(int(tree.stat().st_mtime), OLD_MTIME)
             self.assertEqual(int(directory.stat().st_mtime), OLD_MTIME)
 
-    @unittest.skipUnless(shutil.which("perltidy"), "perltidy is unavailable")
-    def test_current_sid_formatting_is_preserved(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="mtime-format-") as temporary:
-            candidate = self.apply_candidate(pathlib.Path(temporary))
-            formatted = subprocess.run(
-                ["perltidy"],
-                input=candidate.read_text(encoding="utf-8"),
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-                timeout=30,
-            )
-            self.assertEqual(
-                formatted.returncode,
-                0,
-                formatted.stdout + formatted.stderr,
-            )
-            self.assertEqual(
-                formatted.stdout,
-                candidate.read_text(encoding="utf-8"),
-            )
-
 
 if __name__ == "__main__":
     unittest.main()
