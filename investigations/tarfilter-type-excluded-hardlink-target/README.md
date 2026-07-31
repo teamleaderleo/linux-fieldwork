@@ -2,24 +2,33 @@
 
 ## TL;DR
 
-`tarfilter --type-exclude=REGTYPE` filters regular archive members by their type. A hard-link member uses `LNKTYPE`, carries no payload, and names a data-bearing member through `linkname`. The current source can therefore remove the regular target, retain the hard link, exit 0, and emit an archive GNU tar cannot extract.
+`tarfilter --type-exclude=REGTYPE` removes the regular member `root/base`, retains the payload-free hard-link member `root/peer -> root/base`, exits 0, and emits an archive GNU tar cannot extract. Exact-head Linux Fieldwork CI reproduced that behavior and also proved that excluding `LNKTYPE` alone leaves a valid regular-file archive.
 
-This is a stronger candidate than the related path-exclusion case because `--type-exclude` is tarfilter-specific and its help text does not inherit dpkg's documented current-object path-filter warning. Exact repository execution is pending.
+This is distinct from dpkg-compatible path exclusion. `--type-exclude` is a tarfilter-specific option without dpkg's documented current-object warning. Issue #243 now owns the defect; PR #244 is the executed baseline carrier, and stacked PR #248 carries a bounded rejection candidate.
 
 ## Explain like I'm five
 
-The filter removes every box marked “regular file.” It keeps a label marked “hard link,” even though that label only says “use the removed box.” The resulting archive has a label with nothing behind it.
+Input: one archive box named `root/base`, plus a second label `root/peer` that says “use the first box.” Action: `--type-exclude=REGTYPE` throws away the box but keeps the label. Result: tarfilter reports success, then GNU tar cannot create either file because the label points at a missing box.
 
 ## Why care
 
-Type filtering should produce a usable filtered archive or a clear error when the requested type removal breaks another retained member. A zero-status filter followed by a later GNU tar failure hides the dependency problem behind the extraction stage and makes the option harder to use safely.
+The emitted bytes are not a usable filtered archive. A caller sees tarfilter status 0 and only learns about the broken dependency in a later extraction process. The later error names the missing target, while it does not identify the type-filter decision that removed it.
+
+## Intent and precedent
+
+The imported help text presents `--type-exclude` as a tarfilter feature that removes selected archive-member types. The source applies that decision independently to each member. It contains no documented dependency policy for hard links.
+
+The neighboring path-filter investigation #240 / PR #241 is governed by dpkg compatibility: dpkg documents current-object-only path filtering and reproduces the same hazardous path-exclusion result. That precedent does not govern this tarfilter-specific type option. The design choice retained for the candidate is therefore an early focused error for a dependency already known to be removed by type, rather than silently producing a dangling member.
 
 ## Canonical records
 
 - Investigation issue: #243
+- Characterization PR: #244
+- Executed characterization head: `c853da482a04a5ad49b53478b49e540fd4208b27`
+- Linux Fieldwork CI: run `30590931312`, passed
+- Candidate PR: #248
 - Home lane: LF-14, archive extraction and metadata contracts
 - Related path-filter compatibility map: #240 / PR #241
-- Working branch: `investigate/tarfilter-type-excluded-hardlink-target`
 - Imported source: `upstream/mmdebstrap/tarfilter`
 - Imported blob at branch creation: `ad776167a8473d5d15dbe22e850f4f6db35cf278`
 - Regression: `tests/test_tarfilter_type_excluded_hardlink_target.py`
@@ -38,7 +47,7 @@ def type_filter_should_skip(member):
     return False
 ```
 
-The main loop discards a matching member before writing any output:
+The main loop discards a matching member immediately:
 
 ```python
 if type_filter_should_skip(member):
@@ -54,101 +63,99 @@ else:
     out_tar.addfile(member)
 ```
 
-Thus `--type-exclude=REGTYPE` can remove the only member carrying bytes while leaving a `LNKTYPE` member that refers to it.
+The source therefore has no point where the retained link is checked against an earlier target removed by type.
 
 ## Bounded question
 
-For one target-before-link PAX archive, what happens when the target's member type is excluded while the dependent hard-link type remains allowed?
+For one valid target-before-link PAX archive, what does tarfilter emit when the target's member type is excluded while the dependent hard-link type remains allowed?
 
 ## Fixture and controls
 
 The test creates:
 
-- regular `root/base` with `hard-link-payload\n`;
+- regular `root/base` containing `hard-link-payload\n`;
 - hard link `root/peer -> root/base`.
 
-### Negative control
+### Direct archive control
 
-Direct GNU tar extraction must:
+GNU tar extraction returns 0, creates both names with identical bytes, and preserves one inode relationship.
 
-- return 0;
-- create both paths with identical bytes;
-- preserve one inode relationship.
+### `REGTYPE` characterization
 
-### Candidate characterization
-
-Run:
+Command:
 
 ```text
 python3 upstream/mmdebstrap/tarfilter --type-exclude=REGTYPE
 ```
 
-Record filter status, output member table, and GNU tar extraction.
+Observed:
 
-### Neighboring control
+- tarfilter status 0;
+- output table contains only `root/peer -> root/base` as `LNKTYPE`;
+- GNU tar extraction returns nonzero;
+- neither `root/base` nor `root/peer` exists afterward.
 
-Run:
+### Neighboring `LNKTYPE` control
+
+Command:
 
 ```text
 python3 upstream/mmdebstrap/tarfilter --type-exclude=LNKTYPE
 ```
 
-This should retain the regular target, remove the hard-link peer, and produce an extractable archive. The control distinguishes the dependency hole from a general type-filter failure.
+Observed:
 
-## Distinguishing outcomes
+- tarfilter status 0;
+- output table contains only regular `root/base`;
+- GNU tar extraction returns 0;
+- `root/base` contains the original payload and `root/peer` is absent.
 
-For `REGTYPE` exclusion:
+The neighboring control distinguishes a hard-link dependency hole from a general failure of type filtering.
 
-- both target and dependent hard link absent: dependency-aware filtering;
-- hard link converted to a payload member: materialized dependency;
-- focused nonzero error: explicit unsupported-dependency contract;
-- target absent, hard link retained, filter status 0, GNU tar failure: dangling output.
+## Execution
 
-For `LNKTYPE` exclusion, the regular target should remain valid and extractable.
+Linux Fieldwork CI run `30590931312` passed at exact head `c853da482a04a5ad49b53478b49e540fd4208b27`.
 
-The retained test encodes the source-visible dangling-output result plus the neighboring valid control. Exact CI decides whether the checked-out source and GNU tar exhibit both.
+Evidence by claim:
 
-## Promotion and repair design
+- independent member filtering and payload-free hard-link output: `source-read`;
+- direct archive, `REGTYPE`, and `LNKTYPE` outcomes: `target-executed` through the checked-out tarfilter and GNU tar;
+- complete Linux Fieldwork repository compatibility at that head: `full-gate`, limited to the repository's declared Linux Fieldwork CI paths;
+- package pipelines, other extractors, other platforms, and privileged metadata: unexecuted.
 
-A passing characterization promotes this into a focused defect investigation. Candidate policies include:
+## Repair design
+
+The observed behavior promotes the question from characterization to a focused defect. Possible policies were:
 
 1. skip hard links whose known target was excluded;
-2. reject the filter operation with a precise dependency diagnostic;
+2. reject the operation with a precise dependency diagnostic;
 3. materialize an already-seen target's bytes into the retained link member;
 4. buffer hard-link dependency groups until the stream establishes their fate.
 
-Streaming constraints and member order decide feasibility. A repair must preserve:
+Stacked PR #248 selects option 2 for target-before-link order. It uses bounded streaming state, preserves ordinary independent type filtering, and leaves dpkg-compatible path exclusions unchanged. Its implementation and execution remain a separate review surface.
 
-- ordinary type filtering for independent members;
-- `LNKTYPE` exclusion behavior;
-- path transformation repairs already retained elsewhere;
-- low-memory streaming where possible;
-- clear failure status when coherence cannot be preserved.
+## Remaining matrix
 
-## Next matrix
+The characterization establishes one valid target-before-link pair. Further candidate work should continue to distinguish:
 
-Before selecting a repair, add:
-
-- link before target;
+- normalized target spellings and non-equivalent spellings;
 - multiple peers to one target;
 - hard-link chains;
-- target excluded by several type rules;
 - simultaneous `REGTYPE` and `LNKTYPE` exclusion;
-- long PAX `linkpath` names;
-- a filter rerun after failure;
-- Python tarfile and libarchive extraction comparison where available.
+- immediate rerun after a focused failure;
+- long PAX `linkpath` values;
+- Python tarfile and libarchive extraction where available;
+- complete mmdebstrap package-pipeline diagnostics.
+
+Link-before-target ordering remains a reference boundary: GNU tar already rejects that ordering without filtering, so it cannot serve as the valid baseline for this bounded repair.
 
 ## Cleanup and rerun
 
-The probe creates small archives and extraction directories below `TemporaryDirectory`. It invokes only the checked-out Python source and GNU tar. No privileged operations, package mutation, device nodes, network, or persistent output are used.
-
-A candidate rerun must reuse the same logical output path after the failing control and prove that no temporary archive or extraction state affects the successful case.
+The characterization creates small archives and extraction directories below `TemporaryDirectory`. It invokes only the checked-out Python source and GNU tar. It uses no network, package mutation, device nodes, privileged metadata, or persistent output.
 
 ## Evidence boundary
 
-The first probe covers one target-before-link PAX archive and two type filters under an ordinary user. It skips reverse ordering, dependency chains, path rules, transforms, other extractors, package-level pipelines, and privileged metadata.
-
-Source inspection supports the dependency hypothesis. Behavior remains `execution-pending` until Linux Fieldwork CI runs the exact test.
+Demonstrated behavior is limited to one target-before-link PAX pair, two type selections, the checked-out imported tarfilter, and GNU tar on the CI environment. The result establishes a dangling-output mechanism and a neighboring valid control. It does not establish frequency, package-level impact, behavior in other extractors, cross-platform compatibility, or the correctness of any candidate repair.
 
 ## Authority
 
@@ -156,4 +163,4 @@ Internal Linux Fieldwork investigation only. No Debian or external upstream cont
 
 ## Disposition
 
-**EXECUTE.** Run the exact branch through Linux Fieldwork CI. If the dangling-output characterization and neighboring valid control both pass, promote to a focused defect candidate and execute the ordering/dependency matrix before implementing a repair.
+**ACCEPT CHARACTERIZATION.** PR #244 is suitable to merge as executed evidence. Review and execute PR #248 separately as the candidate repair; do not infer candidate acceptance from this baseline result.
