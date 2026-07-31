@@ -9,40 +9,14 @@ import tempfile
 import time
 import unittest
 
+from tests import test_mmdebstrap_coverage_term_resistant_cleanup as matrix
 
-DRIVER = r'''
+
+FINALIZER = r'''
 import argparse
-import os
 import pathlib
 import signal
-import subprocess
-import sys
 import time
-
-
-def live_group_members(pgid):
-    members = []
-    for entry in pathlib.Path("/proc").iterdir():
-        if not entry.name.isdigit():
-            continue
-        try:
-            text = (entry / "stat").read_text(encoding="utf-8")
-            right = text.rfind(")")
-            fields = text[right + 2 :].split()
-            if int(fields[2]) == pgid and fields[0] != "Z":
-                members.append(int(entry.name))
-        except (FileNotFoundError, ProcessLookupError, PermissionError, ValueError):
-            continue
-    return members
-
-
-def wait_group(pgid, timeout):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if not live_group_members(pgid):
-            return True
-        time.sleep(0.01)
-    return not live_group_members(pgid)
 
 
 parser = argparse.ArgumentParser()
@@ -50,95 +24,17 @@ parser.add_argument("--root", type=pathlib.Path, required=True)
 parser.add_argument("--restore-before-final", action="store_true")
 args = parser.parse_args()
 
-proc = subprocess.Popen(
-    [sys.executable, str(args.root / "wrapper.py"), str(args.root)],
-    start_new_session=True,
-)
-(args.root / "backend.pgid").write_text(str(proc.pid), encoding="ascii")
-(args.root / "driver.ready").write_text("ready\n", encoding="ascii")
+previous_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
+(args.root / "finalizing").write_text("yes\n", encoding="ascii")
+if args.restore_before_final:
+    signal.signal(signal.SIGINT, previous_sigint)
+(args.root / "handler-ready").write_text("yes\n", encoding="ascii")
 
-try:
-    proc.wait()
-except KeyboardInterrupt:
-    previous_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    try:
-        try:
-            os.killpg(proc.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+while not (args.root / "final-release").exists():
+    time.sleep(0.01)
 
-        try:
-            proc.wait(timeout=0.20)
-        except subprocess.TimeoutExpired:
-            pass
-
-        if not wait_group(proc.pid, 0.20):
-            (args.root / "escalated").write_text("yes\n", encoding="ascii")
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            try:
-                proc.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                pass
-            wait_group(proc.pid, 1)
-
-        (args.root / "finalizing").write_text("yes\n", encoding="ascii")
-        if args.restore_before_final:
-            signal.signal(signal.SIGINT, previous_sigint)
-        while not (args.root / "final-release").exists():
-            time.sleep(0.01)
-        (args.root / "driver.done").write_text("130\n", encoding="ascii")
-        raise SystemExit(130)
-    finally:
-        if not args.restore_before_final:
-            # The process exits immediately after publication. Keeping SIGINT ignored
-            # through that exit is the policy under test.
-            pass
-'''
-
-WRAPPER = r'''
-import os
-import pathlib
-import signal
-import subprocess
-import sys
-import time
-
-
-root = pathlib.Path(sys.argv[1])
-
-
-def on_term(_signal, _frame):
-    (root / "wrapper.term").write_text("term\n", encoding="ascii")
-
-
-signal.signal(signal.SIGTERM, on_term)
-subprocess.Popen([sys.executable, str(root / "descendant.py"), str(root)])
-(root / "wrapper.ready").write_text("ready\n", encoding="ascii")
-while True:
-    time.sleep(0.05)
-'''
-
-DESCENDANT = r'''
-import pathlib
-import signal
-import sys
-import time
-
-
-root = pathlib.Path(sys.argv[1])
-
-
-def on_term(_signal, _frame):
-    (root / "descendant.term").write_text("term\n", encoding="ascii")
-
-
-signal.signal(signal.SIGTERM, on_term)
-(root / "descendant.ready").write_text("ready\n", encoding="ascii")
-while True:
-    time.sleep(0.05)
+(args.root / "driver.done").write_text("130\n", encoding="ascii")
+raise SystemExit(130)
 '''
 
 
@@ -147,21 +43,6 @@ while True:
     "requires Linux /proc and POSIX process groups",
 )
 class CoverageFinalSigintContainmentTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory(
-            prefix="coverage-final-sigint-containment-"
-        )
-        self.root = pathlib.Path(self.temporary.name)
-        for name, content in (
-            ("driver.py", DRIVER),
-            ("wrapper.py", WRAPPER),
-            ("descendant.py", DESCENDANT),
-        ):
-            (self.root / name).write_text(content, encoding="utf-8")
-
-    def tearDown(self) -> None:
-        self.temporary.cleanup()
-
     @staticmethod
     def wait_for_file(
         path: pathlib.Path,
@@ -180,41 +61,6 @@ class CoverageFinalSigintContainmentTest(unittest.TestCase):
         raise AssertionError(f"timed out waiting for {path}")
 
     @staticmethod
-    def live_group_members(pgid: int) -> list[int]:
-        members: list[int] = []
-        for entry in pathlib.Path("/proc").iterdir():
-            if not entry.name.isdigit():
-                continue
-            try:
-                text = (entry / "stat").read_text(encoding="utf-8")
-                right = text.rfind(")")
-                fields = text[right + 2 :].split()
-                if int(fields[2]) == pgid and fields[0] != "Z":
-                    members.append(int(entry.name))
-            except (
-                FileNotFoundError,
-                ProcessLookupError,
-                PermissionError,
-                ValueError,
-            ):
-                continue
-        return sorted(members)
-
-    @classmethod
-    def stop_group(cls, pgid: int) -> None:
-        if not cls.live_group_members(pgid):
-            return
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except ProcessLookupError:
-            return
-        deadline = time.monotonic() + 2
-        while time.monotonic() < deadline:
-            if not cls.live_group_members(pgid):
-                return
-            time.sleep(0.01)
-
-    @staticmethod
     def stop_process(process: subprocess.Popen[bytes]) -> None:
         if process.poll() is not None:
             return
@@ -224,19 +70,95 @@ class CoverageFinalSigintContainmentTest(unittest.TestCase):
             return
         process.wait(timeout=2)
 
-    def start_case(
+    def start_finalizer(
         self,
-        label: str,
+        root: pathlib.Path,
         *,
         restore_before_final: bool,
-    ) -> tuple[pathlib.Path, subprocess.Popen[bytes], subprocess.Popen[bytes]]:
-        case = self.root / label
-        case.mkdir()
-        for name in ("driver.py", "wrapper.py", "descendant.py"):
-            (case / name).write_text(
-                (self.root / name).read_text(encoding="utf-8"),
-                encoding="utf-8",
+    ) -> subprocess.Popen[bytes]:
+        script = root / "finalizer.py"
+        script.write_text(FINALIZER, encoding="utf-8")
+        command = [
+            sys.executable,
+            str(script),
+            "--root",
+            str(root),
+        ]
+        if restore_before_final:
+            command.append("--restore-before-final")
+        stdout = open(root / "finalizer.stdout", "wb")
+        stderr = open(root / "finalizer.stderr", "wb")
+        self.addCleanup(stdout.close)
+        self.addCleanup(stderr.close)
+        process = subprocess.Popen(
+            command,
+            stdout=stdout,
+            stderr=stderr,
+            start_new_session=True,
+        )
+        self.addCleanup(self.stop_process, process)
+        self.wait_for_file(root / "handler-ready", process)
+        return process
+
+    def test_predecessor_source_restores_sigint_before_result_publication(self) -> None:
+        restore = matrix.DRIVER.index(
+            "signal.signal(signal.SIGINT, previous_sigint)"
+        )
+        publication = matrix.DRIVER.index(
+            '(args.root / "driver.done").write_text("130\\n", encoding="ascii")'
+        )
+        final_exit = matrix.DRIVER.index("raise SystemExit(130)", publication)
+        self.assertLess(restore, publication)
+        self.assertLess(publication, final_exit)
+
+    def test_restored_handler_loses_final_publication_to_third_sigint(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="coverage-final-sigint-restored-"
+        ) as temporary:
+            root = pathlib.Path(temporary)
+            process = self.start_finalizer(
+                root,
+                restore_before_final=True,
             )
+            os.kill(process.pid, signal.SIGINT)
+            status = process.wait(timeout=5)
+
+            self.assertNotEqual(status, 0)
+            self.assertFalse((root / "driver.done").exists())
+            self.assertIn(
+                "KeyboardInterrupt",
+                (root / "finalizer.stderr").read_text(errors="replace"),
+            )
+
+    def test_ignored_handler_survives_third_sigint_and_publishes_130(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="coverage-final-sigint-ignored-"
+        ) as temporary:
+            root = pathlib.Path(temporary)
+            process = self.start_finalizer(
+                root,
+                restore_before_final=False,
+            )
+            os.kill(process.pid, signal.SIGINT)
+            time.sleep(0.10)
+            self.assertIsNone(process.poll())
+
+            (root / "final-release").write_text("go\n", encoding="ascii")
+            status = process.wait(timeout=5)
+
+            self.assertEqual(status, 130)
+            self.assertEqual(
+                (root / "driver.done").read_text(encoding="ascii"),
+                "130\n",
+            )
+
+    def test_escalation_drains_backend_without_touching_unrelated_process(
+        self,
+    ) -> None:
+        helper = matrix.CoverageTermResistantCleanupTest(methodName="runTest")
+        helper.setUp()
+        self.addCleanup(helper.tearDown)
+        self.addCleanup(helper.doCleanups)
 
         unrelated = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(300)"],
@@ -244,92 +166,27 @@ class CoverageFinalSigintContainmentTest(unittest.TestCase):
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
-        self.addCleanup(self.stop_process, unrelated)
+        self.addCleanup(helper.stop_driver, unrelated)
 
-        stdout = open(case / "driver.stdout", "wb")
-        stderr = open(case / "driver.stderr", "wb")
-        self.addCleanup(stdout.close)
-        self.addCleanup(stderr.close)
-        command = [
-            sys.executable,
-            str(case / "driver.py"),
-            "--root",
-            str(case),
-        ]
-        if restore_before_final:
-            command.append("--restore-before-final")
-        driver = subprocess.Popen(
-            command,
-            stdout=stdout,
-            stderr=stderr,
-            start_new_session=True,
+        case, process, stdout, stderr = helper.start_driver(
+            "escalation-unrelated",
+            "escalate",
+            "hold",
         )
-        self.addCleanup(self.stop_process, driver)
+        backend_pgid, _descendant_pid, descendant_pgid = helper.identities(case)
+        self.assertEqual(descendant_pgid, backend_pgid)
 
-        self.wait_for_file(case / "driver.ready", driver)
-        self.wait_for_file(case / "wrapper.ready", driver)
-        self.wait_for_file(case / "descendant.ready", driver)
-        backend_pgid = int((case / "backend.pgid").read_text(encoding="ascii"))
-        self.addCleanup(self.stop_group, backend_pgid)
-        return case, driver, unrelated
-
-    def drive_to_finalization(
-        self,
-        case: pathlib.Path,
-        driver: subprocess.Popen[bytes],
-    ) -> int:
-        backend_pgid = int((case / "backend.pgid").read_text(encoding="ascii"))
-        os.kill(driver.pid, signal.SIGINT)
-        self.wait_for_file(case / "wrapper.term", driver)
-        self.wait_for_file(case / "descendant.term", driver)
-
-        # A later signal during bounded cleanup must not replace the first.
-        os.kill(driver.pid, signal.SIGINT)
-        self.wait_for_file(case / "finalizing", driver)
-        self.assertTrue((case / "escalated").exists())
-        self.assertFalse(self.live_group_members(backend_pgid))
-        return backend_pgid
-
-    def test_restored_handler_loses_final_result_to_third_sigint(self) -> None:
-        case, driver, unrelated = self.start_case(
-            "restore-before-final",
-            restore_before_final=True,
-        )
-        self.drive_to_finalization(case, driver)
-        self.assertIsNone(unrelated.poll())
-
-        os.kill(driver.pid, signal.SIGINT)
-        status = driver.wait(timeout=5)
-
-        self.assertNotEqual(status, 0)
-        self.assertFalse((case / "driver.done").exists())
-        self.assertIn(
-            "KeyboardInterrupt",
-            (case / "driver.stderr").read_text(errors="replace"),
-        )
-        self.assertIsNone(unrelated.poll())
-
-    def test_ignored_handler_survives_third_sigint_and_publishes_130(self) -> None:
-        case, driver, unrelated = self.start_case(
-            "ignore-through-final",
-            restore_before_final=False,
-        )
-        self.drive_to_finalization(case, driver)
-        self.assertIsNone(unrelated.poll())
-
-        os.kill(driver.pid, signal.SIGINT)
-        time.sleep(0.10)
-        self.assertIsNone(driver.poll())
-        self.assertIsNone(unrelated.poll())
-
-        (case / "final-release").write_text("go\n", encoding="ascii")
-        status = driver.wait(timeout=5)
+        helper.signal_once(case, process)
+        os.kill(process.pid, signal.SIGINT)
+        status = process.wait(timeout=5)
+        stdout.close()
+        stderr.close()
 
         self.assertEqual(status, 130)
-        self.assertEqual(
-            (case / "driver.done").read_text(encoding="ascii"),
-            "130\n",
-        )
+        self.assertTrue((case / "escalated").exists())
+        self.assertFalse(helper.live_group_members(backend_pgid))
+        self.assertFalse((case / "descendant.later").exists())
+        self.assertFalse((case / "wrapper.later").exists())
         self.assertIsNone(unrelated.poll())
 
 
