@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-Linux Fieldwork now has a source-independent validator for the grammar of newly added or modified `.patch` files. It checks unified-diff hunk headers and declared old/new line counts before behavioral tests run.
+Linux Fieldwork now has a source-independent validator for the grammar of newly added or modified `.patch` files. It checks textual file sections, unified-diff hunk headers, and declared old/new line counts before behavioral tests run.
 
 The gate catches malformed patch packaging. It does not prove that a patch applies to its intended source, applies with zero fuzz, composes after prerequisite patches, or implements the right behavior.
 
@@ -27,11 +27,11 @@ That is a patch-carrier defect, not product evidence. Catching it in the ordinar
 
 ## Exact boundary
 
-Owning issue: #294.
+Owning issue: #294. Canonical review carrier: PR #302.
 
-Branch: `tooling/unified-diff-hunk-validator`.
+Branch: `tooling/unified-diff-hunk-validator-current-main`.
 
-Base reviewed before implementation: `078a916cbba8fe0fc2d0d5237be6c439ff80ee20`.
+Current-main source generation began from `a636a071de07cc94f797c899c082a271df79e833`, which includes the latest RECONVENE calibration. The semantic parser-review head before this record refresh is `06225f1ce8e82fa532cdf5574636e65a08488c3a`.
 
 Changed surfaces:
 
@@ -48,13 +48,19 @@ The validator:
 - accepts files or directories;
 - recursively scans directories for `*.patch`;
 - supports Git unified-diff metadata;
-- supports multiple files and hunks;
+- supports ordinary Git-separated and plain multi-file unified diffs;
+- supports multiple hunks per textual file section;
 - supports omitted hunk counts, where the count means one;
 - supports zero-count insertion and deletion hunks;
 - ignores the standard `\ No newline at end of file` marker;
 - accepts Git binary and metadata-only patches without textual hunks;
+- accepts a format-patch signature after a complete hunk;
 - rejects malformed hunk headers;
+- rejects unpaired textual file headers;
+- rejects textual file headers without a hunk;
+- rejects hunks without a preceding textual file header;
 - rejects bare or invalidly prefixed hunk-body lines;
+- rejects extra body lines after the declared counts are already satisfied;
 - rejects declared old/new counts that do not match the hunk body;
 - provides text and JSON output;
 - returns nonzero when any finding exists.
@@ -74,32 +80,40 @@ Hunk grammar and line counts are source-independent. Source applicability and ze
 
 ## Focused controls
 
-The synthetic unit matrix covers:
+The complete focused file contains sixteen controls:
 
 - the repository fixture that also triggers the changed-file workflow gate;
-- valid multi-file patches;
-- multiple hunks;
+- valid Git-separated multi-file and multi-hunk patches;
+- valid plain multi-file patches without `diff --git` separators;
 - omitted counts;
 - zero-count insertion and deletion;
 - no-newline markers;
+- format-patch signature handling;
 - hunk content that resembles `---` and `+++` file headers;
 - mode-only Git patches;
 - malformed hunk headers;
 - old/new count mismatches;
-- invalid body prefixes;
-- bare empty hunk lines;
+- extra body after satisfied counts;
+- missing, unpaired, and headerless textual sections;
+- invalid body prefixes and bare empty hunk lines;
 - non-patch prose;
-- recursive directory discovery;
-- explicit JSON schema and nonzero status.
+- recursive directory discovery, explicit JSON schema, and failure status.
 
-Initial local execution:
+Initial exact-file local execution, before the section-boundary review repair:
 
 ```text
 python3 -m compileall -q tools tests
 python3 -m unittest discover -s tests -v
 ```
 
-Result: compilation passed; 10/10 focused tests passed. The local Python environment emitted an unrelated spreadsheet-runtime warmup warning before execution, but the commands completed with status 0 and the validator tests passed. Hosted exact-head repository CI remains authoritative.
+Result: compilation passed; the then-current 10/10 focused tests passed. The local Python environment emitted an unrelated spreadsheet-runtime warmup warning before execution, but both commands completed with status 0.
+
+Complete-diff review then found two source-independent false-authority gaps:
+
+1. process substitution could hide a failing changed-file `git diff` as an empty list;
+2. a plain multi-file patch or an extra line after satisfied hunk counts could be parsed incorrectly.
+
+The workflow now writes the NUL-delimited path list under direct `set -e` control. The parser now tracks textual sections and rejects extra body after declared counts. Six added positive and negative cases were exercised in an isolated parser simulation. Hosted exact-head repository CI is the first authoritative execution of the complete 16-test file and changed-patch workflow step.
 
 ## Workflow behavior
 
@@ -109,9 +123,29 @@ For pull requests, the workflow obtains the exact base and head SHAs from the ev
 python3 tools/validate_unified_diffs.py -- <changed patch paths>
 ```
 
-The `git diff` command runs directly under `set -e`; a discovery failure cannot be hidden as an empty patch list. The disposable list is removed by an EXIT trap. NUL delimiters preserve spaces and newlines in paths.
+The `git diff` command runs directly under `set -e`; a discovery failure cannot be hidden as an empty patch list. The disposable list is removed by an EXIT trap. NUL delimiters preserve unusual path names.
 
 Workflow-dispatch runs skip the changed-file step because they have no pull-request base/head pair.
+
+## Complete-diff review
+
+The five-file review checked:
+
+- parser section and hunk state;
+- plain versus Git-separated multi-file boundaries;
+- content lines resembling file headers;
+- omitted and zero count semantics;
+- extra-body detection;
+- binary and metadata-only boundaries;
+- text and JSON result authority;
+- changed-file diff filtering;
+- NUL-safe path transfer;
+- fail-closed discovery;
+- disposable-list cleanup;
+- direct execution of the new gate by this PR's valid patch fixture;
+- separation from source application and semantic claims.
+
+No imported source, product candidate, external workflow, secret, live target, destructive action, or external interaction is included.
 
 ## Evidence boundary
 
@@ -131,9 +165,9 @@ Every investigation that proposes a patch must still apply its exact retained by
 
 ## Disposition
 
-`HOLD` until exact-head Linux Fieldwork CI passes and the complete five-file diff is reviewed.
+`HOLD` until exact-head Linux Fieldwork CI passes and confirms that the changed valid fixture executes through the new workflow step.
 
-A green result should move this internal repository tool to `MERGE LOCALLY`.
+A green result on an unchanged head should move this internal repository tool to `MERGE LOCALLY`.
 
 ## Authority
 
