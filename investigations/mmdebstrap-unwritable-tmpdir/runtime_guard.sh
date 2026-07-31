@@ -18,6 +18,19 @@ validate_disposable_runtime() {
   home_root="$(realpath -m "$home_input")"
   runtime_parent="$(realpath -m "$parent_input")"
 
+  case "$repository_root" in
+    /)
+      echo "refusing repository root as cleanup boundary" >&2
+      return 2
+      ;;
+  esac
+  case "$home_root" in
+    /)
+      echo "refusing home root as cleanup boundary" >&2
+      return 2
+      ;;
+  esac
+
   case "$runtime_parent" in
     /tmp|/tmp/*|/var/tmp|/var/tmp/*|/home/runner/work/_temp|/home/runner/work/_temp/*)
       ;;
