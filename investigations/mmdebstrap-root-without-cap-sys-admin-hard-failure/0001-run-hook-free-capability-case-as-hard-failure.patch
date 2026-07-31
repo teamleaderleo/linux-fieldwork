@@ -1,7 +1,7 @@
 diff --git a/coverage.txt b/coverage.txt
 --- a/coverage.txt
 +++ b/coverage.txt
-@@ -53,6 +53,7 @@ Test: root-mode-inside-unshare-chroot
+@@ -52,6 +52,7 @@ Test: root-mode-inside-unshare-chroot
  
  Test: root-without-cap-sys-admin
  Needs-Root: true
@@ -12,7 +12,7 @@ diff --git a/coverage.txt b/coverage.txt
 diff --git a/coverage.py b/coverage.py
 --- a/coverage.py
 +++ b/coverage.py
-@@ -96,6 +96,7 @@ def parse_config(confname):
+@@ -95,6 +95,7 @@ def parse_config(confname):
                      "Needs-QEMU",
                      "Needs-Root",
                      "Needs-APT-Config",
@@ -20,7 +20,7 @@ diff --git a/coverage.py b/coverage.py
                  ]:
                      print(f"Unknown field name {k} in test {name}")
                      exit(1)
-@@ -270,10 +271,11 @@ def main():
+@@ -268,10 +269,11 @@ def main():
              skipreason = skip(test.get("Skip-If"), dist, mode, variant, fmt)
              if skipreason:
                  tt = ("skip", skipreason)

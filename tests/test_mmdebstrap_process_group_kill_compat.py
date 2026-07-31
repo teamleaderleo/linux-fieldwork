@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
@@ -85,11 +86,14 @@ class MmdebstrapProcessGroupKillCompatibilityTest(unittest.TestCase):
 
     def test_patch_is_one_exact_replacement(self) -> None:
         patch_text = self.patch.read_text(encoding="utf-8")
+        hunk_headers = re.findall(
+            r"(?m)^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@(?: .*)?$",
+            patch_text,
+        )
         self.assertEqual(patch_text.count("diff --git "), 1)
-        self.assertEqual(patch_text.count("@@ "), 1)
+        self.assertEqual(hunk_headers, ["@@ -8,6 +8,6 @@ rm hookstarted"])
         self.assertEqual(patch_text.count("-" + self.original), 1)
         self.assertEqual(patch_text.count("+" + self.replacement), 1)
-        self.assertIn("@@ -7,6 +7,6 @@", patch_text)
 
     def test_zero_fuzz_application_preserves_complete_shell_and_source(self) -> None:
         source_text = self.source.read_text(encoding="utf-8")
