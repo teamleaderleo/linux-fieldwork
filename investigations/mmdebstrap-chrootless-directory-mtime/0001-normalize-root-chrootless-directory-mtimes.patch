@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
 --- a/upstream/mmdebstrap/mmdebstrap
 +++ b/upstream/mmdebstrap/mmdebstrap
-@@ -5631,6 +5631,17 @@
+@@ -5631,6 +5631,32 @@
      return int($installed_size * 1.2);
  }
  
@@ -9,17 +9,32 @@ diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
 +    my $root  = shift;
 +    my $mtime = shift;
 +
-+    0 == system(
-+        'find', $root, '-xdev', '-type', 'd', '-exec',
-+        'touch', '--no-dereference', "--date=\@$mtime", '--', '{}', '+'
-+      )
-+      or error "cannot normalize archive directory mtimes: $?";
++    lstat $root or error "cannot stat archive root $root: $!";
++    if (!-d _ || -l _) {
++        error "archive root is not a real directory: $root";
++    }
++    my $root_dev = (lstat _)[0];
++
++    my $normalize = sub {
++        lstat or error "cannot stat $File::Find::name: $!";
++        if (!-d _ || -l _) {
++            return;
++        }
++        my $device = (lstat _)[0];
++        if ($device != $root_dev) {
++            $File::Find::prune = 1;
++            return;
++        }
++        1 == utime($mtime, $mtime, $File::Find::name)
++          or error "cannot normalize directory mtime $File::Find::name: $!";
++    };
++    find({ wanted => $normalize, no_chdir => 1 }, $root);
 +}
 +
  sub main() {
      my $before = Time::HiRes::time;
  
-@@ -7331,6 +7342,16 @@
+@@ -7331,6 +7357,13 @@
          open(STDOUT, '>&', STDERR) or error "cannot open STDOUT: $!";
  
          setup($options);
@@ -28,9 +43,6 @@ diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
 +            && exists $ENV{SOURCE_DATE_EPOCH}
 +            && $options->{format} eq 'tar'
 +            && any { $_ eq $options->{mode} } ('root', 'chrootless')) {
-+            if (!can_execute 'touch') {
-+                error "cannot find touch";
-+            }
 +            normalize_archive_directory_mtimes($options->{root}, $mtime);
 +        }
  
