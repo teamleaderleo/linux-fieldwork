@@ -21,7 +21,7 @@ Search, in order:
 5. `investigations/` for active or retained evidence;
 6. the relevant imported tree under `upstream/`.
 
-Link related records instead of repeating them.
+Link related records instead of repeating them. Existing work is context, not permission: a claim, assignee, branch, or pull request does not reserve the question. Parallel reproduction, review, and competing candidates are allowed. Use separate exact heads, compare the results, and retain the evidence that explains which variant survived.
 
 ## 2. Choose the work type
 
