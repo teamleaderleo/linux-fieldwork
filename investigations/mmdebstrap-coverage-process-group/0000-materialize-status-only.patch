@@ -1,0 +1,7 @@
+diff --git a/upstream/mmdebstrap/coverage.py b/upstream/mmdebstrap/coverage.py
+--- a/upstream/mmdebstrap/coverage.py
++++ b/upstream/mmdebstrap/coverage.py
+@@ -421 +421,2 @@
+-            break
++            print("interrupted by SIGINT", file=sys.stderr)
++            raise SystemExit(130)
