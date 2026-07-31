@@ -71,8 +71,11 @@ class LF02ScriptLogArgumentsTest(unittest.TestCase):
             "upgrade",
             "1.0",
             "2.0",
+            "",
             "argument with spaces",
+            "tab\targument",
             "line\nbreak",
+            "snowman-☃",
         )
         fields = self.run_script(arguments)
         self.assertEqual(fields["phase"], "postinst")
@@ -94,6 +97,32 @@ class LF02ScriptLogArgumentsTest(unittest.TestCase):
             "script log token is not key=value: '1.0'",
         ):
             self.summary.parse_script_log_line(line)
+
+    def test_argument_field_is_required_and_must_be_recoverable(self) -> None:
+        without_arguments = (
+            "phase=preinst script_version=2.0 "
+            "dpkg_root=/target cwd=/target uid=0 gid=0"
+        )
+        with self.assertRaisesRegex(
+            self.summary.ValidationError,
+            "omit required fields",
+        ):
+            self.summary.parse_script_log_line(without_arguments)
+
+        for value, diagnostic in (
+            ("not-hex", "not hexadecimal"),
+            ("616263", "lacks a trailing NUL"),
+        ):
+            with self.subTest(value=value):
+                line = (
+                    f"phase=preinst script_version=2.0 args_hex={value} "
+                    "dpkg_root=/target cwd=/target uid=0 gid=0"
+                )
+                with self.assertRaisesRegex(
+                    self.summary.ValidationError,
+                    diagnostic,
+                ):
+                    self.summary.parse_script_log_line(line)
 
     def test_generated_source_uses_nul_delimited_hex_not_raw_args(self) -> None:
         source = self.build.script_text("preinst", "1.0")
