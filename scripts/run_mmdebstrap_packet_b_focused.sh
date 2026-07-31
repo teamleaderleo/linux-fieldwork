@@ -186,6 +186,7 @@ sh -n "$source_tree/debian/tests/testsuite" || \
   printf -- '- Outer timeout: `%s`\n' "$timeout_duration"
   printf -- '- Imported source: `upstream/mmdebstrap`\n'
   printf -- '- Product command: installed `/usr/bin/mmdebstrap` through a formatted proxy\n'
+  printf -- '- Autopkgtest selection: exact `--test-name=testsuite` stanza\n'
   printf -- '- Focused order: `create-directory`, `root-without-cap-sys-admin`, explicit stop\n'
   printf -- '- Broad phase: `not executed by construction`\n'
   printf -- '- Patch placement: `zero fuzz and zero offset`\n'
@@ -208,14 +209,14 @@ sh -n "$source_tree/debian/tests/testsuite" || \
 } >"$run_dir/provenance.md"
 
 printf '%q ' timeout --signal=INT --kill-after=5m "$timeout_duration" \
-  autopkgtest --output-dir "$output_dir" '<temporary-source-copy>' -- null \
-  >"$run_dir/command.txt"
+  autopkgtest --test-name=testsuite --output-dir "$output_dir" \
+  '<temporary-source-copy>' -- null >"$run_dir/command.txt"
 printf '\n' >>"$run_dir/command.txt"
 
 set +e
 timeout --signal=INT --kill-after=5m "$timeout_duration" \
-  autopkgtest --output-dir "$output_dir" "$source_tree" -- null \
-  >"$console_log" 2>&1
+  autopkgtest --test-name=testsuite --output-dir "$output_dir" \
+  "$source_tree" -- null >"$console_log" 2>&1
 raw_status=$?
 set -e
 printf '%s\n' "$raw_status" >"$raw_status_file"
