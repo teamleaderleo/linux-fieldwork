@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -141,6 +142,7 @@ def archive_manifest(archive: Path) -> list[tuple[object, ...]]:
 
 
 @unittest.skipUnless(shutil.which("tar"), "GNU tar is required")
+@unittest.skipUnless(sys.platform.startswith("linux"), "Linux descriptor API required")
 class DescriptorDirectoryMtimeCandidateTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -249,7 +251,7 @@ normalize_directory_mtimes($root, $ARGV[1]);
         )
         self.assertEqual(payload[6], PACKAGE_MTIME)
 
-    def test_replacement_by_symlink_or_regular_file_is_rejected(self) -> None:
+    def test_enumerated_child_replaced_before_open_is_rejected(self) -> None:
         parent = self.root / "parent"
         parent.mkdir()
         child = parent / "child"
@@ -258,23 +260,46 @@ normalize_directory_mtimes($root, $ARGV[1]);
         outside.mkdir()
         os.utime(outside, (OUTSIDE_MTIME, OUTSIDE_MTIME))
 
-        child.rmdir()
-        child.symlink_to(outside, target_is_directory=True)
         body = """
 sysopen(my $parent, $ARGV[0], O_RDONLY | O_DIRECTORY) or die $!;
-my $child = open_child_directory($parent, 'child');
-exit 9 if defined $child;
-"""
-        result = run_helpers(self.helpers, body, parent)
++my $parent_fd = fileno $parent;
++opendir(my $dh, "/dev/fd/$parent_fd") or die $!;
++my @entries = grep { $_ ne '.' and $_ ne '..' } readdir $dh;
++closedir $dh or die $!;
++grep { $_ eq 'child' } @entries or die "child was not enumerated";
++my $path = "$ARGV[0]/child";
++rmdir($path) or die $!;
++if ($ARGV[1] eq 'symlink') {
++    symlink($ARGV[2], $path) or die $!;
++} elsif ($ARGV[1] eq 'regular') {
++    open my $replacement, '>', $path or die $!;
++    print {$replacement} "regular\\n" or die $!;
++    close $replacement or die $!;
++    utime($ARGV[3], $ARGV[3], $path) == 1 or die $!;
++} else {
++    die "unknown replacement mode";
++}
++my $opened = open_child_directory($parent, 'child');
++exit 9 if defined $opened;
+""".replace("\n+", "\n")
+
+        result = run_helpers(
+            self.helpers, body, parent, "symlink", outside, PACKAGE_MTIME
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(child.is_symlink())
         self.assertEqual(int(outside.stat().st_mtime), OUTSIDE_MTIME)
 
         child.unlink()
-        child.write_bytes(b"regular\n")
-        os.utime(child, (PACKAGE_MTIME, PACKAGE_MTIME))
-        result = run_helpers(self.helpers, body, parent)
+        child.mkdir()
+        result = run_helpers(
+            self.helpers, body, parent, "regular", outside, PACKAGE_MTIME
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(child.is_file())
+        self.assertEqual(child.read_bytes(), b"regular\n")
         self.assertEqual(int(child.stat().st_mtime), PACKAGE_MTIME)
+        self.assertEqual(int(outside.stat().st_mtime), OUTSIDE_MTIME)
 
     def test_open_descriptor_remains_authority_after_path_replacement(self) -> None:
         parent = self.root / "rename-parent"
@@ -311,6 +336,20 @@ utime($before[8], $ARGV[4], $child) == 1 or die $!;
         self.assertEqual(int(outside.stat().st_mtime), OUTSIDE_MTIME)
         self.assertTrue(child.is_symlink())
 
+    def test_missing_linux_mount_identity_fails_closed(self) -> None:
+        mutated = self.helpers.replace(
+            'my $fdinfo = "/proc/self/fdinfo/$fd";',
+            'my $fdinfo = "/definitely-missing-fieldwork-fdinfo";',
+        )
+        self.assertNotEqual(mutated, self.helpers)
+        body = """
+sysopen(my $root, $ARGV[0], O_RDONLY | O_DIRECTORY) or die $!;
+directory_mount_id($root);
+"""
+        result = run_helpers(mutated, body, self.root)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot read mount identity", result.stderr)
+
     def test_source_uses_pinned_root_mount_boundary_and_handle_utime(self) -> None:
         call = "normalize_directory_mtimes($rootdir_handle, $mtime);"
         self.assertEqual(self.text.count(call), 1)
@@ -326,6 +365,8 @@ utime($before[8], $ARGV[4], $child) == 1 or die $!;
             "utime($timestamp, $timestamp, $child_path)", self.helpers
         )
         self.assertIn('"/proc/self/fdinfo/$fd"', self.helpers)
+        self.assertIn('-r $fdinfo or error "cannot read mount identity', self.helpers)
+        self.assertNotIn("return undef if not -r $fdinfo", self.helpers)
         self.assertIn("next if $childstat[0] != $root_device;", self.helpers)
         self.assertIn(
             "next if $child_mount_id ne $root_mount_id;", self.helpers
@@ -337,10 +378,10 @@ utime($before[8], $ARGV[4], $child) == 1 or die $!;
         directory_branch = self.text.index("('directory', 'null'))", call_index)
         self.assertLess(archive_start, call_index)
         self.assertLess(call_index, directory_branch)
-        self.assertIn(
-            "if (defined $ENV{SOURCE_DATE_EPOCH})",
-            self.text[archive_start:call_index],
-        )
+        scope = self.text[archive_start:call_index]
+        self.assertIn("if (defined $ENV{SOURCE_DATE_EPOCH}", scope)
+        self.assertIn("&& $^O eq 'linux'", scope)
+        self.assertIn("&& $options->{format} eq 'tar')", scope)
 
 
 if __name__ == "__main__":
