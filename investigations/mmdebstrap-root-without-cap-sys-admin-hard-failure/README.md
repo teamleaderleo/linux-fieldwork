@@ -1,6 +1,6 @@
 # Hook-free hard-failure scheduling with phase-scoped fixture ownership
 
-State: `current-main repair — fresh gate pending`
+State: `mechanism green on current-main merge ref — final documentation head pending`
 
 ## TL;DR
 
@@ -44,7 +44,7 @@ diff -u tar1.txt -
 
 The filename is shared; its valid identity is phase-specific.
 
-## Executed evidence
+## Real sid provenance
 
 PR #72 run 939 proved that the capability command succeeded and then lacked `tar1.txt`.
 
@@ -60,6 +60,22 @@ Exact broad-only paths:
 
 This is phase-scoped fixture evidence, not a product failure.
 
+## Current-main execution
+
+Mechanism head `07426fe6d7dbd66f2d4784838e19d7356afe726e` passed Linux Fieldwork CI `30639091371` / 992 on merge ref `c414feb1f5a52f716e8d268d6f17a4d2f6c567b7` against main `90170b1940579ec47175c6a04df1d4defdc6bab8`.
+
+The run:
+
+- validated one patch file and four hunks;
+- compiled all Python tools and tests;
+- retained 369 of 392 discovered tests after removing 23 exact inherited duplicates;
+- passed all 369 retained tests;
+- ran all ten focused phase-contract tests and all three selector/time/status guards exactly once;
+- proved consumer-only metadata, broad producer eligibility, explicit producer-first focused order, empty-selection failure, exhausted-budget neutrality, hard child status, timeout mapping, zero-fuzz/zero-offset application, complete source syntax, and imported capability invariants;
+- passed repository shell syntax and command-help checks.
+
+That receipt owns the executable mechanism. The current documentation-only head must receive one final exact-head repository gate before promotion.
+
 ## Four-file fence
 
 - this README;
@@ -69,8 +85,14 @@ This is phase-scoped fixture evidence, not a product failure.
 
 The three executable blobs are byte-identical to PR #72 head `c0d75729432c5b7a380529eb9bdd40008c605264`.
 
-## Evidence boundary
+## Complete review boundary
 
-This focused carrier proves scheduling, fixture regeneration policy, status classification, exact patch application, and imported-source invariants. PR #72 owns real Debian sid package execution and the next independent failure.
+The focused selector has one metadata-selected consumer and one explicit prerequisite. The guard fixture emits only that consumer, while the retained source assignment constructs the exact producer/consumer pair. Checking the final two timeout arguments is therefore sufficient for this fixed selector fixture; stricter arbitrary-inventory validation remains optional hardening, not a blocker.
+
+This carrier proves scheduling, fixture regeneration policy, status classification, exact patch application, and imported-source invariants. PR #72 owns real Debian sid package execution and the next independent failure.
 
 No imported source is modified. External contact is unauthorized and none is included.
+
+## Disposition
+
+`FINAL DOCUMENTATION HEAD — HOLD FOR EXACT-HEAD CI, UNCHANGED FOUR-FILE REVIEW, AND CURRENT-MAIN RELATION`.
