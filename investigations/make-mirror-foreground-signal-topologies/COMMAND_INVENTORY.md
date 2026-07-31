@@ -1,6 +1,12 @@
 # `update_cache()` cancellation command inventory
 
-This inventory classifies the exact imported `make_mirror.sh` blob `6c4be092edcf23b56b63a3befe238c099c45f590` for prompt-cancellation ownership work. It is not an implementation plan by itself.
+This inventory classifies imported `make_mirror.sh` blob `6c4be092edcf23b56b63a3befe238c099c45f590` for prompt-cancellation ownership work.
+
+## TL;DR
+
+The source grammar cannot be covered by one generic asynchronous helper without changing behavior. A complete prompt-cancellation implementation needs separate ownership for parent pipeline workers, simple commands and fallback attempts, and output-capturing pipelines.
+
+All three shapes are technically modelled. The canonical investigation stops without a source patch because the remaining delay has not been measured as harmful and the complete mechanism adds substantial process-group, dependency, and launch-window complexity.
 
 ## Parent call shapes
 
@@ -30,10 +36,12 @@ END
 
 Properties:
 
-- producer output is still small, but the shell creates a separate pipeline producer;
-- a source repair that backgrounds the pipeline and stores `$!` must prove that `$!` identifies the final worker on the target `/bin/sh`;
+- the shell creates a separate pipeline producer;
+- a source repair that backgrounds the pipeline and stores `$!` must prove that `$!` identifies the final worker;
 - worker cancellation must not leave a blocked or surviving producer;
 - ordinary input bytes and final status must remain unchanged.
+
+Executed controls show that on the target shell `$!` equals the final worker PID for both shapes, complete input reaches the worker, and explicit wait preserves worker status 7.
 
 ## Worker command shapes
 
@@ -45,7 +53,7 @@ Examples:
 - loops over source and preference files;
 - diagnostic `echo` and `cat`.
 
-These are short or local. Converting every operation to asynchronous ownership would add more lifecycle state than the observed cancellation latency justifies.
+These are short or local. Converting every operation to asynchronous ownership would add more lifecycle state than the observed latency justifies.
 
 ### Source-filter pipelines with ignored no-match status
 
@@ -67,16 +75,16 @@ APT_CONFIG=... apt-get --option ... update
 APT_CONFIG=... apt-get clean
 ```
 
-These are the cleanest worker-child ownership candidates:
+Worker-local group ownership is technically viable:
 
-1. launch asynchronously;
-2. retain the exact child PID;
-3. wait explicitly;
-4. preserve the child status;
+1. launch in an isolated group;
+2. retain the group leader PID;
+3. wait explicitly without changing caller errexit state;
+4. preserve child status;
 5. clear ownership;
-6. let worker signal handlers stop/wait the active child.
+6. stop and wait the group during signal cleanup.
 
-A launch/PID-registration first-signal interval must be closed just as for the proxy launches.
+A launch/PID-registration first-signal interval would still need closure.
 
 ### Fallback command chain
 
@@ -85,12 +93,15 @@ APT_CONFIG=... apt-get --yes install $pkgs \
   || APT_CONFIG=... apt-get --yes install ... $pkgs
 ```
 
-Each attempt can use a simple child-owner helper, but the chain must preserve:
+The seven-case matrix in `FALLBACK_CHAIN.md` proves:
 
-- fallback only after the first ordinary nonzero result;
-- cancellation must not start the fallback;
-- the second result remains authoritative when the fallback runs;
-- cleanup failure remains secondary.
+- fallback runs only after ordinary first-attempt failure;
+- fallback never runs after cancellation;
+- the second result is authoritative when fallback runs;
+- ordinary failure and signal beat cleanup failure;
+- cleanup failure is authoritative after otherwise successful work;
+- immediate rerun is clean;
+- a helper must not toggle `set -e` around wait.
 
 ### Output-capturing command-substitution pipeline
 
@@ -100,44 +111,41 @@ pkgs=$(APT_CONFIG=... apt-get indextargets \
   | grep-dctrl ...)
 ```
 
-This is the hardest worker boundary.
+Final-stage PID ownership alone is rejected: upstream stages survive and the shell job remains blocked.
 
-A simple asynchronous helper cannot update `pkgs` in the parent shell. A source repair needs a distinct output-capture primitive, likely a disposable file or controlled pipe, and must preserve:
+`OUTPUT_PIPELINE.md` proves one viable model using an isolated complete pipeline group plus a private capture file. It preserves:
 
-- exact stdout bytes and trailing-newline command-substitution semantics;
-- final pipeline status under the target shell;
-- ownership of every pipeline process or a justified terminal-process/SIGPIPE rule;
-- cancellation cleanup of the capture artifact;
-- no partial output becoming an accepted package list;
-- ordinary error and signal precedence.
-
-Backgrounding a brace group is insufficient by itself: killing the group shell can reproduce the same deferred-foreground-child problem one level lower.
+- exact command-substitution output and trailing-newline behavior;
+- final-stage pipeline status;
+- the existing masking of upstream failure when the final stage succeeds;
+- rejection of partial output after failure;
+- worker-only TERM status 143;
+- complete stage cleanup and immediate rerun.
 
 ## Minimum source primitives implied by the inventory
 
-One generic `run_child` helper cannot cover the exact grammar without semantic expansion. A source-level prompt-cancellation direction needs at least:
+A source-level prompt-cancellation direction needs at least:
 
 1. **parent pipeline-worker ownership** for both `echo` and heredoc call shapes;
-2. **worker simple-child ownership** for direct APT commands and each fallback attempt;
-3. **worker output-capturing pipeline ownership** for `pkgs=$(...)`.
-
-Each primitive needs first-signal retention, PID registration, waiting, status preservation, and cleanup/rerun controls.
+2. **worker simple-child ownership** for direct APT commands and fallback attempts;
+3. **worker output-capturing pipeline ownership** for `pkgs=$(...)`;
+4. first-signal retention and PID-registration closure at parent and worker levels;
+5. one result and cleanup precedence contract across all primitives.
 
 ## Comparative consequence
 
-- Option B, worker-child ownership alone, already loses as a complete solution because parent-only delivery remains deferred.
-- A single-helper form of option C also loses: the command-substitution pipeline requires a separate capture and pipeline-ownership mechanism.
-- A multi-primitive option C remains technically possible, but its scope is materially larger than the current two-layer status/cleanup repairs.
-- Option A, isolated process-group delivery, remains the smallest mechanism only if actual caller/session authority proves the group is safe and intentional.
+- Caller-owned group delivery is prompt only when an external caller guarantees a safe isolated group. The repository does not provide that contract.
+- Worker-child ownership alone loses because parent-only delivery remains deferred.
+- Final-stage pipeline PID ownership loses because upstream stages survive.
+- Internal isolated groups make the complete direction technically viable, but add `setsid`, group-aware external `kill`, multiple ownership helpers, capture publication, and repeated launch windows.
+- A dedicated all-stage supervisor would enlarge packaging and API surfaces further.
 
-## Next discriminators
+## Stop decision
 
-Before any retained source patch:
+The accepted top-level and worker repairs already provide eventual status correctness and correct cleanup ownership. The remaining promptness question has no measured real-workload impact.
 
-- prove `$!` is the final worker PID for both parent call shapes on the target shell;
-- prove ordinary heredoc bytes and final worker status survive background/wait conversion;
-- characterize producer survival when the final worker is cancelled;
-- prototype the output-capturing pipeline and require exact output/status/cancellation controls;
-- inventory actual caller/session topology for a supported isolated process-group contract.
+Disposition: retain the executed negative and comparative evidence and `HOLD` broader source expansion.
 
-No implementation direction is selected yet. External contact authorized: `false`.
+Reopen when measured harmful latency, an explicit isolated-supervisor contract, accepted process-group dependencies, or contradictory lifecycle evidence changes the cost-benefit decision.
+
+External contact authorized: `false`.
