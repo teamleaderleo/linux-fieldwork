@@ -1,8 +1,8 @@
-# LF-02 run 25 — maintainer-script arguments broke strict evidence parsing
+# LF-02 maintainer-script argument evidence repair
 
-State: `carrier-repair-created`
+State: `producer and schema repaired — fresh gates required`
 
-## Exact run
+## Run 25: original evidence failure
 
 - PR #178 head: `a3f7b0d09ec03cad457f09c2c466c759fcf94f54`
 - dedicated workflow: `30588652679` / 25
@@ -11,74 +11,105 @@ State: `carrier-repair-created`
 - digest: `sha256:a973001e9b3bd3ae93937f7385d7cbb9bb9c242b80acbb188ff640908353668a`
 - artifact files: 313
 
-## What cleared
-
-The workflow installed its trace dependency, compiled the LF-02 tools, passed shell syntax, and ran all 29 focused tests successfully.
-
-The guarded lifecycle then executed and retained phase, snapshot, classifier, provenance, and host-fingerprint evidence.
-
-## First failure
-
-Summary validation stopped with:
+The guarded lifecycle executed and retained phase, snapshot, classifier, provenance, and host-fingerprint evidence. Summary validation then stopped with:
 
 ```text
 evidence validation failed: script log token is not key=value: '2.0'
 ```
 
-The generated maintainer scripts wrote:
-
-```sh
-printf 'phase=%s script_version=%s args=%s dpkg_root=%s cwd=%s uid=%s gid=%s\n' \
-    ... "$*" ...
-```
-
-A multi-argument invocation therefore produced records such as:
+The generated scripts had written raw `$*` into a whitespace-delimited record:
 
 ```text
 phase=preinst script_version=2.0 args=upgrade 1.0 2.0 dpkg_root=... cwd=...
 ```
 
-The summarizer deliberately splits the retained line on whitespace and rejects any token without `=`. The bare version tokens are ambiguous: they cannot be assigned back to exact argument boundaries from the log.
+The bare tokens were ambiguous and could not be recovered into exact argument boundaries. This was an evidence-producer failure, not a lifecycle result. Run 25 published no valid disposition.
 
-This is an evidence-producer failure, not lifecycle behavior. No disposition from run 25 is valid because `summary.json` was not published.
+## Selected encoding
 
-## Selected repair
-
-Keep the existing strict `key=value` parser unchanged.
-
-Encode the complete argument vector in one token:
+The producer now writes the complete argument vector in one token:
 
 ```sh
 args_hex=$(printf '%s\000' "$@" | od -An -tx1 | tr -d ' \n')
 ```
 
-The encoding is:
+The format is:
 
-- NUL-delimited, preserving argument boundaries;
-- hexadecimal, so spaces, tabs, and newlines cannot become record delimiters;
-- `-` for an empty argument vector, keeping the token nonempty under the parser contract.
+- NUL-delimited, preserving argument boundaries including empty arguments;
+- hexadecimal, preventing spaces, tabs, newlines, or Unicode bytes from becoming record delimiters;
+- `-` for an empty argument vector.
 
-The generated record uses `args_hex=...` instead of raw `args=...`.
+The record uses `args_hex=...` instead of raw `args=...`.
 
-## Executable regression
+## Run 26: review exposed an unrelated fixture regression
 
-`tests/test_lf02_script_log_arguments.py`:
+First repair head: `912ca6bfaee301ba72ec98f0fbb652b41c093764`.
 
-1. imports the actual fixture generator and summarizer;
-2. executes a generated maintainer script in a disposable target;
-3. supplies ordinary version arguments plus arguments containing spaces and a newline;
-4. parses the retained record with the unchanged strict parser;
-5. decodes the NUL-delimited hex and requires exact argument equality;
-6. proves the explicit empty-vector sentinel;
-7. retains the ambiguous run-25 shape as a rejecting control;
-8. checks the generated source no longer records raw `$*` as a whitespace-delimited field.
+- Linux Fieldwork CI `30638297844` / 984: focused tests passed; the older stacked base still failed its generic shell/help inventory.
+- dedicated lifecycle `30638297780` / 26: failed before package execution.
 
-## Other gate classification
+The encoding tests passed, but complete lifecycle execution found that the same patch had accidentally changed:
 
-Linux Fieldwork CI `30588652694` / 689 ran the same 29 LF-02 tests successfully. Its later generic shell/help step failed because this old stacked generation lacks repository paths now assumed by current main, including `scripts/capture-linux-context.sh`. That is a separate current-main promotion requirement, not a contradiction of this evidence-format repair.
+```python
+path.parent.mkdir(parents=True, exist_ok=True)
+```
+
+to:
+
+```python
+path.parent.mkdir(parents=True)
+```
+
+The second file written below the same `DEBIAN` directory therefore raised `FileExistsError`. This failure was introduced by the carrier and was unrelated to the argument encoding.
+
+The branch restores `exist_ok=True` and adds a regression that writes two files below one existing parent.
+
+## Production schema repair
+
+Review found another evidence gap beyond the red lifecycle: the unit test could decode `args_hex`, but the production summarizer did not require that field or validate its encoding. A future producer could omit or corrupt argument evidence while still producing a summary.
+
+The current generation therefore:
+
+- adds `args_hex` to the required script-log fields;
+- accepts `-` as the explicit empty-vector sentinel;
+- otherwise requires valid hexadecimal;
+- requires the decoded byte sequence to be nonempty and end in NUL;
+- retains the legacy whitespace shape as a rejecting control.
+
+The test matrix now covers:
+
+- multiple ordinary arguments;
+- an empty argument within a nonempty vector;
+- spaces, tabs, newlines, and Unicode;
+- an empty vector;
+- missing `args_hex`;
+- malformed hexadecimal;
+- a vector without a trailing NUL;
+- repeatable writes below an existing fixture parent;
+- generated source using `$@` with NUL-delimited hexadecimal rather than raw `$*`.
+
+## Current identity
+
+- branch: `repair/178-script-log-tsv`;
+- current reviewed head after source and schema repairs: `1b2e807faea1b8d4cd2bbe98404ccde16197cdea`;
+- changed surface: fixture producer, production summarizer, focused regression, and this record;
+- product source: unchanged;
+- external contact: none and unauthorized.
+
+## Decision boundary
+
+A green unit test proves the producer/parser contract. It does not establish the package lifecycle result.
+
+A valid lifecycle disposition requires the dedicated workflow to:
+
+1. build all fixture packages;
+2. execute the guarded upgrade/failure/recovery matrix;
+3. retain complete script logs with recoverable argument vectors;
+4. publish a schema-valid summary;
+5. classify the resulting lifecycle, host effects, and unresolved events.
 
 ## Next transition
 
-Run repository CI and the dedicated LF-02 lifecycle on the exact repair head. A successful summary is required before interpreting package lifecycle, host effects, or disposition.
+Run repository CI and the dedicated LF-02 lifecycle on the unchanged current head. Classify any next failure by the first failing phase; do not infer a lifecycle result from producer-only success.
 
 Internal Linux Fieldwork work only. No external contact.
