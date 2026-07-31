@@ -21,7 +21,7 @@ FIELD_RE = re.compile(
     r"^[ \t]*(Carrier[ \t]+state|Successor)[ \t]*:[ \t]*(.*?)[ \t]*$",
     re.IGNORECASE | re.MULTILINE,
 )
-FENCE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
+FENCE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})(.*)$")
 SUCCESSOR_RE = re.compile(r"^#([1-9][0-9]*)$")
 ALLOWED_STATES = {"active", "component-evidence", "superseded", "stopped"}
 TERMINAL_STATES = {"superseded", "stopped"}
@@ -45,8 +45,9 @@ def _exact_int(value: Any) -> bool:
 def _without_fenced_code(body: str) -> str:
     """Remove Markdown fenced blocks while preserving ordinary lines.
 
-    A fence closes only with the same marker character and at least the opening
-    marker length. Unterminated fences remain excluded through end of body.
+    A fence closes only with the same marker character, at least the opening
+    marker length, and no trailing content other than whitespace. Unterminated
+    fences remain excluded through end of body.
     """
 
     output: list[str] = []
@@ -68,7 +69,12 @@ def _without_fenced_code(body: str) -> str:
         if match is None:
             continue
         marker = match.group(1)
-        if marker[0] == marker_character and len(marker) >= marker_length:
+        suffix = match.group(2)
+        if (
+            marker[0] == marker_character
+            and len(marker) >= marker_length
+            and suffix.strip() == ""
+        ):
             marker_character = None
             marker_length = 0
     return "\n".join(output)
