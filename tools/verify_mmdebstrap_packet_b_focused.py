@@ -102,6 +102,11 @@ def verify_console(text: str, *, raw_status: int) -> VerificationReceipt:
         raise VerificationError(
             f"expected exactly one {CONSUMER}, found {len(consumers)}"
         )
+    if len(records) != 2:
+        names = ", ".join(record.name for record in records)
+        raise VerificationError(
+            f"expected exactly two named focused tests, found {len(records)}: {names}"
+        )
     producer = producers[0]
     consumer = consumers[0]
     if producer.outcome != "success":
@@ -164,7 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Require one successful create-directory followed by one successful "
-            "root-without-cap-sys-admin and no later named case."
+            "root-without-cap-sys-admin and no other named case."
         )
     )
     parser.add_argument("console", type=pathlib.Path)
