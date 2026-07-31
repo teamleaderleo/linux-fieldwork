@@ -89,14 +89,16 @@ jobs:
 
           def exact_integer(name: str) -> int:
               value = text(name)
-              assert value is not None
+              if value is None:
+                  raise SystemExit(f"required status file is missing: {name}")
               stripped = value.strip()
               if not stripped.isdigit():
                   raise SystemExit(f"{name} is not a nonnegative integer: {stripped!r}")
               return int(stripped)
 
           console_path = unique("autopkgtest-console.log")
-          assert console_path is not None
+          if console_path is None:
+              raise SystemExit("autopkgtest console is missing")
           console = console_path.read_text(encoding="utf-8", errors="replace")
           named_lines = [
               line
