@@ -63,22 +63,23 @@ Both patches must apply with zero fuzz and zero offset. Imported source is copie
 `tools/verify_mmdebstrap_packet_b_focused.py` accepts only a console with:
 
 - raw autopkgtest status 0;
+- exactly two named tests in the complete console;
 - exactly one `create-directory` occurrence with `SUCCESS`;
 - exactly one `root-without-cap-sys-admin` occurrence with `SUCCESS`;
 - completed producer before completed consumer;
-- no later named test;
 - exactly one final `testsuite PASS` and no `testsuite FAIL`.
 
-Missing, duplicated, unresolved, reversed, failed, or followed-by-broad cases fail closed.
+Missing, extra, duplicated, unresolved, reversed, failed, unrelated-before, or broad-after cases fail closed.
 
 ## Status policy
 
 - exact focused success plus receipt: 0;
-- outer timeout 124 or timeout kill 137: neutral 77;
-- any other nonzero autopkgtest status: preserved as a hard failure;
+- outer timeout status 124: neutral 77;
+- bare 137 remains a hard failure because it can represent an external or OOM SIGKILL rather than an owned timeout;
+- every other nonzero autopkgtest status is preserved as a hard failure;
 - raw success with receipt disagreement: 2.
 
-The workflow requires carrier and container status agreement before promotion.
+The workflow requires carrier and container status agreement before promotion. Focused controls execute the status table, including `124→77` and `137→137`.
 
 ## Safety and cleanup
 
@@ -120,17 +121,17 @@ A topology mismatch fails before package execution.
 ## Required gates
 
 - complete repository CI;
-- focused preparation, verifier, and runner controls;
+- focused preparation, verifier, status-precedence, and runner controls;
 - exact generated-merge identity;
 - disposable sid package execution;
 - exact producer and consumer success receipt;
-- no later named case;
+- no other named case;
 - artifact upload, cleanup, and source-diff confirmation;
 - complete nine-file review on the unchanged head.
 
 ## Disposition
 
-**EXECUTE.** If the exact current-head sid workflow records both successes and no later case, Packet B may advance from current-main integration hold. Any hard failure remains authoritative and must be classified before changing product code.
+**EXECUTE.** If the exact current-head sid workflow records both successes and no other named case, Packet B may advance from current-main integration hold. Any hard failure remains authoritative and must be classified before changing product code.
 
 ## Evidence boundary and authority
 
