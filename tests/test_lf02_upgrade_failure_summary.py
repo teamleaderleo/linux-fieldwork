@@ -146,8 +146,8 @@ def make_results(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
         write_service_rows(results, name, [])
 
     script_log = [
-        f"phase=postinst script_version=3.0 dpkg_root={target} cwd={target}",
-        f"phase=postinst script_version=3.1 dpkg_root={target} cwd={target}",
+        f"phase=postinst script_version=3.0 args_hex=- dpkg_root={target} cwd={target}",
+        f"phase=postinst script_version=3.1 args_hex=- dpkg_root={target} cwd={target}",
     ]
     for label, (status, payload, conffile_contents) in SNAPSHOTS.items():
         conffiles = {
@@ -248,8 +248,8 @@ class LF02UpgradeFailureSummaryTest(unittest.TestCase):
                 lambda record: record.__setitem__(
                     "script_log",
                     [
-                        "phase=postinst script_version=3.0 dpkg_root=/wrong cwd=/wrong",
-                        "phase=postinst script_version=3.1 dpkg_root=/wrong cwd=/wrong",
+                        "phase=postinst script_version=3.0 args_hex=- dpkg_root=/wrong cwd=/wrong",
+                        "phase=postinst script_version=3.1 args_hex=- dpkg_root=/wrong cwd=/wrong",
                     ],
                 ),
             ),
