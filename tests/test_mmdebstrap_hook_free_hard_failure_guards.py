@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 
-SELECTION = "create-directory\nroot-without-cap-sys-admin\n"
+CONSUMER_SELECTION = "root-without-cap-sys-admin\n"
 
 
 class HookFreeHardFailureGuardsTest(unittest.TestCase):
@@ -122,7 +122,7 @@ class HookFreeHardFailureGuardsTest(unittest.TestCase):
         )
         return result, call_log, args_log
 
-    def test_empty_selection_fails_before_timeout(self) -> None:
+    def test_empty_consumer_selection_fails_before_timeout(self) -> None:
         with tempfile.TemporaryDirectory(prefix="hook-free-empty-") as tmp:
             root = pathlib.Path(tmp)
             block = self.hard_block(self.candidate_testsuite(root))
@@ -141,7 +141,7 @@ class HookFreeHardFailureGuardsTest(unittest.TestCase):
             result, call_log, args_log = self.execute(
                 root / "run",
                 block,
-                selection=SELECTION,
+                selection=CONSUMER_SELECTION,
                 timeout_value=0,
                 timeout_status=0,
             )
@@ -150,25 +150,24 @@ class HookFreeHardFailureGuardsTest(unittest.TestCase):
             self.assertFalse(call_log.exists())
             self.assertFalse(args_log.exists())
 
-    def test_selected_child_failure_remains_hard_and_order_is_preserved(self) -> None:
+    def test_selected_child_failure_remains_hard_and_prerequisite_is_first(self) -> None:
         with tempfile.TemporaryDirectory(prefix="hook-free-status-") as tmp:
             root = pathlib.Path(tmp)
             block = self.hard_block(self.candidate_testsuite(root))
             result, call_log, args_log = self.execute(
                 root / "run",
                 block,
-                selection=SELECTION,
+                selection=CONSUMER_SELECTION,
                 timeout_value=100,
                 timeout_status=2,
             )
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertTrue(call_log.exists())
             arguments = args_log.read_text(encoding="utf-8").splitlines()
-            self.assertLess(
-                arguments.index("create-directory"),
-                arguments.index("root-without-cap-sys-admin"),
+            self.assertEqual(
+                arguments[-2:],
+                ["create-directory", "root-without-cap-sys-admin"],
             )
-            self.assertEqual(arguments[-2:], ["create-directory", "root-without-cap-sys-admin"])
 
 
 if __name__ == "__main__":
