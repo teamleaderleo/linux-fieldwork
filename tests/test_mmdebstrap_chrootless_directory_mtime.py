@@ -1,6 +1,7 @@
 import hashlib
 import os
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -12,6 +13,17 @@ SOURCE_DATE_EPOCH = 1_700_000_000
 OLDER_DIRECTORY_MTIME = SOURCE_DATE_EPOCH - 100_000
 NEWER_DIRECTORY_MTIME = SOURCE_DATE_EPOCH + 100_000
 PACKAGE_FILE_MTIME = SOURCE_DATE_EPOCH - 50_000
+SYMLINK_MTIME = SOURCE_DATE_EPOCH - 75_000
+
+
+def real_directories(root: Path) -> list[Path]:
+    """Return real directories without following directory symlinks."""
+
+    result = [root]
+    for path in root.rglob("*"):
+        if stat.S_ISDIR(path.lstat().st_mode):
+            result.append(path)
+    return result
 
 
 def make_tree(root: Path, directory_mtime: int) -> None:
@@ -20,14 +32,14 @@ def make_tree(root: Path, directory_mtime: int) -> None:
     payload.write_bytes(b"same bytes\n")
     os.utime(payload, (PACKAGE_FILE_MTIME, PACKAGE_FILE_MTIME))
 
-    directories = [root, *[path for path in root.rglob("*") if path.is_dir()]]
-    for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True):
+    for directory in sorted(
+        real_directories(root), key=lambda path: len(path.parts), reverse=True
+    ):
         os.utime(directory, (directory_mtime, directory_mtime), follow_symlinks=False)
 
 
 def normalize_directory_mtimes(root: Path, timestamp: int) -> None:
-    directories = [root, *[path for path in root.rglob("*") if path.is_dir()]]
-    for directory in directories:
+    for directory in real_directories(root):
         os.utime(directory, (timestamp, timestamp), follow_symlinks=False)
 
 
@@ -160,6 +172,65 @@ class ChrootlessDirectoryMtimePolicyTest(unittest.TestCase):
         self.assertTrue(
             all(row[6] == SOURCE_DATE_EPOCH for row in manifest if row[1] == tarfile.DIRTYPE)
         )
+
+    def test_directory_normalization_preserves_symlink_hardlink_and_outside_target(self) -> None:
+        outside = self.root / "outside-target"
+        outside.mkdir()
+        outside_payload = outside / "sentinel"
+        outside_payload.write_bytes(b"outside bytes\n")
+        os.utime(outside_payload, (PACKAGE_FILE_MTIME, PACKAGE_FILE_MTIME))
+        os.utime(outside, (PACKAGE_FILE_MTIME, PACKAGE_FILE_MTIME))
+
+        links: list[Path] = []
+        for tree in (self.root_mode, self.chrootless):
+            demo = tree / "usr" / "share" / "demo"
+            payload = demo / "payload"
+            hardlink = demo / "zz-payload-hardlink"
+            os.link(payload, hardlink)
+            link = demo / "external-directory-link"
+            link.symlink_to(outside, target_is_directory=True)
+            try:
+                os.utime(
+                    link,
+                    (SYMLINK_MTIME, SYMLINK_MTIME),
+                    follow_symlinks=False,
+                )
+            except (NotImplementedError, OSError) as error:
+                self.skipTest(f"symlink timestamp control unavailable: {error}")
+            links.append(link)
+
+        outside_directory_before = int(outside.stat().st_mtime)
+        outside_payload_before = int(outside_payload.stat().st_mtime)
+
+        normalize_directory_mtimes(self.root_mode, SOURCE_DATE_EPOCH)
+        normalize_directory_mtimes(self.chrootless, SOURCE_DATE_EPOCH)
+
+        for tree, link in zip((self.root_mode, self.chrootless), links):
+            demo = tree / "usr" / "share" / "demo"
+            payload = demo / "payload"
+            hardlink = demo / "zz-payload-hardlink"
+            self.assertEqual(int(link.lstat().st_mtime), SYMLINK_MTIME)
+            self.assertEqual(int(payload.stat().st_mtime), PACKAGE_FILE_MTIME)
+            self.assertEqual(int(hardlink.stat().st_mtime), PACKAGE_FILE_MTIME)
+            self.assertEqual(payload.stat().st_ino, hardlink.stat().st_ino)
+
+        self.assertEqual(int(outside.stat().st_mtime), outside_directory_before)
+        self.assertEqual(int(outside_payload.stat().st_mtime), outside_payload_before)
+
+        root_archive, chrootless_archive = self.archive_pair("links", clamp=True)
+        self.assertEqual(root_archive.read_bytes(), chrootless_archive.read_bytes())
+        manifest = archive_manifest(root_archive)
+        symlink = next(
+            row for row in manifest if str(row[0]).endswith("/external-directory-link")
+        )
+        hardlink = next(
+            row for row in manifest if str(row[0]).endswith("/zz-payload-hardlink")
+        )
+        self.assertEqual(symlink[1], tarfile.SYMTYPE)
+        self.assertEqual(symlink[6], SYMLINK_MTIME)
+        self.assertEqual(symlink[7], str(outside))
+        self.assertEqual(hardlink[1], tarfile.LNKTYPE)
+        self.assertTrue(str(hardlink[7]).endswith("/payload"))
 
     def test_comparison_only_normalization_explains_but_does_not_fix_output(self) -> None:
         root_archive, chrootless_archive = self.archive_pair("comparison", clamp=True)
