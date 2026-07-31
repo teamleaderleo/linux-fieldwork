@@ -43,6 +43,22 @@ class PacketBFocusedHarnessTest(unittest.TestCase):
         self.assertNotIn("sigint-process-group-kill-sid.patch", source)
         self.assertNotIn("debian_bug_report", source)
 
+    def test_privileged_workflow_requires_owned_exact_branch(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        job_start = source.index("  focused-sid:\n")
+        checkout = source.index("      - name: Check out proposed repository state")
+        guard_block = source[job_start:checkout]
+        self.assertIn("github.event_name == 'pull_request'", guard_block)
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name == github.repository",
+            guard_block,
+        )
+        self.assertIn(
+            "github.head_ref == 'packet-b-focused-current-main'", guard_block
+        )
+        self.assertLess(guard_block.index("if: >-"), guard_block.index("runs-on:"))
+        self.assertEqual(source.count("docker run --privileged --rm"), 1)
+
     def test_workflow_receipt_gate_is_explicit_and_optimizer_safe(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         start = source.index("- name: Require focused completion")
