@@ -109,13 +109,21 @@ class VerifyGithubArtifactMetadataTest(unittest.TestCase):
                 expected_digest="not-a-digest",
             )
 
-    def test_workflow_verifies_metadata_before_download_and_retains_receipts(self) -> None:
+    def test_workflow_verifies_then_downloads_exact_id_and_retains_receipts(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         verify_index = source.index("- name: Verify exact source artifact metadata")
         download_index = source.index("- name: Download exact retained source artifact")
         summarize_index = source.index("- name: Build typed artifact receipt")
         self.assertLess(verify_index, download_index)
         self.assertLess(download_index, summarize_index)
+
+        download_block = source[download_index:summarize_index]
+        self.assertIn(
+            "artifact-ids: ${{ env.SOURCE_ARTIFACT_ID }}", download_block
+        )
+        self.assertNotIn(
+            "name: ${{ env.SOURCE_ARTIFACT_NAME }}", download_block
+        )
 
         required = (
             "actions/artifacts/$SOURCE_ARTIFACT_ID",
@@ -124,7 +132,6 @@ class VerifyGithubArtifactMetadataTest(unittest.TestCase):
             '--expected-name "$SOURCE_ARTIFACT_NAME"',
             '--expected-run-id "$SOURCE_RUN_ID"',
             '--expected-digest "$SOURCE_ARTIFACT_DIGEST"',
-            "artifact-ids: ${{ env.SOURCE_ARTIFACT_ID }}",
             "source-artifact-metadata.json",
             "source-artifact-metadata-receipt.json",
             "derived receipt artifact id contradicts verified metadata",
