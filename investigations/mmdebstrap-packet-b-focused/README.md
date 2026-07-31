@@ -81,7 +81,15 @@ Missing, extra, duplicated, unresolved, reversed, failed, unrelated-before, or b
 
 The workflow requires carrier and container status agreement before promotion. Focused controls execute the status table, including `124→77` and `137→137`.
 
-## Safety and cleanup
+## Safety, execution authority, and cleanup
+
+The privileged workflow job is eligible only when all three conditions are true before checkout:
+
+- event is `pull_request`;
+- the head repository exactly equals the owning repository;
+- the head branch is exactly `packet-b-focused-current-main`.
+
+This prevents fork-controlled or unrelated branch code from reaching the proposed checkout and `docker run --privileged` surface. A source-shape control retains that guard and the single privileged launch.
 
 The runner:
 
@@ -121,7 +129,7 @@ A topology mismatch fails before package execution.
 ## Required gates
 
 - complete repository CI;
-- focused preparation, verifier, status-precedence, and runner controls;
+- focused preparation, verifier, status-precedence, runner, optimizer-safe receipt, and workflow-authority controls;
 - exact generated-merge identity;
 - disposable sid package execution;
 - exact producer and consumer success receipt;
@@ -139,4 +147,4 @@ This carrier proves one Debian sid producer/capability pair against the imported
 
 Internal Linux Fieldwork work only. No Debian or mmdebstrap upstream issue, email, patch, merge request, release, deployment, or public contact is authorized or included.
 
-Refs #153, #194, run 974, merged PR #376, and historical PRs #72/#361/#366.
+Refs #75, #153, #194, run 974, merged PR #376, and historical PRs #72/#361/#366.
