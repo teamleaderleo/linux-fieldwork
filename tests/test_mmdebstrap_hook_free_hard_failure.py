@@ -100,20 +100,30 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
             self.tree / "debian/tests/testsuite"
         ).read_text(encoding="utf-8")
 
-    def test_candidate_marks_producer_and_consumer_for_same_hard_phase(self) -> None:
-        for name in ("create-directory", "root-without-cap-sys-admin"):
-            with self.subTest(name=name):
-                baseline = paragraph(self.baseline_coverage, name)
-                candidate = paragraph(self.candidate_coverage, name)
-                self.assertNotIn("Needs-APT-Config: true", baseline)
-                self.assertNotIn("Needs-Hook-Free-APT-Config: true", baseline)
-                self.assertIn("Needs-Root: true", candidate)
-                self.assertIn("Needs-Hook-Free-APT-Config: true", candidate)
-                self.assertNotIn("Needs-APT-Config: true", candidate)
+    def test_candidate_marks_only_consumer_and_prepends_explicit_producer(self) -> None:
+        baseline_producer = paragraph(self.baseline_coverage, "create-directory")
+        candidate_producer = paragraph(self.candidate_coverage, "create-directory")
+        self.assertIn("Needs-Root: true", candidate_producer)
+        self.assertNotIn("Needs-APT-Config: true", baseline_producer)
+        self.assertNotIn("Needs-APT-Config: true", candidate_producer)
+        self.assertNotIn("Needs-Hook-Free-APT-Config: true", baseline_producer)
+        self.assertNotIn("Needs-Hook-Free-APT-Config: true", candidate_producer)
+
+        baseline_consumer = paragraph(
+            self.baseline_coverage, "root-without-cap-sys-admin"
+        )
+        candidate_consumer = paragraph(
+            self.candidate_coverage, "root-without-cap-sys-admin"
+        )
+        self.assertIn("Needs-Root: true", candidate_consumer)
+        self.assertNotIn("Needs-APT-Config: true", baseline_consumer)
+        self.assertNotIn("Needs-APT-Config: true", candidate_consumer)
+        self.assertNotIn("Needs-Hook-Free-APT-Config: true", baseline_consumer)
+        self.assertIn("Needs-Hook-Free-APT-Config: true", candidate_consumer)
 
         self.assertEqual(
             selected_hook_free_tests(self.candidate_coverage),
-            ["create-directory", "root-without-cap-sys-admin"],
+            ["root-without-cap-sys-admin"],
         )
         self.assertIn(
             'test.get("Needs-Hook-Free-APT-Config", "false") == "true"',
@@ -123,6 +133,17 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
         self.assertIn(
             '("skip", "test cannot use host apt config")', self.candidate_driver
         )
+
+        hard_start = self.candidate_testsuite.index("HOOK_FREE_HARD_CONSUMERS=")
+        soft_start = self.candidate_testsuite.index(
+            "# run only those tests that were skipped because of USE_HOST_APT_CONFIG=yes"
+        )
+        hard = self.candidate_testsuite[hard_start:soft_start]
+        self.assertIn(
+            'HOOK_FREE_HARD_TESTS="create-directory\n$HOOK_FREE_HARD_CONSUMERS"',
+            hard,
+        )
+        self.assertEqual(hard.count("create-directory"), 1)
 
     def test_fixture_producer_creates_exact_consumer_input(self) -> None:
         producer = PRODUCER.read_text(encoding="utf-8")
@@ -163,7 +184,7 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
         )
 
     def test_hard_phase_is_hook_free_and_precedes_soft_transition_phase(self) -> None:
-        hard_start = self.candidate_testsuite.index("HOOK_FREE_HARD_TESTS=")
+        hard_start = self.candidate_testsuite.index("HOOK_FREE_HARD_CONSUMERS=")
         soft_start = self.candidate_testsuite.index(
             "# run only those tests that were skipped because of USE_HOST_APT_CONFIG=yes"
         )
@@ -172,6 +193,10 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
         soft = self.candidate_testsuite[soft_start : soft_start + 800]
 
         self.assertIn("Needs-Hook-Free-APT-Config true", hard)
+        self.assertIn(
+            'HOOK_FREE_HARD_TESTS="create-directory\n$HOOK_FREE_HARD_CONSUMERS"',
+            hard,
+        )
         self.assertIn('env CMD="mmdebstrap"', hard)
         self.assertIn('"$SRC/coverage.py" --exitfirst $HOOK_FREE_HARD_TESTS', hard)
         self.assertNotIn("sourcesfilter", hard)
@@ -183,7 +208,7 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
         self.assertNotIn("Needs-Hook-Free-APT-Config", soft)
 
     def test_actual_candidate_status_block_preserves_hard_failures(self) -> None:
-        hard_start = self.candidate_testsuite.index("HOOK_FREE_HARD_TESTS=")
+        hard_start = self.candidate_testsuite.index("HOOK_FREE_HARD_CONSUMERS=")
         soft_start = self.candidate_testsuite.index(
             "# run only those tests that were skipped because of USE_HOST_APT_CONFIG=yes"
         )
@@ -249,6 +274,7 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
         self.assertIn("tar -tf /tmp/debian-chroot.tar", case)
 
     def test_baseline_soft_phase_is_the_negative_control(self) -> None:
+        self.assertNotIn("HOOK_FREE_HARD_CONSUMERS=", self.baseline_testsuite)
         self.assertNotIn("HOOK_FREE_HARD_TESTS=", self.baseline_testsuite)
         self.assertIn(
             '"$SRC/coverage.py" --exitfirst $SKIPPED_TESTS || exit 77',
