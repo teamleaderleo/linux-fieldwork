@@ -23,13 +23,19 @@ Search, in order:
 
 Link related records instead of repeating them. Existing work is context, not permission: a claim, assignee, branch, or pull request does not reserve the question. Parallel reproduction, review, and competing candidates are allowed. Use separate exact heads, compare the results, and retain the evidence that explains which variant survived.
 
+Immediately before writing to an issue, pull request, or branch, refresh the canonical carrier, latest disposition, exact head, and current-main relation. This is an identity check, not an ownership lock. A technically useful branch may have become retired provenance while a newer restack owns the decision.
+
+When a gate fails, classify the first distinguishing owner before changing product code: product, fixture, capability, workflow, tooling, packaging, or evidence. Repair the owner that prevented the intended observation, then rerun unchanged downstream logic.
+
 ### Make a bounded cross-context pass
 
 Before narrowing to one file or one happy path, sample the adjacent contexts that could change the decision: caller and callee, direct and mediated paths, producer and consumer, setup and cleanup, sibling modes or backends, representation and metadata, ownership, nearby tests, and relevant history.
 
 Choose two to four adjacent contexts. Give each one a discriminator that could make the current mechanism, compatibility claim, evidence boundary, or next action lose. Transfer reusable defect classes from other investigations—identity, ordering, completeness, cleanup authority, sanitizer bootstrap, metadata, retry, cache, and exact-execution mistakes—but keep them as hypotheses with negative controls.
 
-Breadth is not permission for aimless exploration. Record a stop condition. Stop when the selected contexts cannot change the decision, or split a distinct finding into its own carrier instead of silently widening the current patch. Follow [`notes/processes/cross-context-review-prevents-myopia.md`](notes/processes/cross-context-review-prevents-myopia.md) for the review map and compact receipt.
+When an adjacent context invokes the same executable or resembles the same mechanism, verify that it has the same operation owner and authority contract before widening the patch. A host probe, user-directed hook, sanitizer, and package child may all call the same tool for intentionally different reasons. Broad review may produce a new defect, a separate successor, or a sharper boundary; it does not have to produce a larger patch.
+
+Breadth is not permission for aimless exploration. Record a stop condition. Stop when the selected contexts cannot change the decision, or split a distinct finding into its own carrier instead of silently widening the current patch. Follow [`notes/processes/cross-context-review-prevents-myopia.md`](notes/processes/cross-context-review-prevents-myopia.md) for the review map and compact receipt, and [`notes/processes/recent-cross-context-lessons.md`](notes/processes/recent-cross-context-lessons.md) for recent examples involving carrier freshness, failure ownership, structured argv evidence, adjacent authority, and workflow state.
 
 ## 2. Choose the work type
 
