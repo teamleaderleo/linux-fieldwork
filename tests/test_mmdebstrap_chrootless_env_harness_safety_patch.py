@@ -30,6 +30,7 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
                 "patch",
                 "--batch",
                 "--forward",
+                "--fuzz=0",
                 "-p1",
                 "-d",
                 str(root),
