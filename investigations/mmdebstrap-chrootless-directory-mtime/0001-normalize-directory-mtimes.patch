@@ -20,7 +20,7 @@
 +            $File::Find::prune = 1;
 +            return;
 +        }
-+        1 == utime($timestamp, $timestamp, $File::Find::name)
++        1 == utime($stat[8], $timestamp, $File::Find::name)
 +          or error "cannot set mtime on $File::Find::name";
 +    };
 +
@@ -30,11 +30,12 @@
  sub approx_disk_usage {
      my $directory  = shift;
      my $block_size = shift;
-@@ -7352,6 +7375,10 @@
+@@ -7352,6 +7375,11 @@
              ('tar', 'squashfs', 'ext2', 'ext4')) {
              info "creating tarball...";
  
-+            if (defined $ENV{SOURCE_DATE_EPOCH}) {
++            if (defined $ENV{SOURCE_DATE_EPOCH}
++                && $options->{format} eq 'tar') {
 +                normalize_directory_mtimes($options->{root}, $mtime);
 +            }
 +
