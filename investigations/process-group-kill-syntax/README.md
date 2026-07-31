@@ -109,6 +109,21 @@ The current workflow repair:
 
 The predecessor sid result remains useful evidence for command topology. Fresh exact-head execution owns the zero-status selection claim.
 
+## First patched execution classification
+
+Head `c09c3248d9c52282b1b64f31a20874f07793e218` ran the intended patched sid job in workflow `30635358159` / 7. It stopped before candidate execution because the exactness gate found stale hunk coordinates:
+
+```text
+patching file tools/probe_process_group_kill.py
+Hunk #2 succeeded at 453 (offset -1 lines).
+Hunk #3 succeeded at 471 (offset -2 lines).
+candidate patch used fuzz or offset
+```
+
+Artifact `8795057389` retained the package and patch receipts; its ZIP digest is `sha256:06f9d43050d66394e47a61c198678180d2162d029e528a6fcebbdf82d5a1c4ab`.
+
+This is a patch-packaging rejection, not evidence against the zero-status policy or any kill spelling. The product-direction additions matched the imported source, but two hunk headers named lines one and two positions too late. The current patch declares the actual imported-source coordinates, and the focused Python regression now rejects both `fuzz` and `offset` output so repository CI owns the same exactness contract as the sid job.
+
 ## Exact candidate matrix
 
 The probe exercises:
