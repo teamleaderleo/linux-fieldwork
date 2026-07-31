@@ -5,6 +5,7 @@ import pathlib
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -49,6 +50,8 @@ class ProcessGroupKillZeroStatusSelectionTest(unittest.TestCase):
         self.assertIsNotNone(spec)
         self.assertIsNotNone(spec.loader)
         module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        self.addCleanup(sys.modules.pop, spec.name, None)
         spec.loader.exec_module(module)
         return module
 
