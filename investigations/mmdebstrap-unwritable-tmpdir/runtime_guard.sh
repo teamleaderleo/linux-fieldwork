@@ -5,7 +5,7 @@ validate_disposable_runtime() {
   local home_input=$2
   local parent_input=$3
   local leaf=$4
-  local repository_root home_root runtime_parent runtime_root
+  local repository_root home_root runtime_parent runtime_path runtime_root
 
   case "$leaf" in
     ''|.|..|*/*)
@@ -40,7 +40,13 @@ validate_disposable_runtime() {
       ;;
   esac
 
-  runtime_root="$(realpath -m "$runtime_parent/$leaf")"
+  runtime_path="$runtime_parent/$leaf"
+  if [[ -L "$runtime_path" ]]; then
+    echo "refusing symlink runtime leaf: $runtime_path" >&2
+    return 2
+  fi
+
+  runtime_root="$(realpath -m "$runtime_path")"
   case "$runtime_root" in
     "$runtime_parent"/*)
       ;;
