@@ -1,10 +1,11 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -346,9 +346,21 @@ def main():
+@@ -346,9 +346,23 @@ def main():
      ) as out_tar:
 +        hardlink_prefix = re.compile(r"^(?:(?:\.\.?/)|/)+")
 +        type_excluded_members = set()
++        hardlink_dependency_failure = False
          for member in in_tar:
              if path_filter_should_skip(member):
                  continue
@@ -19,7 +20,20 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +                    % (member.name, member.linkname),
 +                    file=sys.stderr,
 +                )
-+                exit(1)
++                hardlink_dependency_failure = True
++                break
              if args.strip_components:
                  comps = member.name.split("/")
                  # just as with GNU tar, archive members with less or equal
+@@ -410,8 +424,11 @@ def main():
+             if member.isfile():
+                 with in_tar.extractfile(member) as file:
+                     out_tar.addfile(member, file)
+             else:
+                 out_tar.addfile(member)
+ 
++    if hardlink_dependency_failure:
++        exit(1)
++
+ 
+ if __name__ == "__main__":
