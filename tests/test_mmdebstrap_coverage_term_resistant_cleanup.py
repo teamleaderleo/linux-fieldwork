@@ -364,6 +364,7 @@ class CoverageTermResistantCleanupTest(unittest.TestCase):
         self.addCleanup(stdout.close)
         self.addCleanup(stderr.close)
         self.addCleanup(self.stop_driver, process)
+        self.wait_for_file(case / "wrapper.ready", process)
         self.wait_for_file(case / "descendant.ready", process)
         return case, process, stdout, stderr
 
