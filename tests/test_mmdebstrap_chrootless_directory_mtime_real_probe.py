@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
+import tempfile
 import unittest
 
 
@@ -70,6 +72,17 @@ class ChrootlessDirectoryMtimeRealProbeContractTest(unittest.TestCase):
             "/home/runner/work/_temp|/home/runner/work/_temp/*",
             source,
         )
+        self.assertIn(
+            'runtime="$runtime_parent/mmdebstrap-chrootless-directory-mtime-real"',
+            source,
+        )
+        self.assertIn('if [[ -L "$runtime" ]]; then', source)
+        self.assertIn("refusing symlink runtime leaf", source)
+        self.assertIn('runtime_canonical="$(realpath -m "$runtime")"', source)
+        self.assertNotIn(
+            'runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-directory-mtime-real")"',
+            source,
+        )
         self.assertIn("refusing runtime inside repository", source)
         self.assertIn("refusing runtime containing repository", source)
         self.assertIn("refusing runtime containing home", source)
@@ -80,6 +93,37 @@ class ChrootlessDirectoryMtimeRealProbeContractTest(unittest.TestCase):
         first_recursive_removal = source.index('rm -rf "$runtime"', stale_guard)
         self.assertGreater(stale_guard, validation_end)
         self.assertLess(stale_guard, first_recursive_removal)
+
+    def test_symlink_runtime_leaf_is_rejected_without_touching_target(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="lf-real-metadata-parent-", dir="/tmp"
+        ) as parent_name:
+            parent = pathlib.Path(parent_name)
+            target = parent / "protected-target"
+            target.mkdir()
+            sentinel = target / "sentinel"
+            sentinel.write_text("preserve\n", encoding="utf-8")
+            runtime = parent / "mmdebstrap-chrootless-directory-mtime-real"
+            runtime.symlink_to(target, target_is_directory=True)
+
+            environment = os.environ.copy()
+            environment["RUNNER_TEMP"] = str(parent)
+            result = subprocess.run(
+                ["bash", str(PROBE), "--check-runtime-parent"],
+                cwd=REPOSITORY_ROOT,
+                env=environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=30,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("refusing symlink runtime leaf", result.stderr)
+            self.assertEqual(result.stdout, "")
+            self.assertTrue(runtime.is_symlink())
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "preserve\n")
 
     def test_probe_preserves_real_metadata_and_device_boundaries(self) -> None:
         source = PROBE.read_text(encoding="utf-8")
