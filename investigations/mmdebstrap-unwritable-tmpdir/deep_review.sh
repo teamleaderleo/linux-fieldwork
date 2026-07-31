@@ -4,7 +4,25 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 source_root="$repo_root/upstream/mmdebstrap"
 result_dir="$repo_root/investigations/mmdebstrap-unwritable-tmpdir/results"
-runtime_root="${RUNNER_TEMP:-/tmp}/linux-fieldwork-mmdebstrap-deep-review"
+runtime_leaf=linux-fieldwork-mmdebstrap-deep-review
+source "$repo_root/investigations/mmdebstrap-unwritable-tmpdir/runtime_guard.sh"
+
+if [[ ${1:-} == --check-runtime-parent ]]; then
+  if [[ $# -ne 2 ]]; then
+    echo "usage: $0 --check-runtime-parent PATH" >&2
+    exit 2
+  fi
+  validate_disposable_runtime \
+    "$repo_root" "${HOME:-/nonexistent-home}" "$2" "$runtime_leaf" \
+    >/dev/null
+  exit
+fi
+
+runtime_root="$(validate_disposable_runtime \
+  "$repo_root" \
+  "${HOME:-/nonexistent-home}" \
+  "${RUNNER_TEMP:-/tmp}" \
+  "$runtime_leaf")"
 source_spec="deb [trusted=yes] https://deb.debian.org/debian sid main"
 
 cleanup() {
