@@ -12,10 +12,10 @@ This candidate keeps the folder itself open. Child folders are opened relative
 to an already-open parent, shortcuts are refused, and the timestamp operation is
 performed on the open folder rather than resolving its old name again.
 
-## Product contract
+## Current bounded contract
 
-When `SOURCE_DATE_EPOCH` is defined and the output format is backed by the final
-tar stream (`tar`, `squashfs`, `ext2`, or `ext4`):
+On Linux, when `SOURCE_DATE_EPOCH` is defined and the output format is direct
+`tar`:
 
 1. reuse mmdebstrap's existing locked temporary-root filehandle;
 2. enumerate each directory through `/dev/fd/<parent-fd>`;
@@ -23,8 +23,8 @@ tar stream (`tar`, `squashfs`, `ext2`, or `ext4`):
    parent;
 4. skip entries that disappeared or became symlinks or non-directories;
 5. prune a different device;
-6. on Linux, also prune a different mount ID so same-device bind mounts are not
-   timestamped;
+6. require readable Linux `/proc/self/fdinfo` mount identity and prune a
+   different mount ID, including same-device bind mounts;
 7. retain visited `(device,inode)` identities to avoid traversal cycles;
 8. recurse through the opened child handle;
 9. preserve each opened directory's existing atime and set only its mtime through
@@ -32,8 +32,10 @@ tar stream (`tar`, `squashfs`, `ext2`, or `ext4`):
 10. retain GNU tar's existing `--clamp-mtime` policy for every non-directory
     member.
 
-The helper is not called for `directory`, `null`, dry-run, or absent
-`SOURCE_DATE_EPOCH` output.
+The helper is not called for `squashfs`, `ext2`, `ext4`, `directory`, `null`,
+dry-run, absent `SOURCE_DATE_EPOCH`, or non-Linux output. Those surfaces retain
+their current behavior until they receive separate evidence and portability
+review.
 
 ## Why this is different from PR #384
 
@@ -53,11 +55,37 @@ This candidate performs child lookup through a pinned parent with
 does not change the object referenced by the handle. Timestamp mutation receives
 the handle itself.
 
+## Complete-review repairs before execution
+
+The first descriptor head correctly closed the pathname mutation race but
+expanded beyond its evidence and overstated one control:
+
+- it ran for `tar`, `squashfs`, `ext2`, and `ext4` although executed evidence
+  covered direct tar only;
+- it could reach the helper on non-Linux even though `/dev/fd`, `O_NOFOLLOW`,
+  handle `utime`, and mount-ID authority were unresolved;
+- unreadable `/proc/self/fdinfo` silently disabled same-device mount pruning;
+- the replacement test changed the child before helper invocation, so it proved
+  no-follow/type rejection but not readdir-to-open replacement.
+
+The current generation:
+
+- limits invocation to Linux direct tar;
+- fails closed when Linux mount identity cannot be read;
+- enumerates the child through the pinned parent, replaces it, and only then
+  calls `open_child_directory` in both symlink and regular-file controls;
+- retains source assertions for the Linux/direct-tar scope and the absence of a
+  name-based mount-ID fallback.
+
+The attempted pull-request checkpoint for this review was blocked by the
+interaction platform. The exact observation and repair are retained here instead
+of being retried or disguised.
+
 ## Focused controls
 
 `tests/test_mmdebstrap_chrootless_directory_mtime_descriptor.py` requires:
 
-- zero-fuzz patch application and transformed Perl syntax;
+- zero-fuzz, zero-offset patch application and transformed Perl syntax;
 - root/chrootless archive convergence under the retained GNU tar options;
 - preservation of intentionally distinct directory atimes while directory mtimes
   converge to the epoch;
@@ -66,11 +94,15 @@ the handle itself.
   and target, outside directory/sentinel mtimes, and `user.*` xattrs when
   supported;
 - a clean second normalization run;
-- rejection when an enumerated child is replaced by an outside symlink;
-- rejection when that child is replaced by a regular file;
+- enumeration of a real child followed by replacement with an outside symlink,
+  then descriptor-open rejection;
+- enumeration followed by replacement with a regular file, then descriptor-open
+  rejection;
 - continued authority over an opened directory after it is renamed and its old
   path becomes an outside symlink;
-- one call using the existing locked root handle inside the archive/SDE branch;
+- fail-closed behavior when Linux mount identity is unavailable;
+- one call using the existing locked root handle only inside the Linux,
+  direct-tar, SDE branch;
 - source contracts for `O_NOFOLLOW`, `/dev/fd`, filehandle `utime`, device and
   mount pruning, visited-inode tracking, and mtime-only mutation.
 
@@ -88,10 +120,11 @@ not merely an overstrict internal comparison.
 
 This is still a draft candidate, not an upstream-ready patch.
 
-- Hosted tests execute on Linux. `/dev/fd`, `O_NOFOLLOW`, filehandle `futimes`,
-  and the non-Linux fallback need explicit Hurd review or execution.
+- Non-Linux behavior is deliberately unchanged. A Hurd or other-platform design
+  needs separate evidence rather than inheriting Linux `/proc` and no-follow
+  assumptions.
 - A real different-mount control may require a privileged disposable namespace;
-  the current test verifies the device/mount-ID mechanism and ordinary tree
+  the current test verifies fail-closed mount-ID authority and ordinary tree
   behavior but does not create a bind mount.
 - ACLs, capabilities, privileged xattrs, converter outputs, and a full package
   rerun remain unexecuted.
@@ -106,9 +139,10 @@ This is still a draft candidate, not an upstream-ready patch.
 
 ## Promotion rule
 
-Require exact-head repository CI, complete review of the descriptor and mount
-boundary, and an explicit portability decision. Only then compose this patch
-into a disposable current-sid carrier and rerun the real `chrootless` comparison.
+Require fresh exact-head repository CI, complete review of the descriptor and
+mount boundary, and a real different-mount control. Only then compose this patch
+into a disposable current-sid carrier and rerun the real direct-tar
+`chrootless` comparison.
 
 ## Authority
 
