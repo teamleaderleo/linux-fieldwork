@@ -4,261 +4,186 @@ State: `comparative-evaluation-active`
 
 ## TL;DR
 
-The accepted top-level proxy lifecycle and the focused `update_cache()` worker repair make status, cleanup, and proxy ownership correct. They do not make every signal-delivery topology prompt while a shell waits for an unowned foreground descendant.
+The accepted top-level proxy lifecycle and focused `update_cache()` worker repair make eventual signal status, cleanup, and proxy ownership correct. They do not make every PID-only cancellation topology prompt while a shell waits for an unowned foreground descendant.
 
-Executed real-`/bin/sh` controls now establish:
+The retained comparison now establishes four layers:
 
-- worker-only TERM waits for the foreground command, then exits 143 before worker later work;
-- owner-only TERM waits for the complete worker and permits worker later work before exiting 143;
-- whole-process-group TERM stops promptly;
-- explicit worker ownership of its foreground child makes worker-only TERM prompt;
-- composed parent ownership of the pipeline worker plus worker ownership of the foreground child makes owner-only TERM prompt;
-- for both the one-line and heredoc parent call shapes, a background pipeline's `$!` is the final worker PID on the target shell, and explicit `wait` preserves input plus worker status.
+1. current worker-only and owner-only signals can remain deferred behind foreground work;
+2. explicit parent-worker plus worker-child ownership can make those two paths prompt in a simple chain;
+3. background parent pipelines preserve final-worker PID, input, and status for both one-line and heredoc producers;
+4. the worker's output-capturing internal pipeline cannot be owned by its final PID alone—upstream stages survive and `wait "$!"` remains blocked. An isolated `setsid` group can stop all stages and preserve output/status semantics, but adds dependencies and group policy.
 
-The current candidates remain valid for their stated eventual status and cleanup contracts. This investigation owns the separate promptness and descendant-ownership layer.
+No source direction is selected yet. The simple shell-only composed approach is eliminated; the remaining comparison is between bounded internal process groups, a dedicated all-stage supervisor, and deliberately retaining eventual cancellation because the documented operational impact is limited.
 
 ## Canonical records
 
-- owning issue: #263;
+- issue: #263;
 - merged top-level lifecycle: PR #224, merge commit `386f5c8dbb01e5de1af45ac0eb325ee8567722e3`;
 - focused worker lifecycle: PR #259 at `d270f558fa7c32569ea380fd614c34edaf60b3b3`;
 - imported source blob: `6c4be092edcf23b56b63a3befe238c099c45f590`;
-- topology regression: `tests/test_make_mirror_foreground_signal_topologies.py`;
-- parent pipeline identity regression: `tests/test_make_mirror_pipeline_worker_identity.py`;
-- exact command inventory: `COMMAND_INVENTORY.md`;
-- branch: `investigation/make-mirror-foreground-signal-topologies`.
+- `COMMAND_INVENTORY.md`: exact worker command grammar;
+- `CALLER_TOPOLOGY.md`: documented invocation and process-group authority;
+- `OUTPUT_PIPELINE.md`: final-PID failure and isolated-group semantics;
+- `tests/test_make_mirror_foreground_signal_topologies.py`;
+- `tests/test_make_mirror_pipeline_worker_identity.py`;
+- `tests/test_make_mirror_output_capture_pipeline_ownership.py`;
+- `tests/test_make_mirror_output_capture_semantics.py`.
 
-## Explain like I'm five
+## In simple words
 
-A manager owns a worker, and the worker uses a tool.
+A manager owns a worker, and the worker uses tools.
 
-The current repair makes everyone report the right stop result and clean only their own things. But if only the manager hears “stop,” the worker and tool can finish their current job before the manager acts. If only the worker hears it, the tool can finish first.
+The current repair makes everyone eventually report “stopped” and clean only their own things. But if only the manager hears “stop,” the worker and tool can finish first. If only the worker hears it, the active tool can finish first.
 
-One approach is to stop the whole group. Another is to make the manager track the worker and the worker track the tool, so cancellation can travel down the ownership chain.
-
-## Why care
-
-A long foreground APT command can continue after a stop request even though the eventual result is correctly reported as cancellation. Parent-only delivery can also allow later commands inside the worker to run before the top-level trap executes.
-
-This is an operational cancellation-latency and descendant-ownership question. It is not evidence that PR #259 returns success, leaks the proxy, or violates its written cleanup contract.
+Tracking the worker and tool works for one simple chain. The real worker also has a three-tool pipeline. Tracking only the last tool does not work because the first two can survive and keep the worker waiting. Stopping an isolated group works, but the script does not currently create or promise those groups.
 
 ## Exact source boundary
 
-The imported source invokes `update_cache()` synchronously as the last pipeline command:
+The source calls `update_cache()` synchronously through two parent pipeline shapes:
 
 ```sh
 echo "deb ..." | update_cache "$dist" "$nativearch"
 cat <<END | update_cache "$dist" "$nativearch"
 ```
 
-Inside the worker it runs foreground operations including:
+Inside `update_cache()` it has:
 
-```sh
-APT_CONFIG=... apt-get update --error-on=any
-APT_CONFIG=... apt-get --yes install ...
-```
+- direct foreground APT commands;
+- an install fallback chain;
+- source-filter pipelines whose no-match status is deliberately ignored;
+- an output-capturing command-substitution pipeline used to build `pkgs`.
 
-It also contains an output-capturing command-substitution pipeline and a fallback install chain. The full grammar is classified in `COMMAND_INVENTORY.md`.
+Neither PR #224 nor PR #259 introduces a pipeline-worker PID, foreground-command PID, or internal process group.
 
-The retained PR #224 patch does not introduce a tracked pipeline-worker PID. The retained PR #259 patch does not introduce a tracked foreground-command PID. Shell traps can therefore remain deferred while those unowned foreground commands run.
+## Executed findings
 
-## Executed topology model
+### Current worker-only TERM
 
-The topology regression builds disposable real-shell owners with:
+With the foreground child held, the worker signal remains pending. After release:
 
-- a top-level owner using signal-derived status and proxy cleanup;
-- a pipeline worker using PR #259-style EXIT/INT/QUIT/TERM cleanup;
-- a foreground child held at a deterministic release point;
-- child, worker, and owner later-work markers;
-- worker and owner cleanup logs;
-- proxy-disappearance checks.
-
-A held child rather than elapsed-time thresholds distinguishes pending from prompt cancellation.
-
-### Current worker-only delivery
-
-TERM is sent only to the worker while its foreground child is held.
-
-Observed:
-
-- owner remains running and child remains alive;
-- after child release, child later work exists;
+- child later work exists;
 - worker later work is absent;
 - final status is 143;
-- worker cleanup once, owner cleanup once, proxy gone.
+- worker cleanup once, parent cleanup once, proxy gone.
 
-Interpretation: PR #259 gives eventual status correctness and stops worker continuation, but cannot interrupt an unowned foreground child.
+### Current owner-only TERM
 
-### Current owner-only delivery
+With the worker and child held, the owner signal remains pending. After release:
 
-TERM is sent only to the top-level owner while the worker and child are active.
-
-Observed:
-
-- owner remains running and child remains alive;
-- after child release, child later work exists;
+- child later work exists;
 - worker later work also exists;
 - owner later work is absent;
 - final status is 143;
 - both cleanups once, proxy gone.
 
-Interpretation: the top-level shell does not own the synchronous pipeline worker, so its trap remains deferred until that worker returns.
+### Whole process-group TERM
 
-### Whole process-group delivery
+An isolated group signal is prompt, leaves no later markers, exits 143, cleans each owner once, and leaves no proxy.
 
-TERM is sent to the isolated process group.
+### Explicit simple ownership chain
 
-Observed:
+Worker-owned foreground child makes worker-only TERM prompt. Parent-owned pipeline worker plus worker-owned child makes owner-only TERM prompt.
 
-- prompt status 143;
-- no child, worker, or owner later markers;
-- both cleanups once;
-- proxy gone.
+### Parent background-pipeline identity
 
-Interpretation: group delivery is effective when the caller owns a safe isolated group. It is a caller-policy contract, not an owner-PID-only source guarantee.
+For both one-line and heredoc producers:
 
-### Worker-owned foreground child
+- `$!` equals the final worker's actual PID;
+- complete input reaches the worker;
+- explicit wait preserves worker status 7.
 
-The worker launches the foreground operation asynchronously, stores its PID, waits explicitly, and stops/waits it during signal cleanup.
+### Output-capturing pipeline final PID
 
-Observed for worker-only TERM:
+Killing the stored final-stage PID does not complete cancellation:
 
-- prompt status 143 without releasing the child;
-- no child or worker later marker;
-- both cleanups once;
-- proxy gone.
+- final stage exits;
+- producer and middle remain alive;
+- shell `wait "$!"` remains blocked on the pipeline job;
+- status 143 and cleanup complete only after upstream stages are separately terminated.
 
-Interpretation: explicit worker-child ownership resolves worker-only promptness.
+This rejects final-PID-only ownership for the internal package-list pipeline.
 
-### Composed parent-worker and worker-child ownership
+### Isolated output pipeline group
 
-The parent launches the pipeline worker asynchronously, stores the final worker PID, waits explicitly, and stops/waits it during owner cleanup. The worker separately owns its foreground child.
+`setsid /bin/sh -c PIPELINE` plus external negative-group `kill` stops all held stages, removes partial capture, and exits 143. Ordinary controls preserve:
 
-Observed for owner-only TERM:
+- command-substitution trailing-newline stripping;
+- final-stage failure status 7 and rejection of partial output;
+- the target shell's existing last-stage pipeline-status rule.
 
-- prompt status 143 without releasing the child;
-- no child, worker, or owner later marker;
-- both cleanups once;
-- proxy gone.
+## Caller topology result
 
-Interpretation: an explicit ownership chain resolves owner-only promptness in the model.
+The retained README documents direct `./make_mirror.sh` invocation. Repository search found no `setsid` wrapper or isolated-group cancellation contract.
 
-## Parent pipeline identity controls
+Therefore caller-owned group delivery is a useful mitigation for controlled wrappers, not the canonical repository answer. Interactive and noninteractive callers can provide different grouping arrangements.
 
-A second regression exercises the two exact parent producer shapes with a worker that captures stdin and exits 7.
+## Alternatives
 
-For both one-line and heredoc pipelines:
+### A. Rely on caller process groups
 
-- the stored `$!` equals the worker's actual `$$`;
-- the complete input reaches the worker unchanged;
-- explicit `wait` returns worker status 7;
-- the owner itself exits 0 after recording that status.
+**Disposition:** not selected as the repository answer.
 
-This removes one shell-portability uncertainty from the parent-worker half of the composed direction. It does not yet prove cancellation-time producer cleanup or multiple sequential worker ownership.
+The repository does not establish a safe isolated group. Owner-PID-only behavior would remain deferred.
 
-## Command inventory result
+### B. Track worker foreground children only
 
-One generic child helper cannot preserve the exact worker grammar.
+**Disposition:** rejected as a complete answer.
 
-At least three source primitives would be required:
+It fixes worker-only delivery but leaves owner-only delivery deferred and cannot by itself own the output-capturing pipeline.
 
-1. parent pipeline-worker ownership for one-line and heredoc calls;
-2. worker simple-child ownership for direct APT commands and fallback attempts;
-3. worker output-capturing pipeline ownership for `pkgs=$(...)`.
+### C. Track only final pipeline PIDs
 
-The command-substitution pipeline is the hardest boundary because asynchronous execution cannot directly assign its output to the parent worker shell. A capture artifact or controlled pipe is required, along with exact output, trailing-newline, pipeline-status, cancellation, and partial-output controls.
+**Disposition:** rejected by executed control.
 
-## Alternatives under comparison
+Upstream stages survive and `wait "$!"` remains blocked.
 
-### A. Caller-owned process group
+### D. Internal isolated process groups
 
-Require supervisors to launch the mirror in an isolated process group and signal the group.
+**State:** still viable.
 
-**Benefit:** prompt in the current topology with no source expansion.
+Use explicit isolated groups for active worker commands/pipelines and track group leaders through parent and worker ownership.
 
-**Risk:** caller policy may not provide an isolated group; group delivery may include unrelated processes; owner-PID-only semantics remain deferred.
+**Costs and unknowns:** `setsid` and external group-aware `kill` dependencies, first-signal retention, launch registration, direct-command/fallback integration, group-leader status, and portability.
 
-**Evidence still needed:** actual invocation/session topology and a safe group boundary.
+### E. Dedicated all-stage supervisor
 
-### B. Worker owns each foreground command
+**State:** unexecuted alternative.
 
-Introduce worker-local ownership for active commands.
+A helper could explicitly spawn, signal, and wait every stage while capturing output. It avoids shell job assumptions but adds a helper-language/API boundary and more code.
 
-**Benefit:** worker-only cancellation becomes prompt.
+### F. Retain eventual correctness and stop
 
-**Risk:** parent-only delivery remains deferred. One generic helper also loses on the output-capturing pipeline grammar.
+**State:** viable outcome.
 
-**Current result:** loses as a complete answer; may remain one component of option C.
+The script is a manually invoked mirror/test-cache helper; common interactive interruption often reaches a foreground job group, while the problematic PID-only path has unknown frequency. The accepted repairs already prevent false success, cross-owner proxy cleanup, duplicate cleanup, and leaks. A broad supervisor may cost more than the bounded remaining latency issue justifies.
 
-### C. Composed parent-worker and worker-child ownership
+## Evidence summary
 
-Track each pipeline worker in the parent and active command or command pipeline in the worker.
+Local retained matrices currently cover:
 
-**Benefit:** both worker-only and owner-only cancellation become prompt in the executed model. Parent `$!` identity and ordinary input/status are now positively controlled for both call shapes.
+- topology/source comparison: 6 tests;
+- parent pipeline PID/input/status: 2 tests;
+- output pipeline ownership: 2 tests;
+- grouped output/status semantics: 3 tests.
 
-**Risk:** largest source change. The worker needs separate simple-command and output-capture primitives; first-signal and launch-registration ownership repeat at two levels.
+Total: 13 passing local controls on the current retained head before hosted CI.
 
-**Evidence still needed:** cancellation-time heredoc producer behavior, multiple sequential workers, fallback status, command-substitution output/status, first-signal competition, and complete composition with PR #224/#259.
+## Boundaries
 
-## Current comparison
+Not proved:
 
-| Direction | Worker-only prompt | Owner-only prompt | Source change | Current evidence |
-| --- | --- | --- | --- | --- |
-| A. Process group | yes | yes through group rather than owner PID | none | model-executed; invocation boundary unknown |
-| B. Worker child ownership | yes | no | medium | model-executed; incomplete answer |
-| C. Parent-worker plus worker-child ownership | yes | yes | largest | model-executed; parent pipeline identity positive; worker grammar incomplete |
-
-Option A remains viable only if caller group isolation is an actual supported contract.
-
-Option C remains the only source-level direction demonstrated to make both owner-only and worker-only delivery prompt. It is not selected because the command-substitution and cancellation-time producer boundaries remain unresolved.
-
-## Edge cases covered
-
-| Case | Result |
-| --- | --- |
-| Exact source retains synchronous worker pipelines and foreground APT commands | asserted |
-| Current worker-only TERM while child held | pending until release; child later work; final 143; no worker later work |
-| Current owner-only TERM while child held | pending until release; child and worker later work; final 143 |
-| Isolated process-group TERM | prompt 143; no later work |
-| Worker-owned child, worker-only TERM | prompt 143; no later work |
-| Composed ownership, owner-only TERM | prompt 143; no later work |
-| One-line background pipeline `$!` | final worker PID; input preserved; status 7 preserved |
-| Heredoc background pipeline `$!` | final worker PID; input preserved; status 7 preserved |
-| All completed topology cases | worker cleanup once, owner cleanup once, proxy gone |
-
-## Deferred or unproved
-
-- real APT signal behavior;
-- cancellation-time heredoc/input producer cleanup;
-- output-capturing command-substitution pipeline;
-- fallback install cancellation and result precedence;
-- multiple sequential workers and PID clearing;
-- INT/QUIT and competing signals in proposed helpers;
-- launch/PID-registration windows at worker and parent levels;
-- process-group isolation in actual callers;
-- full mirror, network, QEMU, package, and privilege execution;
+- actual APT signal response;
+- exact availability contract for `setsid` and external `kill` in every host environment;
+- cancellation-time heredoc producer cleanup beyond the held model;
+- multiple sequential worker/group registrations;
+- INT/QUIT and competing first signals in proposed group helpers;
+- full mirror, network, QEMU, package, or privileged execution;
 - timeout and TERM-to-KILL escalation.
 
-## Exact execution
+## Next transition
 
-Local commands:
+Run hosted CI on the retained exact head. In parallel, inspect declared host/test dependencies for `setsid` and external group kill. If those dependencies are not explicit or the source mechanism requires broad helper code, select `stopped` with eventual correctness retained and reopening triggers for measured PID-only latency or a documented supervisor contract. If dependencies and a small common primitive are supported, prepare a separate design candidate rather than modifying PR #259.
 
-```text
-python3 tests/test_make_mirror_foreground_signal_topologies.py -v
-python3 tests/test_make_mirror_pipeline_worker_identity.py -v
-```
-
-Results:
-
-- topology/source matrix: 6/6 passed;
-- parent pipeline identity/input/status matrix: 2/2 passed.
-
-Hosted execution on the retained exact head remains the next evidence gate.
-
-## Next action
-
-Prototype the output-capturing pipeline as the strongest discriminator for option C. Require exact output bytes, command-substitution trailing-newline behavior, ordinary final-stage failure, upstream-stage failure behavior under the target shell, worker-only cancellation, cleanup of partial capture, and immediate rerun. In parallel, recover actual caller/session topology for option A.
-
-No human design decision is requested. Continue autonomous comparison.
+No human design decision is requested yet.
 
 Internal Linux Fieldwork work only. External contact authorized: `false`.
