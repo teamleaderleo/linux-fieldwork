@@ -34,12 +34,63 @@ class PacketBFocusedHarnessTest(unittest.TestCase):
         )
         self.assertIn("prepare_mmdebstrap_packet_b_focused.py", source)
         self.assertIn("verify_mmdebstrap_packet_b_focused.py", source)
-        self.assertIn("124|137)", source)
-        self.assertIn("carrier_status=77", source)
-        self.assertIn("carrier_status=$raw_status", source)
+        self.assertIn("124)", source)
+        self.assertNotIn("124|137)", source)
+        self.assertIn("outer-timeout-neutral", source)
+        self.assertIn("focused-hard-failure", source)
         self.assertNotIn("sourcesfilter-deb822.patch", source)
         self.assertNotIn("sigint-process-group-kill-sid.patch", source)
         self.assertNotIn("debian_bug_report", source)
+
+    def run_classify(
+        self, raw_status: int, verifier_status: int
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                "bash",
+                str(SCRIPT),
+                "--classify-status",
+                str(raw_status),
+                str(verifier_status),
+            ],
+            cwd=ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
+
+    def test_status_precedence(self) -> None:
+        cases = (
+            (0, 0, "0 focused-pass\n"),
+            (0, 2, "2 evidence-verification-failure\n"),
+            (124, 2, "77 outer-timeout-neutral\n"),
+            (1, 2, "1 focused-hard-failure\n"),
+            (2, 2, "2 focused-hard-failure\n"),
+            (137, 2, "137 focused-hard-failure\n"),
+        )
+        for raw_status, verifier_status, expected in cases:
+            with self.subTest(raw_status=raw_status, verifier_status=verifier_status):
+                result = self.run_classify(raw_status, verifier_status)
+                self.assertEqual(
+                    result.returncode, 0, result.stdout + result.stderr
+                )
+                self.assertEqual(result.stdout, expected)
+                self.assertEqual(result.stderr, "")
+
+    def test_invalid_status_classifier_input_fails_closed(self) -> None:
+        result = subprocess.run(
+            ["bash", str(SCRIPT), "--classify-status", "broken", "0"],
+            cwd=ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("usage:", result.stderr)
 
     def run_check(
         self, parent: str, *, run_id: str = "focused-guard-control"
