@@ -14,7 +14,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
@@ -23,6 +23,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
+            apt-utils \
             fakeroot \
             libdistro-info-perl \
             libdpkg-perl \
@@ -32,7 +33,11 @@ jobs:
         run: |
           perl -c upstream/mmdebstrap/mmdebstrap
           pod2man upstream/mmdebstrap/mmdebstrap >/dev/null
+          python3 -m py_compile \
+            investigations/mmdebstrap-chrootless-env/prepare_authority_candidates.py
           bash -n investigations/mmdebstrap-chrootless-env/run.sh
+          bash -n \
+            investigations/mmdebstrap-chrootless-env/direct_authority_transaction.sh
 
       - name: Check current Debian sid formatting
         run: |
@@ -50,11 +55,18 @@ jobs:
       - name: Run security regression
         run: bash investigations/mmdebstrap-chrootless-env/run.sh
 
+      - name: Run direct authority transaction
+        run: |
+          bash \
+            investigations/mmdebstrap-chrootless-env/direct_authority_transaction.sh
+
       - name: Upload retained evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mmdebstrap-chrootless-env-${{ github.run_id }}-${{ github.run_attempt }}
-          path: investigations/mmdebstrap-chrootless-env/results/
+          path: |
+            investigations/mmdebstrap-chrootless-env/results/
+            investigations/mmdebstrap-chrootless-env/direct-authority-results/
           if-no-files-found: warn
           retention-days: 14
