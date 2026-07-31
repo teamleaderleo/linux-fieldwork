@@ -7,10 +7,21 @@ import pathlib
 import tempfile
 import unittest
 
-from tools.validate_unified_diffs import main, validate_text
+from tools.validate_unified_diffs import main, validate_path, validate_text
+
+
+REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
+VALID_FIXTURE = (
+    REPOSITORY_ROOT / "tests/fixtures/unified-diff-validator/valid.patch"
+)
 
 
 class UnifiedDiffValidatorTest(unittest.TestCase):
+    def test_repository_fixture_is_a_valid_changed_patch_carrier(self) -> None:
+        result = validate_path(VALID_FIXTURE)
+        self.assertEqual(result.hunks, 1)
+        self.assertEqual(result.findings, ())
+
     def test_valid_multifile_patch_and_no_newline_marker(self) -> None:
         patch = """\
 diff --git a/a b/a
