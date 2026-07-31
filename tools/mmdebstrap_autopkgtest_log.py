@@ -63,6 +63,29 @@ def _preflight_signal(line: str) -> str | None:
     return None
 
 
+def _record_case_failure(
+    *,
+    current: dict[str, Any],
+    line_number: int,
+    signal: str,
+    first_failed_test: dict[str, Any] | None,
+    failure_events: list[dict[str, Any]],
+    signals: list[str],
+) -> dict[str, Any]:
+    failed = dict(current)
+    if first_failed_test is None:
+        first_failed_test = failed
+        failure_events.append(
+            {
+                "line": line_number,
+                "phase": "coverage-case",
+                "signal": signal,
+            }
+        )
+    _append_signal(signals, signal)
+    return first_failed_test
+
+
 def classify_lines(lines: Iterable[str]) -> dict[str, Any]:
     current: dict[str, Any] | None = None
     last_named_test: dict[str, Any] | None = None
@@ -94,17 +117,28 @@ def classify_lines(lines: Iterable[str]) -> dict[str, Any]:
 
         lower = line.lower()
         if "result: failure" in lower and current is not None:
-            failed = dict(current)
-            if first_failed_test is None:
-                first_failed_test = failed
-                failure_events.append(
-                    {
-                        "line": line_number,
-                        "phase": "coverage-case",
-                        "signal": "coverage.py reported FAILURE",
-                    }
-                )
-            _append_signal(signals, "coverage.py reported FAILURE")
+            first_failed_test = _record_case_failure(
+                current=current,
+                line_number=line_number,
+                signal="coverage.py reported FAILURE",
+                first_failed_test=first_failed_test,
+                failure_events=failure_events,
+                signals=signals,
+            )
+            current = None
+        elif "test.sh failed" in lower and current is not None:
+            # coverage.sh reports direct shell-test failures with this message
+            # rather than coverage.py's "result: FAILURE" spelling. Attribute
+            # it only while a named case is active; a stray later diagnostic
+            # must not borrow the last completed case.
+            first_failed_test = _record_case_failure(
+                current=current,
+                line_number=line_number,
+                signal="coverage.sh reported test.sh failed",
+                first_failed_test=first_failed_test,
+                failure_events=failure_events,
+                signals=signals,
+            )
             current = None
         elif "result: success" in lower and current is not None:
             current = None
