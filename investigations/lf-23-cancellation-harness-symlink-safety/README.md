@@ -2,18 +2,21 @@
 
 ## In simple words
 
-PR #199 resolves the complete requested cancellation-harness output path before deciding whether recursive replacement is allowed. That ordering prevents either a final symlink or an ancestor symlink below `/tmp` or `/var/tmp` from granting deletion authority over a target elsewhere.
+Merged PR #199 resolves the complete requested cancellation-harness output path before deciding whether recursive replacement is allowed. That ordering prevents either a final symlink or an ancestor symlink below `/tmp` or `/var/tmp` from granting deletion authority over a target elsewhere.
 
 The original regression proves a direct repository child is rejected. This cross-review adds both symlink forms of the same safety boundary.
 
 ## Source and routing
 
-- canonical safety candidate: PR #199
+- canonical safety candidate: merged PR #199
+- original current-main parent: `a0ec62f64fd6a9ff2cc20b28142ec876c52a5145`
 - reviewed base head: `b1e8aa4e9376e41962e456467c2f3fdcb38cae17`
-- predecessor current-main parent: `a0ec62f64fd6a9ff2cc20b28142ec876c52a5145`
-- predecessor hosted gate: Linux Fieldwork CI run `30578704079` / run 564
-- independently green first proof head: `556c15c67b2978a1eae635a27f4b69986b4dc0e2`, run `30579993408` / run 596
+- predecessor hosted gate: Linux Fieldwork CI run `30578704079` / run 564, success
+- independently green first proof head: `556c15c67b2978a1eae635a27f4b69986b4dc0e2`, run `30579993408` / run 596, success
 - concurrent expanded proof source: `65ddf0fce71d46b7851c599a358a52a8cc3c279b`
+- final composed source head: `6251a11fd30b26d29451e5ee292a6186344429a1`
+- final hosted gate: Linux Fieldwork CI run `30580869813` / run 620, success
+- merge commit: `12dd20f6965d11024afc6cbbcb2f039d53e4beef`
 - harness: `programmes/services-resources/lanes/LF-23-cancellation-subprocess-fd-cleanup/scouts/LF-SCOUT-PROC-01/artifacts/cancellation_harness.py`
 - focused regression: `../../tests/test_lf23_cancellation_harness_symlink_safety.py`
 - authority: internal Linux Fieldwork work only
@@ -33,7 +36,7 @@ The test subclasses the existing LF-23 safety class, so direct root refusal and 
 python3 -m unittest -v tests/test_lf23_cancellation_harness_symlink_safety.py
 ```
 
-Complete discovery and exact-head Linux Fieldwork CI remain required on the canonical composed head after transfer.
+The composed exact head completed full Linux Fieldwork CI successfully in run 620.
 
 ## Evidence boundary
 
@@ -42,6 +45,12 @@ This proves decision-time resolution of final and ancestor symlink components. T
 ## Carrier history
 
 Review PR #208 advanced concurrently while its first green proof was being transferred. The later two commits added the ancestor-symlink differential and tightened this record. Both unique changes were inspected and copied into canonical PR #199 before final closeout of the review carrier.
+
+## Current disposition
+
+`CLOSED — MERGED LOCALLY`
+
+The final and ancestor-symlink controls are retained in the canonical merged five-file safety composition at `6251a11fd30b26d29451e5ee292a6186344429a1`.
 
 ## External contact
 
