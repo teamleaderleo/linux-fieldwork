@@ -10,7 +10,7 @@ diff --git a/tools/probe_process_group_kill.py b/tools/probe_process_group_kill.
      if not owner.child_running or not owner.unrelated_running:
          raise ProbeError(f"owner-only topology control was not preserved: {owner}")
  
-@@ -452,6 +454,8 @@ def run_probe() -> dict[str, object]:
+@@ -451,6 +453,8 @@ def run_probe() -> dict[str, object]:
      positive = by_name["python-killpg-control"]
      if positive.classification != "whole-group-delivery":
          raise ProbeError(f"Python killpg positive control failed: {positive}")
@@ -19,7 +19,7 @@ diff --git a/tools/probe_process_group_kill.py b/tools/probe_process_group_kill.
      if positive.parent_running or positive.child_running:
          raise ProbeError(f"Python killpg left group members running: {positive}")
      if not positive.unrelated_running:
-@@ -469,6 +473,7 @@ def run_probe() -> dict[str, object]:
+@@ -467,6 +471,7 @@ def run_probe() -> dict[str, object]:
              name
              for name in candidate_priority
              if by_name[name].classification == "whole-group-delivery"
