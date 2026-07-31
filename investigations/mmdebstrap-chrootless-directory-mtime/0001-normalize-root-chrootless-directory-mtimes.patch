@@ -21,17 +21,7 @@ diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
  sub main() {
      my $before = Time::HiRes::time;
  
-@@ -6026,9 +6037,9 @@ sub main() {
-     foreach my $tool (
-         'dpkg',       'dpkg-deb', 'apt-get', 'apt-cache',
-         'apt-config', 'tar',      'rm',      'find',
--        'env'
-+        'env',        'touch'
-     ) {
-         if (!can_execute $tool) {
-             error "cannot find $tool";
-         }
-@@ -7330,7 +7341,14 @@ sub main() {
+@@ -7330,7 +7341,17 @@ sub main() {
          close $parentsock;
          open(STDOUT, '>&', STDERR) or error "cannot open STDOUT: $!";
  
@@ -41,6 +31,9 @@ diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
 +            && exists $ENV{SOURCE_DATE_EPOCH}
 +            && $options->{format} eq 'tar'
 +            && any { $_ eq $options->{mode} } ('root', 'chrootless')) {
++            if (!can_execute 'touch') {
++                error "cannot find touch";
++            }
 +            normalize_archive_directory_mtimes($options->{root}, $mtime);
 +        }
  
