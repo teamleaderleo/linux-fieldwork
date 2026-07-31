@@ -1,6 +1,6 @@
 # Current-main focused Packet B capability execution
 
-State: `candidate — exact-head sid execution pending`
+State: `candidate — exact focused pass observed; clean aggregate rerun pending`
 
 ## TL;DR
 
@@ -11,15 +11,19 @@ create-directory
 root-without-cap-sys-admin
 ```
 
-The package testsuite performs its real mirror and autopkgtest setup, executes the installed `/usr/bin/mmdebstrap`, preserves hard failures, and exits immediately after the capability consumer. Broad coverage cannot fail first, replace the result, or make the focus appear only in a skipped inventory.
+Focused run 14 completed both cases successfully, in order, with no other named test and a final `testsuite PASS`. The carrier still returned 2 because autopkgtest also parsed an unrelated second control stanza and skipped `hint-testsuite-triggers` as an unknown restriction.
+
+The current repair selects only the intended `testsuite` stanza with `--test-name=testsuite`. It does not weaken the verifier or reinterpret raw status 2 as success.
 
 ## Explain like I'm five
 
-A prior full exam stopped before the question we cared about. This carrier gives the student the prerequisite question, then the capability question, records both grades, and ends the exam before unrelated questions can interfere.
+The two exam questions both passed. The exam program still returned a warning because it also noticed a separate instruction card it did not understand.
+
+The repair tells the exam program to run only the real test card. It does not teach the checker to ignore warnings generally.
 
 ## Why care
 
-Packet B already has exact predecessor evidence that the focused pair passed, but a later current-main broad artifact never completed the focus case. A current-main decision needs an execution surface that guarantees the case either passes, fails, or times out visibly.
+Packet B already had predecessor evidence that the focused pair passed, but a later current-main broad artifact never completed the focus case. Run 14 now proves the current focused behavior. A final selected-stanza rerun is required so the package runner, transcript verifier, and aggregate status agree on one clean exact head.
 
 ## Evidence history
 
@@ -50,6 +54,43 @@ Artifact `8803277230`, digest `sha256:4762326e9af4a56eb9900fc197ab67057139a483b4
 
 The repair derives `base_sha` from the checkout's observed first parent, retains the event base separately as `event_base_sha`, and still requires exact event SHA, exact second-parent head SHA, ordered parents, and `synthetic-merge-ref` classification. A source contract forbids returning to event-base authority.
 
+### Focused run 14 — product pass, aggregate selector defect
+
+Exact head `7fb737d8c05e5b0f88dbfbf3a4ab240aba8a9a34` ran focused workflow `30656784376` / 14 on generated merge `5562cfd74d420795527abb7cd20108b29f0ab93d`.
+
+The generated-merge identity gate passed, privileged Debian sid execution completed, and artifact `8803973329` was uploaded with digest `sha256:938de98236230f2050bb50f4a3d9f9b58f683e94bc6cc7281c42b50808461543`.
+
+Read-only receipt PR #396 verified and downloaded that exact artifact ID. Its typed receipt established:
+
+```text
+container_status=2
+carrier_status=2
+autopkgtest_status=2
+verifier_status=2
+create-directory SUCCESS
+root-without-cap-sys-admin SUCCESS
+testsuite PASS
+```
+
+The complete focused verifier structure was otherwise exact:
+
+- `named_test_count=2`;
+- producer `create-directory`, success;
+- consumer `root-without-cap-sys-admin`, success;
+- `later_named_tests=[]`;
+- no preflight failure;
+- no broad named case.
+
+The console then reported only:
+
+```text
+hint-testsuite-triggers SKIP unknown restriction hint-testsuite-triggers
+```
+
+Autopkgtest had parsed the unrelated second `debian/tests/control` stanza in addition to the selected package testsuite. The raw status remained authoritative, so the carrier correctly refused promotion even though Packet B itself passed.
+
+The current repair adds exact `--test-name=testsuite` selection to both the retained command and execution. It does not use `--ignore-restrictions`, remove the control stanza, or teach the verifier to accept status 2.
+
 ## Candidate construction
 
 The disposable source copy receives two exact retained changes:
@@ -67,6 +108,8 @@ The disposable source copy receives two exact retained changes:
 - writes a digest and ordering receipt.
 
 Both patches must apply with zero fuzz and zero offset. Imported source is copied and never modified in place.
+
+Autopkgtest is invoked with exact `--test-name=testsuite`, so the unrelated trigger-hint stanza cannot alter the focused aggregate status.
 
 ## Result verification
 
@@ -141,17 +184,18 @@ A topology, head, or event-SHA mismatch fails before package execution. Base-bra
 ## Required gates
 
 - complete repository CI;
-- focused preparation, verifier, status-precedence, runner, optimizer-safe receipt, workflow-authority, and merge-parent controls;
+- focused preparation, verifier, status-precedence, exact-stanza selection, runner, optimizer-safe receipt, workflow-authority, and merge-parent controls;
 - exact generated-merge identity;
 - disposable sid package execution;
+- raw autopkgtest status 0;
 - exact producer and consumer success receipt;
-- no other named case;
+- no other named case or unrelated control stanza result;
 - artifact upload, cleanup, and source-diff confirmation;
 - complete nine-file review on the unchanged head.
 
 ## Disposition
 
-**EXECUTE.** If the exact current-head sid workflow records both successes and no other named case, Packet B may advance from current-main integration hold. Any hard failure remains authoritative and must be classified before changing product code.
+**FOCUSED PRODUCT PASS OBSERVED / HOLD FOR CLEAN SELECTED-STANZA RERUN.** Packet B behavior is no longer unresolved. Promotion waits only for one exact-head execution where autopkgtest selects the intended stanza and the aggregate status, verifier, and host gate all agree.
 
 ## Evidence boundary and authority
 
@@ -159,4 +203,4 @@ This carrier proves one Debian sid producer/capability pair against the imported
 
 Internal Linux Fieldwork work only. No Debian or mmdebstrap upstream issue, email, patch, merge request, release, deployment, or public contact is authorized or included.
 
-Refs #75, #153, #194, run 974, merged PR #376, and historical PRs #72/#361/#366.
+Refs #75, #153, #194, run 974, merged PR #376, receipt PR #396, and historical PRs #72/#361/#366.
