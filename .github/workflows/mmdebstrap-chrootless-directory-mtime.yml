@@ -4,6 +4,11 @@ on:
   pull_request:
     paths:
       - 'investigations/mmdebstrap-chrootless-directory-mtime/**'
+      - 'tests/test_mmdebstrap-chrootless-directory-mtime.py'
+      - 'tests/test_mmdebstrap-chrootless-directory-mtime-candidate.py'
+      - 'tests/test_mmdebstrap-chrootless-directory-mtime-patch-context.py'
+      - 'tests/test_mmdebstrap-chrootless-directory-mtime-product-probe.py'
+      - 'tests/test_mmdebstrap-chrootless-directory-mtime-real-probe.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime_patch_context.py'
@@ -28,10 +33,10 @@ jobs:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
 
-      - name: Install focused metadata and formatting tools
+      - name: Install focused metadata tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes acl libcap2-bin perltidy
+          sudo apt-get install --yes acl libcap2-bin
 
       - name: Check exact patch context, synthetic matrix, and product candidate
         shell: bash
@@ -54,6 +59,34 @@ jobs:
           python3 \
             tests/test_mmdebstrap_chrootless_directory_mtime_product_probe.py -v
           python3 tests/test_mmdebstrap_chrootless_directory_mtime_real_probe.py -v
+
+      - name: Check current Debian sid formatting
+        run: |
+          docker run --rm \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            debian:sid-slim \
+            sh -euxc '
+              apt-get update
+              apt-get install --yes --no-install-recommends patch perl perltidy
+              candidate=$(mktemp -d)
+              mkdir -p "$candidate/upstream/mmdebstrap"
+              cp upstream/mmdebstrap/mmdebstrap \
+                "$candidate/upstream/mmdebstrap/mmdebstrap"
+              patch_output=$(
+                patch --batch --forward --fuzz=0 -p1 \
+                  -d "$candidate" \
+                  -i /work/investigations/mmdebstrap-chrootless-directory-mtime/0001-normalize-root-chrootless-directory-mtimes.patch
+              )
+              printf "%s\n" "$patch_output"
+              case "$patch_output" in
+                *fuzz*|*offset*) exit 1 ;;
+              esac
+              perl -c "$candidate/upstream/mmdebstrap/mmdebstrap"
+              perltidy < "$candidate/upstream/mmdebstrap/mmdebstrap" \
+                > /tmp/mmdebstrap.tdy
+              cmp "$candidate/upstream/mmdebstrap/mmdebstrap" /tmp/mmdebstrap.tdy
+            '
 
       - name: Run exact product helper on real metadata matrix twice
         shell: bash
