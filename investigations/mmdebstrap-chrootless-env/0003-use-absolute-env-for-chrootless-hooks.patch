@@ -1,0 +1,26 @@
+diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
+--- a/upstream/mmdebstrap/mmdebstrap
++++ b/upstream/mmdebstrap/mmdebstrap
+@@ -2661,4 +2661,8 @@ sub run_hooks {
+         return;
+     }
+ 
++    my $env_path = $options->{mode} eq 'chrootless'
++      ? chrootless_env_path()
++      : 'env';
++
+     my @env_opts = ();
+@@ -2758,4 +2762,4 @@ sub run_hooks {
+-                    0 == system(@cmdprefix, 'env', @env_opts, 'sh', '-c',
++                    0 == system(@cmdprefix, $env_path, @env_opts, 'sh', '-c',
+                         $script)
+                       or error "command failed: $script";
+@@ -2819,2 +2823,2 @@ sub run_hooks {
+-                0 == system('env', @env_opts, $script, $options->{root})
++                0 == system($env_path, @env_opts, $script, $options->{root})
+                   or error "command failed: $script";
+@@ -2826,3 +2830,3 @@ sub run_hooks {
+-                0 == system('env', @env_opts,
++                0 == system($env_path, @env_opts,
+                     'sh', '-c', $script, 'exec', $options->{root})
+                   or error "command failed: $script";
