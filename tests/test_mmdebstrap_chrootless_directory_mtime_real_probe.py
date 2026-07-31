@@ -41,14 +41,19 @@ class ChrootlessDirectoryMtimeRealProbeContractTest(unittest.TestCase):
 
         unmount = cleanup.index('sudo umount "$mount_dir"')
         recheck = cleanup.index('mountpoint -q "$mount_dir"', unmount)
+        nonzero = cleanup.index(
+            "[[ $cleanup_status -ne 0 ]] || cleanup_status=1",
+            recheck,
+        )
         refusal = cleanup.index(
             "refusing recursive cleanup while mount is still active",
-            recheck,
+            nonzero,
         )
         stop = cleanup.index("return", refusal)
         removal = cleanup.index('rm -rf "$runtime"', stop)
         self.assertLess(unmount, recheck)
-        self.assertLess(recheck, refusal)
+        self.assertLess(recheck, nonzero)
+        self.assertLess(nonzero, refusal)
         self.assertLess(refusal, stop)
         self.assertLess(stop, removal)
 
