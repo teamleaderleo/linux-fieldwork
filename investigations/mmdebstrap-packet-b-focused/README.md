@@ -40,6 +40,16 @@ The later broad failure was a phase-scoped fixture mismatch, not a focused produ
 
 Merged receipt PR #376 authenticated run `30641621084` and established that `root-without-cap-sys-admin` appeared only in the skipped inventory after broad `(242/284) chrootless` failed. That artifact proves neither focus pass nor focus failure.
 
+### Focused run 11 — identity gate stopped before privilege
+
+Exact head `6540437cc0350752e3229824d5836beb980604d6` passed repository CI `30655286527` / 1055. Focused workflow `30655286545` / 11 then stopped in the generated-merge identity step before privileged Docker or package execution.
+
+The checkout was generated merge `abb9c45adad4f3ba97b222b76914bc628dd28403`, whose observed first parent was `e4e28e2e7606c1dde7dfe706205c961e5c37060d` and second parent was the exact PR head. The pull-request event payload still exposed older base SHA `1ac6aadf884ca69935c2f763b9788476a313645c`. The workflow incorrectly used that advisory event field as the authoritative merge parent and the identity auditor returned status 2.
+
+Artifact `8803277230`, digest `sha256:4762326e9af4a56eb9900fc197ab67057139a483b4583276f2179f592bdf90c3`, retains the four pre-execution identity files. No package result, focus outcome, timeout, or product failure exists for this run.
+
+The repair derives `base_sha` from the checkout's observed first parent, retains the event base separately as `event_base_sha`, and still requires exact event SHA, exact second-parent head SHA, ordered parents, and `synthetic-merge-ref` classification. A source contract forbids returning to event-base authority.
+
 ## Candidate construction
 
 The disposable source copy receives two exact retained changes:
@@ -107,12 +117,14 @@ Before privileged work, the workflow records:
 
 - checked-out commit;
 - ordered parents;
-- declared PR head and base;
+- exact head SHA from the event;
+- base SHA from the observed first parent;
+- event-provided base SHA as advisory provenance only;
 - event SHA and refs;
 - run ID and attempt;
 - typed `synthetic-merge-ref` classification and digest.
 
-A topology mismatch fails before package execution.
+A topology, head, or event-SHA mismatch fails before package execution. Base-branch movement between event creation and execution remains visible without being misclassified as the generated merge's parent.
 
 ## Candidate fence
 
@@ -129,7 +141,7 @@ A topology mismatch fails before package execution.
 ## Required gates
 
 - complete repository CI;
-- focused preparation, verifier, status-precedence, runner, optimizer-safe receipt, and workflow-authority controls;
+- focused preparation, verifier, status-precedence, runner, optimizer-safe receipt, workflow-authority, and merge-parent controls;
 - exact generated-merge identity;
 - disposable sid package execution;
 - exact producer and consumer success receipt;
