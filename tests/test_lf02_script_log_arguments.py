@@ -102,6 +102,18 @@ class LF02ScriptLogArgumentsTest(unittest.TestCase):
         self.assertIn("args_hex=%s", source)
         self.assertNotIn(" args=%s ", source)
 
+    def test_fixture_writer_reuses_existing_parent_directory(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="lf02-write-text-") as td:
+            parent = pathlib.Path(td) / "package/DEBIAN"
+            first = parent / "control"
+            second = parent / "conffiles"
+            self.build.write_text(first, "Package: fixture\n")
+            self.build.write_text(second, "/etc/fixture.conf\n")
+            self.assertEqual(first.read_text(encoding="utf-8"), "Package: fixture\n")
+            self.assertEqual(
+                second.read_text(encoding="utf-8"), "/etc/fixture.conf\n"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
