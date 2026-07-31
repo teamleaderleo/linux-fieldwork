@@ -118,9 +118,21 @@ jobs:
     timeout-minutes: 180
     env:
       RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+      FIELDWORK_EVENT_NAME: ${{ github.event_name }}
+      FIELDWORK_EVENT_SHA: ${{ github.sha }}
+      FIELDWORK_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      FIELDWORK_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      FIELDWORK_REF: ${{ github.ref }}
+      FIELDWORK_HEAD_REF: ${{ github.head_ref }}
+      FIELDWORK_BASE_REF: ${{ github.base_ref }}
+      FIELDWORK_RUN_ID: ${{ github.run_id }}
+      FIELDWORK_RUN_ATTEMPT: ${{ github.run_attempt }}
+      FIELDWORK_EXPECTED_CHECKOUT_CLASSIFICATION: synthetic-merge-ref
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Run Debian sid autopkgtest in a disposable container
         shell: bash
@@ -128,12 +140,24 @@ jobs:
           set -uo pipefail
           run_dir="investigations/mmdebstrap-autopkgtest-1141078/runs/$RUN_ID"
           mkdir -p "$run_dir"
+          checkout_rev_line=$(git rev-list --parents -n 1 HEAD)
           set +e
           docker run --privileged --rm \
             --volume "$PWD:/work" \
             --workdir /work \
             --env RUN_ID="$RUN_ID" \
             --env AUTOPKGTEST_TIMEOUT=160m \
+            --env FIELDWORK_CHECKOUT_REV_LINE="$checkout_rev_line" \
+            --env FIELDWORK_EVENT_NAME \
+            --env FIELDWORK_EVENT_SHA \
+            --env FIELDWORK_PR_HEAD_SHA \
+            --env FIELDWORK_PR_BASE_SHA \
+            --env FIELDWORK_REF \
+            --env FIELDWORK_HEAD_REF \
+            --env FIELDWORK_BASE_REF \
+            --env FIELDWORK_RUN_ID \
+            --env FIELDWORK_RUN_ATTEMPT \
+            --env FIELDWORK_EXPECTED_CHECKOUT_CLASSIFICATION \
             debian:sid-slim \
             bash -lc '
               set -euo pipefail
