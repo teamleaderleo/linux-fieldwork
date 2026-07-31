@@ -18,7 +18,7 @@ PATCH = (
 )
 
 
-def extract_block(text, path):
+def extract_block(text: str, path: str) -> str:
     pattern = re.compile(
         rf"if \[ ! -e {re.escape(path)} \].*?\n"
         rf"\techo .*? >> {re.escape(path)}\n"
@@ -32,13 +32,14 @@ def extract_block(text, path):
 
 
 class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
-    def apply_candidate(self):
+    def apply_candidate(self) -> str:
         tempdir = tempfile.TemporaryDirectory(prefix="mmdebstrap-subid-match-")
         self.addCleanup(tempdir.cleanup)
         tree = pathlib.Path(tempdir.name) / "tree"
         destination = tree / "upstream/mmdebstrap/debian/tests"
         destination.mkdir(parents=True)
-        shutil.copy2(SOURCE, destination / "testsuite")
+        candidate = destination / "testsuite"
+        shutil.copy2(SOURCE, candidate)
         completed = subprocess.run(
             [
                 "patch",
@@ -55,10 +56,25 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
             stderr=subprocess.PIPE,
             timeout=30,
         )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        return (destination / "testsuite").read_text(encoding="utf-8")
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        syntax = subprocess.run(
+            ["/bin/sh", "-n", str(candidate)],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
+        self.assertEqual(syntax.returncode, 0, syntax.stdout + syntax.stderr)
+        return candidate.read_text(encoding="utf-8")
 
-    def run_block(self, block, source_path, actual_path, user):
+    def run_block(
+        self,
+        block: str,
+        source_path: str,
+        actual_path: pathlib.Path,
+        user: str,
+    ) -> subprocess.CompletedProcess[str]:
         script = block.replace(source_path, shlex.quote(str(actual_path)))
         env = os.environ.copy()
         env["AUTOPKGTEST_NORMAL_USER"] = user
@@ -72,7 +88,7 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
             timeout=30,
         )
 
-    def exercise_cases(self, source_path):
+    def exercise_cases(self, source_path: str) -> None:
         candidate = self.apply_candidate()
         block = extract_block(candidate, source_path)
 
@@ -113,6 +129,15 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
                 )
             )
 
+            leading_option = tmp_path / "leading-option"
+            leading_option.write_text("-debci:200000:65536\n", encoding="utf-8")
+            result = self.run_block(block, source_path, leading_option, "-debci")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                leading_option.read_text(encoding="utf-8"),
+                "-debci:200000:65536\n",
+            )
+
             empty = tmp_path / "empty"
             empty.write_text("", encoding="utf-8")
             result = self.run_block(block, source_path, empty, "debci")
@@ -128,17 +153,22 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
             self.assertEqual(rerun.returncode, 0, rerun.stderr)
             self.assertEqual(absent.read_text(encoding="utf-8"), "debci:100000:65536\n")
 
-    def test_baseline_uses_unanchored_regular_expression_grep(self):
+    def test_baseline_uses_unanchored_regular_expression_grep(self) -> None:
         baseline = SOURCE.read_text(encoding="utf-8")
         self.assertIn('grep "$AUTOPKGTEST_NORMAL_USER" /etc/subuid', baseline)
         self.assertIn('grep "$AUTOPKGTEST_NORMAL_USER" /etc/subgid', baseline)
 
-    def test_candidate_changes_only_the_two_match_conditions(self):
+    def test_candidate_changes_only_the_two_match_conditions(self) -> None:
         baseline = SOURCE.read_text(encoding="utf-8").splitlines()
         candidate = self.apply_candidate().splitlines()
+        self.assertEqual(
+            len(candidate),
+            len(baseline),
+            "candidate unexpectedly inserted or removed testsuite lines",
+        )
         differences = [
             (index + 1, before, after)
-            for index, (before, after) in enumerate(zip(baseline, candidate))
+            for index, (before, after) in enumerate(zip(baseline, candidate, strict=True))
             if before != after
         ]
         self.assertEqual(len(differences), 2)
@@ -147,10 +177,10 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
             self.assertIn("cut -s -d: -f1", after)
             self.assertIn('grep -Fxq -- "$AUTOPKGTEST_NORMAL_USER"', after)
 
-    def test_subuid_exact_match_and_idempotency(self):
+    def test_subuid_exact_match_and_idempotency(self) -> None:
         self.exercise_cases("/etc/subuid")
 
-    def test_subgid_exact_match_and_idempotency(self):
+    def test_subgid_exact_match_and_idempotency(self) -> None:
         self.exercise_cases("/etc/subgid")
 
 
