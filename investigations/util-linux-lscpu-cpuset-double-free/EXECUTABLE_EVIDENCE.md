@@ -4,7 +4,7 @@ State: `current-main candidate — exact-head CI pending`
 
 ## TL;DR
 
-The canonical source owner and upstream correction are already mapped in `README.md`. This companion record retains the executable ownership distinction and requires the upstream patch to apply at the exact reviewed v2.41 hunk.
+The canonical source owner and upstream correction are already mapped in `README.md`. This companion record retains the executable ownership distinction and requires an exact reviewed v2.41 fixture before the upstream patch is applied.
 
 No new util-linux implementation is proposed.
 
@@ -46,7 +46,7 @@ Expected results:
 - baseline: duplicate cleanup detected, status 42;
 - candidate with `CLEAR_OUTPUT_AFTER_ERROR`: output becomes NULL, later cleanup harmless, status 0.
 
-## Exact retained patch
+## Exact retained patch and fixture contract
 
 `0001-clear-cpuset-output-after-error.patch` preserves canonical util-linux commit `4581ede384f22983d6155768635ce43cb5304cb0` and adds:
 
@@ -55,28 +55,37 @@ cpuset_free(*set);
 *set = NULL;
 ```
 
-The regression requires both dry-run and real application with `--fuzz=0`, and rejects either `fuzz` or `offset` in patch output.
+The fixture is intentionally a minimal extraction rather than a thousand-line copy of `lib/path.c`. The canonical hunk header therefore reports a large line offset even when the fixture bytes are correct. Zero offset is not a meaningful requirement for this reduction.
 
-A reversing control inserts one line before the fixture hunk. GNU patch still accepts the source at offset 1, and the control requires that offset diagnostic. This demonstrates why `--fuzz=0` alone is not exact placement.
+The current regression instead requires:
+
+1. the complete fixture bytes equal the reviewed literal source before patch execution;
+2. dry-run and real application use `--fuzz=0`;
+3. neither application may report fuzz;
+4. the exact post-patch free-then-NULL sequence is present;
+5. a one-line fixture drift fails the identity check before patch execution.
+
+This keeps the source boundary exact without padding the fixture with meaningless lines or rewriting the canonical upstream hunk header.
 
 ## Required gate
 
 - Python compilation;
 - complete repository unit discovery;
 - baseline/candidate C model;
-- exact dry-run and real patch application;
-- offset-positive losing control;
+- exact fixture identity;
+- zero-fuzz dry-run and real patch application;
+- fixture-drift losing control;
 - complete six-file diff review;
 - current-main relation and mergeability.
 
-Historical predecessor head `247d26c3a96a0bb5cc001950d899f32d8b961eba` passed Linux Fieldwork CI `30589924810` / 700 before exact-placement tightening. That run is mechanism provenance only.
+Historical predecessor head `247d26c3a96a0bb5cc001950d899f32d8b961eba` passed Linux Fieldwork CI `30589924810` / 700 before fixture-identity tightening. That run is mechanism provenance only.
 
 ## Evidence boundary
 
 Established:
 
 - deterministic stale-output-pointer ownership distinction;
-- exact canonical hunk shape and placement on the retained v2.41 fixture;
+- exact reviewed fixture bytes and canonical hunk content;
 - NULL-safe ordinary cleanup after the repair.
 
 Not established:
