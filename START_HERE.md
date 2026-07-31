@@ -101,9 +101,11 @@ When the distinction could be unclear, label a conclusion as demonstrated behavi
 
 If a chat response, connector call, command, hosted job, or safety check stops, separate that interruption from product behavior. Use the `INTERRUPTION CHECKPOINT` in [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md), then resume from the exact repository head, raw artifacts, current receipts, and tracked records rather than chat narration.
 
-For benign safety-sensitive work, keep fixtures synthetic and disposable, avoid real credentials or public targets, and preserve the external-contact boundary.
+Security-adjacent work does not automatically require `RECONVENE`. Continue ordinary investigation and repair when the work stays on public source, local or owned systems, synthetic fixtures, disposable state, and authorized repository actions. Typical examples include local path traversal with fake destructive commands, malformed-input crashes, signal and cleanup defects, wrong-result bugs, permission mistakes, and defense-in-depth hardening with restrictive prerequisites.
 
-If the investigation unexpectedly reaches real secrets or private data, a live public target, an authorization bypass, destructive or persistent capability, materially higher-impact vulnerability detail, or any result that cannot safely be carried in the current public record, switch to `RECONVENE`. Preserve a public-safe checkpoint, finish cleanup, stop deepening operational detail, and request a specific human decision about sanitized continuation, private handling, upstream contact, or stopping.
+Do not use a hard 7/10, 8/10, or 9/10 cutoff. Severity estimates are context only. Judge the real operation, authority crossed, deployment reach, ease of exploitation, publication delta, and whether the current public workflow remains an appropriate surface.
+
+Switch to `RECONVENE` only when the investigation reaches a materially different boundary: real secrets or private data, a live public target, an unauthorized authentication or authorization bypass on a real system, destructive or persistent capability, unusually broad or low-friction impact, or operational detail that cannot safely remain in the current public record. Preserve a public-safe checkpoint, finish cleanup, stop deepening that path, and request a specific human decision about sanitized continuation, private handling, upstream contact, or stopping.
 
 ## 8. Decide the next step
 
