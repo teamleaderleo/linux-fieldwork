@@ -7,6 +7,8 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Callable
 
 
 SOURCE_DATE_EPOCH = 1_700_000_000
@@ -14,15 +16,38 @@ OLDER_DIRECTORY_MTIME = SOURCE_DATE_EPOCH - 100_000
 NEWER_DIRECTORY_MTIME = SOURCE_DATE_EPOCH + 100_000
 PACKAGE_FILE_MTIME = SOURCE_DATE_EPOCH - 50_000
 SYMLINK_MTIME = SOURCE_DATE_EPOCH - 75_000
+FOREIGN_DIRECTORY_MTIME = SOURCE_DATE_EPOCH - 125_000
 
 
-def real_directories(root: Path) -> list[Path]:
-    """Return real directories without following directory symlinks."""
+def real_directories(
+    root: Path,
+    *,
+    lstat: Callable[[os.PathLike[str] | str], os.stat_result] = os.lstat,
+) -> list[Path]:
+    """Return real directories on the root device without following symlinks."""
 
+    root_info = lstat(root)
+    if not stat.S_ISDIR(root_info.st_mode):
+        raise ValueError(f"normalization root is not a directory: {root}")
+    root_device = root_info.st_dev
     result = [root]
-    for path in root.rglob("*"):
-        if stat.S_ISDIR(path.lstat().st_mode):
-            result.append(path)
+
+    for current_raw, dirnames, _filenames in os.walk(
+        root, topdown=True, followlinks=False
+    ):
+        current = Path(current_raw)
+        retained: list[str] = []
+        for name in dirnames:
+            candidate = current / name
+            info = lstat(candidate)
+            if not stat.S_ISDIR(info.st_mode):
+                continue
+            if info.st_dev != root_device:
+                continue
+            retained.append(name)
+            result.append(candidate)
+        dirnames[:] = retained
+
     return result
 
 
@@ -38,8 +63,13 @@ def make_tree(root: Path, directory_mtime: int) -> None:
         os.utime(directory, (directory_mtime, directory_mtime), follow_symlinks=False)
 
 
-def normalize_directory_mtimes(root: Path, timestamp: int) -> None:
-    for directory in real_directories(root):
+def normalize_directory_mtimes(
+    root: Path,
+    timestamp: int,
+    *,
+    lstat: Callable[[os.PathLike[str] | str], os.stat_result] = os.lstat,
+) -> None:
+    for directory in real_directories(root, lstat=lstat):
         os.utime(directory, (timestamp, timestamp), follow_symlinks=False)
 
 
@@ -231,6 +261,57 @@ class ChrootlessDirectoryMtimePolicyTest(unittest.TestCase):
         self.assertEqual(symlink[7], str(outside))
         self.assertEqual(hardlink[1], tarfile.LNKTYPE)
         self.assertTrue(str(hardlink[7]).endswith("/payload"))
+
+    def test_directory_normalization_prunes_foreign_device_before_descent(self) -> None:
+        visited: dict[Path, list[Path]] = {}
+        preserved: dict[Path, tuple[int, int]] = {}
+
+        for tree in (self.root_mode, self.chrootless):
+            foreign = tree / "usr" / "share" / "foreign-device"
+            nested = foreign / "nested"
+            sentinel = nested / "sentinel"
+            nested.mkdir(parents=True)
+            sentinel.write_bytes(b"foreign bytes\n")
+            os.utime(sentinel, (PACKAGE_FILE_MTIME, PACKAGE_FILE_MTIME))
+            os.utime(nested, (FOREIGN_DIRECTORY_MTIME, FOREIGN_DIRECTORY_MTIME))
+            os.utime(foreign, (FOREIGN_DIRECTORY_MTIME, FOREIGN_DIRECTORY_MTIME))
+            preserved[tree] = (
+                int(foreign.stat().st_mtime),
+                int(sentinel.stat().st_mtime),
+            )
+
+            root_device = os.lstat(tree).st_dev
+            calls: list[Path] = []
+
+            def fake_lstat(path: os.PathLike[str] | str) -> os.stat_result:
+                candidate = Path(path)
+                calls.append(candidate)
+                info = os.lstat(candidate)
+                if candidate == foreign:
+                    return SimpleNamespace(
+                        st_mode=info.st_mode,
+                        st_dev=root_device + 1,
+                    )
+                return info
+
+            normalize_directory_mtimes(
+                tree,
+                SOURCE_DATE_EPOCH,
+                lstat=fake_lstat,
+            )
+            visited[tree] = calls
+
+            self.assertEqual(int(foreign.stat().st_mtime), preserved[tree][0])
+            self.assertEqual(int(nested.stat().st_mtime), FOREIGN_DIRECTORY_MTIME)
+            self.assertEqual(int(sentinel.stat().st_mtime), preserved[tree][1])
+            self.assertNotIn(nested, calls)
+            self.assertNotIn(sentinel, calls)
+
+            ordinary = tree / "usr" / "share" / "demo"
+            self.assertEqual(int(ordinary.stat().st_mtime), SOURCE_DATE_EPOCH)
+
+        root_archive, chrootless_archive = self.archive_pair("device", clamp=True)
+        self.assertEqual(root_archive.read_bytes(), chrootless_archive.read_bytes())
 
     def test_comparison_only_normalization_explains_but_does_not_fix_output(self) -> None:
         root_archive, chrootless_archive = self.archive_pair("comparison", clamp=True)
