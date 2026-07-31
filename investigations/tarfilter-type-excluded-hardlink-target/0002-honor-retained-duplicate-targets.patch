@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -346,12 +346,16 @@ def main():
+@@ -346,11 +346,14 @@ def main():
      ) as out_tar:
          hardlink_prefix = re.compile(r"^(?:(?:\.\.?/)|/)+")
          type_excluded_members = set()
@@ -17,7 +17,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
                  continue
              if member.islnk() and hardlink_prefix.sub(
                  "", member.linkname
-@@ -365,6 +369,9 @@ def main():
+@@ -365,6 +368,9 @@ def main():
                      file=sys.stderr,
                  )
                  exit(1)
