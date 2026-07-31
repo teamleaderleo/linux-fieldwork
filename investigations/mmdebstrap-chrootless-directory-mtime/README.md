@@ -2,19 +2,39 @@
 
 Tracking: #380
 
-## In simple words
+## TL;DR
 
-The real Debian sid package test built the same root filesystem in root and
-chrootless modes. The file set and file bytes matched, but directory dates did
-not. Because tar stores directory dates, the two archives were not byte-for-byte
-identical.
+The real Debian sid package test built root and chrootless tarballs with the same
+files and file bytes, but 123 directory timestamps differed. A focused GNU tar
+matrix shows that full timestamp normalization is too broad, while real-directory
+normalization before tar can converge archive bytes and preserve package file
+mtimes.
 
-This investigation separates four policies before changing product source:
+Cross-context review found one evidence defect in the first matrix: `Path.is_dir()`
+follows symlinks, so a symlink to a directory could have its own timestamp changed
+while the helper still called the policy “directory-only.” The repaired matrix
+uses `lstat` type identity and proves symlink, hard-link, regular-file, and outside
+target metadata remain unchanged.
 
-1. keep the current clamp policy;
-2. normalize every member timestamp;
-3. normalize directory timestamps before the final tar operation;
-4. ignore directory timestamps only while comparing test output.
+This is still an evidence-only comparison. No product policy is selected yet.
+
+## Explain like I'm five
+
+Two workers built the same box with the same files. One wrote today's date on
+folders; the other kept older package folder dates. The boxes therefore differ
+byte-for-byte even though the contents match.
+
+The first proposed ruler also mistook a shortcut pointing to a folder for a real
+folder. The repaired ruler checks what the object itself is before changing its
+date.
+
+## Why care
+
+The existing `chrootless` test requires root and chrootless tarballs to be
+byte-identical. Ignoring directory timestamps could weaken a real reproducibility
+contract. Normalizing every timestamp would destroy legitimate package file
+metadata. A so-called directory-only repair must also avoid changing symlink or
+outside-target metadata.
 
 ## Real-system anchor
 
@@ -51,31 +71,65 @@ identical trees:
   observable;
 - file bytes, names, modes, and ownership headers are identical.
 
-It then runs GNU tar with the exact relevant mmdebstrap reproducibility options,
+It then runs GNU tar with the relevant mmdebstrap reproducibility options,
 including sorted PAX output and removal of atime/ctime PAX fields.
-
-Observed synthetic outcomes:
 
 | Policy | Archives converge | Package file mtime preserved | Interpretation |
 | --- | --- | --- | --- |
 | `--mtime` plus `--clamp-mtime` | no | yes | reproduces directory-only divergence |
 | full `--mtime`, no clamp | yes | no | too broad for a narrow repair |
-| normalize directories, then clamp | yes | yes | promising mechanism class |
+| normalize real directories, then clamp | yes | yes | promising mechanism class |
 | normalize only comparison manifests | comparison only | yes | explains result but leaves product bytes different |
+
+## Review repair — object identity before timestamp mutation
+
+The first helper collected paths with:
+
+```python
+path.is_dir()
+```
+
+That follows symlinks. A symlink to a directory could enter the normalization
+set even though `os.utime(..., follow_symlinks=False)` then changes the symlink
+object rather than the directory target.
+
+The repaired helper classifies each candidate with `lstat` and selects only
+`stat.S_ISDIR(...)` objects. Its reversing control adds:
+
+- a symlink to an outside directory with its own old mtime;
+- an outside directory and sentinel file whose mtimes must not change;
+- a hard link to the package payload;
+- the original regular file mtime and inode relationship.
+
+After normalization:
+
+- only real in-tree directory mtimes change;
+- symlink mtime and link target remain unchanged;
+- outside directory and sentinel mtimes remain unchanged;
+- regular file and hard-link mtimes remain package-owned;
+- the hard-link inode relationship remains intact;
+- root/chrootless archive bytes converge;
+- the tar archive retains the symlink and hard-link member types.
+
+This closes the immediate symlink-identity hole in the evidence model. It does
+not prove a safe product implementation across mount points or every metadata
+class.
 
 ## Current interpretation
 
-Directory-only normalization is the only tested policy that both converges the
-archive bytes and preserves the deliberately old regular-file timestamp.
+Real-directory-only normalization is the only tested policy that converges the
+archive bytes while preserving the deliberately old regular-file, symlink, and
+hard-link controls.
 
 That does not yet make it a product patch. Before modifying mmdebstrap, the next
 candidate must answer:
 
-- whether touching every directory in the temporary root is safe for all output
-  formats and permissions;
+- whether mutating temporary-tree directory mtimes is safe for all output formats
+  and permissions;
 - whether normalization should occur only for archive output;
-- whether symlinks, mount boundaries, xattrs, ACLs, hard links, and package
-  maintainer-script expectations remain unchanged;
+- how mount boundaries are detected rather than traversed;
+- whether xattrs, ACLs, capabilities, sparse files, and package script
+  expectations remain unchanged;
 - whether a streaming header rewrite would repeat LF-14's sparse-member
   corruption class;
 - whether root/chrootless byte identity is the intended public contract or only
@@ -84,9 +138,9 @@ candidate must answer:
 ## Stop rule
 
 Retain this evidence-only matrix until one product candidate adds reversing
-controls for ordinary files, links, xattrs, sparse members, directory output,
-and a second clean run. Do not weaken the real test to ignore directory mtimes
-without an explicit contract decision.
+controls for mount boundaries, xattrs/ACLs/capabilities, sparse members,
+directory-format output, failure cleanup, and a second clean run. Do not weaken
+the real test to ignore directory mtimes without an explicit contract decision.
 
 ## Authority
 
