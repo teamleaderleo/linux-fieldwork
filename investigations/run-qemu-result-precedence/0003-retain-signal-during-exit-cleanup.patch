@@ -21,7 +21,7 @@ diff --git a/upstream/mmdebstrap/run_qemu.sh b/upstream/mmdebstrap/run_qemu.sh
  
    if [ "$rv" -ne 0 ]; then
      exit "$rv"
-@@ -41,10 +47,18 @@
+@@ -41,9 +47,16 @@
    exit "$cleanup_status"
  }
  
