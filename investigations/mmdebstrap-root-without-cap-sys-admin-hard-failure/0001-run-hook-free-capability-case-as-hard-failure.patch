@@ -37,7 +37,7 @@ diff --git a/coverage.py b/coverage.py
 diff --git a/debian/tests/testsuite b/debian/tests/testsuite
 --- a/debian/tests/testsuite
 +++ b/debian/tests/testsuite
-@@ -205,6 +205,31 @@ if [ "$ret" -ne 0 ]; then
+@@ -205,6 +205,30 @@ if [ "$ret" -ne 0 ]; then
  # subtract 10 seconds to account for the inaccuracy in measuring time
  TIMEOUT=$((10000-$(date +%s)+$TIME_BEGIN-10))
  
