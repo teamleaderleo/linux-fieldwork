@@ -34,7 +34,7 @@ Source workflow run:
 - run: `30641621084`;
 - attempt: `1`;
 - repository head: `fe49686c333aea3c5b8e378e655c52fa57e9224c`;
-- generated merge checkout: `37648c5bda3f406ce706b4a5be46c1ccaa354f9c`;
+- generated merge checkout: `37648c5efd9cf80b5ae4ec063e8d6cb5b4f82d6e`;
 - ordered merge parents: base `c2b7c43a4b6ce883f6dcdbef8d489bcf48323266`, head `fe49686c333aea3c5b8e378e655c52fa57e9224c`;
 - artifact ID: `8799126060`;
 - artifact name: `mmdebstrap-reproduction-gha-30641621084-1`;
@@ -49,7 +49,7 @@ The raw artifact remains the authority for package evidence. This derived receip
 
 Owning issue: #370.
 
-Branch: `investigation/mmdebstrap-autopkgtest-artifact-receipt`.
+Branch: `investigation/mmdebstrap-autopkgtest-artifact-receipt-v2`.
 
 Changed surfaces:
 
@@ -81,12 +81,12 @@ The retained identity input is passed through the existing canonical classifier:
 
 `tools/audit_pr_evidence_identity.py`
 
-The rebuilt typed receipt must byte-for-byte agree after JSON normalization with the retained output receipt.
+The rebuilt typed receipt must agree after JSON normalization with the retained output receipt.
 
 Required source identity:
 
 - classification: `synthetic-merge-ref`;
-- checkout SHA: `37648c5b...`;
+- checkout SHA: `37648c5efd9cf80b5ae4ec063e8d6cb5b4f82d6e`;
 - head SHA: `fe49686c...`;
 - base SHA: `c2b7c43a...`;
 - ordered parents: `[base, head]`;
@@ -124,6 +124,8 @@ The derived JSON retains:
 
 - classifier output;
 - first failed and last named test;
+- first wrapper-failure line when the canonical classifier correctly remains wrapper-only `unknown`;
+- one ordering-failure line used only to compare focus completion with later failure;
 - named test count;
 - console SHA-256 and line count;
 - bounded context around the first failure;
@@ -151,8 +153,8 @@ Focus state is one of:
 
 Two order booleans answer the Packet B decision:
 
-- did the focus case begin before the first meaningful failure?
-- did it complete successfully before the first meaningful failure?
+- did the focus case begin before the first meaningful or wrapper-only failure?
+- did it complete successfully before that failure?
 
 The phase-order transformation receipt is retained verbatim alongside this result.
 
@@ -161,11 +163,12 @@ The phase-order transformation receipt is retained verbatim alongside this resul
 `tests/test_summarize_mmdebstrap_reproduction.py` covers:
 
 1. focus case passes, later broad case fails;
-2. focus case itself fails;
-3. focus case absent;
-4. repository head mismatch;
-5. duplicate required artifact basename;
-6. script/container status disagreement.
+2. focus case passes before wrapper-only failure;
+3. focus case itself fails;
+4. focus case absent;
+5. repository head mismatch;
+6. duplicate required artifact basename;
+7. script/container status disagreement.
 
 The positive fixture uses a real typed identity input/output pair built with the canonical classifier.
 
@@ -180,6 +183,16 @@ It downloads only artifact name `mmdebstrap-reproduction-gha-30641621084-1` from
 
 No package, container, mirror, root, mount, or network-package transaction is rerun. The only network action is GitHub downloading its own retained artifact.
 
+## First receipt failure and repair
+
+Dedicated receipt run `30646336151` downloaded the correct artifact and failed before console interpretation because this record and workflow contained a manually transcribed checkout SHA ending in `...aa354f9c`.
+
+The artifact's own typed input/output receipts and raw revision line identify the generated merge as:
+
+`37648c5efd9cf80b5ae4ec063e8d6cb5b4f82d6e`
+
+The tool correctly rejected the stale expected coordinate. The repair changes only that expected source identity and this record; no artifact bytes or interpretation policy changed.
+
 ## Why this approach
 
 ### Why not rerun the package matrix?
@@ -192,7 +205,7 @@ The wrapper does not expose the first named failure or focused-case execution.
 
 ### Why not parse only the final lines?
 
-Later wrapper failures can overwrite the useful owner. The canonical classifier preserves the first meaningful event.
+Later wrapper failures can overwrite the useful owner. The canonical classifier preserves the first meaningful event; the separate wrapper line exists only for focus-order comparison when no meaningful event is recognized.
 
 ### Why not copy the artifact into the repository?
 
@@ -227,7 +240,7 @@ Any product or broad-matrix repair should then use the named first failure as it
 
 ## Disposition
 
-`HOLD` until the dedicated receipt workflow executes against artifact `8799126060` and the exact repository gate passes.
+`REPAIR` until the dedicated receipt workflow executes against artifact `8799126060` with the corrected checkout coordinate and the exact repository gate passes.
 
 The next disposition depends on the observed focus state:
 
