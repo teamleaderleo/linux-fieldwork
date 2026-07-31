@@ -16,18 +16,33 @@ PATCH = (
 EPOCH = 1_700_000_000
 FILE_TIME = EPOCH - 50_000
 OUTSIDE_TIME = EPOCH - 75_000
+DIRECTORY_ATIME = EPOCH - 125_000
+DIRECTORY_MTIME = EPOCH - 100_000
 
 
 def apply_candidate(directory: Path) -> Path:
     source = directory / 'mmdebstrap'
     shutil.copy2(REPO_SOURCE, source)
-    subprocess.run(
-        ['patch', '--batch', '--fuzz=0', '--no-backup-if-mismatch', '-p1', '-i', str(PATCH)],
+    completed = subprocess.run(
+        [
+            'patch',
+            '--batch',
+            '--fuzz=0',
+            '--no-backup-if-mismatch',
+            '-p1',
+            '-i',
+            str(PATCH),
+        ],
         cwd=directory,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+    output = completed.stdout + completed.stderr
+    if completed.returncode != 0:
+        raise AssertionError(output)
+    if re.search(r'\b(?:fuzz|offset)\b', output, re.IGNORECASE):
+        raise AssertionError(f'candidate patch applied non-exactly:\n{output}')
     return source
 
 
@@ -64,11 +79,16 @@ class CandidateTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.base = Path(self.temporary.name)
 
-    def test_patch_applies_without_fuzz_and_perl_compiles(self) -> None:
+    def test_patch_applies_without_fuzz_or_offset_and_perl_compiles(self) -> None:
         source = apply_candidate(self.base)
-        subprocess.run(['perl', '-c', str(source)], check=True, capture_output=True, text=True)
+        subprocess.run(
+            ['perl', '-c', str(source)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
-    def test_helper_changes_only_in_tree_directories_and_is_repeatable(self) -> None:
+    def test_helper_changes_only_directory_mtime_and_is_repeatable(self) -> None:
         source = apply_candidate(self.base)
         helper = extract_helper(source.read_text())
 
@@ -95,8 +115,9 @@ class CandidateTest(unittest.TestCase):
 
         before_inode = payload.stat().st_ino
         before_nlink = payload.stat().st_nlink
-        for directory in [root, root / 'usr', root / 'usr/share', nested]:
-            os.utime(directory, (EPOCH - 100_000, EPOCH - 100_000))
+        directories = [root, root / 'usr', root / 'usr/share', nested]
+        for directory in directories:
+            os.utime(directory, (DIRECTORY_ATIME, DIRECTORY_MTIME))
 
         run_helper(helper, root, EPOCH)
         run_helper(helper, root, EPOCH)
@@ -110,10 +131,12 @@ class CandidateTest(unittest.TestCase):
         self.assertEqual(payload.read_bytes(), b'payload\n')
         if xattr_supported:
             self.assertEqual(os.getxattr(payload, b'user.lf380'), b'preserve')
-        for directory in [root, root / 'usr', root / 'usr/share', nested]:
-            self.assertEqual(directory.stat().st_mtime_ns, EPOCH * 1_000_000_000)
+        for directory in directories:
+            stat = directory.stat()
+            self.assertEqual(stat.st_atime_ns, DIRECTORY_ATIME * 1_000_000_000)
+            self.assertEqual(stat.st_mtime_ns, EPOCH * 1_000_000_000)
 
-    def test_call_is_limited_to_source_date_epoch_and_archive_backed_formats(self) -> None:
+    def test_call_is_limited_to_source_date_epoch_and_direct_tar(self) -> None:
         source = apply_candidate(self.base).read_text()
         archive_branch = re.search(
             r"elsif \(any \{ \$_ eq \$options->\{format\} \}\n"
@@ -124,8 +147,13 @@ class CandidateTest(unittest.TestCase):
             re.S,
         )
         self.assertIsNotNone(archive_branch)
-        self.assertIn('if (defined $ENV{SOURCE_DATE_EPOCH})', archive_branch.group(0))
-        self.assertEqual(source.count('normalize_directory_mtimes($options->{root}, $mtime);'), 1)
+        block = archive_branch.group(0)
+        self.assertIn('if (defined $ENV{SOURCE_DATE_EPOCH}', block)
+        self.assertIn("&& $options->{format} eq 'tar')", block)
+        self.assertEqual(
+            source.count('normalize_directory_mtimes($options->{root}, $mtime);'),
+            1,
+        )
 
     def test_helper_prunes_foreign_devices_before_utime(self) -> None:
         source = apply_candidate(self.base).read_text()
@@ -133,6 +161,7 @@ class CandidateTest(unittest.TestCase):
         self.assertIn('if ($stat[0] != $rootdev)', helper)
         self.assertIn('$File::Find::prune = 1;', helper)
         self.assertLess(helper.index('$File::Find::prune = 1;'), helper.index('utime('))
+        self.assertIn('utime($stat[8], $timestamp,', helper)
         self.assertIn('no_chdir => 1', helper)
 
 
