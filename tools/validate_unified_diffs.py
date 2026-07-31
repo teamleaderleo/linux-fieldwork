@@ -18,6 +18,7 @@ HUNK_HEADER = re.compile(
     r"@@(?: .*)?$"
 )
 NO_NEWLINE_MARKER = r"\ No newline at end of file"
+EMAIL_SIGNATURE_SEPARATOR = "-- "
 
 
 @dataclass(frozen=True)
@@ -38,26 +39,79 @@ def _declared_count(raw_count: str | None) -> int:
     return 1 if raw_count is None else int(raw_count)
 
 
+def _is_plain_file_header(lines: Sequence[str], index: int) -> bool:
+    return (
+        lines[index].startswith("--- ")
+        and index + 1 < len(lines)
+        and lines[index + 1].startswith("+++ ")
+    )
+
+
 def validate_text(text: str, *, path: str = "<memory>") -> ValidationResult:
-    """Validate one patch's unified-diff hunk headers and body counts."""
+    """Validate one patch's unified-diff headers, sections, and hunk counts."""
 
     lines = text.splitlines()
     findings: list[Finding] = []
     hunks = 0
     saw_patch_structure = False
     saw_binary_marker = False
+    pending_text_header_line: int | None = None
+    pending_text_section_has_hunk = False
     index = 0
+
+    def finish_text_section() -> None:
+        nonlocal pending_text_header_line, pending_text_section_has_hunk
+        if pending_text_header_line is not None and not pending_text_section_has_hunk:
+            findings.append(
+                Finding(
+                    path,
+                    pending_text_header_line,
+                    "textual file header is not followed by a unified-diff hunk",
+                )
+            )
+        pending_text_header_line = None
+        pending_text_section_has_hunk = False
 
     while index < len(lines):
         line = lines[index]
 
-        if line.startswith("diff --git ") or line.startswith("--- ") or line.startswith("+++ "):
+        if line == EMAIL_SIGNATURE_SEPARATOR:
+            finish_text_section()
+            break
+
+        if line.startswith("diff --git "):
+            finish_text_section()
             saw_patch_structure = True
+            index += 1
+            continue
+
         if line == "GIT binary patch" or (
             line.startswith("Binary files ") and line.endswith(" differ")
         ):
+            finish_text_section()
             saw_patch_structure = True
             saw_binary_marker = True
+            index += 1
+            continue
+
+        if _is_plain_file_header(lines, index):
+            finish_text_section()
+            saw_patch_structure = True
+            pending_text_header_line = index + 1
+            index += 2
+            continue
+
+        if line.startswith("--- ") or line.startswith("+++ "):
+            saw_patch_structure = True
+            findings.append(
+                Finding(
+                    path,
+                    index + 1,
+                    "unpaired textual file header; expected adjacent '---' and '+++' lines",
+                )
+            )
+            index += 1
+            continue
 
         if not line.startswith("@@"):
             index += 1
@@ -72,6 +126,17 @@ def validate_text(text: str, *, path: str = "<memory>") -> ValidationResult:
             index += 1
             continue
 
+        if pending_text_header_line is None:
+            findings.append(
+                Finding(
+                    path,
+                    index + 1,
+                    "unified-diff hunk has no preceding textual file header",
+                )
+            )
+        else:
+            pending_text_section_has_hunk = True
+
         hunks += 1
         old_expected = _declared_count(match.group("old_count"))
         new_expected = _declared_count(match.group("new_count"))
@@ -82,7 +147,38 @@ def validate_text(text: str, *, path: str = "<memory>") -> ValidationResult:
 
         while index < len(lines):
             body = lines[index]
-            if body.startswith("@@") or body.startswith("diff --git "):
+
+            counts_complete = (
+                old_actual == old_expected and new_actual == new_expected
+            )
+            if counts_complete:
+                if body == NO_NEWLINE_MARKER:
+                    index += 1
+                    continue
+                if (
+                    body.startswith("@@")
+                    or body.startswith("diff --git ")
+                    or _is_plain_file_header(lines, index)
+                    or body == EMAIL_SIGNATURE_SEPARATOR
+                ):
+                    break
+                if body and body[0] in " +-":
+                    findings.append(
+                        Finding(
+                            path,
+                            index + 1,
+                            "extra hunk-body line after the declared old/new counts were satisfied",
+                        )
+                    )
+                    index += 1
+                    continue
+                break
+
+            if (
+                body.startswith("@@")
+                or body.startswith("diff --git ")
+                or body == EMAIL_SIGNATURE_SEPARATOR
+            ):
                 break
             if body == NO_NEWLINE_MARKER:
                 index += 1
@@ -127,12 +223,15 @@ def validate_text(text: str, *, path: str = "<memory>") -> ValidationResult:
                 )
             )
 
+    finish_text_section()
+
     if not saw_patch_structure:
         findings.append(
             Finding(path, 1, "no unified-diff or Git binary patch structure found")
         )
     elif hunks == 0 and not saw_binary_marker:
         # Mode-only, rename-only, and copy-only Git patches are valid without hunks.
+        # Plain textual headers without hunks are rejected by finish_text_section().
         pass
 
     return ValidationResult(path, hunks, tuple(findings))
@@ -188,8 +287,9 @@ def validate_path(path: Path) -> ValidationResult:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Validate unified-diff hunk grammar and declared old/new line counts. "
-            "Directories are scanned recursively for *.patch files."
+            "Validate unified-diff file sections, hunk grammar, and declared "
+            "old/new line counts. Directories are scanned recursively for "
+            "*.patch files."
         )
     )
     parser.add_argument(
