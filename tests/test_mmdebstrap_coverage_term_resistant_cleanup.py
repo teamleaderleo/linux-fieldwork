@@ -522,11 +522,15 @@ class CoverageTermResistantCleanupTest(unittest.TestCase):
             "subprocess.Popen(argv, start_new_session=True)",
             patch,
         )
-        self.assertIn(
-            "os.killpg(proc.pid, signal.SIGTERM)",
-            patch,
+        kill_index = patch.index(
+            "+                os.killpg(proc.pid, signal.SIGTERM)"
         )
-        self.assertEqual(patch.count("+            proc.wait()"), 1)
+        wait_index = patch.index("\n             proc.wait()\n", kill_index)
+        exit_index = patch.index(
+            '+            raise SystemExit(130)', wait_index
+        )
+        self.assertLess(kill_index, wait_index)
+        self.assertLess(wait_index, exit_index)
         self.assertNotIn("signal.SIG_IGN", patch)
         self.assertNotIn("timeout=", patch)
         self.assertNotIn("signal.SIGKILL", patch)
