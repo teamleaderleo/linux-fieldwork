@@ -242,17 +242,18 @@ class MmdebstrapCoverageQemuProcessGroupTest(unittest.TestCase):
 
         os.kill(process.pid, signal.SIGINT)
         if expect_survivors:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                process.wait(timeout=0.5)
             live = (
                 process_group.MmdebstrapCoverageProcessGroupTest.live_group_members(
                     worker_pgid
                 )
             )
             self.assertTrue(live, before)
-            self.assertIsNone(process.poll())
             self.assertFalse((suite / "qemu-later").exists())
             process_group.MmdebstrapCoverageProcessGroupTest.release_test(suite)
-            status = process.wait(timeout=10)
             self.wait_for_qemu_later(suite)
+            status = process.wait(timeout=10)
         else:
             status = process.wait(timeout=10)
             live = (
