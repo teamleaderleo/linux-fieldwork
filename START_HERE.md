@@ -23,6 +23,14 @@ Search, in order:
 
 Link related records instead of repeating them. Existing work is context, not permission: a claim, assignee, branch, or pull request does not reserve the question. Parallel reproduction, review, and competing candidates are allowed. Use separate exact heads, compare the results, and retain the evidence that explains which variant survived.
 
+### Make a bounded cross-context pass
+
+Before narrowing to one file or one happy path, sample the adjacent contexts that could change the decision: caller and callee, direct and mediated paths, producer and consumer, setup and cleanup, sibling modes or backends, representation and metadata, ownership, nearby tests, and relevant history.
+
+Choose two to four adjacent contexts. Give each one a discriminator that could make the current mechanism, compatibility claim, evidence boundary, or next action lose. Transfer reusable defect classes from other investigations—identity, ordering, completeness, cleanup authority, sanitizer bootstrap, metadata, retry, cache, and exact-execution mistakes—but keep them as hypotheses with negative controls.
+
+Breadth is not permission for aimless exploration. Record a stop condition. Stop when the selected contexts cannot change the decision, or split a distinct finding into its own carrier instead of silently widening the current patch. Follow [`notes/processes/cross-context-review-prevents-myopia.md`](notes/processes/cross-context-review-prevents-myopia.md) for the review map and compact receipt.
+
 ## 2. Choose the work type
 
 Use a **note** for:
