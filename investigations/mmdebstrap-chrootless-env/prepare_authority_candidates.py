@@ -21,6 +21,9 @@ PATCHES = (
     ROOT
     / "investigations/mmdebstrap-chrootless-env/"
     / "0002-use-absolute-env-wrapper.patch",
+    ROOT
+    / "investigations/mmdebstrap-chrootless-env/"
+    / "0003-use-absolute-env-for-chrootless-hooks.patch",
 )
 
 
@@ -123,12 +126,26 @@ def prepare(destination: pathlib.Path) -> dict[str, str]:
     outer_mutation.chmod(mode | stat.S_IXUSR)
     check_perl(outer_mutation)
 
+    hook_mutation = destination / "mmdebstrap-hook-env-mutation"
+    hook_source = replace_exact(
+        candidate_source,
+        "    my $env_path = $options->{mode} eq 'chrootless'\n"
+        "      ? chrootless_env_path()\n"
+        "      : 'env';\n",
+        "    my $env_path = 'env';\n",
+        "chrootless hook wrapper mutation",
+    )
+    hook_mutation.write_text(hook_source, encoding="utf-8")
+    hook_mutation.chmod(mode | stat.S_IXUSR)
+    check_perl(hook_mutation)
+
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": str(SOURCE),
         "candidate": str(candidate),
         "inner_mutation": str(inner_mutation),
         "outer_mutation": str(outer_mutation),
+        "hook_mutation": str(hook_mutation),
         "source_mode": format(stat.S_IMODE(SOURCE.stat().st_mode), "04o"),
         "candidate_mode": format(stat.S_IMODE(candidate.stat().st_mode), "04o"),
     }
@@ -151,7 +168,12 @@ def main() -> int:
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
-        for key in ("candidate", "inner_mutation", "outer_mutation"):
+        for key in (
+            "candidate",
+            "inner_mutation",
+            "outer_mutation",
+            "hook_mutation",
+        ):
             print(f"{key}={result[key]}")
     return 0
 
