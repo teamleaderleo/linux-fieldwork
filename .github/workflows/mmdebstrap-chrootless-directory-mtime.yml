@@ -39,6 +39,7 @@ jobs:
           bash -n \
             investigations/mmdebstrap-chrootless-directory-mtime/real_metadata_probe.sh
           python3 -m py_compile \
+            investigations/mmdebstrap-chrootless-directory-mtime/prepare_product_normalizer.py \
             tests/test_mmdebstrap_chrootless_directory_mtime.py \
             tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py \
             tests/test_mmdebstrap_chrootless_directory_mtime_patch_context.py \
@@ -50,7 +51,7 @@ jobs:
             tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py -v
           python3 tests/test_mmdebstrap_chrootless_directory_mtime_real_probe.py -v
 
-      - name: Run real mount ACL and capability matrix twice
+      - name: Run exact product helper on real metadata matrix twice
         shell: bash
         run: |
           set -euo pipefail
@@ -71,6 +72,7 @@ jobs:
           test -s "$result_dir/rerun.txt"
           for receipt in "$result_dir/first.txt" "$result_dir/rerun.txt"; do
             grep -Fx 'schema_version=1' "$receipt"
+            grep -Fx 'normalizer=extracted-product-perl-helper' "$receipt"
             grep -Fx 'acl_preserved=yes' "$receipt"
             grep -Fx 'capability_preserved=yes' "$receipt"
             grep -Fx 'mount_remained_active=yes' "$receipt"
