@@ -18,6 +18,7 @@ from typing import Callable, Sequence
 
 READY_TIMEOUT_SECONDS = 5.0
 SIGNAL_TIMEOUT_SECONDS = 3.0
+CLEANUP_TIMEOUT_SECONDS = 3.0
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,15 @@ def wait_for_path(path: pathlib.Path, timeout: float = READY_TIMEOUT_SECONDS) ->
             return
         time.sleep(0.02)
     raise ProbeError(f"timed out waiting for fixture path: {path}")
+
+
+def wait_for_process_exit(pid: int, timeout: float = CLEANUP_TIMEOUT_SECONDS) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not process_running(pid):
+            return
+        time.sleep(0.02)
+    raise ProbeError(f"process survived cleanup: pid={pid}")
 
 
 def read_signal(path: pathlib.Path) -> int | None:
@@ -160,7 +170,7 @@ def classify(
     if parent_signal == signal.SIGINT and child_signal is None:
         return "owner-only-delivery"
     if parent_signal is None and child_signal is None:
-        if "usage:" in stderr.lower() or returncode not in (0,):
+        if "usage:" in stderr.lower() or returncode != 0:
             return "parser-or-target-rejection"
         return "no-delivery"
     return "partial-or-unexpected-delivery"
@@ -175,6 +185,22 @@ def terminate_process(process: subprocess.Popen[str]) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=2)
+
+
+def cleanup_group(parent: subprocess.Popen[str], child_pid: int | None) -> None:
+    try:
+        os.killpg(parent.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+    try:
+        parent.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        parent.kill()
+        parent.wait(timeout=2)
+
+    if child_pid is not None:
+        wait_for_process_exit(child_pid)
 
 
 def run_case(
@@ -199,6 +225,7 @@ def run_case(
             stderr=subprocess.PIPE,
             start_new_session=True,
         )
+        child_pid_for_cleanup: int | None = None
         try:
             wait_for_path(root / "parent.ready")
             wait_for_path(root / "child.ready")
@@ -207,6 +234,7 @@ def run_case(
             if len(ready) != 3:
                 raise ProbeError(f"invalid parent readiness record: {ready}")
             parent_pid, pgid, child_pid = map(int, ready)
+            child_pid_for_cleanup = child_pid
             unrelated_pid = int(
                 (root / "unrelated.ready").read_text(encoding="utf-8").strip()
             )
@@ -248,7 +276,7 @@ def run_case(
             parent_signal_value = read_signal(root / "parent.signal")
             child_signal_value = read_signal(root / "child.signal")
             unrelated_signal_value = read_signal(root / "unrelated.signal")
-            result = CaseResult(
+            return CaseResult(
                 name=name,
                 command=command,
                 returncode=returncode,
@@ -268,19 +296,15 @@ def run_case(
                     stderr=stderr,
                 ),
             )
-            return result
         finally:
+            cleanup_error: Exception | None = None
             try:
-                if parent.poll() is None:
-                    os.killpg(parent.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            try:
-                parent.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                parent.kill()
-                parent.wait(timeout=2)
+                cleanup_group(parent, child_pid_for_cleanup)
+            except Exception as error:  # preserve cleanup authority after all cases
+                cleanup_error = error
             terminate_process(unrelated)
+            if cleanup_error is not None:
+                raise cleanup_error
 
 
 def command_cases() -> tuple[
