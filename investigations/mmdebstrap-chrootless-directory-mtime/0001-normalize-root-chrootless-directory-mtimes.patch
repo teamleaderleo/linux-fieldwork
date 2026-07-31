@@ -31,13 +31,14 @@ diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
          if (!can_execute $tool) {
              error "cannot find $tool";
          }
-@@ -7330,7 +7341,13 @@ sub main() {
+@@ -7330,7 +7341,14 @@ sub main() {
          close $parentsock;
          open(STDOUT, '>&', STDERR) or error "cannot open STDOUT: $!";
  
          setup($options);
 +
-+        if (exists $ENV{SOURCE_DATE_EPOCH}
++        if (!$options->{dryrun}
++            && exists $ENV{SOURCE_DATE_EPOCH}
 +            && $options->{format} eq 'tar'
 +            && any { $_ eq $options->{mode} } ('root', 'chrootless')) {
 +            normalize_archive_directory_mtimes($options->{root}, $mtime);
