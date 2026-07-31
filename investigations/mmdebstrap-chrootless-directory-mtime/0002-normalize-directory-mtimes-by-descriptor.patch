@@ -1,0 +1,128 @@
+--- a/mmdebstrap
++++ b/mmdebstrap
+@@ -5580,6 +5580,113 @@
+     return;
+ }
+ 
++sub directory_mount_id {
++    my $directory_handle = shift;
++    my $fd               = fileno $directory_handle;
++    defined $fd or error "directory handle has no file descriptor";
++
++    my $fdinfo = "/proc/self/fdinfo/$fd";
++    return undef if not -r $fdinfo;
++
++    open my $fh, '<', $fdinfo or error "cannot open $fdinfo: $!";
++    my $mount_id;
++    while (my $line = <$fh>) {
++        if ($line =~ /^mnt_id:\s+([0-9]+)\s*$/) {
++            $mount_id = $1;
++            last;
++        }
++    }
++    close $fh or error "cannot close $fdinfo: $!";
++    defined $mount_id or error "cannot read mount identity from $fdinfo";
++    return $mount_id;
++}
++
++sub open_child_directory {
++    my $parent_handle = shift;
++    my $entry         = shift;
++
++    if ($entry eq '.' or $entry eq '..' or index($entry, '/') >= 0) {
++        error "invalid directory entry for descriptor traversal: $entry";
++    }
++
++    my $parent_fd = fileno $parent_handle;
++    defined $parent_fd
++      or error "parent directory handle has no file descriptor";
++
++    my $no_follow = eval { Fcntl::O_NOFOLLOW() };
++    defined $no_follow
++      or error "O_NOFOLLOW is unavailable for directory timestamp normalization";
++
++    my $child_handle;
++    my $child_path = "/dev/fd/$parent_fd/$entry";
++    if (!sysopen($child_handle, $child_path,
++            O_RDONLY | O_DIRECTORY | $no_follow)) {
++        return undef if $!{ENOENT} or $!{ENOTDIR} or $!{ELOOP};
++        error "cannot open directory entry $entry below fd $parent_fd: $!";
++    }
++    return $child_handle;
++}
++
++sub normalize_directory_mtimes {
++    my $root_handle = shift;
++    my $timestamp   = shift;
++
++    defined $root_handle
++      or error "root directory handle is unavailable for timestamp normalization";
++
++    my @rootstat = stat $root_handle;
++    scalar @rootstat or error "cannot stat root directory handle: $!";
++    my $root_device   = $rootstat[0];
++    my $root_mount_id = directory_mount_id($root_handle);
++    my %visited;
++
++    my $visit;
++    $visit = sub {
++        my $directory_handle = shift;
++        my @stat             = stat $directory_handle;
++        scalar @stat or error "cannot stat directory handle: $!";
++
++        my $identity = "$stat[0]:$stat[1]";
++        return if $visited{$identity}++;
++
++        my $fd = fileno $directory_handle;
++        defined $fd or error "directory handle has no file descriptor";
++        my $fdpath = "/dev/fd/$fd";
++
++        opendir(my $dh, $fdpath) or error "cannot open $fdpath: $!";
++        my @entries = sort grep { $_ ne '.' and $_ ne '..' } readdir $dh;
++        closedir $dh or error "cannot close $fdpath: $!";
++
++        foreach my $entry (@entries) {
++            my $child_handle = open_child_directory($directory_handle, $entry);
++            next if not defined $child_handle;
++
++            my @childstat = stat $child_handle;
++            scalar @childstat
++              or error "cannot stat directory entry $entry below fd $fd: $!";
++            next if $childstat[0] != $root_device;
++
++            my $child_mount_id = directory_mount_id($child_handle);
++            if (defined $root_mount_id) {
++                defined $child_mount_id
++                  or error "cannot determine mount identity below fd $fd";
++                next if $child_mount_id ne $root_mount_id;
++            }
++
++            $visit->($child_handle);
++        }
++
++        my $changed = eval {
++            utime($stat[8], $timestamp, $directory_handle);
++        };
++        if (!$changed) {
++            my $reason = $@ ne '' ? $@ : $!;
++            error "cannot set timestamp on directory fd $fd: $reason";
++        }
++    };
++
++    $visit->($root_handle);
++}
++
+ sub approx_disk_usage {
+     my $directory  = shift;
+     my $block_size = shift;
+@@ -7352,6 +7459,10 @@
+             ('tar', 'squashfs', 'ext2', 'ext4')) {
+             info "creating tarball...";
+ 
++            if (defined $ENV{SOURCE_DATE_EPOCH}) {
++                normalize_directory_mtimes($rootdir_handle, $mtime);
++            }
++
+             # redirect tar output to the writing end of the pipe so
+             # that the parent process can capture the output
+             open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
