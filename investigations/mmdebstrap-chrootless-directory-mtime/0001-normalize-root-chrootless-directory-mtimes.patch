@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
 --- a/upstream/mmdebstrap/mmdebstrap
 +++ b/upstream/mmdebstrap/mmdebstrap
-@@ -5628,7 +5628,18 @@ sub approx_disk_usage {
+@@ -5628,8 +5628,19 @@ sub approx_disk_usage {
      # the above is only a heuristic and especially ext4 will consume quite
      # a few more blocks than the heuristic above is going to compute
      return int($installed_size * 1.2);
