@@ -75,22 +75,24 @@ class MmdebstrapChrootlessDirectoryMtimeCandidateTest(unittest.TestCase):
             "normalize_archive_directory_mtimes",
             "main",
         )
-        expected = (
-            "'find', $root, '-xdev', '-type', 'd', '-exec',\n"
-            "        'touch', '--no-dereference', \"--date=\\@$mtime\", '--', '{}', '+'"
+        required = (
+            'lstat $root or error "cannot stat archive root $root: $!";',
+            "if (!-d _ || -l _)",
+            'error "archive root is not a real directory: $root";',
+            "my $root_dev = (lstat _)[0];",
+            'lstat or error "cannot stat $File::Find::name: $!";',
+            "my $device = (lstat _)[0];",
+            "$File::Find::prune = 1;",
+            "1 == utime($mtime, $mtime, $File::Find::name)",
+            "find({ wanted => $normalize, no_chdir => 1 }, $root);",
         )
-        self.assertIn(expected, helper)
-        self.assertIn(
-            'or error "cannot normalize archive directory mtimes: $?";',
-            helper,
-        )
+        for value in required:
+            with self.subTest(value=value):
+                self.assertIn(value, helper)
+        self.assertNotIn("system(", helper)
+        self.assertNotIn("'touch'", helper)
+        self.assertNotIn("'-xdev'", helper)
 
-        global_tools_start = source.index("foreach my $tool (")
-        global_tools_end = source.index("my $dpkgversion", global_tools_start)
-        global_tools = source[global_tools_start:global_tools_end]
-        self.assertNotIn("'touch'", global_tools)
-        self.assertIn("if (!can_execute 'touch')", source)
-        self.assertIn('error "cannot find touch";', source)
         self.assertEqual(
             source.count(
                 "normalize_archive_directory_mtimes($options->{root}, $mtime);"
@@ -104,18 +106,17 @@ class MmdebstrapChrootlessDirectoryMtimeCandidateTest(unittest.TestCase):
             "            && any { $_ eq $options->{mode} } ('root', 'chrootless'))"
         )
         self.assertIn(gate, source)
+        self.assertNotIn("cannot find touch", source)
 
         worker_start = source.index("my $worker = sub")
         setup = source.index("setup($options);", worker_start)
-        dependency = source.index("if (!can_execute 'touch')", setup)
         normalize = source.index(
             "normalize_archive_directory_mtimes($options->{root}, $mtime);",
-            dependency,
+            setup,
         )
         adios = source.index("pack('n', 0) . 'adios'", normalize)
         tar_output = source.index("open(STDOUT, '>&', $wfh)", adios)
-        self.assertLess(setup, dependency)
-        self.assertLess(dependency, normalize)
+        self.assertLess(setup, normalize)
         self.assertLess(normalize, adios)
         self.assertLess(adios, tar_output)
 
@@ -123,11 +124,14 @@ class MmdebstrapChrootlessDirectoryMtimeCandidateTest(unittest.TestCase):
         self,
         root: pathlib.Path,
         helper: str,
+        *,
+        prelude: str = "",
     ) -> pathlib.Path:
         harness = root / "normalize.pl"
         harness.write_text(
-            "use strict;\nuse warnings;\n"
-            "sub error { die $_[0] . \"\\n\"; }\n"
+            "use strict;\nuse warnings;\nuse File::Find;\n"
+            + prelude
+            + "sub error { die $_[0] . \"\\n\"; }\n"
             + helper
             + "normalize_archive_directory_mtimes($ARGV[0], $ARGV[1]);\n",
             encoding="utf-8",
@@ -211,7 +215,7 @@ class MmdebstrapChrootlessDirectoryMtimeCandidateTest(unittest.TestCase):
             self.assertEqual(int(sentinel.stat().st_mtime), before["sentinel_mtime"])
             self.assertEqual(sentinel.read_bytes(), before["sentinel_bytes"])
 
-    def test_exact_helper_preserves_first_tool_failure(self) -> None:
+    def test_exact_helper_fails_closed_for_invalid_root_and_utime_failure(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mtime-failure-") as temporary:
             root = pathlib.Path(temporary)
             candidate = self.apply_candidate(root / "candidate")
@@ -222,49 +226,61 @@ class MmdebstrapChrootlessDirectoryMtimeCandidateTest(unittest.TestCase):
                 "main",
             )
             harness = self.write_helper_harness(root, helper)
+
+            missing = root / "missing"
+            missing_result = subprocess.run(
+                ["perl", str(harness), str(missing), str(SOURCE_DATE_EPOCH)],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=30,
+            )
+            self.assertNotEqual(missing_result.returncode, 0)
+            self.assertIn("cannot stat archive root", missing_result.stderr)
+
+            target = root / "target"
+            target.mkdir()
+            self.set_mtime(target, OLD_MTIME)
+            symlink = root / "root-link"
+            symlink.symlink_to(target, target_is_directory=True)
+            symlink_result = subprocess.run(
+                ["perl", str(harness), str(symlink), str(SOURCE_DATE_EPOCH)],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=30,
+            )
+            self.assertNotEqual(symlink_result.returncode, 0)
+            self.assertIn("archive root is not a real directory", symlink_result.stderr)
+            self.assertEqual(int(target.stat().st_mtime), OLD_MTIME)
+
             tree = root / "tree"
             directory = tree / "directory"
             directory.mkdir(parents=True)
             self.set_mtime(tree, OLD_MTIME)
             self.set_mtime(directory, OLD_MTIME)
-
-            fakebin = root / "fakebin"
-            fakebin.mkdir()
-            fake_find = fakebin / "find"
-            fake_find.write_text("#!/bin/sh\nexit 42\n", encoding="utf-8")
-            fake_find.chmod(0o755)
-            environment = os.environ.copy()
-            environment["PATH"] = f"{fakebin}:{environment['PATH']}"
-
-            failed_find = subprocess.run(
-                ["perl", str(harness), str(tree), str(SOURCE_DATE_EPOCH)],
-                env=environment,
+            failing_harness = self.write_helper_harness(
+                root,
+                helper,
+                prelude=(
+                    "BEGIN { *CORE::GLOBAL::utime = sub { "
+                    "$! = 13; return 0; }; }\n"
+                ),
+            )
+            failed_utime = subprocess.run(
+                ["perl", str(failing_harness), str(tree), str(SOURCE_DATE_EPOCH)],
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=False,
                 timeout=30,
             )
-            self.assertNotEqual(failed_find.returncode, 0)
-            self.assertIn("cannot normalize archive directory mtimes", failed_find.stderr)
+            self.assertNotEqual(failed_utime.returncode, 0)
+            self.assertIn("cannot normalize directory mtime", failed_utime.stderr)
             self.assertEqual(int(tree.stat().st_mtime), OLD_MTIME)
             self.assertEqual(int(directory.stat().st_mtime), OLD_MTIME)
-
-            fake_find.unlink()
-            fake_touch = fakebin / "touch"
-            fake_touch.write_text("#!/bin/sh\nexit 43\n", encoding="utf-8")
-            fake_touch.chmod(0o755)
-            failed_touch = subprocess.run(
-                ["perl", str(harness), str(tree), str(SOURCE_DATE_EPOCH)],
-                env=environment,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-                timeout=30,
-            )
-            self.assertNotEqual(failed_touch.returncode, 0)
-            self.assertIn("cannot normalize archive directory mtimes", failed_touch.stderr)
 
     @unittest.skipUnless(shutil.which("perltidy"), "perltidy is unavailable")
     def test_current_sid_formatting_is_preserved(self) -> None:
