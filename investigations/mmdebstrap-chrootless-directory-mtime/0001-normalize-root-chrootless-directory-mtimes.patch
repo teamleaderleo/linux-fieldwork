@@ -1,9 +1,7 @@
 diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
 --- a/upstream/mmdebstrap/mmdebstrap
 +++ b/upstream/mmdebstrap/mmdebstrap
-@@ -5628,8 +5628,19 @@ sub approx_disk_usage {
-     # the above is only a heuristic and especially ext4 will consume quite
-     # a few more blocks than the heuristic above is going to compute
+@@ -5631,6 +5631,17 @@
      return int($installed_size * 1.2);
  }
  
@@ -21,8 +19,7 @@ diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
  sub main() {
      my $before = Time::HiRes::time;
  
-@@ -7330,7 +7341,17 @@ sub main() {
-         close $parentsock;
+@@ -7331,6 +7342,16 @@
          open(STDOUT, '>&', STDERR) or error "cannot open STDOUT: $!";
  
          setup($options);
