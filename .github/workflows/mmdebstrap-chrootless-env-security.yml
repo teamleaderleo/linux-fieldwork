@@ -54,8 +54,20 @@ jobs:
               cmp mmdebstrap /tmp/mmdebstrap.tdy
             '
 
-      - name: Run security regression
-        run: bash investigations/mmdebstrap-chrootless-env/run.sh
+      - name: Run security regression without changing source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_path=upstream/mmdebstrap/mmdebstrap
+          source_mode="$(stat -c '%a' "$source_path")"
+          restore_mode() {
+            chmod "$source_mode" "$source_path"
+          }
+          trap restore_mode EXIT
+          bash investigations/mmdebstrap-chrootless-env/run.sh
+          restore_mode
+          trap - EXIT
+          git diff --exit-code -- "$source_path"
 
       - name: Run direct authority transaction
         run: |
