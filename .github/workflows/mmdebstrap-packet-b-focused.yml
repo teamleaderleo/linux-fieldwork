@@ -26,6 +26,10 @@ permissions:
 
 jobs:
   focused-sid:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'packet-b-focused-current-main'
     runs-on: ubuntu-24.04
     timeout-minutes: 100
     env:
