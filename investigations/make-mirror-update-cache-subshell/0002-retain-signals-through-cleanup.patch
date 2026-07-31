@@ -1,0 +1,45 @@
+diff --git a/upstream/mmdebstrap/make_mirror.sh b/upstream/mmdebstrap/make_mirror.sh
+--- a/upstream/mmdebstrap/make_mirror.sh
++++ b/upstream/mmdebstrap/make_mirror.sh
+@@ -156,18 +156,40 @@ update_cache() (
++  update_cache_cleanup_signal_status=0
++
++  record_update_cache_cleanup_signal() {
++    if [ "$update_cache_cleanup_signal_status" -eq 0 ]; then
++      update_cache_cleanup_signal_status=$1
++    fi
++    trap '' INT QUIT TERM
++  }
++
+   update_cache_finish() {
+     status=$1
+-    trap - EXIT INT QUIT TERM
++    if [ "$update_cache_cleanup_signal_status" -eq 0 ]; then
++      trap 'record_update_cache_cleanup_signal 130' INT
++      trap 'record_update_cache_cleanup_signal 131' QUIT
++      trap 'record_update_cache_cleanup_signal 143' TERM
++    else
++      trap '' INT QUIT TERM
++    fi
++    trap - EXIT
+     cleanup_status=0
+     cleanupapt || cleanup_status=$?
++    trap '' INT QUIT TERM
+     if [ "$status" -ne 0 ]; then
+       exit "$status"
+     fi
++    if [ "$update_cache_cleanup_signal_status" -ne 0 ]; then
++      exit "$update_cache_cleanup_signal_status"
++    fi
+     exit "$cleanup_status"
+   }
+ 
+   update_cache_exit_cleanup() {
+     update_cache_finish "$?"
+   }
+ 
+   update_cache_signal_exit() {
++    update_cache_cleanup_signal_status=$1
++    trap '' INT QUIT TERM
+     update_cache_finish "$1"
+   }
