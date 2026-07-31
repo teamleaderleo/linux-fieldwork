@@ -82,7 +82,13 @@ MAPPED_SERVICE_PATHS = {
     "/run/needrestart/unpacked",
     "/run/needrestart/errored",
 }
-SCRIPT_LOG_REQUIRED_FIELDS = {"phase", "script_version", "dpkg_root", "cwd"}
+SCRIPT_LOG_REQUIRED_FIELDS = {
+    "phase",
+    "script_version",
+    "args_hex",
+    "dpkg_root",
+    "cwd",
+}
 
 
 class ValidationError(RuntimeError):
@@ -179,6 +185,19 @@ def validate_snapshot(label: str, record: dict[str, Any]) -> None:
         )
 
 
+def validate_script_arguments(value: str) -> None:
+    """Require a recoverable empty sentinel or NUL-delimited hexadecimal vector."""
+
+    if value == "-":
+        return
+    try:
+        raw = bytes.fromhex(value)
+    except ValueError as exc:
+        raise ValidationError(f"script log args_hex is not hexadecimal: {value!r}") from exc
+    require(bool(raw), "script log args_hex decodes to an empty byte string")
+    require(raw.endswith(b"\0"), "script log args_hex lacks a trailing NUL")
+
+
 def parse_script_log_line(line: str) -> dict[str, str]:
     """Parse the probe's space-delimited key=value script log format exactly."""
 
@@ -194,6 +213,7 @@ def parse_script_log_line(line: str) -> dict[str, str]:
         SCRIPT_LOG_REQUIRED_FIELDS.issubset(fields),
         f"script log fields {sorted(fields)!r} omit required fields",
     )
+    validate_script_arguments(fields["args_hex"])
     return fields
 
 
