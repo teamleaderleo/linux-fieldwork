@@ -1,0 +1,94 @@
+name: Repair process-group signal settlement
+
+on:
+  pull_request:
+    paths:
+      - 'investigations/process-group-kill-syntax/0001-wait-for-signaled-exit.patch'
+      - '.github/workflows/repair-process-group-kill-settle.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out helper carrier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Apply exact timing-only repair
+        run: |
+          git apply --check investigations/process-group-kill-syntax/0001-wait-for-signaled-exit.patch
+          git apply investigations/process-group-kill-syntax/0001-wait-for-signaled-exit.patch
+          git diff --check
+
+      - name: Run focused unit and rerun controls
+        run: |
+          python3 -m unittest -v tests.test_process_group_kill_probe
+          python3 -m py_compile \
+            tools/probe_process_group_kill.py \
+            tests/test_process_group_kill_probe.py
+          python3 tools/probe_process_group_kill.py --output /tmp/host-1.json
+          python3 tools/probe_process_group_kill.py --output /tmp/host-2.json
+
+      - name: Run current Debian sid matrix twice
+        run: |
+          mkdir -p "$RUNNER_TEMP/process-group-kill-repair"
+          docker run --rm \
+            --volume "$PWD:/work:ro" \
+            --volume "$RUNNER_TEMP/process-group-kill-repair:/results" \
+            --workdir /work \
+            debian:sid-slim \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install --yes --no-install-recommends dash procps python3
+              dpkg-query -W -f="${binary:Package}\t${Version}\t${Architecture}\n" \
+                dash procps python3 | tee /results/package-versions.tsv
+              /bin/kill --version | tee /results/kill-version.txt
+              python3 tools/probe_process_group_kill.py --output /results/run-1.json
+              python3 tools/probe_process_group_kill.py --output /results/run-2.json
+            '
+
+      - name: Verify stable selected candidate
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['RUNNER_TEMP']) / 'process-group-kill-repair'
+          first = json.loads((root / 'run-1.json').read_text(encoding='utf-8'))
+          second = json.loads((root / 'run-2.json').read_text(encoding='utf-8'))
+          assert first['selected_candidate'] == second['selected_candidate']
+          assert first['kill_version'] == second['kill_version']
+          assert first['dash_version'] == second['dash_version']
+          for record in (first, second):
+              by_name = {item['name']: item for item in record['results']}
+              positive = by_name['python-killpg-control']
+              assert positive['classification'] == 'whole-group-delivery'
+              assert positive['parent_running'] is False
+              assert positive['child_running'] is False
+              assert positive['unrelated_running'] is True
+              selected = by_name[record['selected_candidate']]
+              assert selected['classification'] == 'whole-group-delivery'
+              assert selected['parent_running'] is False
+              assert selected['child_running'] is False
+              assert selected['unrelated_running'] is True
+          PY
+
+      - name: Upload exact repair evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: process-group-kill-settle-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/host-1.json
+            /tmp/host-2.json
+            ${{ runner.temp }}/process-group-kill-repair/
+          if-no-files-found: warn
+          retention-days: 14
