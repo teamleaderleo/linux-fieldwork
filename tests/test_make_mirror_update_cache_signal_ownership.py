@@ -26,7 +26,15 @@ class MakeMirrorUpdateCacheSignalOwnershipTest(unittest.TestCase):
         destination.parent.mkdir(parents=True)
         shutil.copy2(self.source, destination)
         applied = subprocess.run(
-            ["patch", "--batch", "--forward", "-p1", "-i", str(self.patch)],
+            [
+                "patch",
+                "--batch",
+                "--forward",
+                "--fuzz=0",
+                "-p1",
+                "-i",
+                str(self.patch),
+            ],
             cwd=tree,
             check=False,
             text=True,
@@ -55,7 +63,11 @@ class MakeMirrorUpdateCacheSignalOwnershipTest(unittest.TestCase):
     def candidate_blocks(self, source: str) -> tuple[str, str]:
         functions = "\n".join(
             self.extract_nested_function(source, name)
-            for name in ("update_cache_exit_cleanup", "update_cache_signal_exit")
+            for name in (
+                "update_cache_finish",
+                "update_cache_exit_cleanup",
+                "update_cache_signal_exit",
+            )
         )
         traps = (
             "  trap 'update_cache_exit_cleanup' EXIT\n"
@@ -88,6 +100,11 @@ class MakeMirrorUpdateCacheSignalOwnershipTest(unittest.TestCase):
         cleanup_failure: bool = False,
     ) -> pathlib.Path:
         functions, traps = blocks
+        completion = (
+            "update_cache_finish 0\n"
+            if "update_cache_finish() {" in functions
+            else "cleanupapt\ntrap - EXIT INT QUIT TERM\n"
+        )
         runtime.mkdir(parents=True, exist_ok=True)
         worker = runtime / "worker.sh"
         worker.write_text(
@@ -114,8 +131,7 @@ class MakeMirrorUpdateCacheSignalOwnershipTest(unittest.TestCase):
             "  *) exit 98 ;;\n"
             "esac\n"
             "printf 'worker-after\\n' >\"$runtime/worker-after\"\n"
-            "cleanupapt\n"
-            "trap - EXIT INT QUIT TERM\n",
+            + completion,
             encoding="utf-8",
         )
         worker.chmod(0o755)
@@ -302,13 +318,15 @@ class MakeMirrorUpdateCacheSignalOwnershipTest(unittest.TestCase):
                 'trap \'kill "$PROXYPID" || :;cleanupapt\' EXIT INT TERM',
                 candidate,
             )
+            self.assertIn("update_cache_finish() {", candidate)
             self.assertIn("update_cache_exit_cleanup() {", candidate)
             self.assertIn("update_cache_signal_exit() {", candidate)
             self.assertIn("trap 'update_cache_exit_cleanup' EXIT", candidate)
             self.assertIn("trap 'update_cache_signal_exit 130' INT", candidate)
             self.assertIn("trap 'update_cache_signal_exit 131' QUIT", candidate)
             self.assertIn("trap 'update_cache_signal_exit 143' TERM", candidate)
-            self.assertIn('trap "-" EXIT INT QUIT TERM', candidate)
+            self.assertIn("trap - EXIT INT QUIT TERM", candidate)
+            self.assertIn("update_cache_finish 0", candidate)
             update_start = candidate.index("update_cache() (\n")
             update_end = candidate.index("\n)\n", update_start)
             update_block = candidate[update_start:update_end]
