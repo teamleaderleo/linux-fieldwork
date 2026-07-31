@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -68,37 +68,118 @@ class TypeFilterAction(argparse.Action):
+@@ -66,6 +66,69 @@ class TypeFilterAction(argparse.Action):
          setattr(namespace, "typefilter", items)
  
  
@@ -71,9 +71,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
  class TransformAction(argparse.Action):
      def __call__(self, parser, namespace, values, option_string=None):
          items = getattr(namespace, "trans", [])
-         # This function mimics what src/transform.c from tar does
-         if not values.startswith("s"):
-             raise ValueError("regex must start with an 's'")
+@@ -75,30 +138,48 @@ class TransformAction(argparse.Action):
          if len(values) <= 4:
              # minimum regex: s/x//
              raise ValueError("invalid regex (too short)")
