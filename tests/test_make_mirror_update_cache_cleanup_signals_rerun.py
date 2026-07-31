@@ -10,6 +10,10 @@ from tests import test_make_mirror_update_cache_cleanup_signals as cleanup_signa
 
 
 class MakeMirrorUpdateCacheCleanupSignalsRerunTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cleanup_signals.MakeMirrorUpdateCacheCleanupSignalsTest.setUpClass()
+
     @staticmethod
     def run_unsignaled_cleanup(
         helper: cleanup_signals.MakeMirrorUpdateCacheCleanupSignalsTest,
