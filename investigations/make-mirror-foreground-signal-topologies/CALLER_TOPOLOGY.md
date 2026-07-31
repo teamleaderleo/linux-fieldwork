@@ -1,5 +1,15 @@
 # `make_mirror.sh` caller and process-group topology
 
+## TL;DR
+
+Whole-process-group cancellation is prompt in the model, but the repository does not document or enforce a safe isolated caller group for `make_mirror.sh`. Caller-group delivery therefore remains useful operational guidance for controlled wrappers, not the canonical source contract.
+
+The main investigation stops without a broad internal supervision patch because the remaining latency has not been measured as harmful and the source-level alternative adds several ownership primitives and new utility dependencies.
+
+## Explain like I'm five
+
+Telling an entire room to stop works when the room contains only the program and its tools. The project does not promise that every caller gives the program a private room. Stopping the whole room could therefore stop unrelated work.
+
 ## Repository evidence
 
 The retained upstream README documents direct invocation:
@@ -17,13 +27,13 @@ It does not require or demonstrate:
 - a supervisor that signals a negative process-group ID;
 - a contract that every descendant belongs to one isolated group.
 
-Repository search found no `setsid make_mirror` wrapper. The internal Linux Fieldwork workflows run focused regressions; they do not establish the full script's production invocation/session topology.
+Repository search found no `setsid make_mirror` wrapper. The internal Linux Fieldwork workflows run focused regressions; they do not establish the full script's production invocation or session topology.
 
 ## Interpretation
 
 A foreground command in an interactive job-control shell may receive its own process group. A noninteractive shell, CI step, scheduler, wrapper, or caller may use a different grouping arrangement. The repository evidence does not make either topology authoritative.
 
-Therefore whole-process-group TERM is retained as a valid executed mitigation when the caller already owns a safe isolated group. It cannot be selected as the canonical repository contract for these reasons:
+Therefore whole-process-group TERM is retained as a valid executed mitigation when the caller already owns a safe isolated group. It cannot be selected as the canonical repository contract because:
 
 1. the documented command does not create or verify the group;
 2. signaling a non-isolated group may affect unrelated caller processes;
@@ -41,7 +51,7 @@ It remains useful operational guidance for controlled wrappers, but the current 
 
 ### Internal isolated groups
 
-A source-level implementation could create isolated groups for specific child pipelines. That is a different direction from relying on the caller. It requires:
+A source-level implementation could create isolated groups for specific child pipelines. Executed models show this is technically viable, including output capture and fallback chains. It requires:
 
 - `setsid` or an equivalent supervisor;
 - an explicit group-leader PID;
@@ -49,20 +59,22 @@ A source-level implementation could create isolated groups for specific child pi
 - dependency and portability review;
 - first-signal retention;
 - cleanup and rerun controls;
-- proof that no unrelated process enters the group.
+- proof that no unrelated process enters the group;
+- separate parent-worker, simple-command, fallback, and output-capture ownership primitives.
 
-The local output-pipeline model shows that `setsid /bin/sh -c PIPELINE` plus external `/bin/kill` of the negative group ID can stop all held stages. The target `/bin/sh` builtin group-kill spelling was not accepted as sufficient in that model; relying on `/bin/kill` adds another exact dependency to verify.
+The compatibility and implementation surface is disproportionate without evidence that the remaining cancellation delay is frequent or operationally harmful.
 
 ### Explicit all-stage supervisor
 
-A dedicated helper could spawn and track every pipeline stage without relying on shell job groups. That enlarges the implementation and introduces a helper-language/API boundary, but it can make ownership explicit and testable.
+A dedicated helper could spawn and track every pipeline stage without relying on shell job groups. That introduces a helper-language and API boundary plus packaging and maintenance cost. No measured impact currently justifies it.
 
 ## Current conclusion
 
-Caller-group delivery is not a non-delegable user choice because the repository evidence already makes it unsuitable as the sole canonical answer. Comparative work should continue between:
+- Caller-group delivery: valid only under an explicitly isolated external wrapper.
+- Internal process groups: technically viable, not retained.
+- Dedicated supervisor: technically plausible, not justified.
+- Canonical result: retain eventual correctness from PRs #224/#259 and hold broader source expansion.
 
-- bounded internal process-group ownership;
-- a dedicated all-stage pipeline supervisor;
-- deliberately accepting eventual status correctness when the implementation cost exceeds the bounded operational impact.
+Reopen only after measured harmful latency, a declared isolated-supervisor contract, explicit acceptance of group dependencies, or contradictory lifecycle evidence.
 
 No external contact is authorized or performed.
