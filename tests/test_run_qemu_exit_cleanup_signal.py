@@ -60,6 +60,34 @@ class RunQemuExitCleanupSignalTest(unittest.TestCase):
         self.assertEqual(syntax.returncode, 0, syntax.stdout + syntax.stderr)
         return destination.read_text(encoding="utf-8")
 
+    @staticmethod
+    def extract_function(source: str, name: str) -> str:
+        marker = f"{name}() {{\n"
+        if source.startswith(marker):
+            start = 0
+        else:
+            start = source.index("\n" + marker) + 1
+        end = source.index("\n}\n", start) + len("\n}\n")
+        return source[start:end]
+
+    def candidate_blocks(self, source: str) -> tuple[str, str]:
+        names = ["finish"]
+        parts: list[str] = []
+        if "cleanup_signal_status=0" in source:
+            parts.append("cleanup_signal_status=0")
+            names.append("record_cleanup_signal")
+        names.extend(("cleanup_exit", "cleanup_signal"))
+        parts.extend(self.extract_function(source, name) for name in names)
+        functions = "\n".join(parts)
+        traps = (
+            "trap cleanup_exit EXIT\n"
+            "trap 'cleanup_signal 130' INT\n"
+            "trap 'cleanup_signal 143' TERM\n"
+        )
+        for line in traps.splitlines(keepends=True):
+            self.assertEqual(source.count(line), 1)
+        return functions, traps
+
     def run_signals_during_cleanup(
         self,
         script: pathlib.Path,
@@ -116,7 +144,7 @@ class RunQemuExitCleanupSignalTest(unittest.TestCase):
         return helper.write_case(
             root,
             label,
-            helper.candidate_blocks(source),
+            self.candidate_blocks(source),
             host_status=host_status,
             guest_status=guest_status,
             cleanup_failure=cleanup_failure,
@@ -222,11 +250,10 @@ class RunQemuExitCleanupSignalTest(unittest.TestCase):
             source = self.prepare_candidate(
                 pathlib.Path(td), include_exit_repair=True
             )
-        helper = first_signal.RunQemuFirstSignalCleanupTest(methodName="runTest")
-        finish = helper.extract_function(source, "finish")
-        exit_handler = helper.extract_function(source, "cleanup_exit")
-        signal_handler = helper.extract_function(source, "cleanup_signal")
-        recorder = helper.extract_function(source, "record_cleanup_signal")
+        finish = self.extract_function(source, "finish")
+        exit_handler = self.extract_function(source, "cleanup_exit")
+        signal_handler = self.extract_function(source, "cleanup_signal")
+        recorder = self.extract_function(source, "record_cleanup_signal")
 
         self.assertIn("cleanup_signal_status=0", source)
         self.assertIn("trap '' INT TERM", finish)
