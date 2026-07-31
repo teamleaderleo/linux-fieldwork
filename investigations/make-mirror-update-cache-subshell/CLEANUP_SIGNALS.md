@@ -24,7 +24,7 @@ existing ordinary or explicit-signal failure
 
 The worker starts putting away its temporary APT desk. The landed baseline unlocks the stop buttons before the desk is clean. A button press can knock the worker over, or a second button can replace the first stop reason.
 
-The successor writes down the first stop request, disables later stop buttons, finishes putting the desk away, and reports the strongest result.
+The successor writes down the first stop request, disables later stop buttons, finishes putting the desk away, and reports the strongest result. A separate rerun control then starts a fresh worker to prove that the first interrupted cleanup left no state behind.
 
 ## Why care
 
@@ -39,11 +39,11 @@ The PR #286 evidence remains authoritative for signals delivered before cleanup.
 - clean current-main carrier: PR #324;
 - branch: `repair/make-mirror-update-cache-cleanup-signals-current-main`;
 - base: the PR #286 merge on `main`;
-- direct unit: this record, patch 0002, and one focused regression;
+- direct unit: this record, patch 0002, the focused cleanup-signal matrix, and the rerun/precedence matrix;
 - imported source: unchanged;
 - external contact: unauthorized and none.
 
-PR #305 remains historical construction evidence. It replayed the squashed PR #286 files when compared to `main`; PR #324 transfers only its three successor blobs.
+PR #305 remains historical construction evidence. It replayed the squashed PR #286 files when compared to `main`; PR #324 transfers its three successor blobs and adds one review-driven regression.
 
 ## Repair mechanism
 
@@ -55,11 +55,11 @@ An explicit signal handler records its status and ignores handled signals before
 
 After cleanup, the finalizer ignores handled signals before evaluating precedence and exiting.
 
-## Deterministic regression
+## Deterministic regressions
 
 `tests/test_make_mirror_update_cache_cleanup_signals.py` applies the landed patch and this successor with zero fuzz, then uses real `/bin/sh` and a barrier inside `cleanupapt`.
 
-The controls require:
+Its controls require:
 
 1. predecessor TERM then INT during cleanup exits by SIGINT after only cleanup `start` and retains APT state;
 2. predecessor ordinary cleanup plus TERM exits by SIGTERM after only `start` and retains APT state;
@@ -71,14 +71,25 @@ The controls require:
 8. both patches apply with zero fuzz and the complete source passes `/bin/sh -n`;
 9. source order installs recorder or ignore policy before EXIT is cleared.
 
+`tests/test_make_mirror_update_cache_cleanup_signals_rerun.py` was added during complete review because the first matrix did not independently preserve three landed lifecycle promises after patch 2 changed the finalizer. It requires:
+
+- a cleanup-time TERM followed by INT returns 143, finishes cleanup, and permits an immediate unsignaled status-0 rerun;
+- explicit TERM remains 143 when cleanup also fails with status 74 and a later INT arrives;
+- unsignaled successful work plus cleanup failure still returns 74;
+- all paths remove APT state, omit later work, and log one complete `start, end` cleanup.
+
+The added module imports the existing test module rather than inheriting its `TestCase`, so repository discovery does not duplicate the original matrix. Its class setup initializes the shared exact-source fixture explicitly.
+
 ## Evidence boundary
 
-The regression uses real shell processes, signals, disposable files, and a deterministic cleanup barrier. It does not run APT, network downloads, a mirror loop, root operations, or process-group delivery.
+The regressions use real shell processes, signals, disposable files, and a deterministic cleanup barrier. They do not run APT, network downloads, a mirror loop, root operations, or process-group delivery.
 
-It assumes cleanup is bounded and should complete after the first handled signal. TERM-to-KILL escalation, HUP, hostile descendants, and permanently blocking cleanup remain outside the repair.
+They assume cleanup is bounded and should complete after the first handled signal. TERM-to-KILL escalation, HUP, hostile descendants, and permanently blocking cleanup remain outside the repair.
+
+The attempted local clone for direct execution failed at DNS resolution before repository retrieval. That environment failure is not candidate evidence; hosted exact-head CI remains the execution authority.
 
 ## Disposition
 
-PR #324 must receive exact-head repository CI and complete three-file review. A green unchanged head may advance this bounded internal successor to local landing.
+PR #324 must receive exact-head repository CI and complete four-file review. A green unchanged head may advance this bounded internal successor to final human check or local landing.
 
 Internal Linux Fieldwork work only. External contact authorized: `false`.
