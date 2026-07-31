@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pathlib
 import unittest
 
 from tools.verify_github_artifact_metadata import (
@@ -8,6 +9,8 @@ from tools.verify_github_artifact_metadata import (
 )
 
 
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+WORKFLOW = ROOT / ".github/workflows/mmdebstrap-autopkgtest-artifact-receipt.yml"
 ARTIFACT_ID = "8799126060"
 ARTIFACT_NAME = "mmdebstrap-reproduction-gha-30641621084-1"
 RUN_ID = "30641621084"
@@ -105,6 +108,30 @@ class VerifyGithubArtifactMetadataTest(unittest.TestCase):
                 expected_run_id=RUN_ID,
                 expected_digest="not-a-digest",
             )
+
+    def test_workflow_verifies_metadata_before_download_and_retains_receipts(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        verify_index = source.index("- name: Verify exact source artifact metadata")
+        download_index = source.index("- name: Download exact retained source artifact")
+        summarize_index = source.index("- name: Build typed artifact receipt")
+        self.assertLess(verify_index, download_index)
+        self.assertLess(download_index, summarize_index)
+
+        required = (
+            "actions/artifacts/$SOURCE_ARTIFACT_ID",
+            "tools/verify_github_artifact_metadata.py",
+            '--expected-id "$SOURCE_ARTIFACT_ID"',
+            '--expected-name "$SOURCE_ARTIFACT_NAME"',
+            '--expected-run-id "$SOURCE_RUN_ID"',
+            '--expected-digest "$SOURCE_ARTIFACT_DIGEST"',
+            "source-artifact-metadata.json",
+            "source-artifact-metadata-receipt.json",
+            "derived receipt artifact id contradicts verified metadata",
+            "derived receipt digest contradicts verified metadata",
+        )
+        for value in required:
+            with self.subTest(value=value):
+                self.assertIn(value, source)
 
 
 if __name__ == "__main__":
