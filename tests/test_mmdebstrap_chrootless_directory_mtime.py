@@ -1,3 +1,4 @@
+import errno
 import hashlib
 import os
 import shutil
@@ -17,6 +18,11 @@ NEWER_DIRECTORY_MTIME = SOURCE_DATE_EPOCH + 100_000
 PACKAGE_FILE_MTIME = SOURCE_DATE_EPOCH - 50_000
 SYMLINK_MTIME = SOURCE_DATE_EPOCH - 75_000
 FOREIGN_DIRECTORY_MTIME = SOURCE_DATE_EPOCH - 125_000
+XATTR_NAME = b"user.linux-fieldwork"
+XATTR_VALUE = b"directory-mtime-control"
+SPARSE_SIZE = 4 * 1024 * 1024
+SPARSE_HEAD = b"sparse-head\n"
+SPARSE_TAIL = b"sparse-tail\n"
 
 
 def real_directories(
@@ -83,6 +89,7 @@ def create_archive(root: Path, archive: Path, *, clamp: bool) -> None:
         "--group=0",
         "--one-file-system",
         "--format=pax",
+        "--xattrs",
         "--pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime",
     ]
     if clamp:
@@ -115,6 +122,14 @@ def archive_manifest(archive: Path) -> list[tuple[object, ...]]:
                 )
             )
     return result
+
+
+def archive_member(archive: Path, suffix: str) -> tarfile.TarInfo:
+    with tarfile.open(archive, "r:*") as tar:
+        matches = [member for member in tar if member.name.endswith(suffix)]
+    if len(matches) != 1:
+        raise AssertionError(f"expected one archive member ending in {suffix!r}")
+    return matches[0]
 
 
 def normalize_directory_manifest(
@@ -263,7 +278,6 @@ class ChrootlessDirectoryMtimePolicyTest(unittest.TestCase):
         self.assertTrue(str(hardlink[7]).endswith("/payload"))
 
     def test_directory_normalization_prunes_foreign_device_before_descent(self) -> None:
-        visited: dict[Path, list[Path]] = {}
         preserved: dict[Path, tuple[int, int]] = {}
 
         for tree in (self.root_mode, self.chrootless):
@@ -299,7 +313,6 @@ class ChrootlessDirectoryMtimePolicyTest(unittest.TestCase):
                 SOURCE_DATE_EPOCH,
                 lstat=fake_lstat,
             )
-            visited[tree] = calls
 
             self.assertEqual(int(foreign.stat().st_mtime), preserved[tree][0])
             self.assertEqual(int(nested.stat().st_mtime), FOREIGN_DIRECTORY_MTIME)
@@ -312,6 +325,93 @@ class ChrootlessDirectoryMtimePolicyTest(unittest.TestCase):
 
         root_archive, chrootless_archive = self.archive_pair("device", clamp=True)
         self.assertEqual(root_archive.read_bytes(), chrootless_archive.read_bytes())
+
+    def test_directory_normalization_preserves_user_xattrs(self) -> None:
+        if not hasattr(os, "setxattr"):
+            self.skipTest("Python xattr APIs are unavailable")
+
+        controlled: list[tuple[Path, Path]] = []
+        try:
+            for tree in (self.root_mode, self.chrootless):
+                directory = tree / "usr" / "share" / "demo"
+                payload = directory / "payload"
+                os.setxattr(directory, XATTR_NAME, XATTR_VALUE)
+                os.setxattr(payload, XATTR_NAME, XATTR_VALUE)
+                controlled.append((directory, payload))
+        except OSError as error:
+            if error.errno in {
+                errno.ENOTSUP,
+                getattr(errno, "EOPNOTSUPP", errno.ENOTSUP),
+                errno.EPERM,
+            }:
+                self.skipTest(f"user xattrs unavailable: {error}")
+            raise
+
+        normalize_directory_mtimes(self.root_mode, SOURCE_DATE_EPOCH)
+        normalize_directory_mtimes(self.chrootless, SOURCE_DATE_EPOCH)
+
+        for directory, payload in controlled:
+            self.assertEqual(os.getxattr(directory, XATTR_NAME), XATTR_VALUE)
+            self.assertEqual(os.getxattr(payload, XATTR_NAME), XATTR_VALUE)
+            self.assertEqual(int(payload.stat().st_mtime), PACKAGE_FILE_MTIME)
+
+        root_archive, chrootless_archive = self.archive_pair("xattrs", clamp=True)
+        self.assertEqual(root_archive.read_bytes(), chrootless_archive.read_bytes())
+        key = "SCHILY.xattr." + XATTR_NAME.decode()
+        for suffix in ("/usr/share/demo", "/usr/share/demo/payload"):
+            member = archive_member(root_archive, suffix)
+            self.assertEqual(member.pax_headers.get(key), XATTR_VALUE.decode())
+
+    def test_directory_normalization_preserves_sparse_source_file(self) -> None:
+        expected_hash: str | None = None
+        expected_by_tree: dict[Path, tuple[int, int, int, str]] = {}
+
+        for tree in (self.root_mode, self.chrootless):
+            sparse = tree / "usr" / "share" / "demo" / "sparse-payload"
+            with sparse.open("wb") as stream:
+                stream.write(SPARSE_HEAD)
+                stream.seek(SPARSE_SIZE - len(SPARSE_TAIL))
+                stream.write(SPARSE_TAIL)
+            os.utime(sparse, (PACKAGE_FILE_MTIME, PACKAGE_FILE_MTIME))
+            info = sparse.stat()
+            if info.st_blocks * 512 >= info.st_size:
+                self.skipTest("fixture filesystem did not retain sparse allocation")
+            digest = hashlib.sha256(sparse.read_bytes()).hexdigest()
+            if expected_hash is None:
+                expected_hash = digest
+            else:
+                self.assertEqual(digest, expected_hash)
+            expected_by_tree[tree] = (
+                info.st_size,
+                info.st_blocks,
+                int(info.st_mtime),
+                digest,
+            )
+
+        normalize_directory_mtimes(self.root_mode, SOURCE_DATE_EPOCH)
+        normalize_directory_mtimes(self.chrootless, SOURCE_DATE_EPOCH)
+
+        for tree in (self.root_mode, self.chrootless):
+            sparse = tree / "usr" / "share" / "demo" / "sparse-payload"
+            info = sparse.stat()
+            observed = (
+                info.st_size,
+                info.st_blocks,
+                int(info.st_mtime),
+                hashlib.sha256(sparse.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(observed, expected_by_tree[tree])
+
+        root_archive, chrootless_archive = self.archive_pair("sparse", clamp=True)
+        self.assertEqual(root_archive.read_bytes(), chrootless_archive.read_bytes())
+        sparse_member = next(
+            row
+            for row in archive_manifest(root_archive)
+            if str(row[0]).endswith("/sparse-payload")
+        )
+        self.assertEqual(sparse_member[5], SPARSE_SIZE)
+        self.assertEqual(sparse_member[6], PACKAGE_FILE_MTIME)
+        self.assertEqual(sparse_member[8], expected_hash)
 
     def test_comparison_only_normalization_explains_but_does_not_fix_output(self) -> None:
         root_archive, chrootless_archive = self.archive_pair("comparison", clamp=True)
