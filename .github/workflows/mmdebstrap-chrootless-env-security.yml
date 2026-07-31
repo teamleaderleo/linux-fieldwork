@@ -5,6 +5,8 @@ on:
     paths:
       - 'upstream/mmdebstrap/mmdebstrap'
       - 'investigations/mmdebstrap-chrootless-env/**'
+      - 'tools/classify_env_argv.py'
+      - 'tests/test_classify_env_argv.py'
       - '.github/workflows/mmdebstrap-chrootless-env-security.yml'
   workflow_dispatch:
 
@@ -34,7 +36,9 @@ jobs:
           perl -c upstream/mmdebstrap/mmdebstrap
           pod2man upstream/mmdebstrap/mmdebstrap >/dev/null
           python3 -m py_compile \
-            investigations/mmdebstrap-chrootless-env/prepare_authority_candidates.py
+            investigations/mmdebstrap-chrootless-env/prepare_authority_candidates.py \
+            tools/classify_env_argv.py \
+            tests/test_classify_env_argv.py
           bash -n investigations/mmdebstrap-chrootless-env/run.sh
           bash -n \
             investigations/mmdebstrap-chrootless-env/direct_authority_transaction.sh
