@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/debian/tests/testsuite b/upstream/mmdebstrap/debian/tests/testsuite
 --- a/upstream/mmdebstrap/debian/tests/testsuite
 +++ b/upstream/mmdebstrap/debian/tests/testsuite
-@@ -153,10 +153,10 @@ END
+@@ -152,9 +152,9 @@ END
  
  # add entries to /etc/subuid and /etc/subgid if they don't exist yet
 -if [ ! -e /etc/subuid ] || ! grep "$AUTOPKGTEST_NORMAL_USER" /etc/subuid; then
