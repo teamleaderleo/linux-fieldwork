@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -346,9 +346,19 @@ def main():
+@@ -346,9 +346,21 @@ def main():
      ) as out_tar:
 +        hardlink_prefix = re.compile(r"^(?:(?:\.\.?/)|/)+")
 +        type_excluded_members = set()
