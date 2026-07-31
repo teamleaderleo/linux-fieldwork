@@ -119,18 +119,29 @@ class ChrootlessDirectoryMtimeRealProbeContractTest(unittest.TestCase):
             "github.event.pull_request.head.repo.full_name == github.repository",
             guard,
         )
-        self.assertIn(
-            "github.head_ref == 'repair/chrootless-dir-mtime-real-boundaries-v2'",
-            guard,
-        )
+        for branch in (
+            "repair/chrootless-dir-mtime-real-boundaries-v2",
+            "candidate/chrootless-directory-mtime-normalization-v3",
+        ):
+            with self.subTest(branch=branch):
+                self.assertIn(f"github.head_ref == '{branch}'", guard)
+        self.assertIn("||", guard)
+        self.assertNotIn("startsWith", guard)
         self.assertLess(guard.index("if: >-"), guard.index("runs-on:"))
         self.assertEqual(source.count("sudo mount -t tmpfs"), 0)
         self.assertEqual(PROBE.read_text(encoding="utf-8").count("sudo mount -t tmpfs"), 1)
 
-    def test_workflow_runs_rerun_and_retains_receipts_read_only(self) -> None:
+    def test_workflow_runs_candidate_rerun_and_retains_receipts_read_only(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("permissions:\n  contents: read", source)
-        self.assertIn("sudo apt-get install --yes acl libcap2-bin", source)
+        self.assertIn(
+            "sudo apt-get install --yes acl libcap2-bin perltidy",
+            source,
+        )
+        self.assertIn(
+            "tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py -v",
+            source,
+        )
         self.assertIn("for label in first rerun; do", source)
         self.assertIn('test ! -e "$runtime"', source)
         self.assertIn('findmnt -rn -M "$runtime/tree/foreign-device"', source)
