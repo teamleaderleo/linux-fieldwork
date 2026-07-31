@@ -6,19 +6,23 @@ Authority: internal Linux Fieldwork research only; no new upstream contact autho
 
 ## TL;DR
 
-This round refreshed the project rules, scanned current work and public upstream queues, stopped duplicates with active or merged fixes, and promoted five externally recognizable problems into bounded Linux Fieldwork investigations:
+This round refreshed the project rules, scanned current work and public upstream queues, stopped duplicates with active or merged fixes, and opened five bounded Linux Fieldwork units:
 
 1. BuildKit rootless versus rootful image metadata parity — issue #229;
-2. libarchive seek-dependent format bidding on non-seekable streams — issue #230;
+2. libarchive non-seekable 7-Zip overlap review — issue #230;
 3. util-linux fsck versus udev/libblkid block-device locking — issue #232;
 4. BuildKit multi-platform symlink rewriting — issue #233;
 5. util-linux `lscpu` stable-series double-free mapping/backport — issue #234.
 
-The existing systemd-oomd reload-registration investigation #140 remains the strongest VM-gated target. The libarchive and `lscpu` items offer the quickest current-CI path to executable evidence. The util-linux/systemd boot race has the highest operational consequence and the widest ownership boundary.
+A post-branch overlap refresh corrected the libarchive classification: open upstream PR 3070 already owns the seekability-aware bidder and pipe/raw test, while merged PR 3074 restored forward-only stream reading. Issue #230 is therefore an overlap/evidence review, not an implementation target.
+
+The existing systemd-oomd reload-registration investigation #140 remains the strongest VM-gated target. The `lscpu` item offers the quickest current-CI path to executable contribution evidence. The util-linux/systemd boot race has the highest operational consequence and the widest ownership boundary.
 
 ## Explain like I'm five
 
 A large issue tracker contains shiny problems, duplicates, stale reports, active fixes, and problems that need hardware we do not have. This scan asked whether each item has a small experiment, a real consequence, a likely source owner, a clean stop rule, and enough room to contribute without duplicating somebody else's work.
+
+The live-overlap correction is part of the result. Finding that somebody already owns a credible fix is a successful stop, not lost work.
 
 ## Why care
 
@@ -37,31 +41,17 @@ Current guidance requires the reader-facing argument before the test matrix:
 - retain one canonical issue and one canonical fix carrier;
 - keep external contact unauthorized until a deliberate decision.
 
-Each promotion below therefore records why leaving it alone matters, precedent, likely ownership directions, negative ramifications, first probe, promotion signal, and stop signal.
+Each unit below therefore records why leaving it alone matters, precedent, likely ownership directions, negative ramifications, first probe, promotion signal, and stop signal.
 
 ## Selection method
 
-Higher-ranked candidates had a current open report without visible equivalent development work, a pinnable source boundary, a small distinguishing fixture, a consequential result, a likely source owner, and an environment available now or behind one named capability gate. Public state is perishable; recheck assignees, branches, pull requests, comments, and current source before implementation.
+Higher-ranked candidates had a current open report, a pinnable source boundary, a small distinguishing fixture, a consequential result, a likely source owner, and an environment available now or behind one named capability gate.
 
-# Ranked promotions
+Public state is perishable. Recheck assignees, branches, pull requests, comments, and current source before implementation. The missed libarchive PR demonstrates why this check must happen immediately before branch creation, not only during the broad scan.
 
-## A1 — libarchive seek-dependent bidders claim non-seekable streams
+# Ranked units
 
-Linux Fieldwork: #230  
-Public report: https://github.com/libarchive/libarchive/issues/3068  
-Environment: current CI
-
-The report identifies a sharp parser-selection defect: a strong format bidder can win even when the selected reader later requires seeking and the transport cannot seek. That can turn an early capability decision into a late failure and can block raw fallback or another reader.
-
-In-tree precedent matters: ZIP already has separate seekable-reader handling. The correct answer is not automatically “lower every bid”; the matrix must distinguish abstention, an earlier explicit error, and seek emulation.
-
-**First probe:** build current libarchive, generate a tiny 7-Zip archive, and compare regular-file, stdin, gzip-filter, memory-callback, and explicitly non-seekable callback inputs. Record selected format, status, diagnostics, and raw fallback. Map readers that bid before a later seek.
-
-**Negative ramifications:** a broad bidder change can weaken reliable detection or silently route recognized archives through raw mode. Limit the first candidate to one proved seek-dependent reader and preserve seekable controls.
-
-**Disposition:** execute first.
-
-## A2 — util-linux `lscpu` double-free correction and stable backport map
+## A1 — util-linux `lscpu` double-free correction and stable backport map
 
 Linux Fieldwork: #234  
 Public report: https://github.com/util-linux/util-linux/issues/4401  
@@ -75,9 +65,9 @@ This should begin as canonical-fix archaeology rather than a second implementati
 
 **Negative ramifications:** removing one free can trade an abort for a leak or stale alias. A topology refactor can alter script-visible output.
 
-**Disposition:** execute early.
+**Disposition:** execute first.
 
-## A3 — BuildKit multi-platform local export rewrites absolute symlinks
+## A2 — BuildKit multi-platform local export rewrites absolute symlinks
 
 Linux Fieldwork: #233  
 Public report: https://github.com/moby/buildkit/issues/6684  
@@ -93,7 +83,7 @@ Filesystem-copy precedent separates the path where the link object is created fr
 
 **Disposition:** execute after one BuildKit environment gate.
 
-## A4 — BuildKit rootless worker changes reproducible image metadata
+## A3 — BuildKit rootless worker changes reproducible image metadata
 
 Linux Fieldwork: #229  
 Public report: https://github.com/moby/buildkit/issues/6686  
@@ -109,7 +99,7 @@ The probe must compare complete image metadata, not only extracted bytes, and mu
 
 **Disposition:** capability-gated priority.
 
-## A5 — systemd-oomd loses user-service registration after daemon reload
+## A4 — systemd-oomd loses user-service registration after daemon reload
 
 Linux Fieldwork: #140  
 Public report: https://github.com/systemd/systemd/issues/43174  
@@ -125,7 +115,7 @@ The existing investigation already names the Varlink publication paths and `TEST
 
 **Disposition:** highest-value VM execution; keep #140 canonical.
 
-## A6 — util-linux fsck and udev use mismatched block-device locks
+## A5 — util-linux fsck and udev use mismatched block-device locks
 
 Linux Fieldwork: #232  
 Public report: https://github.com/util-linux/util-linux/issues/4477  
@@ -139,7 +129,29 @@ Systemd documents block-device-node locking; util-linux moved fsck locks under `
 
 **Negative ramifications:** changing lock identity or order can deadlock, over-serialize partitions, mishandle aliases/device mapper, or leave stale initramfs locks. Do not hide the race with a broad sleep.
 
-**Disposition:** highest-consequence investigation; execute after A1/A2 and require strong independent review.
+**Disposition:** highest-consequence investigation; execute after the current-CI items and require strong independent review.
+
+# Overlap review
+
+## libarchive non-seekable 7-Zip handling
+
+Linux Fieldwork: #230  
+Public report: https://github.com/libarchive/libarchive/issues/3068  
+Active equivalent fix: https://github.com/libarchive/libarchive/pull/3070  
+Merged streamability repair: https://github.com/libarchive/libarchive/pull/3074  
+Environment: current CI
+
+The initial scan said no linked fix existed. That was wrong. Open PR 3070 already changes core seekability detection, the 7-Zip bidder, and a pipe/raw fallback test. Merged PR 3074 replaced one unconditional central-directory seek with forward consumption and restored stream reading for compatible layouts.
+
+Current source's `seek_compat()` can consume forward on non-seekable input but cannot move backward. That means “7-Zip requires seek” is too broad: some archive layouts and operations can proceed sequentially, while others still need random access.
+
+A controlled fork probe at `teamleaderleo/libarchive#1` first established that current master lists a tiny 7-Zip archive through direct and gzip-filtered pipes. Self-review then added extraction cases because listing alone can consume to end metadata without proving payload access.
+
+**Review probe:** compare seekable file, direct pipe, gzip filter, externally decompressed pipe, listing, and extraction. Add larger archives and explicit callback seek failure if the small matrix leaves the active PR's boundary unclear.
+
+**Negative ramifications:** a global bidder abstention can reject genuinely streamable archives or silently route them through raw mode. Keeping the bid can produce a late seek error. Spooling changes resource and cleanup behavior.
+
+**Disposition:** stop independent implementation; retain exact evidence and review active PR 3070's compatibility boundary.
 
 # Additional queue
 
@@ -150,6 +162,20 @@ Public report: https://github.com/NixOS/nixpkgs/issues/485220
 Environment: aarch64 QEMU
 
 Pinned working and failing nixpkgs revisions plus a QEMU command already exist. Convert the console boundary into one automated pass/fail marker before bisecting package flags, edk2/AAVMF variants, or QEMU compatibility. Keep it behind the aarch64 gate.
+
+## DuckDB read-only decode input mutation
+
+Linux Fieldwork: #254  
+Environment: current CI
+
+Current source writes replacement bytes through a writable pointer to input BLOB storage. A controlled-fork candidate allocates result-owned storage only for invalid replacement input and retains a native dictionary-compression regression. Exact-head build/test remains active.
+
+## DuckDB same-process checkpoint wrong result
+
+Linux Fieldwork: #256  
+Environment: current CI
+
+A release matrix reproduced a persisted filtered wrong result on 1.5.4 and a clean 1.3.2 control. The first classifier did not independently prove the secondary-index execution path, so the probe is being strengthened before source modification.
 
 ## caching_proxy same-UID parent-swap race
 
@@ -166,6 +192,14 @@ Environment: current CI
 A concurrent workstream found that an `update_cache()` pipeline subshell can clean on INT/TERM, kill a parent-owned proxy, continue work, clean twice, and return success. Keep it separate from top-level PID registration so process and cleanup ownership stay explicit.
 
 # Stops and references
+
+## Deno `fetch()` Happy Eyeballs report
+
+Linux Fieldwork: closed #253  
+Public report: https://github.com/denoland/deno/issues/36279  
+Disposition: **retained negative result**
+
+Stable Deno 2.9.4 raced to healthy IPv4 in about 305 ms when IPv6 SYN packets were dropped. The public fixture instead accepted IPv6 TCP and withheld HTTP bytes, which is a response stall after connection establishment. Replaying the request through IPv4 would require a separate HTTP retry contract.
 
 ## BuildKit OTLP shutdown stall
 
@@ -200,24 +234,26 @@ Active equivalent work owns implementation. Retain the fixture as parser refill-
 
 Use a two-speed queue:
 
-1. **Continuous current-CI production:** libarchive bidder, `lscpu` fix map, local lifecycle/path races, and package-harvesting leaves.
-2. **Serious capability-gated work:** systemd-oomd VM, fsck/udev boot race, BuildKit rootful/rootless parity, and AAVMF aarch64.
+1. **Continuous current-CI production:** `lscpu` fix archaeology, DuckDB decode ownership, DuckDB checkpoint classification, local lifecycle/path races, and package-harvesting leaves.
+2. **Serious capability-gated work:** systemd-oomd VM, fsck/udev boot race, BuildKit rootful/rootless parity, BuildKit exporter metadata, and AAVMF aarch64.
 
-This keeps output flowing without pretending every target has equal consequence. Promotion expires when current upstream state changes.
+Overlap reviews such as libarchive #230 remain useful when they transfer exact tests or compatibility findings without creating a competing fix.
 
 # Immediate sequence
 
-1. Execute #230's libarchive callback/pipe matrix.
-2. Execute #234's sanitizer and bisect matrix.
-3. Run #233's BuildKit exporter fixture when a pinned daemon/container is available.
-4. Provision the cgroup-v2 VM for #140.
-5. Build #232's direct loop-device fixture before boot loops.
-6. Run #229's rootful/rootless OCI metadata comparison.
-7. Preserve #231 and #227 as parallel work owned by their current workstreams.
-8. Recheck external issue and development state before every branch.
+1. Finish #254's DuckDB decode candidate gate.
+2. Finish #256's strengthened checkpoint classifier.
+3. Execute #234's sanitizer and canonical-fix matrix.
+4. Classify #230's libarchive extraction probe and review active PR 3070; do not implement a competing fix.
+5. Run #233's BuildKit exporter fixture when a pinned daemon/container is available.
+6. Provision the cgroup-v2 VM for #140.
+7. Build #232's direct loop-device fixture before boot loops.
+8. Run #229's rootful/rootless OCI metadata comparison.
+9. Preserve #231 and #227 as parallel work owned by their current workstreams.
+10. Recheck external issue and development state before every branch.
 
 # Evidence boundary
 
-This round establishes current public issue state and internal actionability, not the underlying product defects. Public reports can be incomplete or wrong. No newly promoted upstream source was executed during this selection pass. Each first probe must independently establish baseline behavior on an exact revision before a candidate patch or upstream packet is justified.
+This round establishes public issue state and internal actionability, not every underlying product defect. Public reports can be incomplete or wrong. Deno #253 already produced a retained negative result. DuckDB #256 reproduced a release-boundary wrong result while mechanism attribution remains under repair. Each first probe must independently establish baseline behavior on an exact revision before a candidate patch or upstream packet is justified.
 
 No third-party issue, comment, review, pull request, email, or patch was created by this work.
