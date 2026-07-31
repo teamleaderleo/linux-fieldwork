@@ -61,7 +61,7 @@ jobs:
       - name: Download exact retained source artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.SOURCE_ARTIFACT_NAME }}
+          artifact-ids: ${{ env.SOURCE_ARTIFACT_ID }}
           path: ${{ runner.temp }}/mmdebstrap-reproduction
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
