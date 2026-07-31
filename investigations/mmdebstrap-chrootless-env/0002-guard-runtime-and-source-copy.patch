@@ -1,7 +1,7 @@
 diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mmdebstrap-chrootless-env/run.sh
 --- a/investigations/mmdebstrap-chrootless-env/run.sh
 +++ b/investigations/mmdebstrap-chrootless-env/run.sh
-@@ -4,11 +4,46 @@
+@@ -4,11 +4,69 @@
  repo_root="$(git rev-parse --show-toplevel)"
  source_root="$repo_root/upstream/mmdebstrap"
  result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/results"
@@ -11,7 +11,7 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
 -  exit 2
 +
 +validate_runtime_parent() {
-+  local candidate home_root
++  local candidate home_root runtime_candidate
 +  candidate="$(realpath -m "$1")"
 +  case "$candidate" in
 +    /tmp|/tmp/*|/var/tmp|/var/tmp/*|/home/runner/work/_temp|/home/runner/work/_temp/*)
@@ -21,9 +21,16 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
 +      return 2
 +      ;;
 +  esac
-+  case "$candidate" in
++  runtime_candidate="$(realpath -m "$candidate/mmdebstrap-chrootless-env")"
++  case "$runtime_candidate" in
 +    "$repo_root"|"$repo_root"/*)
-+      echo "refusing repository runtime parent: $candidate" >&2
++      echo "refusing runtime inside repository: $runtime_candidate" >&2
++      return 2
++      ;;
++  esac
++  case "$repo_root" in
++    "$runtime_candidate"|"$runtime_candidate"/*)
++      echo "refusing runtime containing repository: $runtime_candidate" >&2
 +      return 2
 +      ;;
 +  esac
@@ -31,9 +38,25 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
 +  case "$candidate" in
 +    /home/runner/work/_temp|/home/runner/work/_temp/*)
 +      ;;
-+    "$home_root"|"$home_root"/*)
-+      echo "refusing home runtime parent: $candidate" >&2
-+      return 2
++    *)
++      case "$candidate" in
++        "$home_root"|"$home_root"/*)
++          echo "refusing home runtime parent: $candidate" >&2
++          return 2
++          ;;
++      esac
++      case "$runtime_candidate" in
++        "$home_root"|"$home_root"/*)
++          echo "refusing runtime inside home: $runtime_candidate" >&2
++          return 2
++          ;;
++      esac
++      case "$home_root" in
++        "$runtime_candidate"|"$runtime_candidate"/*)
++          echo "refusing runtime containing home: $runtime_candidate" >&2
++          return 2
++          ;;
++      esac
 +      ;;
 +  esac
 +  printf '%s\n' "$candidate"
@@ -52,7 +75,7 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
  runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-env")"
  case "$runtime" in
    "$runtime_parent"/*) ;;
-@@ -28,4 +63,8 @@
+@@ -28,4 +86,8 @@
  esac
  fixture="$runtime/fixture"
  package="$runtime/lf-chrootless-env-probe_1.0_all.deb"
@@ -61,14 +84,14 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
 +source_hash_before="$(git hash-object "$source_root/mmdebstrap")"
 +source_status_before="$(git status --short -- upstream/mmdebstrap/mmdebstrap)"
  server_pid=
-@@ -47,3 +86,6 @@
+@@ -47,3 +109,6 @@
  rm -rf "$runtime" "$result_dir"
  mkdir -p "$fixture/DEBIAN" "$fixture/usr/lib/lf-chrootless-env-probe"
  mkdir -p "$result_dir" "$runtime/home" "$runtime/xdg" "$runtime/bin"
 +mkdir -p "$(dirname "$source_copy")"
 +cp --preserve=mode "$source_root/mmdebstrap" "$source_copy"
 +chmod 0755 "$source_copy"
-@@ -198,5 +240,5 @@
+@@ -198,5 +263,5 @@
    printf -v hook 'mkdir -p "$1%s"; cp "%s" "$1%s"' \
      "$package_dir" "$package" "$package"
    command=(
@@ -77,13 +100,13 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
      --mode=chrootless
      --variant=custom
      --format=directory
-@@ -211,5 +253,3 @@
+@@ -211,5 +276,3 @@
    fi
    command+=( '' "$target" )
  }
 -
 -chmod 0755 "$source_root/mmdebstrap"
-@@ -426,6 +466,12 @@
+@@ -426,6 +489,12 @@
  fakeroot_environment_preserved=yes
  safe_launch_succeeded=yes
  clean_rerun_succeeded=yes
