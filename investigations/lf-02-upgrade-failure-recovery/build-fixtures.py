@@ -61,7 +61,7 @@ printf 'phase=%s script_version=%s args_hex=%s dpkg_root=%s cwd=%s uid=%s gid=%s
 
 
 def write_text(path: Path, content: str, mode: int = 0o644) -> None:
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     path.chmod(mode)
 
