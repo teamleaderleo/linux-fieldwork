@@ -191,7 +191,32 @@ Safety checks and platform policies still apply. This protocol preserves bounded
 
 ## Switch to RECONVENE mode for unexpectedly sensitive findings
 
-A normal investigation can unexpectedly reach a boundary with materially different consequence or authority. Examples include real secrets or private data, a live public target, an authentication or authorization bypass, destructive or persistent capability, a high-impact vulnerability whose operational details exceed the current synthetic fixture, or any result that cannot safely be carried in the current public record.
+`RECONVENE` is an exceptional transition, not the default response to security-adjacent work. Continue ordinary investigation, repair, and review when the work remains bounded to public source, local or owned systems, synthetic fixtures, disposable state, and authorized repository actions.
+
+Examples that normally stay in the ordinary workflow include local path traversal proved with fake destructive commands, malformed-input crashes in a disposable fixture, cleanup or signal lifecycle errors, wrong-result bugs, permission mistakes, and defense-in-depth hardening whose practical consequence depends on several restrictive conditions.
+
+Do not use a hard severity-score cutoff. A rough 7/10 or 8/10 estimate is useful context, not an authority decision. A lower-scored finding can still require reconvening if it exposes real credentials or a live target; a higher-scored finding can remain in the normal workflow when it is fully synthetic, locally bounded, already public in substance, and safe to repair and review. Judge the concrete operation, affected authority, deployment reach, ease of exploitation, and publication delta.
+
+Continue normally when all of these remain true:
+
+- no real secret, private data, or private repository content is exposed;
+- no live public target or unrelated external system is being probed or changed;
+- no unauthorized authentication or authorization boundary is crossed;
+- no destructive, persistent, self-propagating, or production-impacting action is performed;
+- the reproduction stays local, synthetic, disposable, or inside an explicitly owned testbed;
+- the record can truthfully describe the defect and fix without adding materially dangerous operational detail beyond what is already public;
+- cleanup, rerun, evidence limits, and external-contact authority remain explicit.
+
+Switch to `RECONVENE` when one or more of these becomes true:
+
+- real secrets, private data, private infrastructure, or identifying live-target details appear;
+- the work reaches an unauthorized authentication or authorization bypass on a real system;
+- a local model turns into a credible live exploit path with unusually broad, immediate, or low-friction impact;
+- continuing would require destructive, persistent, stealthy, self-propagating, or production-changing action;
+- the operational detail needed to continue cannot safely live in the current public repository or chat;
+- public disclosure timing, coordinated handling, or a private security channel becomes a real decision rather than a hypothetical concern.
+
+Public source does not automatically make every new exploit chain or operational detail safe to publish. The relevant question is what the current work newly enables, whom it affects, and whether the ordinary public record is still the right surface.
 
 At that point, do not keep deepening the same path. Switch the unit to `RECONVENE`:
 
