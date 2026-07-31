@@ -117,9 +117,11 @@ class DirectAuthorityArgvReceiptTest(unittest.TestCase):
     def test_transaction_uses_lossless_env_and_dpkg_records(self) -> None:
         source = TRANSACTION.read_text(encoding="utf-8")
 
-        # Both fake wrappers write the original argument vector, not a joined
-        # display string. The exact line appears once in each heredoc.
-        self.assertEqual(source.count('printf \'%s\\0\' "$@" >&9'), 2)
+        # The outer wrapper is a quoted heredoc, while the generated dpkg
+        # wrapper escapes "$@" until its heredoc is rendered. Require both
+        # source spellings so the final generated scripts each preserve argv.
+        self.assertEqual(source.count('printf \'%s\\0\' "$@" >&9'), 1)
+        self.assertEqual(source.count('printf \'%s\\0\' "\\$@" >&9'), 1)
         self.assertNotIn('printf \'%s\\n\' "$*"', source)
         self.assertNotIn('printf \'%s\\n\' "\\$*"', source)
 
