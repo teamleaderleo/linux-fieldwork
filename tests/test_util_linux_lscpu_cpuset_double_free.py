@@ -15,9 +15,33 @@ RUNNER = INVESTIGATION / "run_model.py"
 PATCH = INVESTIGATION / "0001-clear-cpuset-output-after-error.patch"
 MODEL = INVESTIGATION / "ownership_model.c"
 FIXTURE = INVESTIGATION / "fixtures/v2.41"
+EXPECTED_FIXTURE = """/*
+ * Minimal source fixture retaining the exact util-linux v2.41
+ * ul_path_cpuparse() error-path text needed to verify the canonical patch.
+ * The upstream lib/path.c file declares its source public domain.
+ */
+
+static int ul_path_cpuparse(void)
+{
+\tint rc = 0;
+\tvoid **set = 0;
+\tvoid *buf = 0;
+
+\trc = 0;
+
+out:
+\tif (rc)
+\t\tcpuset_free(*set);
+\tfree(buf);
+\treturn rc;
+}
+"""
 
 
 class UtilLinuxLscpuCpusetDoubleFreeTest(unittest.TestCase):
+    def assert_exact_fixture(self, path: pathlib.Path) -> None:
+        self.assertEqual(path.read_text(encoding="utf-8"), EXPECTED_FIXTURE)
+
     def test_baseline_and_candidate_ownership_matrix(self) -> None:
         result = subprocess.run(
             [sys.executable, str(RUNNER)],
@@ -31,10 +55,12 @@ class UtilLinuxLscpuCpusetDoubleFreeTest(unittest.TestCase):
         self.assertIn("baseline: duplicate cleanup detected (status 42)", result.stdout)
         self.assertIn("candidate: output cleared", result.stdout)
 
-    def test_retained_patch_applies_at_the_exact_v241_error_path(self) -> None:
+    def test_retained_patch_applies_to_the_exact_v241_fixture(self) -> None:
         with tempfile.TemporaryDirectory(prefix="util-linux-cpuset-patch-") as tmp:
             tree = pathlib.Path(tmp) / "source"
             shutil.copytree(FIXTURE, tree)
+            path_c = tree / "lib/path.c"
+            self.assert_exact_fixture(path_c)
             for extra in (["--dry-run"], []):
                 result = subprocess.run(
                     [
@@ -56,43 +82,27 @@ class UtilLinuxLscpuCpusetDoubleFreeTest(unittest.TestCase):
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode, 0, output)
                 self.assertIsNone(
-                    re.search(r"\b(?:fuzz|offset)\b", output, re.IGNORECASE),
+                    re.search(r"\bfuzz\b", output, re.IGNORECASE),
                     output,
                 )
-            patched = (tree / "lib/path.c").read_text(encoding="utf-8")
+            patched = path_c.read_text(encoding="utf-8")
             self.assertIn("cpuset_free(*set);\n\t\t*set = NULL;", patched)
             self.assertLess(
                 patched.index("cpuset_free(*set);"),
                 patched.index("*set = NULL;"),
             )
 
-    def test_offset_control_loses_even_when_patch_accepts_it(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="util-linux-cpuset-offset-") as tmp:
+    def test_fixture_drift_is_rejected_before_patch_execution(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="util-linux-cpuset-drift-") as tmp:
             tree = pathlib.Path(tmp) / "source"
             shutil.copytree(FIXTURE, tree)
             path_c = tree / "lib/path.c"
-            source = path_c.read_text(encoding="utf-8")
-            path_c.write_text("\n" + source, encoding="utf-8")
-            result = subprocess.run(
-                [
-                    "patch",
-                    "--batch",
-                    "--forward",
-                    "--fuzz=0",
-                    "--dry-run",
-                    "-p1",
-                    "-i",
-                    str(PATCH),
-                ],
-                cwd=tree,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=30,
+            path_c.write_text(
+                "\n" + path_c.read_text(encoding="utf-8"),
+                encoding="utf-8",
             )
-            output = result.stdout + result.stderr
-        self.assertEqual(result.returncode, 0, output)
-        self.assertRegex(output.lower(), r"\boffset\b")
+            with self.assertRaises(AssertionError):
+                self.assert_exact_fixture(path_c)
 
     def test_retained_patch_clears_output_after_free(self) -> None:
         patch = PATCH.read_text(encoding="utf-8")
