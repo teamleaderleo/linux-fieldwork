@@ -285,10 +285,13 @@ class RunQemuExitCleanupSignalTest(unittest.TestCase):
 
         self.assertEqual(fixture.count("cleanup_signal_status=0"), 1)
         self.assertEqual(fixture.count("record_cleanup_signal() {"), 1)
-        self.assertEqual(fixture.count("cleanup_signal() {"), 1)
+        self.assertEqual(fixture.count("\ncleanup_signal() {\n"), 1)
         self.assertIn("trap 'record_cleanup_signal 130' INT", fixture)
         self.assertIn("trap 'record_cleanup_signal 143' TERM", fixture)
-        self.assertIn("trap '' INT TERM", self.extract_exact_function(fixture, "cleanup_signal"))
+        self.assertIn(
+            "trap '' INT TERM",
+            self.extract_exact_function(fixture, "cleanup_signal"),
+        )
 
 
 if __name__ == "__main__":
