@@ -95,8 +95,9 @@ cleanup() {
   if [[ $mounted == yes ]] || mountpoint -q "$mount_dir" 2>/dev/null; then
     sudo umount "$mount_dir" || cleanup_status=$?
     if mountpoint -q "$mount_dir" 2>/dev/null; then
+      [[ $cleanup_status -ne 0 ]] || cleanup_status=1
       echo "refusing recursive cleanup while mount is still active: $mount_dir" >&2
-      return "${cleanup_status:-1}"
+      return "$cleanup_status"
     fi
     mounted=no
   fi
