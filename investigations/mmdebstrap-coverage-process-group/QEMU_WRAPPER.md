@@ -1,131 +1,116 @@
 # QEMU wrapper process-group model
 
-Tracking: issue #306 and PR #313.
+State: `target-tested`
+
+Tracking: issue #306 and PR #313.  
+Exact candidate receipt: CI `30632491641`, job `91161937871`, success.
 
 ## In simple words
 
-The coverage caller chooses both `run_null.sh` and `run_qemu.sh`. A caller-owned process group is useful only if the actual QEMU wrapper and its helper processes remain inside that operation boundary.
+The coverage caller chooses both `run_null.sh` and `run_qemu.sh`. A caller-owned process group is useful only when the wrapper, its output follower, and its foreground operation stay inside that boundary.
 
-This focused model uses the exact imported `run_qemu.sh`, including its background output follower and cleanup function, while replacing only the expensive `timeout --foreground debvm-run ...` payload with a held disposable worker.
+This model keeps exact imported `run_qemu.sh` and replaces only the expensive `timeout --foreground debvm-run ...` payload with one held disposable worker.
 
-## Why care
+## Retained topology
 
-The null backend proves nested shell-pipeline ownership. The QEMU wrapper has a different topology:
+The exact wrapper contains:
 
-- `run_qemu.sh` wrapper;
-- background `setpriv --pdeathsig TERM tail -f shared/output.txt`;
-- foreground `timeout --foreground debvm-run ...` operation;
-- wrapper EXIT/INT/TERM cleanup;
-- guest-result file interpreted during cleanup.
+- `run_qemu.sh`;
+- a background `setpriv --pdeathsig TERM tail -f shared/output.txt` follower;
+- a foreground `timeout --foreground debvm-run ...` operation;
+- EXIT/INT/TERM cleanup;
+- guest-result interpretation during cleanup.
 
-A repair that stops the null pipeline but lets the QEMU-like foreground operation escape would not satisfy the caller-level contract.
+The fixture supplies deterministic `shellcheck`, `shfmt`, `lscpu`, and `timeout` controls. The fake foreground worker records PID and process group, waits on a FIFO, writes guest status 0 on release, and records later work.
 
-## Exact model
+No QEMU binary, debvm, image mutation, socket, root operation, or network access is used.
 
-Regression:
-
-`tests/test_mmdebstrap_coverage_qemu_process_group.py`
-
-The fixture retains the exact imported:
-
-- `coverage.py` source;
-- `run_qemu.sh` source;
-- status-only patch from merged PR #204;
-- group-owned candidate patch.
-
-It provides controlled replacements for:
-
-- `shellcheck` and `shfmt` — successful no-op checks;
-- `lscpu` — deterministic generic topology;
-- `timeout` — consumes the wrapper arguments and execs one held Python worker.
-
-The fake foreground worker records its PID and process group, waits on the same FIFO-style barrier used by the null topology, writes guest status 0 only on release, and records later work.
-
-No QEMU binary, debvm, socket, image mutation, root operation, or network access is used.
-
-## Three-way parent-only SIGINT comparison
+## Three-way parent-only SIGINT result
 
 ### Imported baseline
 
-Expected and retained:
+After parent-only SIGINT:
 
-```text
-coverage status: 0
-QEMU-like foreground worker: alive after coverage and wrapper exit
-later-work marker: written after release
-```
+- the QEMU-like foreground operation remains live;
+- the coverage driver remains blocked waiting for the wrapper;
+- no later-work marker exists yet;
+- after fixture release, later work appears and the final driver status is 0.
 
-The background tail may terminate through its parent-death signal, but the held foreground operation remains outside immediate-wrapper ownership.
+### Merged status-only predecessor
 
-### Merged status-only repair
+After parent-only SIGINT:
 
-Expected and retained:
+- the QEMU-like foreground operation remains live;
+- the coverage driver remains blocked waiting for the wrapper;
+- no later-work marker exists yet;
+- after fixture release, later work appears and the final driver status is 130.
 
-```text
-coverage status: 130
-QEMU-like foreground worker: alive after coverage and wrapper exit
-later-work marker: written after release
-```
-
-This distinguishes parent status correction from backend lifecycle ownership.
+This distinguishes corrected status from complete backend ownership.
 
 ### Group-owned candidate
 
-Expected and retained:
+After parent-only SIGINT:
 
-```text
-coverage status: 130
-live in-group QEMU-wrapper work: none
-later-work marker: absent
-```
-
-The dedicated group includes the wrapper and foreground operation. Group TERM stops the complete retained operation boundary before the caller returns.
+- the complete modeled wrapper operation receives group TERM;
+- the driver exits 130 without fixture release;
+- no live in-group backend remains;
+- no later-work marker appears.
 
 ## Unsignaled control
 
-The group-owned candidate is also released normally:
+The candidate also preserves ordinary behavior:
 
 - the fake foreground operation writes guest status 0;
-- `run_qemu.sh` completes its ordinary result handling;
+- `run_qemu.sh` completes normal result handling;
 - coverage records `result: SUCCESS`;
-- the QEMU-like later-work marker exists;
+- the later-work marker exists;
 - no live group member remains.
-
-This protects ordinary wrapper semantics from a cancellation-only change.
 
 ## Why `timeout --foreground` matters
 
-The imported wrapper explicitly uses `timeout --foreground`. The focused fake command follows the same foreground-command position and does not create another session or process group.
+The imported wrapper explicitly uses `timeout --foreground`. The fake command occupies the same foreground-command position and does not create another session or process group. The selected caller boundary therefore contains the modeled operation.
 
-The selected caller boundary therefore contains the modeled operation. A future backend that calls `setsid()`, creates another group, delegates to a remote supervisor, or ignores TERM falls outside this evidence and must be reviewed separately.
+A future backend that calls `setsid()`, creates a new group, delegates to a remote supervisor, or ignores TERM falls outside this evidence.
+
+## Exact repository receipt
+
+CI `30632491641` passed all four QEMU controls on exact PR #313 head `e90fc438f530f7bd78ffd6fd1ba24c665bd96913`:
+
+- baseline survivor and final status 0 after release;
+- status-only survivor and final status 130 after release;
+- group candidate status 130 with no live operation and no later work;
+- unsignaled candidate success and clean teardown.
+
+The same job passed all 359 repository tests.
 
 ## Cleanup discipline
 
 The test:
 
-- writes coverage stdout/stderr to files so escaped descendants cannot hold assertion pipes open;
-- registers teardown for the coverage session and discovered backend group;
-- distinguishes live processes from transient zombies through `/proc`;
-- releases negative-control survivors only after recording their state;
-- permits TERM-to-KILL escalation only inside fixture teardown, never as product policy.
+- writes stdout/stderr to files;
+- records live group state before releasing negative controls;
+- verifies the driver is still blocked while the operation survives;
+- registers driver-session and backend-group teardown;
+- distinguishes live members from zombies through `/proc`;
+- permits TERM-to-KILL escalation only in fixture teardown.
 
 ## Evidence boundary
 
 Established:
 
-- exact wrapper construction and cleanup source are present;
-- baseline and status-only parent-PID cancellation leave the held foreground operation alive;
+- exact wrapper construction and cleanup source are retained;
+- immediate-wrapper cancellation leaves the modeled foreground operation alive;
 - group ownership stops it;
 - ordinary candidate completion remains successful.
 
 Not established:
 
 - real QEMU/debvm descendants;
-- privileged helpers;
 - monitor or serial socket behavior;
-- `/dev/tty`-specific debug behavior;
+- privileged helpers;
+- `/dev/tty`-specific behavior;
 - escaped sessions/groups;
 - uncooperative descendants;
-- TERM-to-KILL product policy.
+- product TERM-to-KILL policy.
 
 Internal Linux Fieldwork evidence only. External contact authorized: `false`.
