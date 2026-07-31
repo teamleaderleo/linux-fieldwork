@@ -11,7 +11,24 @@ cleanup() {
   chmod -R u+w "$runtime_root" 2>/dev/null || true
   rm -rf "$runtime_root"
 }
-trap cleanup EXIT INT TERM
+
+finish() {
+  local primary_status=$1 cleanup_status=0
+  trap - EXIT INT TERM
+  cleanup || cleanup_status=$?
+  if [[ $primary_status -ne 0 ]]; then
+    exit "$primary_status"
+  fi
+  exit "$cleanup_status"
+}
+
+exit_cleanup() {
+  finish "$?"
+}
+
+trap exit_cleanup EXIT
+trap 'finish 130' INT
+trap 'finish 143' TERM
 
 rm -rf "$runtime_root"
 mkdir -p "$runtime_root" "$result_dir"
