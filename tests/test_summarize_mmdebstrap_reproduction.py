@@ -133,6 +133,30 @@ testsuite FAIL non-zero exit status 6
         )
         self.assertTrue(summary["console"]["failure_context"])
 
+    def test_focus_pass_before_wrapper_only_failure(self) -> None:
+        console = """\
+(1/2) create-directory
+result: SUCCESS
+(2/2) root-without-cap-sys-admin
+result: SUCCESS
+generated package helper exited unexpectedly
+testsuite FAIL non-zero exit status 6
+"""
+        with tempfile.TemporaryDirectory(prefix="artifact-summary-wrapper-") as td:
+            root = pathlib.Path(td)
+            self.make_artifact(root, console)
+            summary = self.summarize(root)
+
+        classifier = summary["console"]["classifier"]
+        self.assertEqual(classifier["phase"], "unknown")
+        self.assertIsNone(classifier["first_failure_line"])
+        self.assertTrue(classifier["wrapper_failure_only"])
+        self.assertEqual(summary["focus_case"]["state"], "passed")
+        self.assertTrue(summary["focus_case"]["before_first_failure"])
+        self.assertTrue(summary["focus_case"]["completed_before_first_failure"])
+        self.assertEqual(summary["console"]["first_wrapper_failure_line"], 6)
+        self.assertEqual(summary["console"]["ordering_failure_line"], 6)
+
     def test_focus_failure_is_authoritative(self) -> None:
         console = """\
 (1/2) create-directory
