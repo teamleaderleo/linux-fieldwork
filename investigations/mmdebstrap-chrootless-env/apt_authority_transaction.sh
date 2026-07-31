@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 source_root="$repo_root/upstream/mmdebstrap"
 result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/apt-authority-results"
+argv_classifier="$repo_root/tools/classify_env_argv.py"
 
 validate_runtime_parent() {
   local requested=$1 canonical
@@ -74,6 +75,10 @@ for command_name in \
     exit 2
   }
 done
+[[ -f "$argv_classifier" ]] || {
+  echo "missing env argv classifier: $argv_classifier" >&2
+  exit 2
+}
 
 rm -rf "$runtime" "$result_dir"
 mkdir -p "$runtime/fixture/DEBIAN" "$runtime/fake-bin" "$runtime/home"
@@ -138,35 +143,118 @@ chmod 0755 "$runtime/fake-bin/lf-authority-helper"
 cat >"$runtime/fake-bin/env" <<'EOF'
 #!/bin/sh
 set -eu
-: "${OUTER_ENV_LOG:?}"
-printf '%s\n' "$*" >>"$OUTER_ENV_LOG"
+: "${OUTER_ENV_LOG_DIR:?}"
+umask 077
+record="$OUTER_ENV_LOG_DIR/argv.$$"
+set -C
+exec 9>"$record"
+set +C
+printf '%s\0' "$@" >&9
+exec 9>&-
 exec /usr/bin/env "$@"
 EOF
 chmod 0755 "$runtime/fake-bin/env"
 
-assert_version_probe_only() {
-  local log_file=$1
-  grep -Fx -- '--version' "$log_file" >/dev/null
-  if grep -F -- '-i PATH=' "$log_file" >/dev/null; then
-    echo "unexpected apt-managed sanitizer launch through caller PATH: $log_file" >&2
-    return 1
-  fi
-  if grep -vFx -- '--version' "$log_file" | grep -q .; then
-    echo "unexpected caller-path env invocation: $log_file" >&2
-    return 1
-  fi
+classify_outer_env() {
+  local label=$1
+  local record_dir="$result_dir/$label-outer-env"
+  local summary="$result_dir/$label-outer-env.json"
+  python3 "$argv_classifier" "$record_dir" --output "$summary" \
+    >"$result_dir/$label-outer-env.stdout" \
+    2>"$result_dir/$label-outer-env.stderr"
 }
 
-assert_version_probe_and_sanitizer() {
-  local log_file=$1
-  grep -Fx -- '--version' "$log_file" >/dev/null
-  grep -F -- '-i PATH=' "$log_file" >/dev/null
-  if grep -vFx -- '--version' "$log_file" \
-    | grep -vF -- '-i PATH=' \
-    | grep -q .; then
-    echo "unexpected caller-path env invocation class: $log_file" >&2
-    return 1
-  fi
+require_outer_env_contract() {
+  local label=$1 expected_sanitizer=$2 expected_host_calls=$3
+  python3 - \
+    "$result_dir/$label-outer-env.json" \
+    "$expected_sanitizer" \
+    "$expected_host_calls" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+expected_sanitizer = sys.argv[2]
+expected_host_calls = sys.argv[3]
+payload = json.loads(path.read_text(encoding="utf-8"))
+if type(payload) is not dict or payload.get("schema_version") != 1:
+    raise SystemExit(f"invalid env argv summary schema: {path}")
+counts = payload.get("counts")
+if type(counts) is not dict:
+    raise SystemExit(f"env argv summary counts are missing: {path}")
+required = (
+    "host-version-probe",
+    "host-shell-hook",
+    "sanitizer-dpkg",
+    "other-host",
+)
+for name in required:
+    value = counts.get(name)
+    if type(value) is not int or value < 0:
+        raise SystemExit(f"invalid {name} count in {path}: {value!r}")
+files_checked = payload.get("files_checked")
+if type(files_checked) is not int or files_checked < 0:
+    raise SystemExit(f"invalid files_checked in {path}: {files_checked!r}")
+if sum(counts[name] for name in required) != files_checked:
+    raise SystemExit(f"env argv count total mismatch: {path}")
+records = payload.get("records")
+if type(records) is not list or len(records) != files_checked:
+    raise SystemExit(f"env argv record inventory mismatch: {path}")
+
+sanitizer_count = counts["sanitizer-dpkg"]
+if expected_sanitizer == "absent":
+    if sanitizer_count != 0:
+        raise SystemExit(
+            f"caller-path dpkg sanitizer unexpectedly executed {sanitizer_count} time(s): {path}"
+        )
+elif expected_sanitizer == "present":
+    if sanitizer_count < 1:
+        raise SystemExit(f"caller-path dpkg sanitizer was not observed: {path}")
+else:
+    raise SystemExit(f"invalid sanitizer expectation: {expected_sanitizer}")
+
+if expected_host_calls == "present":
+    if counts["host-version-probe"] < 1:
+        raise SystemExit(f"caller-path env version probe was not observed: {path}")
+    if counts["host-shell-hook"] < 1:
+        raise SystemExit(f"caller-path setup hook was not observed: {path}")
+elif expected_host_calls == "absent":
+    if files_checked != 0:
+        raise SystemExit(f"caller-path env unexpectedly executed: {path}")
+else:
+    raise SystemExit(f"invalid host-call expectation: {expected_host_calls}")
+
+# "other-host" remains retained evidence. It is outside the two product-patch
+# boundaries and must not be silently discarded or promoted to sanitizer use.
+print(
+    json.dumps(
+        {
+            "summary": str(path),
+            "host-version-probe": counts["host-version-probe"],
+            "host-shell-hook": counts["host-shell-hook"],
+            "sanitizer-dpkg": counts["sanitizer-dpkg"],
+            "other-host": counts["other-host"],
+        },
+        sort_keys=True,
+    )
+)
+PY
+}
+
+json_count() {
+  local summary=$1 classification=$2
+  python3 - "$summary" "$classification" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+value = payload["counts"][sys.argv[2]]
+if type(value) is not int or value < 0:
+    raise SystemExit("invalid classification count")
+print(value)
+PY
 }
 
 make_hook() {
@@ -182,7 +270,7 @@ run_case() {
   local mmdebstrap_path=$3
   local apt_config=${4-}
   local target="$runtime/$label-root"
-  local outer_log="$result_dir/$label-outer-env.log"
+  local outer_dir="$result_dir/$label-outer-env"
   local hook
   local status
   local -a launch_env=(
@@ -191,10 +279,11 @@ run_case() {
     HOME="$runtime/home"
     TMPDIR="$runtime"
     LC_ALL=C.UTF-8
-    OUTER_ENV_LOG="$outer_log"
+    OUTER_ENV_LOG_DIR="$outer_dir"
   )
   hook="$(make_hook)"
-  : >"$outer_log"
+  rm -rf "$outer_dir"
+  mkdir -p "$outer_dir"
   if [[ -n "$apt_config" ]]; then
     launch_env+=(APT_CONFIG="$apt_config")
   fi
@@ -214,6 +303,7 @@ run_case() {
   status=$?
   set -e
   printf '%s\n' "$status" >"$result_dir/$label.status"
+  classify_outer_env "$label"
 
   [[ "$status" -ne 124 ]] || {
     echo "$label transaction timed out" >&2
@@ -249,12 +339,10 @@ grep -Fx 'configured_or_caller_command_resolved=yes' \
 grep -Fx 'source=fake-bin' \
   "$result_dir/inner-mutation-tainted-maintainer-script/command.txt"
 
-assert_version_probe_only "$result_dir/candidate-tainted-outer-env.log"
-# The clean case has no fake env in PATH, so the log is intentionally empty.
-[[ ! -s "$result_dir/candidate-clean-outer-env.log" ]]
-assert_version_probe_only "$result_dir/inner-mutation-tainted-outer-env.log"
-assert_version_probe_and_sanitizer \
-  "$result_dir/outer-mutation-tainted-outer-env.log"
+require_outer_env_contract candidate-tainted absent present
+require_outer_env_contract candidate-clean absent absent
+require_outer_env_contract inner-mutation-tainted absent present
+require_outer_env_contract outer-mutation-tainted present present
 
 candidate_tainted_path="$(cat "$result_dir/candidate-tainted-maintainer-script/path.txt")"
 candidate_clean_path="$(cat "$result_dir/candidate-clean-maintainer-script/path.txt")"
@@ -275,20 +363,22 @@ grep -Fx 'source=fake-bin' \
   "$result_dir/configured-authority-maintainer-script/command.txt"
 configured_authority_path="$(cat "$result_dir/configured-authority-maintainer-script/path.txt")"
 [[ "$configured_authority_path" == "$configured_path" ]]
-[[ ! -s "$result_dir/configured-authority-outer-env.log" ]]
+require_outer_env_contract configured-authority absent absent
 
 empty_config="$runtime/apt-empty-dpkg-path.conf"
 printf 'DPkg::Path "";\n' >"$empty_config"
 empty_target="$runtime/empty-dpkg-path-root"
 empty_hook="$(make_hook)"
-: >"$result_dir/empty-dpkg-path-outer-env.log"
+empty_outer_dir="$result_dir/empty-dpkg-path-outer-env"
+rm -rf "$empty_outer_dir"
+mkdir -p "$empty_outer_dir"
 set +e
 timeout 300 /usr/bin/env -i \
   PATH="$system_path" \
   HOME="$runtime/home" \
   TMPDIR="$runtime" \
   LC_ALL=C.UTF-8 \
-  OUTER_ENV_LOG="$result_dir/empty-dpkg-path-outer-env.log" \
+  OUTER_ENV_LOG_DIR="$empty_outer_dir" \
   APT_CONFIG="$empty_config" \
   "$candidate" \
     --mode=chrootless \
@@ -302,12 +392,13 @@ timeout 300 /usr/bin/env -i \
     2>"$result_dir/empty-dpkg-path.stderr"
 empty_status=$?
 set -e
+classify_outer_env empty-dpkg-path
 [[ "$empty_status" -ne 0 ]]
 [[ "$empty_status" -ne 124 ]]
 grep -F 'cannot determine chrootless maintainer-script PATH' \
   "$result_dir/empty-dpkg-path.stderr"
 test ! -f "$empty_target/var/lib/lf-apt-authority-probe/result.txt"
-[[ ! -s "$result_dir/empty-dpkg-path-outer-env.log" ]]
+require_outer_env_contract empty-dpkg-path absent absent
 
 for label in \
   candidate-clean \
@@ -322,6 +413,13 @@ source_mode_after="$(stat -c '%a' "$source_root/mmdebstrap")"
 [[ "$source_mode_after" == "$source_mode_before" ]]
 git diff --exit-code -- upstream/mmdebstrap/mmdebstrap
 
+candidate_version_calls="$(json_count "$result_dir/candidate-tainted-outer-env.json" "host-version-probe")"
+candidate_hook_calls="$(json_count "$result_dir/candidate-tainted-outer-env.json" "host-shell-hook")"
+candidate_sanitizer_calls="$(json_count "$result_dir/candidate-tainted-outer-env.json" "sanitizer-dpkg")"
+candidate_other_host_calls="$(json_count "$result_dir/candidate-tainted-outer-env.json" "other-host")"
+inner_sanitizer_calls="$(json_count "$result_dir/inner-mutation-tainted-outer-env.json" "sanitizer-dpkg")"
+outer_sanitizer_calls="$(json_count "$result_dir/outer-mutation-tainted-outer-env.json" "sanitizer-dpkg")"
+
 cat >"$result_dir/summary.txt" <<EOF
 product_source=upstream/mmdebstrap/mmdebstrap
 executed_candidate_copy=$candidate
@@ -331,28 +429,28 @@ repository_source_unchanged=yes
 candidate_tainted_status=$(cat "$result_dir/candidate-tainted.status")
 candidate_tainted_path=$candidate_tainted_path
 candidate_tainted_fake_inner_command=no
-candidate_tainted_caller_env_host_probe=version-only
-candidate_tainted_caller_env_sanitizer_launch=no
+candidate_tainted_caller_env_version_calls=$candidate_version_calls
+candidate_tainted_caller_env_hook_calls=$candidate_hook_calls
+candidate_tainted_caller_env_sanitizer_calls=$candidate_sanitizer_calls
+candidate_tainted_other_host_calls=$candidate_other_host_calls
 candidate_clean_status=$(cat "$result_dir/candidate-clean.status")
 candidate_clean_path=$candidate_clean_path
 inner_mutation_status=$(cat "$result_dir/inner-mutation-tainted.status")
 inner_mutation_path=$inner_path
 inner_mutation_fake_inner_command=yes
-inner_mutation_caller_env_host_probe=version-only
-inner_mutation_caller_env_sanitizer_launch=no
+inner_mutation_caller_env_sanitizer_calls=$inner_sanitizer_calls
 outer_mutation_status=$(cat "$result_dir/outer-mutation-tainted.status")
 outer_mutation_path=$outer_path
 outer_mutation_fake_inner_command=no
-outer_mutation_caller_env_host_probe=version-only
-outer_mutation_caller_env_sanitizer_launch=yes
+outer_mutation_caller_env_sanitizer_calls=$outer_sanitizer_calls
 configured_authority_path=$configured_authority_path
 configured_authority_fake_inner_command=yes
-configured_authority_caller_env_sanitizer_launch=no
+configured_authority_caller_env_sanitizer_calls=0
 empty_dpkg_path_status=$empty_status
 empty_dpkg_path_failed_closed=yes
 empty_dpkg_path_maintainer_script_ran=no
 candidate_mutation_package_sets_equal=yes
-interpretation=apt-managed run_install requires absolute sanitizer authority and configured inner DPkg::Path while honoring explicit non-empty apt configuration; host dependency probes remain caller-PATH based and outside this patch boundary
+interpretation=apt-managed run_install requires absolute sanitizer authority and configured inner DPkg::Path while honoring explicit non-empty apt configuration; lossless argv receipts retain caller-path version, setup-hook, sanitizer, and other host calls without confusing host hooks with the governed dpkg sanitizer
 EOF
 
 cat "$result_dir/summary.txt"
