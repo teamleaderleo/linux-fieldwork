@@ -8,16 +8,16 @@ import tempfile
 import time
 import unittest
 
-from tests.test_make_mirror_update_cache_signal_ownership import (
-    MakeMirrorUpdateCacheSignalOwnershipTest,
-)
+from tests import test_make_mirror_update_cache_signal_ownership as ownership
 
 
 class MakeMirrorUpdateCacheSignalMatrixTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        MakeMirrorUpdateCacheSignalOwnershipTest.setUpClass()
-        cls.helper = MakeMirrorUpdateCacheSignalOwnershipTest(methodName="runTest")
+        ownership.MakeMirrorUpdateCacheSignalOwnershipTest.setUpClass()
+        cls.helper = ownership.MakeMirrorUpdateCacheSignalOwnershipTest(
+            methodName="runTest"
+        )
 
     def run_owner_with_signal(
         self,
