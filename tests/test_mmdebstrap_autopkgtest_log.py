@@ -206,6 +206,47 @@ testsuite PASS
         self.assertIsNone(result["first_failed_test"])
         self.assertEqual(result["last_named_test"]["name"], "successful-case")
 
+    def test_active_test_sh_failure_is_attributed_to_named_case(self):
+        result = MODULE.classify_text(
+            """
+(242/284) chrootless
+ dist: unstable mode: root variant: apt format: directory
++ test.sh
+E: package transaction failed
++ echo test.sh failed
+test.sh failed
+testsuite FAIL non-zero exit status 1
+"""
+        )
+        self.assertEqual(result["phase"], "coverage-case")
+        self.assertEqual(result["first_failure_signal"], "coverage.sh reported test.sh failed")
+        self.assertEqual(
+            result["first_failed_test"],
+            {
+                "index": 242,
+                "total": 284,
+                "name": "chrootless",
+                "dist": "unstable",
+                "mode": "root",
+                "variant": "apt",
+                "format": "directory",
+            },
+        )
+        self.assertFalse(result["wrapper_failure_only"])
+
+    def test_stray_test_sh_failure_after_success_does_not_borrow_case(self):
+        result = MODULE.classify_text(
+            """
+(1/1) completed-case
+result: SUCCESS
+later summary says test.sh failed
+testsuite PASS
+"""
+        )
+        self.assertEqual(result["phase"], "pass")
+        self.assertIsNone(result["first_failed_test"])
+        self.assertNotIn("coverage.sh reported test.sh failed", result["signals"])
+
     def test_multiple_dimensions_on_one_line_are_all_retained(self):
         result = MODULE.classify_text(
             """
