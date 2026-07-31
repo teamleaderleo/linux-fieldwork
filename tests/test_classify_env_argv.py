@@ -51,14 +51,16 @@ class EnvArgvClassifierTest(unittest.TestCase):
             "other-host",
         )
 
-    def test_sanitizer_requires_ignore_environment_and_dpkg_command(self) -> None:
+    def test_sanitizer_requires_ignore_environment_dpkg_and_exact_flag(self) -> None:
         record = classify_argv(
             (
                 "-i",
                 "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
                 "TMPDIR=/target/tmp",
                 "dpkg",
+                "--force-not-root",
                 "--force-script-chrootless",
+                "--root=/target",
             )
         )
         self.assertEqual(record.classification, "sanitizer-dpkg")
@@ -66,9 +68,16 @@ class EnvArgvClassifierTest(unittest.TestCase):
         self.assertEqual(record.command, "dpkg")
 
         for values in (
-            ("PATH=/usr/bin", "dpkg", "--version"),
+            ("PATH=/usr/bin", "dpkg", "--force-script-chrootless"),
+            ("-i", "PATH=/usr/bin", "dpkg", "--version"),
+            (
+                "-i",
+                "PATH=/usr/bin",
+                "dpkg",
+                "prefix--force-script-chrootless-suffix",
+            ),
             ("-i", "PATH=/usr/bin", "sh", "-c", "echo dpkg"),
-            ("--split-string=dpkg --version",),
+            ("--split-string=dpkg --force-script-chrootless",),
         ):
             with self.subTest(values=values):
                 self.assertNotEqual(
@@ -95,7 +104,7 @@ class EnvArgvClassifierTest(unittest.TestCase):
             (
                 "sh",
                 "-c",
-                "printf '%s\\n' dpkg",
+                "printf '%s\\n' dpkg --force-script-chrootless",
                 "exec",
                 "/target/root",
             )
@@ -113,7 +122,12 @@ class EnvArgvClassifierTest(unittest.TestCase):
             )
             self.write_record(
                 root / "argv.3",
-                ("-i", "PATH=/usr/bin", "/usr/bin/dpkg", "--version"),
+                (
+                    "-i",
+                    "PATH=/usr/bin",
+                    "/usr/bin/dpkg",
+                    "--force-script-chrootless",
+                ),
             )
             self.write_record(root / "argv.4", ("date", "+%s"))
             payload = classify_paths((root,))
