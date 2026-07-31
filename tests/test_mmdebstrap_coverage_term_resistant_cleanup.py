@@ -229,6 +229,24 @@ class CoverageTermResistantCleanupTest(unittest.TestCase):
         raise AssertionError(f"timed out waiting for {path}")
 
     @staticmethod
+    def process_identity(pid: int) -> tuple[int, int, int] | None:
+        try:
+            text = pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+            right = text.rfind(")")
+            fields = text[right + 2 :].split()
+            if fields[0] == "Z":
+                return None
+            return pid, int(fields[2]), int(fields[19])
+        except (
+            FileNotFoundError,
+            ProcessLookupError,
+            PermissionError,
+            ValueError,
+            IndexError,
+        ):
+            return None
+
+    @staticmethod
     def group_members(pgid: int) -> list[dict[str, int | str]]:
         members: list[dict[str, int | str]] = []
         for entry in pathlib.Path("/proc").iterdir():
@@ -247,6 +265,7 @@ class CoverageTermResistantCleanupTest(unittest.TestCase):
                         "ppid": int(fields[1]),
                         "pgid": int(fields[2]),
                         "sid": int(fields[3]),
+                        "starttime": int(fields[19]),
                     }
                 )
             except (
@@ -254,6 +273,7 @@ class CoverageTermResistantCleanupTest(unittest.TestCase):
                 ProcessLookupError,
                 PermissionError,
                 ValueError,
+                IndexError,
             ):
                 continue
         return sorted(members, key=lambda item: int(item["pid"]))
@@ -263,9 +283,30 @@ class CoverageTermResistantCleanupTest(unittest.TestCase):
         return [member for member in cls.group_members(pgid) if member["state"] != "Z"]
 
     @classmethod
-    def terminate_group(cls, pgid: int) -> None:
+    def identity_is_live_in_group(
+        cls,
+        identity: tuple[int, int, int],
+        pgid: int,
+    ) -> bool:
+        pid, recorded_pgid, _starttime = identity
+        if recorded_pgid != pgid:
+            return False
+        return cls.process_identity(pid) == identity
+
+    @classmethod
+    def terminate_owned_group(
+        cls,
+        pgid: int,
+        expected_identities: tuple[tuple[int, int, int], ...],
+    ) -> None:
+        def fixture_member_is_live() -> bool:
+            return any(
+                cls.identity_is_live_in_group(identity, pgid)
+                for identity in expected_identities
+            )
+
         for group_signal in (signal.SIGTERM, signal.SIGKILL):
-            if not cls.live_group_members(pgid):
+            if not fixture_member_is_live():
                 return
             try:
                 os.killpg(pgid, group_signal)
@@ -273,7 +314,7 @@ class CoverageTermResistantCleanupTest(unittest.TestCase):
                 return
             deadline = time.monotonic() + 1
             while time.monotonic() < deadline:
-                if not cls.live_group_members(pgid):
+                if not fixture_member_is_live():
                     return
                 time.sleep(0.01)
 
@@ -328,15 +369,37 @@ class CoverageTermResistantCleanupTest(unittest.TestCase):
 
     def identities(self, case: pathlib.Path) -> tuple[int, int, int]:
         backend_pgid = int((case / "backend.pgid").read_text(encoding="ascii"))
+        wrapper_pid = int((case / "wrapper.pid").read_text(encoding="ascii"))
         descendant_pid = int(
             (case / "descendant.pid").read_text(encoding="ascii")
         )
         descendant_pgid = int(
             (case / "descendant.pgid").read_text(encoding="ascii")
         )
-        self.addCleanup(self.terminate_group, backend_pgid)
-        if descendant_pgid != backend_pgid:
-            self.addCleanup(self.terminate_group, descendant_pgid)
+        wrapper_identity = self.process_identity(wrapper_pid)
+        descendant_identity = self.process_identity(descendant_pid)
+        if wrapper_identity is None or descendant_identity is None:
+            raise AssertionError("fixture process exited before identity capture")
+        self.assertEqual(wrapper_identity[1], backend_pgid)
+        self.assertEqual(descendant_identity[1], descendant_pgid)
+
+        if descendant_pgid == backend_pgid:
+            self.addCleanup(
+                self.terminate_owned_group,
+                backend_pgid,
+                (wrapper_identity, descendant_identity),
+            )
+        else:
+            self.addCleanup(
+                self.terminate_owned_group,
+                backend_pgid,
+                (wrapper_identity,),
+            )
+            self.addCleanup(
+                self.terminate_owned_group,
+                descendant_pgid,
+                (descendant_identity,),
+            )
         return backend_pgid, descendant_pid, descendant_pgid
 
     def signal_once(
@@ -351,6 +414,34 @@ class CoverageTermResistantCleanupTest(unittest.TestCase):
     @staticmethod
     def release(case: pathlib.Path) -> None:
         (case / "release").write_text("go\n", encoding="ascii")
+
+    def test_teardown_refuses_reused_numeric_group_without_matching_identity(
+        self,
+    ) -> None:
+        unrelated = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(300)"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        self.addCleanup(self.stop_driver, unrelated)
+        identity = self.process_identity(unrelated.pid)
+        self.assertIsNotNone(identity)
+        assert identity is not None
+        forged_reused_identity = (
+            identity[0],
+            identity[1],
+            identity[2] + 1,
+        )
+
+        self.terminate_owned_group(
+            unrelated.pid,
+            (forged_reused_identity,),
+        )
+        time.sleep(0.05)
+
+        self.assertIsNone(unrelated.poll())
+        self.assertEqual(self.process_identity(unrelated.pid), identity)
 
     def test_current_policy_returns_130_while_term_resistant_descendant_survives(
         self,
