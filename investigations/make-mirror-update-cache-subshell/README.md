@@ -19,12 +19,13 @@ The old ownership can turn cancellation into success, kill a shared proxy from t
 ## Canonical records
 
 - issue: #231;
-- top-level parent lifecycle: PR #224;
+- merged top-level parent lifecycle: PR #224, merge commit `386f5c8dbb01e5de1af45ac0eb325ee8567722e3`;
 - imported source: `upstream/mmdebstrap/make_mirror.sh` blob `6c4be092edcf23b56b63a3befe238c099c45f590`;
 - candidate patch: `0001-confine-update-cache-signal-cleanup.patch`;
 - ownership regression: `tests/test_make_mirror_update_cache_signal_ownership.py`;
 - complete signal matrix: `tests/test_make_mirror_update_cache_signal_matrix.py`;
-- stacked branch: `investigation/make-mirror-update-cache-subshell`.
+- historical stacked carrier: PR #238 at `f6966f0ccd6c3ea91ae39c260f23e6e416b5c601`;
+- canonical current-main branch: `restack/make-mirror-update-cache-main-20260731`.
 
 ## Source and ownership boundary
 
@@ -94,7 +95,7 @@ The dynamic `/bin/sh` matrices prove:
 - the retained patch applies to the exact fixture and the candidate passes `/bin/sh -n`;
 - source assertions remove proxy signaling from the complete `update_cache()` block and require explicit INT/QUIT/TERM mappings.
 
-Repository CI is the exact imported-source gate. It must apply the retained patch to blob `6c4be092…`, run `/bin/sh -n` on the complete script, and execute both focused matrices.
+The historical stacked head passed these focused local gates. Repository CI on the clean current-main head remains the authoritative exact imported-source gate. It must apply the retained patch to blob `6c4be092…`, run `/bin/sh -n` on the complete script, execute both focused matrices, and run repository discovery.
 
 ## Cleanup and rerun
 
@@ -104,7 +105,7 @@ The baseline intentionally lets the subshell kill the parent-owned proxy; the pa
 
 ## Composition and overlap
 
-PR #224 owns top-level proxy launch registration, first-signal retention, proxy reaping, cache-state ownership, and top-level cancellation. This candidate is stacked on that exact evidence head but changes a separate retained source region inside `update_cache()`.
+Merged PR #224 owns top-level proxy launch registration, first-signal retention, proxy reaping, cache-state ownership, and top-level cancellation. This candidate changes a separate retained source region inside `update_cache()` and is now based directly on the main commit containing #224.
 
 The two mechanisms compose through the pipeline result:
 
@@ -112,7 +113,7 @@ The two mechanisms compose through the pipeline result:
 2. the top-level `set -e` path exits with that status;
 3. top-level EXIT cleanup stops and waits for the parent-owned proxy.
 
-The focused PR #224 can finish independently. This follow-up should remain a separate source patch and review unit.
+The retained patch and both regressions on the current-main branch are byte-identical to historical PR #238. Only this README changed to reconcile the merged parent and canonical carrier state.
 
 ## Evidence boundary
 
@@ -120,10 +121,10 @@ The reduced matrix uses real `/bin/sh`, signals, pipelines, child processes, and
 
 A signal delivered while the subshell waits for a foreground APT process may remain deferred until that process exits. The candidate does not forward signals to foreground commands, use process groups, add timeouts, or add TERM-to-KILL escalation.
 
-The exact imported source patch and complete repository suite still require hosted execution. Public current-upstream composition and any external packet require a separate refresh and explicit authorization.
+Public current-upstream composition and any external packet require a separate refresh and explicit authorization.
 
 ## Disposition
 
-`EXECUTE` as a focused stacked evidence carrier. Promote only after exact-head repository CI, complete four-file review, cleanup/rerun confirmation on the published head, and reconciliation with PR #224's final state.
+`EXECUTE` on the clean current-main carrier. Promote after exact-head repository CI, complete four-file review, and cleanup/rerun confirmation on the published head. Retire PR #238 after its evidence is transferred.
 
 Internal Linux Fieldwork work only. No external contact is authorized or performed.
