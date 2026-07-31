@@ -1,0 +1,137 @@
+diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mmdebstrap-chrootless-env/run.sh
+--- a/investigations/mmdebstrap-chrootless-env/run.sh
++++ b/investigations/mmdebstrap-chrootless-env/run.sh
+@@ -4,11 +4,75 @@
+ repo_root="$(git rev-parse --show-toplevel)"
+ source_root="$repo_root/upstream/mmdebstrap"
+ result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/results"
+-runtime_parent="$(realpath -m "${RUNNER_TEMP:-/tmp}")"
+-if [[ "$runtime_parent" == / ]]; then
+-  echo "refusing unsafe runtime parent: $runtime_parent" >&2
+-  exit 2
++
++validate_runtime_parent() {
++  local candidate home_root runtime_candidate
++  candidate="$(realpath -m "$1")"
++  case "$candidate" in
++    /tmp|/tmp/*|/var/tmp|/var/tmp/*|/home/runner/work/_temp|/home/runner/work/_temp/*)
++      ;;
++    *)
++      echo "refusing unsafe runtime parent: $candidate" >&2
++      return 2
++      ;;
++  esac
++  runtime_candidate="$(realpath -m "$candidate/mmdebstrap-chrootless-env")"
++  case "$runtime_candidate" in
++    "$repo_root"|"$repo_root"/*)
++      echo "refusing runtime inside repository: $runtime_candidate" >&2
++      return 2
++      ;;
++  esac
++  case "$repo_root" in
++    "$runtime_candidate"|"$runtime_candidate"/*)
++      echo "refusing runtime containing repository: $runtime_candidate" >&2
++      return 2
++      ;;
++  esac
++  home_root="$(realpath -m "${HOME:-/nonexistent-home}")"
++  case "$candidate" in
++    /home/runner/work/_temp|/home/runner/work/_temp/*)
++      case "$home_root" in
++        "$runtime_candidate"|"$runtime_candidate"/*)
++          echo "refusing hosted runtime containing home: $runtime_candidate" >&2
++          return 2
++          ;;
++      esac
++      ;;
++    *)
++      case "$candidate" in
++        "$home_root"|"$home_root"/*)
++          echo "refusing home runtime parent: $candidate" >&2
++          return 2
++          ;;
++      esac
++      case "$runtime_candidate" in
++        "$home_root"|"$home_root"/*)
++          echo "refusing runtime inside home: $runtime_candidate" >&2
++          return 2
++          ;;
++      esac
++      case "$home_root" in
++        "$runtime_candidate"|"$runtime_candidate"/*)
++          echo "refusing runtime containing home: $runtime_candidate" >&2
++          return 2
++          ;;
++      esac
++      ;;
++  esac
++  printf '%s\n' "$candidate"
++}
++
++if [[ ${1:-} == --check-runtime-parent ]]; then
++  if [[ $# -ne 2 ]]; then
++    echo "usage: $0 --check-runtime-parent PATH" >&2
++    exit 2
++  fi
++  validate_runtime_parent "$2" >/dev/null
++  exit
+ fi
++
++runtime_parent="$(validate_runtime_parent "${RUNNER_TEMP:-/tmp}")"
+ runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-env")"
+ case "$runtime" in
+   "$runtime_parent"/*) ;;
+@@ -28,6 +92,10 @@
+ esac
+ fixture="$runtime/fixture"
+ package="$runtime/lf-chrootless-env-probe_1.0_all.deb"
++source_copy="$runtime/source/mmdebstrap"
++source_mode_before="$(stat -c %a "$source_root/mmdebstrap")"
++source_hash_before="$(git hash-object "$source_root/mmdebstrap")"
++source_status_before="$(git status --short -- upstream/mmdebstrap/mmdebstrap)"
+ server_pid=
+ 
+ cleanup() {
+@@ -50,6 +118,9 @@
+ rm -rf "$runtime" "$result_dir"
+ mkdir -p "$fixture/DEBIAN" "$fixture/usr/lib/lf-chrootless-env-probe"
+ mkdir -p "$result_dir" "$runtime/home" "$runtime/xdg" "$runtime/bin"
++mkdir -p "$(dirname "$source_copy")"
++cp --preserve=mode "$source_root/mmdebstrap" "$source_copy"
++chmod 0755 "$source_copy"
+ 
+ cat >"$fixture/DEBIAN/control" <<'EOF'
+ Package: lf-chrootless-env-probe
+@@ -197,7 +268,7 @@
+   printf -v hook 'mkdir -p "$1%s"; cp "%s" "$1%s"' \
+     "$package_dir" "$package" "$package"
+   command=(
+-    "$source_root/mmdebstrap"
++    "$source_copy"
+     --mode=chrootless
+     --variant=custom
+     --format=directory
+@@ -210,8 +281,6 @@
+   fi
+   command+=( '' "$target" )
+ }
+-
+-chmod 0755 "$source_root/mmdebstrap"
+ 
+ # Negative control: dpkg itself passes the ambient environment to a
+ # chrootless maintainer script unless its caller wraps the process.
+@@ -427,7 +496,14 @@
+ fakeroot_environment_preserved=yes
+ safe_launch_succeeded=yes
+ clean_rerun_succeeded=yes
++source_mode_preserved=yes
++source_content_preserved=yes
++source_git_state_preserved=yes
+ EOF
++
++[[ "$(stat -c %a "$source_root/mmdebstrap")" == "$source_mode_before" ]]
++[[ "$(git hash-object "$source_root/mmdebstrap")" == "$source_hash_before" ]]
++[[ "$(git status --short -- upstream/mmdebstrap/mmdebstrap)" == "$source_status_before" ]]
+ 
+ cat "$result_dir/summary.txt"
+ echo "mmdebstrap chrootless environment security regression passed"
