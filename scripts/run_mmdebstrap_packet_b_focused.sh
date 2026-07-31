@@ -13,6 +13,34 @@ runtime_guard="$repo_root/investigations/mmdebstrap-unwritable-tmpdir/runtime_gu
 run_id=${RUN_ID:-"local-$(date -u +%Y%m%dT%H%M%SZ)"}
 timeout_duration=${FOCUSED_TIMEOUT:-80m}
 
+classify_status() {
+  local raw_status=$1 verifier_status=$2
+  case "$raw_status" in
+    0)
+      if [[ $verifier_status -eq 0 ]]; then
+        printf '0 focused-pass\n'
+      else
+        printf '2 evidence-verification-failure\n'
+      fi
+      ;;
+    124)
+      printf '77 outer-timeout-neutral\n'
+      ;;
+    *)
+      printf '%s focused-hard-failure\n' "$raw_status"
+      ;;
+  esac
+}
+
+if [[ ${1-} == --classify-status ]]; then
+  [[ $# -eq 3 && $2 =~ ^[0-9]+$ && $3 =~ ^[0-9]+$ ]] || {
+    echo 'usage: run_mmdebstrap_packet_b_focused.sh --classify-status RAW VERIFIER' >&2
+    exit 2
+  }
+  classify_status "$2" "$3"
+  exit
+fi
+
 case "$run_id" in
   ''|.|..|*/*|*[!A-Za-z0-9._-]*)
     echo "refusing unsafe run id: $run_id" >&2
@@ -202,25 +230,8 @@ verifier_status=$?
 set -e
 printf '%s\n' "$verifier_status" >"$run_dir/verifier-exit-status"
 
-case "$raw_status" in
-  0)
-    if [[ $verifier_status -eq 0 ]]; then
-      carrier_status=0
-      classification=focused-pass
-    else
-      carrier_status=2
-      classification=evidence-verification-failure
-    fi
-    ;;
-  124|137)
-    carrier_status=77
-    classification=outer-timeout-neutral
-    ;;
-  *)
-    carrier_status=$raw_status
-    classification=focused-hard-failure
-    ;;
-esac
+read -r carrier_status classification \
+  < <(classify_status "$raw_status" "$verifier_status")
 printf '%s\n' "$carrier_status" >"$run_dir/carrier-exit-status"
 
 {
