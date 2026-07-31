@@ -9,6 +9,7 @@ sourcesfilter_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/so
 capability_patch="$repo_root/investigations/mmdebstrap-root-without-cap-sys-admin-hard-failure/0001-run-hook-free-capability-case-as-hard-failure.patch"
 signal_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/sigint-process-group-kill-sid.patch"
 phase_order_tool="$repo_root/tools/reorder_mmdebstrap_hook_free_phase.py"
+identity_tool="$repo_root/tools/audit_pr_evidence_identity.py"
 run_id=${RUN_ID:-"local-$(date -u +%Y%m%dT%H%M%SZ)"}
 run_dir=${RUN_DIR:-"$repo_root/investigations/mmdebstrap-autopkgtest-1141078/runs/$run_id"}
 timeout_duration=${AUTOPKGTEST_TIMEOUT:-165m}
@@ -17,6 +18,8 @@ mkdir -p "$run_dir"
 status_file="$run_dir/exit-status"
 console_log="$run_dir/autopkgtest-console.log"
 output_dir="$run_dir/autopkgtest-output"
+identity_classification=unrecorded
+identity_receipt_sha=unavailable
 
 finish_early() {
   local status=$1
@@ -34,9 +37,111 @@ finish_early() {
     else
       printf -- '- Classification: `carrier-preflight-failure`\n'
     fi
+    printf -- '- Repository checkout classification: `%s`\n' "$identity_classification"
+    printf -- '- Repository identity receipt SHA-256: `%s`\n' "$identity_receipt_sha"
     printf -- '- Preflight reason: `%s`\n' "$reason"
   } >"$run_dir/result.md"
   exit "$status"
+}
+
+record_repository_identity() {
+  local raw_line=${FIELDWORK_CHECKOUT_REV_LINE:-}
+  local raw_path="$run_dir/repository-rev-list.txt"
+  local input_path="$run_dir/repository-identity-input.json"
+  local receipt_path="$run_dir/repository-identity.json"
+  local stdout_path="$run_dir/repository-identity.stdout"
+  local stderr_path="$run_dir/repository-identity.stderr"
+
+  if [[ -z $raw_line ]] && command -v git >/dev/null 2>&1; then
+    raw_line=$(git -C "$repo_root" rev-list --parents -n 1 HEAD 2>/dev/null || true)
+  fi
+  if [[ -z $raw_line ]]; then
+    raw_line=unavailable
+  fi
+  printf '%s\n' "$raw_line" >"$raw_path"
+
+  if [[ ${FIELDWORK_EVENT_NAME:-} != pull_request ]]; then
+    identity_classification=not-a-pull-request
+    {
+      printf 'classification=%s\n' "$identity_classification"
+      printf 'event_name=%s\n' "${FIELDWORK_EVENT_NAME:-local}"
+      printf 'checkout_rev_line=%s\n' "$raw_line"
+    } >"$run_dir/repository-identity.txt"
+    return 0
+  fi
+
+  local required
+  for required in \
+    FIELDWORK_EVENT_SHA \
+    FIELDWORK_PR_HEAD_SHA \
+    FIELDWORK_PR_BASE_SHA \
+    FIELDWORK_REF \
+    FIELDWORK_HEAD_REF \
+    FIELDWORK_BASE_REF \
+    FIELDWORK_RUN_ID \
+    FIELDWORK_RUN_ATTEMPT \
+    FIELDWORK_EXPECTED_CHECKOUT_CLASSIFICATION; do
+    if [[ -z ${!required:-} ]]; then
+      printf 'missing required pull-request identity field: %s\n' "$required" \
+        >"$stderr_path"
+      return 1
+    fi
+  done
+
+  export FIELDWORK_CHECKOUT_REV_LINE="$raw_line"
+  if ! python3 - "$input_path" <<'PY'
+import json
+import os
+import pathlib
+import sys
+
+fields = os.environ["FIELDWORK_CHECKOUT_REV_LINE"].split()
+if not fields:
+    raise SystemExit("checkout revision line is empty")
+record = {
+    "checkout_sha": fields[0],
+    "parents": fields[1:],
+    "head_sha": os.environ["FIELDWORK_PR_HEAD_SHA"],
+    "base_sha": os.environ["FIELDWORK_PR_BASE_SHA"],
+    "event_sha": os.environ["FIELDWORK_EVENT_SHA"],
+    "event_name": os.environ["FIELDWORK_EVENT_NAME"],
+    "ref": os.environ["FIELDWORK_REF"],
+    "head_ref": os.environ["FIELDWORK_HEAD_REF"],
+    "base_ref": os.environ["FIELDWORK_BASE_REF"],
+    "run_id": os.environ["FIELDWORK_RUN_ID"],
+    "run_attempt": os.environ["FIELDWORK_RUN_ATTEMPT"],
+    "expected": os.environ["FIELDWORK_EXPECTED_CHECKOUT_CLASSIFICATION"],
+}
+pathlib.Path(sys.argv[1]).write_text(
+    json.dumps(record, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+  then
+    return 1
+  fi
+
+  if ! python3 "$identity_tool" "$input_path" --output "$receipt_path" \
+      >"$stdout_path" 2>"$stderr_path"; then
+    return 1
+  fi
+
+  identity_classification=$(python3 - "$receipt_path" <<'PY'
+import json
+import pathlib
+import sys
+
+value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")).get(
+    "classification"
+)
+if type(value) is not str or not value:
+    raise SystemExit("identity receipt classification is missing")
+print(value)
+PY
+  )
+  identity_receipt_sha=$(sha256sum "$receipt_path" | cut -d' ' -f1)
+  printf '%s\n' "$identity_classification" \
+    >"$run_dir/repository-identity-classification.txt"
 }
 
 apply_exact_patch() {
@@ -57,10 +162,20 @@ apply_exact_patch() {
   fi
 }
 
+if [[ ! -f $identity_tool ]]; then
+  finish_early 2 "pull-request evidence identity tool is missing"
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+  finish_early 77 "python3 is unavailable"
+fi
+if ! record_repository_identity; then
+  finish_early 2 "repository checkout identity receipt failed"
+fi
+
 if [[ $(id -u) -ne 0 ]]; then
   finish_early 77 "reproduction requires root inside a disposable test environment"
 fi
-for command in autopkgtest patch python3; do
+for command in autopkgtest patch; do
   if ! command -v "$command" >/dev/null 2>&1; then
     finish_early 77 "$command is unavailable"
   fi
@@ -118,6 +233,8 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
   printf -- '- Started: `%s`\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf -- '- Run ID: `%s`\n' "$run_id"
   printf -- '- Timeout: `%s`\n' "$timeout_duration"
+  printf -- '- Repository checkout classification: `%s`\n' "$identity_classification"
+  printf -- '- Repository identity receipt SHA-256: `%s`\n' "$identity_receipt_sha"
   printf -- '- Imported source path: `%s`\n' "upstream/mmdebstrap"
   printf -- '- Execution source: temporary copy with installed-command, Deb822 sourcesfilter, hook-free hard-failure scheduling, sid process-group signal compatibility, and integration-only phase-order transformations\n'
   printf -- '- Patch application contract: `zero fuzz and zero offset`\n'
@@ -126,6 +243,18 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
   printf -- '- Scheduling purpose: retain the landing candidate that runs the mount-capability case in a dedicated hook-free phase with hard ordinary failures\n'
   printf -- '- Signal compatibility purpose: replace the rejected procps long form with the exact dash builtin spelling proven by current sid process-group topology evidence\n'
   printf -- '- Integration-order purpose: run that exact hook-free block before the broad matrix, then continue the broad matrix unchanged so an unrelated earlier failure cannot hide Packet B execution\n'
+  printf '\n## Repository checkout identity\n\n```text\n'
+  cat "$run_dir/repository-rev-list.txt"
+  printf '```\n'
+  if [[ -f $run_dir/repository-identity.json ]]; then
+    printf '\n```json\n'
+    cat "$run_dir/repository-identity.json"
+    printf '```\n'
+  else
+    printf '\n```text\n'
+    cat "$run_dir/repository-identity.txt"
+    printf '```\n'
+  fi
   if [[ -f $imported_source/.linux-fieldwork-source.json ]]; then
     printf '\n## Imported source\n\n```json\n'
     cat "$imported_source/.linux-fieldwork-source.json"
@@ -145,6 +274,7 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
     "$capability_patch" \
     "$signal_patch" \
     "$phase_order_tool" \
+    "$identity_tool" \
     "$source_tree/debian/tests/testsuite" \
     "$source_tree/debian/tests/sourcesfilter" \
     "$source_tree/tests/sigint-during-customize-hook" \
@@ -193,6 +323,8 @@ dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
     124|137) printf -- '- Classification: `timeout`\n' ;;
     *) printf -- '- Classification: `failure`\n' ;;
   esac
+  printf -- '- Repository checkout classification: `%s`\n' "$identity_classification"
+  printf -- '- Repository identity receipt SHA-256: `%s`\n' "$identity_receipt_sha"
   printf -- '- Patch application contract: `zero fuzz and zero offset`\n'
   printf -- '- Source-preflight override: `installed-command-wrapper.patch`\n'
   printf -- '- Source compatibility override: `sourcesfilter-deb822.patch`\n'
