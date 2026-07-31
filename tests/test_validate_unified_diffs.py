@@ -43,6 +43,23 @@ diff --git a/b b/b
         self.assertEqual(result.hunks, 2)
         self.assertEqual(result.findings, ())
 
+    def test_plain_multifile_patch_without_git_separators_is_valid(self) -> None:
+        patch = """\
+--- a/first
++++ b/first
+@@ -1 +1 @@
+-old-first
++new-first
+--- a/second
++++ b/second
+@@ -2 +2 @@
+-old-second
++new-second
+"""
+        result = validate_text(patch)
+        self.assertEqual(result.hunks, 2)
+        self.assertEqual(result.findings, ())
+
     def test_hunk_content_that_looks_like_file_headers_is_counted(self) -> None:
         patch = """\
 diff --git a/file b/file
@@ -81,6 +98,22 @@ diff --git a/one b/one
         self.assertEqual(result.hunks, 3)
         self.assertEqual(result.findings, ())
 
+    def test_format_patch_signature_after_complete_hunk_is_valid(self) -> None:
+        patch = """\
+From: Example <example.invalid>
+diff --git a/file b/file
+--- a/file
++++ b/file
+@@ -1 +1 @@
+-old
++new
+-- 
+2.43.0
+"""
+        result = validate_text(patch)
+        self.assertEqual(result.hunks, 1)
+        self.assertEqual(result.findings, ())
+
     def test_old_and_new_count_mismatch_is_rejected(self) -> None:
         patch = """\
 --- a/file
@@ -94,12 +127,45 @@ diff --git a/one b/one
         self.assertEqual(len(result.findings), 1)
         self.assertIn("declared old/new 3/2, observed 2/2", result.findings[0].message)
 
+    def test_extra_body_after_declared_counts_is_rejected(self) -> None:
+        patch = """\
+--- a/file
++++ b/file
+@@ -1 +1 @@
+-old
++new
+ extra-context-that-was-not-declared
+"""
+        result = validate_text(patch)
+        messages = [finding.message for finding in result.findings]
+        self.assertTrue(any("extra hunk-body line" in message for message in messages))
+
     def test_malformed_header_is_rejected(self) -> None:
         result = validate_text(
             "--- a/file\n+++ b/file\n@@ -1,2 +1,not-a-number @@\n-old\n+new\n"
         )
+        messages = [finding.message for finding in result.findings]
+        self.assertTrue(
+            any("malformed unified-diff hunk header" in message for message in messages)
+        )
+        self.assertTrue(
+            any("textual file header is not followed" in message for message in messages)
+        )
+
+    def test_textual_header_without_hunk_is_rejected(self) -> None:
+        result = validate_text("--- a/file\n+++ b/file\n")
         self.assertEqual(len(result.findings), 1)
-        self.assertIn("malformed unified-diff hunk header", result.findings[0].message)
+        self.assertIn("not followed by a unified-diff hunk", result.findings[0].message)
+
+    def test_hunk_without_textual_header_is_rejected(self) -> None:
+        result = validate_text("@@ -1 +1 @@\n-old\n+new\n")
+        self.assertEqual(len(result.findings), 1)
+        self.assertIn("no preceding textual file header", result.findings[0].message)
+
+    def test_unpaired_textual_header_is_rejected(self) -> None:
+        result = validate_text("--- a/file\nnot-a-new-file-header\n")
+        self.assertEqual(len(result.findings), 1)
+        self.assertIn("unpaired textual file header", result.findings[0].message)
 
     def test_invalid_body_prefix_and_bare_empty_line_are_rejected(self) -> None:
         result = validate_text(
