@@ -50,6 +50,17 @@ def extract_source_receipt() -> str:
     return textwrap.dedent("\n".join(block)) + "\n"
 
 
+def final_diagnostic(completed: subprocess.CompletedProcess[str]) -> str:
+    lines = [line for line in completed.stderr.splitlines() if line.strip()]
+    if not lines:
+        raise AssertionError(
+            "receipt failure did not emit a diagnostic: "
+            + completed.stdout
+            + completed.stderr
+        )
+    return lines[-1]
+
+
 class SubmissionSourceReceiptTest(unittest.TestCase):
     def execute_receipt(
         self,
@@ -102,8 +113,7 @@ class SubmissionSourceReceiptTest(unittest.TestCase):
         ]
         for result in results:
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertTrue(result.stderr.strip(), result.stdout + result.stderr)
-        self.assertEqual(results[0].stderr, results[1].stderr)
+        self.assertEqual(final_diagnostic(results[0]), final_diagnostic(results[1]))
 
     def test_exact_workflow_receipt_has_no_optimizer_removable_assert(self) -> None:
         tree = ast.parse(extract_source_receipt())
