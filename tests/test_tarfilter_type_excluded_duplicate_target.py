@@ -51,6 +51,31 @@ class TarfilterTypeExcludedDuplicateTargetTest(unittest.TestCase):
             archive.addfile(peer)
         return output.getvalue()
 
+    @staticmethod
+    def strip_skipped_target_archive() -> bytes:
+        output = io.BytesIO()
+        payload = b"strip-skipped-target\n"
+        with tarfile.open(
+            fileobj=output, mode="w", format=tarfile.PAX_FORMAT
+        ) as archive:
+            skipped_regular = tarfile.TarInfo("base")
+            skipped_regular.size = len(payload)
+            skipped_regular.mtime = 946684800
+            archive.addfile(skipped_regular, io.BytesIO(payload))
+
+            excluded_duplicate = tarfile.TarInfo("base")
+            excluded_duplicate.type = tarfile.SYMTYPE
+            excluded_duplicate.linkname = "missing"
+            excluded_duplicate.mtime = 946684800
+            archive.addfile(excluded_duplicate)
+
+            surviving_peer = tarfile.TarInfo("root/peer")
+            surviving_peer.type = tarfile.LNKTYPE
+            surviving_peer.linkname = "base"
+            surviving_peer.mtime = 946684800
+            archive.addfile(surviving_peer)
+        return output.getvalue()
+
     def apply_repair(self, tree: pathlib.Path) -> pathlib.Path:
         completed = subprocess.run(
             [
@@ -170,6 +195,81 @@ class TarfilterTypeExcludedDuplicateTargetTest(unittest.TestCase):
                 os.stat(destination / "root/base").st_ino,
                 os.stat(destination / "root/peer").st_ino,
             )
+
+    def test_strip_skipped_member_is_not_recorded_as_retained(self) -> None:
+        helper = candidate_tests.TarfilterTypeExcludedHardlinkCandidateTest(
+            methodName="runTest"
+        )
+        archive = self.strip_skipped_target_archive()
+        options = ("--type-exclude=SYMTYPE", "--strip-components=1")
+
+        with tempfile.TemporaryDirectory(
+            prefix="tarfilter-strip-skipped-target-"
+        ) as td:
+            root = pathlib.Path(td)
+
+            baseline = helper.run_filter(helper.source, archive, *options)
+            self.assertEqual(
+                baseline.returncode,
+                0,
+                baseline.stderr.decode("utf-8", "replace"),
+            )
+            self.assertEqual(
+                helper.member_map(baseline.stdout),
+                {"peer": (tarfile.LNKTYPE, "base")},
+            )
+            extracted, _ = helper.extract(
+                baseline.stdout, root, "strip-baseline"
+            )
+            self.assertNotEqual(extracted.returncode, 0)
+
+            predecessor = helper.prepare_candidate(root)
+            rejected = helper.run_filter(predecessor, archive, *options)
+            self.assertEqual(rejected.returncode, 1)
+            self.assertIn(
+                "hard-link target excluded by type filter: root/peer -> base",
+                rejected.stderr.decode("utf-8", "replace"),
+            )
+            self.assertEqual(helper.member_map(rejected.stdout), {})
+            extracted, destination = helper.extract(
+                rejected.stdout, root, "strip-predecessor"
+            )
+            self.assertEqual(
+                extracted.returncode, 0, extracted.stdout + extracted.stderr
+            )
+            self.assertEqual(list(destination.rglob("*")), [])
+
+            repaired = self.apply_repair(root / "candidate")
+            repaired_text = repaired.read_text(encoding="utf-8")
+            self.assertIn(
+                "type_excluded_members.discard(normalized_name)\n"
+                "            retained_member_names.add(normalized_name)\n"
+                "            if member.isfile():",
+                repaired_text,
+            )
+            self.assertLess(
+                repaired_text.index(
+                    "if len(comps) <= args.strip_components:"
+                ),
+                repaired_text.index(
+                    "retained_member_names.add(normalized_name)"
+                ),
+            )
+
+            repaired_result = helper.run_filter(repaired, archive, *options)
+            self.assertEqual(repaired_result.returncode, 1)
+            self.assertIn(
+                "hard-link target excluded by type filter: root/peer -> base",
+                repaired_result.stderr.decode("utf-8", "replace"),
+            )
+            self.assertEqual(helper.member_map(repaired_result.stdout), {})
+            extracted, destination = helper.extract(
+                repaired_result.stdout, root, "strip-repaired"
+            )
+            self.assertEqual(
+                extracted.returncode, 0, extracted.stdout + extracted.stderr
+            )
+            self.assertEqual(list(destination.rglob("*")), [])
 
 
 if __name__ == "__main__":
