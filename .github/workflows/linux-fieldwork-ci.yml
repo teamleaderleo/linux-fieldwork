@@ -24,6 +24,26 @@ jobs:
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate changed patch carriers
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_list="$(mktemp)"
+          trap 'rm -f "$patch_list"' EXIT
+          git diff --name-only --diff-filter=ACMRT -z \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            -- ':(glob)**/*.patch' >"$patch_list"
+          mapfile -d '' patches <"$patch_list"
+          if ((${#patches[@]})); then
+            python3 tools/validate_unified_diffs.py -- "${patches[@]}"
+          else
+            echo "No added or modified patch carriers."
+          fi
 
       - name: Compile Python tools
         shell: bash
@@ -56,7 +76,8 @@ jobs:
           for tool in \
             tools/tar_manifest.py \
             tools/manifest_diff.py \
-            tools/debian_bug_report.py; do
+            tools/debian_bug_report.py \
+            tools/validate_unified_diffs.py; do
             if [[ -f "$tool" ]]; then
               python3 "$tool" --help >/dev/null
             fi
