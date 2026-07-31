@@ -38,7 +38,7 @@ jobs:
       FIELDWORK_EVENT_NAME: ${{ github.event_name }}
       FIELDWORK_EVENT_SHA: ${{ github.sha }}
       FIELDWORK_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      FIELDWORK_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      FIELDWORK_EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       FIELDWORK_REF: ${{ github.ref }}
       FIELDWORK_HEAD_REF: ${{ github.head_ref }}
       FIELDWORK_BASE_REF: ${{ github.base_ref }}
@@ -91,7 +91,8 @@ jobs:
               "checkout_sha": revision[0],
               "parents": revision[1:],
               "head_sha": os.environ["FIELDWORK_PR_HEAD_SHA"],
-              "base_sha": os.environ["FIELDWORK_PR_BASE_SHA"],
+              "base_sha": revision[1],
+              "event_base_sha": os.environ["FIELDWORK_EVENT_BASE_SHA"],
               "event_sha": os.environ["FIELDWORK_EVENT_SHA"],
               "event_name": os.environ["FIELDWORK_EVENT_NAME"],
               "ref": os.environ["FIELDWORK_REF"],
