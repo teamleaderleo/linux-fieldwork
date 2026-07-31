@@ -1,44 +1,22 @@
 # coverage.py complete backend process-group ownership
 
-State: `fixture-repair-ready`
+State: `delivery-gate-ready`
 
-Tracking: issue #306 and PR #313.
+Tracking: issue #306 and PR #313.  
+Exact candidate head: `e90fc438f530f7bd78ffd6fd1ba24c665bd96913`.  
+Exact CI receipt: run `30632491641`, job `91161937871`, success.
 
-## TL;DR
+## In simple words
 
-The merged parent-SIGINT repair changes a cancelled coverage matrix from status 0 to 130, but it still terminates only the immediate backend wrapper PID.
+The coverage driver starts one backend wrapper for each selected test. The wrapper may own nested shells, pipelines, log followers, a QEMU-style foreground operation, or a privileged worker through sudo.
 
-The exact null, QEMU-wrapper, and sudo topologies contain additional shells, pipelines, log followers, privileged commands, and foreground operations. Under parent-PID-only SIGINT those processes can remain alive after both `coverage.py` and the wrapper return.
+The earlier status repair made parent-only SIGINT return 130, but it still terminated only the immediate wrapper. Backend work could survive.
 
-The selected candidate gives every backend invocation a dedicated session/process group and terminates that complete owned group before returning 130.
-
-The first multi-backend hosted gate, CI 885, did not execute a lifecycle assertion. It failed while the three new modules tried to build the historical status-only comparison using the old PR #204 patch under a stricter `--fuzz=0` rule. The historical test immediately before them applied the same patch under its original policy and passed.
-
-The repaired packet now materializes that historical status-only predecessor through an exact pinned one-occurrence replacement. The new process-group product patch remains the only patch applied with zero fuzz.
-
-## Explain like I'm five
-
-The driver stopped the manager and reported the right cancellation number, but the manager's workers kept going.
-
-The repair puts the manager and workers in one labelled room and stops the room. The first hosted test failed before opening any room because the test copied an old comparison with a stricter ruler than the original comparison used. The repair fixes the copied comparison, not the room mechanism.
-
-## Canonical records
-
-- owning issue: #306;
-- canonical PR: #313;
-- imported `coverage.py` blob: `9a522484aef05deae514a98e4b6adf5feb6c886d`;
-- imported `run_null.sh` blob: `e0a8c106f9d3d636baea286d2ab33834748dffc9`;
-- merged status-only history: PR #204 and `investigations/mmdebstrap-coverage-parent-sigint`;
-- strict historical-fixture patch: `0000-materialize-status-only.patch`;
-- candidate patch: `0001-own-backend-process-group.patch`;
-- null regression: `tests/test_mmdebstrap_coverage_process_group.py`;
-- QEMU-wrapper regression: `tests/test_mmdebstrap_coverage_qemu_process_group.py`;
-- sudo regression: `tests/test_mmdebstrap_coverage_sudo_process_group.py`;
-- reusable note: `notes/processes/callers-must-own-complete-backend-process-groups.md`.
+The selected candidate creates a dedicated session/process group for every backend invocation, sends TERM to that owned group, waits for the wrapper, and then returns 130.
 
 ## Exact caller boundary
 
-The imported driver uses:
+Imported source:
 
 ```python
 proc = subprocess.Popen(argv)
@@ -50,9 +28,9 @@ except KeyboardInterrupt:
     break
 ```
 
-The merged status-only repair replaces `break` with a diagnostic and `SystemExit(130)`. It keeps immediate-wrapper `terminate()`.
+Merged status-only behavior replaces `break` with a diagnostic and `SystemExit(130)`. It retains immediate-wrapper termination.
 
-The group-owned candidate uses:
+Selected candidate:
 
 ```python
 proc = subprocess.Popen(argv, start_new_session=True)
@@ -68,118 +46,100 @@ except KeyboardInterrupt:
     raise SystemExit(130)
 ```
 
-## Three-way result
+The caller chooses the backend and creates one operation identity before the backend executable runs. This avoids backend-specific descendant discovery while descendants remain in the selected group.
 
-For parent-PID-only SIGINT:
+## Three-way lifecycle result
 
-| Variant | Parent status | Live backend work | Later work |
-| --- | ---: | ---: | --- |
-| imported baseline | 0 | yes | yes after release |
-| merged status-only semantics | 130 | yes | yes after release |
-| caller-owned group | 130 | no | no |
+Under parent-PID-only SIGINT:
 
-Correct status and complete operation cleanup are distinct requirements.
+| Variant | Final driver status | State before negative-control release | Later work |
+| --- | ---: | --- | --- |
+| imported baseline | 0 | backend remains live | yes after release |
+| merged status-only semantics | 130 | backend remains live | yes after release |
+| caller-owned group | 130 | no live in-group backend | no |
 
-## Foreground-group boundary
+For the QEMU negative controls, the coverage driver remains blocked in `proc.wait()` while the foreground operation survives. The fixture records that live state, releases the operation, and then observes final status 0 or 130. The candidate exits 130 without a release because the complete modeled operation has already stopped.
 
-The imported null topology is already clean when SIGINT reaches the complete foreground group:
-
-```text
-wrapper status: -2
-live group members: 0
-later work: absent
-```
-
-The defect is supervisor-targeted parent-only delivery, not ordinary terminal group delivery.
+Correct status, bounded driver settlement, and complete backend cleanup are separate requirements.
 
 ## Backend evidence
 
 ### Exact null backend
 
-The exact `run_null.sh` pipeline includes nested shells, `tee`, the status reader, and generated `test.sh`. Immediate-wrapper TERM leaves the pipeline alive and reparented; group TERM stops it.
+The exact `run_null.sh` topology includes nested shells, `tee`, the status reader, and generated `test.sh`.
 
-### Exact QEMU wrapper model
+- imported baseline: final status 0 after the surviving pipeline is released;
+- status-only predecessor: final status 130 after release;
+- group candidate: status 130, no live pipeline, no later work;
+- ordinary candidate run: status 0 and clean group teardown.
 
-The fixture retains exact `run_qemu.sh`, including its background output follower, cleanup, and guest-result path. Only `timeout --foreground debvm-run ...` is replaced by a held disposable worker.
+A separate foreground-group Ctrl-C control is already clean on the imported null topology. The defect is supervisor-targeted parent-only delivery.
 
-Baseline and status-only variants leave the foreground operation alive. The group candidate stops it. Unsignaled guest-status success remains 0.
+### QEMU wrapper model
+
+The fixture retains exact `run_qemu.sh`, including its output follower, cleanup, and guest-result path. Only the expensive `timeout --foreground debvm-run ...` payload is replaced with a held disposable worker.
+
+- baseline and status-only variants leave the foreground operation live and keep the coverage driver blocked until release;
+- the candidate stops the wrapper operation and exits 130;
+- the unsignaled candidate preserves guest-status success and complete cleanup.
+
+This proves wrapper/group inheritance for the modeled operation. It does not execute real QEMU or debvm.
 
 ### Actual passwordless sudo path
 
-`Needs-Root: true` selects exact `run_null.sh SUDO`. When `sudo -n true` is available, the regression uses actual sudo, requires UID 0, and requires the wrapper, sudo command, and root worker to share the observed group.
+When `sudo -n true` succeeds, the repository regression uses exact `run_null.sh SUDO` and actual sudo. It requires the wrapper, sudo command, and UID-0 worker to remain in the observed operation group.
 
-A local Sudo 1.9.16p2/use_pty negative control had seven members in the operation group. Killing only the wrapper left six alive; after FIFO release the root test performed later work.
+- baseline and status-only variants leave privileged work alive until release;
+- the candidate returns 130 with no live in-group privileged work;
+- the unsignaled candidate succeeds and cleans the group;
+- a hosted group escape fails the test rather than silently upgrading the claim.
 
-The repository test skips only when passwordless sudo is unavailable. A hosted group escape is a test failure.
+The module skips only when passwordless sudo is unavailable.
 
-## Terminal compatibility
+## Exact repository gate
 
-A pseudo-terminal comparison found:
+Linux Fieldwork CI `30632491641`, job `91161937871`, passed on exact head `e90fc438f530f7bd78ffd6fd1ba24c665bd96913`:
 
-- a `start_new_session=True` child retained inherited terminal-file-descriptor input/output but had no controlling-terminal association;
-- a same-session background process group stopped on terminal input.
+- validated two retained patch files and three hunks;
+- compiled Python tools and tests;
+- ran 359 tests in 167.224 seconds;
+- all 359 passed;
+- null baseline, status-only, candidate, foreground-group, and unsignaled controls passed;
+- QEMU baseline, status-only, candidate, and unsignaled controls passed;
+- sudo baseline, status-only, candidate, and unsignaled controls passed;
+- shell syntax and command-help checks passed.
 
-The dedicated session is the stronger tested isolation boundary. Direct `/dev/tty` behavior remains outside scope.
+## Carrier repair history
 
-## CI 885 failure classification
+Three earlier CI generations failed before or around the new controls:
 
-Run `30628112270` / 885 failed in `setUpClass` for all three new modules.
+- CI 885: historical status-only fixture used an incompatible strict patch policy;
+- CI 906: candidate patch declared incorrect hunk counts;
+- CI 921: corrected counts still retained stale source context;
+- CI 927: all candidate positive controls passed, while QEMU negative controls deadlocked because the fixture waited for the driver before releasing the deliberately surviving operation.
 
-The first failing operation was construction of the historical status-only variant:
+Those carrier defects were repaired without changing the product mechanism or expected lifecycle outcomes. CI 931 is the first complete green repository receipt.
 
-```text
-patch --fuzz=0 -p1 -i 0001-fail-after-parent-sigint.patch
-```
+## Regression discipline
 
-No null, QEMU-wrapper, or sudo lifecycle assertion executed. The product mechanism was not contradicted.
-
-The existing historical `test_mmdebstrap_coverage_parent_sigint` immediately before the new modules applied the retained PR #204 patch under its original patch policy and passed.
-
-## Fixture repair
-
-The historical comparison input is now built from the pinned imported source through one exact block replacement:
-
-```python
-old = """except KeyboardInterrupt:
-    proc.terminate()
-    proc.wait()
-    break
-"""
-new = """except KeyboardInterrupt:
-    proc.terminate()
-    proc.wait()
-    print("interrupted by SIGINT", file=sys.stderr)
-    raise SystemExit(130)
-"""
-```
-
-The null module requires `source.count(old) == 1` before replacement.
-
-QEMU and sudo modules use the test-only zero-context `0000-materialize-status-only.patch`, which changes only the pinned `break` line into the same two status-only lines.
-
-The candidate `0001-own-backend-process-group.patch` still applies with `--fuzz=0`. Historical PR #204 files remain unchanged.
-
-## Regression cleanup discipline
-
-All three modules:
+The three modules:
 
 - use file-backed logs so escaped descendants cannot hold assertion pipes open;
-- account through Linux `/proc` and distinguish live processes from zombies;
-- preserve negative-control survivors until later work is recorded;
-- register cleanup for the driver session and every discovered backend group;
-- permit TERM-to-KILL escalation only inside fixture teardown;
-- avoid imported `TestCase` duplication;
-- compile all source variants;
+- inspect Linux `/proc` and distinguish live members from zombies;
+- retain negative-control survivors until their state and later work are recorded;
+- register teardown for the driver session and discovered backend group;
+- permit TERM-to-KILL escalation only in fixture teardown;
+- compile every source variant;
 - retain unsignaled successful execution.
 
 ## Compatibility and limits
 
-The process group does not own descendants that call `setsid()` or create another group. TERM-ignoring work can still block product `wait()`. Product escalation, remote supervisors, real QEMU/debvm, mounts, network, package operations, and `/dev/tty`-specific debug behavior remain outside scope.
+The selected group does not own descendants that call `setsid()`, create another group, or delegate to a remote supervisor. TERM-ignoring descendants can still block product `wait()`. Product escalation, real QEMU/debvm, mounts, network, package operations, other operating systems, and `/dev/tty`-specific behavior remain outside scope.
 
-The QEMU model proves wrapper/group inheritance, not real QEMU argument behavior. The sudo model records the available sudo configuration rather than assuming every sudoers policy is identical.
+The dedicated session retained inherited terminal file-descriptor I/O in the focused PTY comparison. Direct controlling-terminal behavior remains separate.
 
-## Next transition
+## Exact next transition
 
-Create one clean current-main nine-file source generation, run repository CI, and classify the first failing owner if any. A green unchanged gate permits review-ready promotion. No source conclusion is promoted from CI 885.
+Complete-diff review the nine-file generation and obtain one eligible independent acceptance. The green receipt supports `delivery-gate-ready`; it does not authorize merge, release, deployment, credentials, private-data access, spending, or public upstream interaction.
 
 Internal Linux Fieldwork work only. External contact authorized: `false`.
