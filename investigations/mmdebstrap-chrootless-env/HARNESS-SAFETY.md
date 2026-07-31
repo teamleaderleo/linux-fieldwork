@@ -8,11 +8,12 @@ Tracking: issue #130. Related product work: issues #40 and #69, PRs #74 and #109
 
 The reusable chrootless environment probe can recursively remove below any caller-selected `RUNNER_TEMP` except `/`, and it changes the imported `mmdebstrap` executable mode in the checkout. This candidate accepts only named disposable parent families, validates the actual derived deletion target, and runs a preserved temporary source copy.
 
-Review repaired three evidence holes:
+Review repaired four evidence holes:
 
 1. preserve the exact incoming source mode, bytes, and Git status instead of demanding a globally clean checkout;
 2. reject overlap between the derived `$runtime_parent/mmdebstrap-chrootless-env` target and the repository or home in either direction;
-3. regenerate the retained unified diff from the exact source and require zero-fuzz application.
+3. regenerate the retained unified diff from the exact source and require zero-fuzz application;
+4. anchor the path-specific Git-state receipt at `repo_root`, so launching the reusable harness from a repository subdirectory cannot silently check the wrong path.
 
 ## Explain like I'm five
 
@@ -20,7 +21,7 @@ The test needs a sandbox it can throw away. Today the caller can point it near i
 
 The repair accepts only known trash areas, checks the exact box it will delete, and makes a photocopy of the program before marking it executable. At the end, the original must look exactly as it did at the beginning.
 
-The repair instructions must also fit the exact program. “Close enough” patching is rejected.
+The repair instructions must also fit the exact program. “Close enough” patching is rejected. The final receipt asks Git about the project from the project root, even if the person launched the test from a room deeper inside the checkout.
 
 ## Why care
 
@@ -29,6 +30,8 @@ A reusable probe should be safe when a person runs it outside GitHub Actions. A 
 Checking only the parent is insufficient. A checkout at `/tmp/mmdebstrap-chrootless-env/repository` makes `/tmp` look safe even though the fixed runtime target is an ancestor of the checkout and `rm -rf` would erase it.
 
 A blanket clean-tree requirement creates another problem: it refuses a checkout that already contains deliberate local work. Exact before/after preservation is the stronger invariant.
+
+A path-specific Git receipt that is evaluated relative to the caller's current directory is weaker than it looks. From a nested directory, `upstream/mmdebstrap/mmdebstrap` can resolve to a nonexistent nested path and return the same empty value before and after. `git -C "$repo_root"` makes the receipt name the intended checkout path.
 
 A malformed or fuzzy patch carrier can make every focused assertion fail before the candidate exists. That is a carrier failure, not evidence against the safety design.
 
@@ -56,6 +59,7 @@ The normal hosted path was disposable, so retained product evidence remains usef
 - copies imported `mmdebstrap` with mode preservation into `$runtime/source/mmdebstrap`;
 - marks and executes only the runtime copy;
 - snapshots original mode, Git blob hash, and path-specific Git status;
+- evaluates the Git status path with `git -C "$repo_root"`;
 - requires all three values to match before reporting success.
 
 ## Why this approach
@@ -72,7 +76,7 @@ Mode, content hash, and Git status cover three distinct outcomes:
 - file bytes changed;
 - the checkout's tracked/untracked state changed.
 
-Comparing before and after supports both a clean checkout and deliberate pre-existing local modifications.
+Comparing before and after supports both a clean checkout and deliberate pre-existing local modifications. Anchoring the status command at `repo_root` makes that invariant independent of the caller's working directory.
 
 ## Historical precedent
 
@@ -91,6 +95,8 @@ Comparing before and after supports both a clean checkout and deliberate pre-exi
 - rejects root, repository, home, and `/tmp/../etc`;
 - creates disposable Git repositories both inside the fixed runtime and containing it, and requires rejection;
 - creates home paths both inside and equal to the fixed runtime, and requires rejection;
+- runs check mode from a nested disposable repository directory;
+- requires both Git-state commands to use `git -C "$repo_root"` and forbids the caller-relative spelling;
 - requires preserved-source copying and runtime execution;
 - forbids chmod of the imported source;
 - requires mode, content, and Git-state snapshots and comparisons;
@@ -114,15 +120,17 @@ Inspection found stale hunk starts and two incorrect hunk line counts in the han
 
 The repair regenerated the unified diff from that exact source, verified all declared hunk counts, applied it locally with `patch --fuzz=0`, and made zero-fuzz application part of every focused test setup. This changes the carrier, not the safety policy.
 
+The current-main restack initially passed Linux Fieldwork CI `30623744286` / 831 on head `02140c5af699fd5d5ddcd9b75e7d4663c2aabff0`. Complete review then found the caller-relative Git status receipt described above. The source-copy and path-authority mechanism remained unchanged; fresh exact-head repository and dedicated gates are required after the receipt repair.
+
 ## Evidence boundary
 
 The focused test exercises the safety classifier and patch contract with real canonical paths and disposable Git repositories. It does not run the full package transaction, race a hostile process between validation and deletion, or prove behavior on non-GNU systems lacking the same `realpath`, `stat`, `patch`, and Git behavior.
 
-The earlier dedicated workflow validates the safety direction at the predecessor head. Fresh exact-head repository and dedicated workflows remain required after the carrier repair.
+A nested-cwd check proves repository discovery and receipt spelling, not a complete package run from every possible subdirectory.
 
 ## Disposition
 
-`REPAIR` until fresh exact-head CI and the dedicated chrootless environment workflow both execute on the regenerated zero-fuzz carrier. A green result makes the patch suitable for direct application or current-main extraction.
+`REPAIR` until fresh exact-head CI and the dedicated chrootless environment workflow both execute on the repository-root-anchored receipt carrier. A green result makes the patch suitable for direct application or current-main extraction.
 
 ## Authority
 
