@@ -1,6 +1,6 @@
 # Signals during update_cache cleanup
 
-State: `current-main successor — exact-head execution pending`
+State: `review complete — final record-only exact-head gate pending`
 
 ## TL;DR
 
@@ -20,6 +20,8 @@ existing ordinary or explicit-signal failure
 > success
 ```
 
+The complete four-file candidate passed exact-head Linux Fieldwork CI 911 at `d33871b6c05947384d1c235c653a40b57772d82d`. This record-only update preserves that receipt and requires one final unchanged-head gate before disposition.
+
 ## Explain like I'm five
 
 The worker starts putting away its temporary APT desk. The landed baseline unlocks the stop buttons before the desk is clean. A button press can knock the worker over, or a second button can replace the first stop reason.
@@ -35,15 +37,18 @@ The PR #286 evidence remains authoritative for signals delivered before cleanup.
 ## Exact current carrier
 
 - landed baseline: PR #286, merge `782774b01002abf37878d834a54d0bbf8b226397`;
+- canonical landed record refresh: PR #322, merge `9245dae2b7391b0f60b90c23ebdd1aca55aeb78c`;
 - historical stacked successor: PR #305 at `0a6b9cc404bcc5e463964be7cbcf74d710528d86`;
 - clean current-main carrier: PR #324;
 - branch: `repair/make-mirror-update-cache-cleanup-signals-current-main`;
-- base: the PR #286 merge on `main`;
+- reviewed executable head: `d33871b6c05947384d1c235c653a40b57772d82d`;
+- reviewed base: `9245dae2b7391b0f60b90c23ebdd1aca55aeb78c`;
+- relation at execution: six commits ahead, zero behind, merge base equal to current `main`;
 - direct unit: this record, patch 0002, the focused cleanup-signal matrix, and the rerun/precedence matrix;
 - imported source: unchanged;
 - external contact: unauthorized and none.
 
-PR #305 remains historical construction evidence. It replayed the squashed PR #286 files when compared to `main`; PR #324 transfers its three successor blobs and adds one review-driven regression.
+PR #305 remains historical construction evidence. It replayed the squash-merged PR #286 files when compared to `main`; PR #324 transfers its three successor blobs and adds one review-driven regression.
 
 ## Repair mechanism
 
@@ -80,16 +85,59 @@ Its controls require:
 
 The added module imports the existing test module rather than inheriting its `TestCase`, so repository discovery does not duplicate the original matrix. Its class setup initializes the shared exact-source fixture explicitly.
 
+## Executed evidence
+
+Linux Fieldwork CI `30630113839` / 911 completed successfully on exact head `d33871b6c05947384d1c235c653a40b57772d82d`.
+
+The hosted merge-ref gate established:
+
+- changed-patch validation: one patch file and one hunk, valid;
+- Python compilation: success;
+- repository discovery: 303 tests in 161.326 seconds, success;
+- shell syntax and command-help checks: success;
+- the five original cleanup-time signal tests: all passed;
+- the three review-driven rerun/precedence tests: all passed;
+- existing PR #286 cleanup-failure, signal matrix, ownership, and rerun controls: all passed once under ordinary repository discovery.
+
+The exact new tests proved:
+
+- predecessor ordinary-cleanup TERM and explicit TERM-then-INT failure modes remain distinguishing controls;
+- repaired INT/QUIT/TERM statuses are 130/131/143;
+- later handled signals do not replace the selected result;
+- host failure 42 remains ahead of a cleanup-time signal;
+- cleanup-time signal remains ahead of cleanup failure 74;
+- explicit TERM remains ahead of cleanup failure 74 and later INT;
+- unsignaled cleanup failure remains 74;
+- immediate unsignaled rerun succeeds after a cleanup-time signal;
+- repaired cleanup completes once, removes APT state, and omits later work.
+
+## Complete-diff review
+
+The current direct unit contains four files and leaves imported `make_mirror.sh` unchanged. Review covered:
+
+- first-signal recording and later-signal ignore policy;
+- trap installation and EXIT-clearing order;
+- ordinary, explicit-signal, cleanup-signal, and cleanup-failure precedence;
+- zero-fuzz two-patch composition and complete `/bin/sh -n`;
+- predecessor negative controls;
+- immediate clean rerun;
+- test process ownership, bounded waits, disposable state, and duplicate-discovery avoidance;
+- exact current-main relation and evidence limits.
+
+No remaining source-visible defect was identified in the bounded candidate.
+
 ## Evidence boundary
 
 The regressions use real shell processes, signals, disposable files, and a deterministic cleanup barrier. They do not run APT, network downloads, a mirror loop, root operations, or process-group delivery.
 
 They assume cleanup is bounded and should complete after the first handled signal. TERM-to-KILL escalation, HUP, hostile descendants, and permanently blocking cleanup remain outside the repair.
 
-The attempted local clone for direct execution failed at DNS resolution before repository retrieval. That environment failure is not candidate evidence; hosted exact-head CI remains the execution authority.
+The attempted local clone for direct execution failed at DNS resolution before repository retrieval. That environment failure is not candidate evidence; hosted exact-head CI is the execution authority.
 
 ## Disposition
 
-PR #324 must receive exact-head repository CI and complete four-file review. A green unchanged head may advance this bounded internal successor to final human check or local landing.
+`READY FOR FINAL HUMAN CHECK` after one green unchanged-head gate for this record-only update.
+
+The human decision is whether to merge this bounded internal evidence-and-patch carrier. It does not authorize or perform any upstream interaction.
 
 Internal Linux Fieldwork work only. External contact authorized: `false`.
