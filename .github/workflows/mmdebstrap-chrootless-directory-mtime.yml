@@ -4,11 +4,6 @@ on:
   pull_request:
     paths:
       - 'investigations/mmdebstrap-chrootless-directory-mtime/**'
-      - 'tests/test_mmdebstrap-chrootless-directory-mtime.py'
-      - 'tests/test_mmdebstrap-chrootless-directory-mtime-candidate.py'
-      - 'tests/test_mmdebstrap-chrootless-directory-mtime-patch-context.py'
-      - 'tests/test_mmdebstrap-chrootless-directory-mtime-product-probe.py'
-      - 'tests/test_mmdebstrap-chrootless-directory-mtime-real-probe.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime_patch_context.py'
