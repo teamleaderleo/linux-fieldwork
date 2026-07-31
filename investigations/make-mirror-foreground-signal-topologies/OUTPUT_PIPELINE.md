@@ -10,7 +10,7 @@ The output-capturing command substitution in `update_cache()` does not make expl
 
 A final-stage PID alone is insufficient: killing it leaves upstream stages alive and the shell job can remain blocked. A complete pipeline launched in an isolated session can instead be stopped as one owned group. A private capture file plus assignment only after status 0 preserves the target shell's output and final-stage-status rules, rejects partial output on failure or cancellation, and reruns cleanly.
 
-This keeps the composed parent-worker plus worker-child direction technically viable. It also proves that the source needs a distinct output-capture primitive rather than one universal child helper.
+This keeps a composed parent-worker plus worker-child implementation technically viable. It also proves that the source needs a distinct output-capture primitive rather than one universal child helper. The canonical investigation retains the result but stops without a source patch because the complete mechanism is disproportionate without measured harmful latency.
 
 ## Explain like I'm five
 
@@ -48,7 +48,7 @@ python3 tests/test_make_mirror_output_capture_pipeline_ownership.py -v
 python3 tests/test_make_mirror_output_capture_pipeline_contract.py -v
 ```
 
-The new contract matrix passed 4/4 locally. Hosted exact-head execution remains required.
+The contract matrix passed 4/4 locally. Hosted exact-head execution remains the authoritative complete repository gate.
 
 ## Naive final-PID ownership: rejected
 
@@ -132,26 +132,21 @@ The target `/bin/sh` uses the final pipeline stage's status. A cancellation repa
 
 ## Design consequence
 
-The command-substitution boundary no longer makes the source-level ownership direction lose.
+The command-substitution boundary is technically solvable.
 
-The minimum source design still needs three separate primitives:
+A complete source implementation still needs:
 
 1. parent ownership of each `update_cache` pipeline worker;
-2. worker ownership of simple foreground commands;
-3. worker ownership of output-capturing pipelines.
+2. worker ownership of simple foreground commands and fallback attempts;
+3. worker ownership of output-capturing pipelines;
+4. first-signal retention across every launch and PID registration;
+5. cleanup and publication precedence.
 
-The output-capture primitive additionally needs:
-
-- a private capture path below an already-owned runtime;
-- an isolated process group or equivalent all-stage supervisor;
-- first-signal retention across launch and PID registration;
-- explicit wait and status preservation;
-- publication only after status 0;
-- cleanup precedence and immediate rerun.
+The output-capture primitive additionally needs a private capture path, an isolated process group or all-stage supervisor, explicit wait, status preservation, publication only after status 0, and immediate rerun.
 
 ## Compatibility boundary
 
-The executed group model depends on Linux/GNU `setsid` and an external `kill` accepting a negative process-group ID. The repository does not yet prove those dependencies across every supported mirror host.
+The executed group model depends on Linux/GNU `setsid` and an external `kill` accepting a negative process-group ID. The repository does not prove those dependencies across every supported mirror host.
 
 A dedicated all-stage supervisor remains an alternative. It would make stage ownership explicit without shell job assumptions, at the cost of a helper-language and API boundary.
 
@@ -159,20 +154,11 @@ A dedicated all-stage supervisor remains an alternative. It would make stage own
 
 The matrices use real `/bin/sh`, pipelines, sessions, signals, waits, files, and processes. They do not run APT, parse real index targets, execute the complete mirror loop, exercise INT/QUIT or competing signals, close launch-registration windows, test cleanup-failure precedence, or prove the complete two-level owner chain.
 
-## Next discriminator
+## Stop relation
 
-Prototype the fallback install chain under the same active-child contract:
+This model is retained as evidence that a future prompt-cancellation repair is possible. It is not independently promoted into a source patch.
 
-```text
-first attempt fails ordinarily -> fallback runs
-first attempt succeeds -> fallback omitted
-first attempt is cancelled -> fallback must not run
-second attempt status -> authoritative
-cleanup failure -> secondary to ordinary failure or signal
-immediate rerun -> clean
-```
-
-Then combine parent-worker ownership, simple-child ownership, and output-capture ownership in one reduced source-shaped model before selecting a retained patch.
+Reopen it only if the canonical investigation reopens after measured harmful cancellation latency, explicit acceptance of the required dependencies, or contradictory lifecycle evidence.
 
 ## Authority
 
