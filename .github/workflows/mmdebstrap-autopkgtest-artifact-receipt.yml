@@ -62,10 +62,15 @@ jobs:
           import pathlib
           import sys
 
-          receipt = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          receipt_path = pathlib.Path(sys.argv[1])
+          receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
           focus = receipt["focus_case"]
           console = receipt["console"]
           classifier = console["classifier"]
+          artifact_root = pathlib.Path(receipt["artifact"]["root"])
+          console_lines = (artifact_root / console["path"]).read_text(
+              encoding="utf-8", errors="replace"
+          ).splitlines()
           print(f"focus_state={focus['state']}")
           print(f"focus_before_first_failure={focus['before_first_failure']}")
           print(
@@ -76,6 +81,13 @@ jobs:
               "focus_occurrences="
               f"{json.dumps(focus['occurrences'], sort_keys=True)}"
           )
+          for occurrence in focus["occurrences"]:
+              line_number = occurrence["line"]
+              start = max(0, line_number - 4)
+              end = min(len(console_lines), line_number + 3)
+              print(f"focus_context_line={line_number}")
+              for index in range(start, end):
+                  print(f"{index + 1}: {console_lines[index]}")
           print(f"first_failure_phase={classifier['phase']}")
           print(f"first_failure_signal={classifier['first_failure_signal']}")
           print(
@@ -91,6 +103,7 @@ jobs:
               f"{console['first_wrapper_failure_line']}"
           )
           print(f"ordering_failure_line={console['ordering_failure_line']}")
+          print(f"phase_order_receipt={receipt['phase_order_receipt']}")
           print("failure_context:")
           for line in console["failure_context"]:
               print(line)
