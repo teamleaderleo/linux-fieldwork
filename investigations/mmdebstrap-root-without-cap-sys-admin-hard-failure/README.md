@@ -1,55 +1,80 @@
-# Hook-free hard-failure scheduling with fixture completeness
+# Hook-free hard-failure scheduling with phase-scoped fixture ownership
 
-State: `current-main focused carrier — fresh gate pending`
+State: `mechanism green on current-main merge ref — final documentation head pending`
 
 ## TL;DR
 
-Run the mmdebstrap capability case without host APT hooks while preserving ordinary failures as hard failures. The focused phase must include `create-directory` before `root-without-cap-sys-admin`, because the latter compares its archive listing against `tar1.txt` produced by the former.
+Run `root-without-cap-sys-admin` without host APT hooks while preserving ordinary failures as hard failures.
+
+The focused phase needs `create-directory` first because it creates `tar1.txt`. The broad host-hook phase also needs to run `create-directory` because its consumers execute with a different wrapper and hook set. The producer is therefore an explicit focused prerequisite, not a hook-free-only test.
 
 ## Why care
 
-The capability case deliberately removes `CAP_SYS_ADMIN`. Host setup that needs that capability prevents the product question from running. Moving one case into a focused phase solved that conflict but exposed an ordered-suite dependency when run 939 selected the consumer alone.
+A persistent fixture records the context that created it. Reusing a hook-free archive listing in a host-hook phase produces a convincing comparison failure even when both product commands succeed.
 
-A focused selector is complete only when it carries the exact prerequisite it removes from normal suite order.
+Each execution phase must regenerate the baseline used by its own consumers.
 
 ## Candidate contract
 
 - accept `Needs-Hook-Free-APT-Config` metadata;
-- mark both `create-directory` and `root-without-cap-sys-admin`;
-- preserve their original producer-before-consumer order;
-- skip that class while host APT hooks are active;
-- execute it later with `CMD=mmdebstrap` and without `sourcesfilter` or `file-mirror-automount`;
+- mark only `root-without-cap-sys-admin` as the hook-free-only consumer;
+- fail closed when no hard consumer is selected;
+- prepend exact prerequisite `create-directory` to the focused invocation;
+- execute focused order `create-directory root-without-cap-sys-admin`;
+- allow broad coverage to execute `create-directory` normally;
 - preserve child statuses 1 and 2;
-- map GNU timeout status 124 to neutral 77;
+- map timeout status 124 to neutral 77;
 - return 77 when the time budget is exhausted;
-- fail 1 when no test is selected;
-- preserve selector-command failures;
 - apply the retained patch with zero fuzz and zero offset;
 - retain the original capability drop, `/proc/self/fd`, tar, and archive assertions.
 
 ## Exact fixture relationship
 
-`tests/create-directory` writes:
+Focused and broad `create-directory` executions write:
 
 ```sh
 tar -C /tmp/debian-chroot --one-file-system -c . | tar -t | sort >tar1.txt
 ```
 
-`tests/root-without-cap-sys-admin` later reads:
+The capability and later broad consumers read:
 
 ```sh
-tar -tf /tmp/debian-chroot.tar | sort | diff -u tar1.txt -
+diff -u tar1.txt -
 ```
 
-The consumer does not read `pkglist.txt`; that file is outside this exact prerequisite.
+The filename is shared; its valid identity is phase-specific.
 
-## Executed evidence
+## Real sid provenance
 
-PR #72 run `30633385029` / 939 cleared carrier preflight and reached the real Debian sid package case. `/usr/bin/mmdebstrap` completed after dropping `CAP_SYS_ADMIN`; the phase then failed because `tar1.txt` was absent. This is fixture-order evidence, not an mmdebstrap product failure.
+PR #72 run 939 proved that the capability command succeeded and then lacked `tar1.txt`.
 
-Run `30636315846` / 968 stopped before package execution because the first producer hunk used stale trailing context. That was a carrier-preflight failure with no product claim. The hunk now matches `Test: unshare-as-root-user` exactly.
+Run 974 executed the focused producer and capability consumer together; both passed. The later broad phase skipped `create-directory`, then `unshare-as-root-user` completed mmdebstrap and failed only because its host-hook archive contained three APT configuration files absent from the retained hook-free baseline.
 
-The live integration carrier later passed its current repository gate on head `fe84899d7c4de599038c41ad13810b82f832baf6`, validating four patch files, nine hunks, and the complete focused controls before entering the real sid package matrix.
+Exact broad-only paths:
+
+```text
+./etc/apt/preferences.d/90autopkgtest
+./etc/apt/sources.list.d/autopkgtest.list
+./etc/apt/sources.list.d/debian.sources
+```
+
+This is phase-scoped fixture evidence, not a product failure.
+
+## Current-main execution
+
+Mechanism head `07426fe6d7dbd66f2d4784838e19d7356afe726e` passed Linux Fieldwork CI `30639091371` / 992 on merge ref `c414feb1f5a52f716e8d268d6f17a4d2f6c567b7` against main `90170b1940579ec47175c6a04df1d4defdc6bab8`.
+
+The run:
+
+- validated one patch file and four hunks;
+- compiled all Python tools and tests;
+- retained 369 of 392 discovered tests after removing 23 exact inherited duplicates;
+- passed all 369 retained tests;
+- ran all ten focused phase-contract tests and all three selector/time/status guards exactly once;
+- proved consumer-only metadata, broad producer eligibility, explicit producer-first focused order, empty-selection failure, exhausted-budget neutrality, hard child status, timeout mapping, zero-fuzz/zero-offset application, complete source syntax, and imported capability invariants;
+- passed repository shell syntax and command-help checks.
+
+That receipt owns the executable mechanism. The current documentation-only head must receive one final exact-head repository gate before promotion.
 
 ## Four-file fence
 
@@ -58,10 +83,16 @@ The live integration carrier later passed its current repository gate on head `f
 - `tests/test_mmdebstrap_hook_free_hard_failure.py`;
 - `tests/test_mmdebstrap_hook_free_hard_failure_guards.py`.
 
-The three executable blobs are byte-identical to PR #72 head `fe84899d7c4de599038c41ad13810b82f832baf6`.
+The three executable blobs are byte-identical to PR #72 head `c0d75729432c5b7a380529eb9bdd40008c605264`.
 
-## Evidence boundary
+## Complete review boundary
 
-This focused carrier proves scheduling, fixture completeness, status classification, exact patch application, and imported-source invariants. PR #72 remains the disposable sid integration carrier and owns real package behavior.
+The focused selector has one metadata-selected consumer and one explicit prerequisite. The guard fixture emits only that consumer, while the retained source assignment constructs the exact producer/consumer pair. Checking the final two timeout arguments is therefore sufficient for this fixed selector fixture; stricter arbitrary-inventory validation remains optional hardening, not a blocker.
 
-No imported source is modified on this branch. External contact is unauthorized and none is included.
+This carrier proves scheduling, fixture regeneration policy, status classification, exact patch application, and imported-source invariants. PR #72 owns real Debian sid package execution and the next independent failure.
+
+No imported source is modified. External contact is unauthorized and none is included.
+
+## Disposition
+
+`FINAL DOCUMENTATION HEAD — HOLD FOR EXACT-HEAD CI, UNCHANGED FOUR-FILE REVIEW, AND CURRENT-MAIN RELATION`.
