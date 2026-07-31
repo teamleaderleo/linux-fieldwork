@@ -144,6 +144,31 @@ exec /usr/bin/env "$@"
 EOF
 chmod 0755 "$runtime/fake-bin/env"
 
+assert_version_probe_only() {
+  local log_file=$1
+  grep -Fx -- '--version' "$log_file" >/dev/null
+  if grep -F -- '-i PATH=' "$log_file" >/dev/null; then
+    echo "unexpected apt-managed sanitizer launch through caller PATH: $log_file" >&2
+    return 1
+  fi
+  if grep -vFx -- '--version' "$log_file" | grep -q .; then
+    echo "unexpected caller-path env invocation: $log_file" >&2
+    return 1
+  fi
+}
+
+assert_version_probe_and_sanitizer() {
+  local log_file=$1
+  grep -Fx -- '--version' "$log_file" >/dev/null
+  grep -F -- '-i PATH=' "$log_file" >/dev/null
+  if grep -vFx -- '--version' "$log_file" \
+    | grep -vF -- '-i PATH=' \
+    | grep -q .; then
+    echo "unexpected caller-path env invocation class: $log_file" >&2
+    return 1
+  fi
+}
+
 make_hook() {
   local package_dir
   package_dir="$(dirname "$package")"
@@ -224,10 +249,12 @@ grep -Fx 'configured_or_caller_command_resolved=yes' \
 grep -Fx 'source=fake-bin' \
   "$result_dir/inner-mutation-tainted-maintainer-script/command.txt"
 
-[[ ! -s "$result_dir/candidate-tainted-outer-env.log" ]]
+assert_version_probe_only "$result_dir/candidate-tainted-outer-env.log"
+# The clean case has no fake env in PATH, so the log is intentionally empty.
 [[ ! -s "$result_dir/candidate-clean-outer-env.log" ]]
-[[ ! -s "$result_dir/inner-mutation-tainted-outer-env.log" ]]
-grep -F -- '-i PATH=' "$result_dir/outer-mutation-tainted-outer-env.log"
+assert_version_probe_only "$result_dir/inner-mutation-tainted-outer-env.log"
+assert_version_probe_and_sanitizer \
+  "$result_dir/outer-mutation-tainted-outer-env.log"
 
 candidate_tainted_path="$(cat "$result_dir/candidate-tainted-maintainer-script/path.txt")"
 candidate_clean_path="$(cat "$result_dir/candidate-clean-maintainer-script/path.txt")"
@@ -304,25 +331,28 @@ repository_source_unchanged=yes
 candidate_tainted_status=$(cat "$result_dir/candidate-tainted.status")
 candidate_tainted_path=$candidate_tainted_path
 candidate_tainted_fake_inner_command=no
-candidate_tainted_fake_outer_env=no
+candidate_tainted_caller_env_host_probe=version-only
+candidate_tainted_caller_env_sanitizer_launch=no
 candidate_clean_status=$(cat "$result_dir/candidate-clean.status")
 candidate_clean_path=$candidate_clean_path
 inner_mutation_status=$(cat "$result_dir/inner-mutation-tainted.status")
 inner_mutation_path=$inner_path
 inner_mutation_fake_inner_command=yes
-inner_mutation_fake_outer_env=no
+inner_mutation_caller_env_host_probe=version-only
+inner_mutation_caller_env_sanitizer_launch=no
 outer_mutation_status=$(cat "$result_dir/outer-mutation-tainted.status")
 outer_mutation_path=$outer_path
 outer_mutation_fake_inner_command=no
-outer_mutation_fake_outer_env=yes
+outer_mutation_caller_env_host_probe=version-only
+outer_mutation_caller_env_sanitizer_launch=yes
 configured_authority_path=$configured_authority_path
 configured_authority_fake_inner_command=yes
-configured_authority_fake_outer_env=no
+configured_authority_caller_env_sanitizer_launch=no
 empty_dpkg_path_status=$empty_status
 empty_dpkg_path_failed_closed=yes
 empty_dpkg_path_maintainer_script_ran=no
 candidate_mutation_package_sets_equal=yes
-interpretation=apt-managed run_install requires absolute outer env authority and configured inner DPkg::Path while honoring explicit non-empty apt configuration
+interpretation=apt-managed run_install requires absolute sanitizer authority and configured inner DPkg::Path while honoring explicit non-empty apt configuration; host dependency probes remain caller-PATH based and outside this patch boundary
 EOF
 
 cat "$result_dir/summary.txt"
