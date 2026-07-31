@@ -43,7 +43,9 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
             check=False,
             timeout=30,
         )
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        output = completed.stdout + completed.stderr
+        self.assertEqual(completed.returncode, 0, output)
+        self.assertNotIn("fuzz", output.lower())
         return script
 
     def check_parent(
@@ -157,6 +159,21 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
                     completed = self.check_parent(script, parent, home=home)
                     self.assertEqual(completed.returncode, 2, completed.stderr)
                     self.assertIn("home", completed.stderr)
+
+    def test_hosted_temp_allows_normal_home_but_protects_home_below_runtime(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="lf-hosted-home-overlap-") as temporary:
+            script = self.apply_patch(pathlib.Path(temporary))
+            parent = pathlib.Path("/home/runner/work/_temp")
+            runtime = parent / "mmdebstrap-chrootless-env"
+
+            normal = self.check_parent(script, parent, home=pathlib.Path("/home/runner"))
+            self.assertEqual(normal.returncode, 0, normal.stderr)
+
+            for home in (runtime, runtime / "home"):
+                with self.subTest(home=home):
+                    completed = self.check_parent(script, parent, home=home)
+                    self.assertEqual(completed.returncode, 2, completed.stderr)
+                    self.assertIn("hosted runtime containing home", completed.stderr)
 
     def test_candidate_executes_a_preserved_runtime_copy(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
