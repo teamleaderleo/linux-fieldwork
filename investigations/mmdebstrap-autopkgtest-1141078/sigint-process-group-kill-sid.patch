@@ -1,7 +1,7 @@
 diff --git a/tests/sigint-during-customize-hook b/tests/sigint-during-customize-hook
 --- a/tests/sigint-during-customize-hook
 +++ b/tests/sigint-during-customize-hook
-@@ -7,7 +7,7 @@ rm hookstarted
+@@ -7,6 +7,6 @@ rm hookstarted
  # negative PID values choose the whole process group
  pgid=$((-1 * $(ps -p "$pid" -o pgid=)))
 -/bin/kill --signal INT -- "$pgid"

@@ -33,6 +33,11 @@ CAPABILITY_PATCH = (
     / "investigations/mmdebstrap-root-without-cap-sys-admin-hard-failure"
     / "0001-run-hook-free-capability-case-as-hard-failure.patch"
 )
+SIGNAL_PATCH = (
+    REPOSITORY_ROOT
+    / "investigations/mmdebstrap-autopkgtest-1141078"
+    / "sigint-process-group-kill-sid.patch"
+)
 
 
 def extract_mmdebstrap_proxy(testsuite: str) -> str:
@@ -55,7 +60,7 @@ class ReproductionHarnessTest(unittest.TestCase):
             self.script,
         )
         self.assertIn(
-            "autopkgtest mmdebstrap perltidy apt dpkg patch",
+            "autopkgtest mmdebstrap perltidy apt dpkg patch procps dash",
             self.script,
         )
 
@@ -87,29 +92,39 @@ class ReproductionHarnessTest(unittest.TestCase):
         )
         self.assertEqual(self.workflow.count(same_repository_guard), 2)
 
-    def test_installed_command_wrapper_patch_applies_and_proxy_has_pod(self) -> None:
+    def apply_wrapper_patch(self, tree: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                "patch",
+                "--batch",
+                "--forward",
+                "--fuzz=0",
+                "-p1",
+                "-d",
+                str(tree),
+                "-i",
+                str(WRAPPER_PATCH),
+            ],
+            cwd=REPOSITORY_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+
+    def assert_exact_patch_output(self, completed: subprocess.CompletedProcess[str]) -> None:
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        combined = (completed.stdout + completed.stderr).lower()
+        self.assertNotIn("fuzz", combined)
+        self.assertNotIn("offset", combined)
+
+    def test_installed_command_wrapper_patch_applies_exactly_and_proxy_has_pod(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tree = Path(tmp) / "tree"
             destination = tree / "debian/tests"
             destination.mkdir(parents=True)
             shutil.copy2(SOURCE_TESTSUITE, destination / "testsuite")
-            completed = subprocess.run(
-                [
-                    "patch",
-                    "--batch",
-                    "--forward",
-                    "-p1",
-                    "-d",
-                    str(tree),
-                    "-i",
-                    str(WRAPPER_PATCH),
-                ],
-                cwd=REPOSITORY_ROOT,
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=30,
-            )
+            completed = self.apply_wrapper_patch(tree)
             patched = (destination / "testsuite").read_text(encoding="utf-8")
             proxy_path = Path(tmp) / "mmdebstrap-proxy"
             proxy_path.write_text(extract_mmdebstrap_proxy(patched), encoding="utf-8")
@@ -128,7 +143,7 @@ class ReproductionHarnessTest(unittest.TestCase):
                 timeout=30,
             )
 
-        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assert_exact_patch_output(completed)
         self.assertIn("exec '/usr/bin/mmdebstrap', @ARGV", patched)
         self.assertIn('CMD="$AUTOPKGTEST_TMP/mmdebstrap --setup-hook=', patched)
         self.assertNotIn('CMD="./mmdebstrap --setup-hook=', patched)
@@ -147,23 +162,8 @@ class ReproductionHarnessTest(unittest.TestCase):
             destination = tree / "debian/tests"
             destination.mkdir(parents=True)
             shutil.copy2(SOURCE_TESTSUITE, destination / "testsuite")
-            completed = subprocess.run(
-                [
-                    "patch",
-                    "--batch",
-                    "--forward",
-                    "-p1",
-                    "-d",
-                    str(tree),
-                    "-i",
-                    str(WRAPPER_PATCH),
-                ],
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=30,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
+            completed = self.apply_wrapper_patch(tree)
+            self.assert_exact_patch_output(completed)
             patched = (destination / "testsuite").read_text(encoding="utf-8")
             command_match = re.search(r'env CMD="([^"]+)" DEFAULT_DIST=', patched)
             self.assertIsNotNone(command_match)
@@ -223,6 +223,22 @@ class ReproductionHarnessTest(unittest.TestCase):
             ],
         )
 
+    def test_exact_patch_helper_rejects_fuzz_and_offset_and_orders_patches(self) -> None:
+        self.assertIn("apply_exact_patch()", self.script)
+        self.assertIn("patch --batch --forward --fuzz=0", self.script)
+        self.assertIn("(fuzz|offset)", self.script)
+        self.assertIn("zero fuzz and zero offset", self.script)
+
+        calls = [
+            'apply_exact_patch sourcesfilter "$sourcesfilter_patch"',
+            'apply_exact_patch capability "$capability_patch"',
+            'apply_exact_patch override "$override_patch"',
+            'apply_exact_patch signal "$signal_patch"',
+        ]
+        positions = [self.script.index(call) for call in calls]
+        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(len(set(positions)), 4)
+
     def test_sourcesfilter_patch_is_preflighted_applied_and_hashed(self) -> None:
         self.assertTrue(SOURCESFILTER_PATCH.is_file())
         self.assertIn(
@@ -232,7 +248,7 @@ class ReproductionHarnessTest(unittest.TestCase):
         )
         self.assertIn('if [[ ! -f $sourcesfilter_patch ]]', self.script)
         self.assertIn(
-            'patch --batch --forward -p1 -d "$source_tree" -i "$sourcesfilter_patch"',
+            'apply_exact_patch sourcesfilter "$sourcesfilter_patch"',
             self.script,
         )
         self.assertIn('"$source_tree/debian/tests/sourcesfilter"', self.script)
@@ -251,7 +267,7 @@ class ReproductionHarnessTest(unittest.TestCase):
         )
         self.assertIn('if [[ ! -f $capability_patch ]]', self.script)
         self.assertIn(
-            'patch --batch --forward -p1 -d "$source_tree" -i "$capability_patch"',
+            'apply_exact_patch capability "$capability_patch"',
             self.script,
         )
         self.assertIn('"$source_tree/debian/tests/testsuite"', self.script)
@@ -260,6 +276,16 @@ class ReproductionHarnessTest(unittest.TestCase):
         self.assertIn(
             'Test scheduling override: '
             '`0001-run-hook-free-capability-case-as-hard-failure.patch`',
+            self.script,
+        )
+
+    def test_signal_patch_is_preflighted_applied_and_hashed(self) -> None:
+        self.assertTrue(SIGNAL_PATCH.is_file())
+        self.assertIn('if [[ ! -f $signal_patch ]]', self.script)
+        self.assertIn('apply_exact_patch signal "$signal_patch"', self.script)
+        self.assertIn('"$source_tree/tests/sigint-during-customize-hook"', self.script)
+        self.assertIn(
+            'Integration signal override: `sigint-process-group-kill-sid.patch`',
             self.script,
         )
 

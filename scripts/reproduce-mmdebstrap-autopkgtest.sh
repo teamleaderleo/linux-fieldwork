@@ -32,11 +32,29 @@ finish_early() {
     if [[ $status -eq 77 ]]; then
       printf -- '- Classification: `neutral-or-skipped`\n'
     else
-      printf -- '- Classification: `infrastructure-failure`\n'
+      printf -- '- Classification: `carrier-preflight-failure`\n'
     fi
     printf -- '- Preflight reason: `%s`\n' "$reason"
   } >"$run_dir/result.md"
   exit "$status"
+}
+
+apply_exact_patch() {
+  local label=$1
+  local patch_path=$2
+  local stdout_path="$run_dir/$label-patch.stdout"
+  local stderr_path="$run_dir/$label-patch.stderr"
+
+  if ! patch --batch --forward --fuzz=0 -p1 -d "$source_tree" -i "$patch_path" \
+      >"$stdout_path" 2>"$stderr_path"; then
+    return 1
+  fi
+  if grep -Eiq '(^|[^[:alpha:]])(fuzz|offset)([^[:alpha:]]|$)' \
+      "$stdout_path" "$stderr_path"; then
+    printf 'patch %s applied with fuzzy or offset placement\n' "$label" \
+      >>"$stderr_path"
+    return 2
+  fi
 }
 
 if [[ $(id -u) -ne 0 ]]; then
@@ -75,14 +93,21 @@ esac
 trap 'rm -rf -- "$work_root"' EXIT INT TERM
 source_tree="$work_root/mmdebstrap"
 cp -a "$imported_source" "$source_tree"
-patch --batch --forward --fuzz=0 -p1 -d "$source_tree" -i "$override_patch" \
-  >"$run_dir/override-patch.stdout" 2>"$run_dir/override-patch.stderr"
-patch --batch --forward --fuzz=0 -p1 -d "$source_tree" -i "$sourcesfilter_patch" \
-  >"$run_dir/sourcesfilter-patch.stdout" 2>"$run_dir/sourcesfilter-patch.stderr"
-patch --batch --forward --fuzz=0 -p1 -d "$source_tree" -i "$capability_patch" \
-  >"$run_dir/capability-patch.stdout" 2>"$run_dir/capability-patch.stderr"
-patch --batch --forward --fuzz=0 -p1 -d "$source_tree" -i "$signal_patch" \
-  >"$run_dir/signal-patch.stdout" 2>"$run_dir/signal-patch.stderr"
+
+# Apply independent and later-file patches before the wrapper changes testsuite
+# line positions. Every patch must land with zero fuzz and zero offset.
+if ! apply_exact_patch sourcesfilter "$sourcesfilter_patch"; then
+  finish_early 2 "Deb822 sourcesfilter patch failed exact application"
+fi
+if ! apply_exact_patch capability "$capability_patch"; then
+  finish_early 2 "hook-free hard-failure patch failed exact application"
+fi
+if ! apply_exact_patch override "$override_patch"; then
+  finish_early 2 "installed-command wrapper patch failed exact application"
+fi
+if ! apply_exact_patch signal "$signal_patch"; then
+  finish_early 2 "sid process-group signal patch failed exact application"
+fi
 python3 "$phase_order_tool" "$source_tree/debian/tests/testsuite" \
   >"$run_dir/phase-order.stdout" 2>"$run_dir/phase-order.stderr"
 
@@ -95,6 +120,7 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
   printf -- '- Timeout: `%s`\n' "$timeout_duration"
   printf -- '- Imported source path: `%s`\n' "upstream/mmdebstrap"
   printf -- '- Execution source: temporary copy with installed-command, Deb822 sourcesfilter, hook-free hard-failure scheduling, sid process-group signal compatibility, and integration-only phase-order transformations\n'
+  printf -- '- Patch application contract: `zero fuzz and zero offset`\n'
   printf -- '- Wrapper purpose: execute `/usr/bin/mmdebstrap` while bypassing source-preflight checks that current tooling applies to the older packaged script\n'
   printf -- '- Sourcesfilter purpose: process current Deb822 apt source entries through python-apt exploded entries instead of asserting\n'
   printf -- '- Scheduling purpose: retain the landing candidate that runs the mount-capability case in a dedicated hook-free phase with hard ordinary failures\n'
@@ -167,6 +193,7 @@ dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
     124|137) printf -- '- Classification: `timeout`\n' ;;
     *) printf -- '- Classification: `failure`\n' ;;
   esac
+  printf -- '- Patch application contract: `zero fuzz and zero offset`\n'
   printf -- '- Source-preflight override: `installed-command-wrapper.patch`\n'
   printf -- '- Source compatibility override: `sourcesfilter-deb822.patch`\n'
   printf -- '- Test scheduling override: `0001-run-hook-free-capability-case-as-hard-failure.patch`\n'
