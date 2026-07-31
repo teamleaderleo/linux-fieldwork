@@ -8,6 +8,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/run_mmdebstrap_packet_b_focused.sh"
+WORKFLOW = ROOT / ".github/workflows/mmdebstrap-packet-b-focused.yml"
 
 
 class PacketBFocusedHarnessTest(unittest.TestCase):
@@ -41,6 +42,18 @@ class PacketBFocusedHarnessTest(unittest.TestCase):
         self.assertNotIn("sourcesfilter-deb822.patch", source)
         self.assertNotIn("sigint-process-group-kill-sid.patch", source)
         self.assertNotIn("debian_bug_report", source)
+
+    def test_workflow_receipt_gate_is_explicit_and_optimizer_safe(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        start = source.index("- name: Require focused completion")
+        block = source[start:]
+        self.assertNotIn("assert receipt", block)
+        self.assertIn("if type(receipt) is not dict", block)
+        self.assertIn("if not condition:", block)
+        self.assertIn("focused receipt validation failed", block)
+        self.assertIn("type(receipt.get(\"raw_status\")) is int", block)
+        self.assertIn("type(receipt.get(\"named_test_count\")) is int", block)
+        self.assertIn("type(receipt.get(\"later_named_tests\")) is list", block)
 
     def run_classify(
         self, raw_status: int, verifier_status: int
