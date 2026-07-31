@@ -10,7 +10,7 @@
 +    defined $fd or error "directory handle has no file descriptor";
 +
 +    my $fdinfo = "/proc/self/fdinfo/$fd";
-+    return undef if not -r $fdinfo;
++    -r $fdinfo or error "cannot read mount identity from $fdinfo";
 +
 +    open my $fh, '<', $fdinfo or error "cannot open $fdinfo: $!";
 +    my $mount_id;
@@ -115,11 +115,13 @@
  sub approx_disk_usage {
      my $directory  = shift;
      my $block_size = shift;
-@@ -7352,6 +7459,10 @@
+@@ -7352,6 +7459,12 @@
              ('tar', 'squashfs', 'ext2', 'ext4')) {
              info "creating tarball...";
  
-+            if (defined $ENV{SOURCE_DATE_EPOCH}) {
++            if (defined $ENV{SOURCE_DATE_EPOCH}
++                && $^O eq 'linux'
++                && $options->{format} eq 'tar') {
 +                normalize_directory_mtimes($rootdir_handle, $mtime);
 +            }
 +
