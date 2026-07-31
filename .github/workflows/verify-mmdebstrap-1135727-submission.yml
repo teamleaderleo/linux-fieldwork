@@ -71,20 +71,40 @@ jobs:
               encoding="utf-8"
           )
 
+          def require_exact_count(text, needle, label):
+              count = text.count(needle)
+              if count != 1:
+                  raise SystemExit(
+                      f"{label}: expected exactly one occurrence, found {count}: "
+                      f"{needle!r}"
+                  )
+
+          def require_contains(text, needle, label):
+              if needle not in text:
+                  raise SystemExit(f"{label}: missing required text: {needle!r}")
+
           for line in (
               "my @tempdir_options = (TMPDIR => 1);",
               "if (defined $ENV{TMPDIR} && $ENV{TMPDIR} ne '') {",
               "@tempdir_options = (DIR => $ENV{TMPDIR});",
               "$options->{root} = tempdir('mmdebstrap.XXXXXXXXXX', @tempdir_options);",
           ):
-              assert source.count(line) == 1, line
+              require_exact_count(source, line, "mmdebstrap source boundary")
           documentation = (
               "For the C<tar>, C<squashfs>, C<ext2>, C<ext4>, and C<null> formats,"
           )
-          assert source.count(documentation) == 1
-          assert coverage.count("Test: fail-with-unwritable-tmpdir") == 1
-          assert "TMPDIR=\"$tmpdir\"" in test
-          assert "grep -F 'I: using /tmp/mmdebstrap.'" in test
+          require_exact_count(source, documentation, "mmdebstrap documentation")
+          require_exact_count(
+              coverage,
+              "Test: fail-with-unwritable-tmpdir",
+              "coverage registration",
+          )
+          require_contains(test, 'TMPDIR="$tmpdir"', "focused shell test")
+          require_contains(
+              test,
+              "grep -F 'I: using /tmp/mmdebstrap.'",
+              "focused shell test",
+          )
           PY
 
       - name: Check syntax and focused runtime behaviour
