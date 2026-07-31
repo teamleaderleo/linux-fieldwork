@@ -10,7 +10,10 @@ import pathlib
 import sys
 from typing import Sequence
 
-from tools.mmdebstrap_autopkgtest_log import ANSI_RE, DETAIL_RE, TEST_RE
+try:
+    from tools.mmdebstrap_autopkgtest_log import ANSI_RE, DETAIL_RE, TEST_RE
+except ModuleNotFoundError:  # direct script execution from tools/
+    from mmdebstrap_autopkgtest_log import ANSI_RE, DETAIL_RE, TEST_RE
 
 
 PRODUCER = "create-directory"
