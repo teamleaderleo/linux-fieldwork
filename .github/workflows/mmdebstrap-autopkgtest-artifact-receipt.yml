@@ -86,6 +86,7 @@ jobs:
             >"$RUNNER_TEMP/mmdebstrap-artifact-receipt.stdout"
           python3 - "$receipt" "$metadata" <<'PY'
           import json
+          import os
           import pathlib
           import sys
 
@@ -102,9 +103,9 @@ jobs:
               raise SystemExit("derived receipt artifact id contradicts verified metadata")
           if receipt["artifact"]["digest"] != artifact_identity["digest"]:
               raise SystemExit("derived receipt digest contradicts verified metadata")
-          if artifact_identity["name"] != "mmdebstrap-reproduction-gha-30641621084-1":
+          if artifact_identity["name"] != os.environ["SOURCE_ARTIFACT_NAME"]:
               raise SystemExit("verified artifact name contradicts workflow contract")
-          if artifact_identity["workflow_run_id"] != 30641621084:
+          if str(artifact_identity["workflow_run_id"]) != os.environ["SOURCE_RUN_ID"]:
               raise SystemExit("verified artifact run contradicts workflow contract")
 
           focus = receipt["focus_case"]
