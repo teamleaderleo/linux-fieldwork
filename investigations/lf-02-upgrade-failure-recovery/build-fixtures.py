@@ -50,14 +50,18 @@ if [ -z "$root" ]; then
     exit 97
 fi
 mkdir -p "$root/var/lib/lf-lifecycle"
-printf 'phase=%s script_version=%s args=%s dpkg_root=%s cwd=%s uid=%s gid=%s\\n' \\
-    '{phase}' '{version}' "$*" "$root" "$(pwd)" "$(id -u)" "$(id -g)" \\
+args_hex=-
+if [ "$#" -gt 0 ]; then
+    args_hex=$(printf '%s\\000' "$@" | od -An -tx1 | tr -d ' \\n')
+fi
+printf 'phase=%s script_version=%s args_hex=%s dpkg_root=%s cwd=%s uid=%s gid=%s\\n' \\
+    '{phase}' '{version}' "$args_hex" "$root" "$(pwd)" "$(id -u)" "$(id -g)" \\
     >> "$root/var/lib/lf-lifecycle/script.log"{failure}
 """
 
 
 def write_text(path: Path, content: str, mode: int = 0o644) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True)
     path.write_text(content, encoding="utf-8")
     path.chmod(mode)
 
