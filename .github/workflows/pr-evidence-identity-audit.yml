@@ -1,0 +1,112 @@
+name: Audit pull request evidence identity
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pr-evidence-identity-audit.yml"
+      - "investigations/pr-evidence-identity/**"
+      - "tests/test_pr_evidence_identity.py"
+      - "tools/audit_pr_evidence_identity.py"
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-identity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out generated pull request merge
+        uses: actions/checkout@v4
+        with:
+          path: merge
+          fetch-depth: 2
+
+      - name: Check out literal pull request head
+        uses: actions/checkout@v4
+        with:
+          path: head
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+
+      - name: Run classifier controls
+        working-directory: merge
+        run: |
+          python3 -m unittest -v tests.test_pr_evidence_identity
+          python3 -m py_compile \
+            tools/audit_pr_evidence_identity.py \
+            tests/test_pr_evidence_identity.py
+
+      - name: Build and classify both checkout receipts
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          RUN_ID_VALUE: ${{ github.run_id }}
+          RUN_ATTEMPT_VALUE: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          merge_line=$(git -C merge rev-list --parents -n 1 HEAD)
+          head_line=$(git -C head rev-list --parents -n 1 HEAD)
+          export MERGE_LINE="$merge_line"
+          export HEAD_LINE="$head_line"
+
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          def record(line, expected):
+              fields = line.split()
+              return {
+                  "checkout_sha": fields[0],
+                  "head_sha": os.environ["PR_HEAD_SHA"],
+                  "base_sha": os.environ["PR_BASE_SHA"],
+                  "event_sha": os.environ["EVENT_SHA"],
+                  "parents": fields[1:],
+                  "event_name": os.environ["EVENT_NAME"],
+                  "ref": os.environ["EVENT_REF"],
+                  "head_ref": os.environ["HEAD_REF"],
+                  "base_ref": os.environ["BASE_REF"],
+                  "run_id": os.environ["RUN_ID_VALUE"],
+                  "run_attempt": os.environ["RUN_ATTEMPT_VALUE"],
+                  "expected": expected,
+              }
+
+          root = pathlib.Path("evidence")
+          (root / "merge-input.json").write_text(
+              json.dumps(record(os.environ["MERGE_LINE"], "synthetic-merge-ref"), indent=2)
+              + "\n",
+              encoding="utf-8",
+          )
+          (root / "head-input.json").write_text(
+              json.dumps(record(os.environ["HEAD_LINE"], "exact-head"), indent=2)
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          python3 merge/tools/audit_pr_evidence_identity.py \
+            evidence/merge-input.json \
+            --output evidence/merge-ref.json
+          python3 merge/tools/audit_pr_evidence_identity.py \
+            evidence/head-input.json \
+            --output evidence/exact-head.json
+
+          printf '%s\n' "$merge_line" > evidence/merge-rev-list.txt
+          printf '%s\n' "$head_line" > evidence/head-rev-list.txt
+
+      - name: Upload identity receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-evidence-identity-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 14
