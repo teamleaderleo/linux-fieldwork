@@ -19,6 +19,8 @@ The remaining issue is cancellation latency under selected PID-only delivery top
 
 Disposition: `HOLD` source expansion and retain the comparative evidence. Reopen only on measured harmful latency, a documented isolated-supervisor contract, an explicit dependency decision, or contradictory real-workload evidence.
 
+The exact completion and overlap record is in [`STOP_RECEIPT.md`](STOP_RECEIPT.md).
+
 ## Explain like I'm five
 
 A manager owns a worker, and the worker uses tools.
@@ -43,6 +45,7 @@ That is an operational latency question. It is separate from the already-fixed c
 - `CALLER_TOPOLOGY.md`: documented invocation and process-group authority;
 - `OUTPUT_PIPELINE.md`: final-PID failure and isolated-group output contract;
 - `FALLBACK_CHAIN.md`: fallback, cancellation, cleanup precedence, and errexit result;
+- `STOP_RECEIPT.md`: completion, overlap, cleanup, and reopening boundary;
 - `tests/test_make_mirror_foreground_signal_topologies.py`;
 - `tests/test_make_mirror_pipeline_worker_identity.py`;
 - `tests/test_make_mirror_output_capture_pipeline_ownership.py`;
