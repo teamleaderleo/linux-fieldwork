@@ -60,6 +60,8 @@ Cleanup performs two passes:
 
 The first pass prevents “remove three safe things, then discover the fourth entry escapes the root.” The second pass reduces the gap between checking and acting.
 
+For a stage-by-stage explanation of the shell syntax, data flow, helper functions, mode decisions, cleanup passes, examples, and test ownership, read [`WALKTHROUGH.md`](WALKTHROUGH.md).
+
 ## Historical and technical precedent
 
 - CWE-22 describes the recurring pathname-traversal weakness and recommends canonicalization followed by validation against the permitted directory: https://cwe.mitre.org/data/definitions/22.html
@@ -72,6 +74,7 @@ The candidate follows that precedent while documenting its remaining pathname ra
 
 - issue: #164
 - pull request: #179
+- code walkthrough: [`WALKTHROUGH.md`](WALKTHROUGH.md)
 - setup source: `upstream/mmdebstrap/hooks/file-mirror-automount/setup00.sh`
 - setup imported blob: `6ccbdaf2ba97c77c4e5223ac5280acd51a998424`
 - cleanup source: `upstream/mmdebstrap/hooks/file-mirror-automount/customize00.sh`
