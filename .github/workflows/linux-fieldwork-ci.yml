@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           if [[ -d tests ]] && find tests -type f -name 'test*.py' -print -quit | grep -q .; then
-            python3 tools/run_fieldwork_unittests.py --verbosity 2
+            python3 -m tools.run_fieldwork_unittests --verbosity 2
           fi
 
       - name: Check shell syntax and command help
