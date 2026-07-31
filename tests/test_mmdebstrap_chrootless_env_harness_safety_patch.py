@@ -114,7 +114,7 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
                     self.assertEqual(completed.returncode, 2)
                     self.assertIn("refusing", completed.stderr)
 
-    def test_rejects_repository_root_identity_with_allowed_parent(self) -> None:
+    def test_rejects_canonical_repository_root_identity(self) -> None:
         with tempfile.TemporaryDirectory(prefix="lf-fake-root-git-") as temporary:
             root = pathlib.Path(temporary)
             script = self.apply_patch(root / "patch-tree")
@@ -125,24 +125,27 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
                 "#!/bin/sh\n"
                 "if [ \"${1:-}\" = rev-parse ] "
                 "&& [ \"${2:-}\" = --show-toplevel ]; then\n"
-                "  printf '/\\n'\n"
+                "  printf '%s\\n' \"${LF_FAKE_REPO_ROOT:?}\"\n"
                 "  exit 0\n"
                 "fi\n"
                 "exit 97\n",
                 encoding="utf-8",
             )
             fake_git.chmod(0o755)
-            completed = self.check_parent(
-                script,
-                "/tmp",
-                home=pathlib.Path("/home/tester"),
-                extra_environment={
-                    "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}"
-                },
-            )
-        self.assertEqual(completed.returncode, 2, completed.stderr)
-        self.assertIn("repository root", completed.stderr)
-        self.assertEqual(completed.stdout, "")
+            for repository_identity in ("/", "/./", "/tmp/.."):
+                with self.subTest(repository_identity=repository_identity):
+                    completed = self.check_parent(
+                        script,
+                        "/tmp",
+                        home=pathlib.Path("/home/tester"),
+                        extra_environment={
+                            "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+                            "LF_FAKE_REPO_ROOT": repository_identity,
+                        },
+                    )
+                    self.assertEqual(completed.returncode, 2, completed.stderr)
+                    self.assertIn("repository root", completed.stderr)
+                    self.assertEqual(completed.stdout, "")
 
     def test_rejects_home_root_identity_for_generic_and_hosted_parents(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -255,6 +258,10 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
             script = self.apply_patch(pathlib.Path(temporary))
             source = script.read_text(encoding="utf-8")
 
+        self.assertIn(
+            'repo_root="$(realpath -m "$(git rev-parse --show-toplevel)")"',
+            source,
+        )
         self.assertIn(
             'source_copy="$runtime/source/mmdebstrap"',
             source,
