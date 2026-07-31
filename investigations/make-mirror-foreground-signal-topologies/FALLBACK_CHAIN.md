@@ -18,7 +18,9 @@ A seven-case real-`/bin/sh` matrix proves:
 - cleanup failure after otherwise successful work remains authoritative;
 - TERM during the first attempt stops it, returns 143, omits fallback, and reruns cleanly.
 
-The matrix also found and rejects one tempting helper design: toggling `set -e` inside `run_child()` can make the shell exit from the failed fallback before the caller records its status.
+The matrix also finds and rejects one tempting helper design: toggling `set -e` inside `run_child()` can make the shell exit from the failed fallback before the caller records its status.
+
+This removes the fallback chain as a technical blocker, while increasing the demonstrated size of a complete prompt-cancellation implementation. The canonical investigation therefore retains this result but stops without a source patch.
 
 ## Explain like I'm five
 
@@ -113,7 +115,7 @@ This captures wait status without changing the caller's errexit mode.
 
 ## Design consequence
 
-Worker-local simple-command ownership remains viable, but the helper contract must state:
+Worker-local simple-command ownership is technically viable, but the helper contract must state:
 
 - never change the caller's `set -e` state;
 - preserve ordinary status exactly;
@@ -123,19 +125,15 @@ Worker-local simple-command ownership remains viable, but the helper contract mu
 - keep cleanup failure secondary to a signal or ordinary failure;
 - support an immediate clean rerun.
 
+A complete source repair would still need this helper to compose with parent pipeline-worker ownership and the separate output-capture primitive. That combined mechanism is not retained because its compatibility cost is disproportionate without measured harmful latency.
+
 ## Evidence boundary
 
 The test uses real shells, sessions, process groups, signals, waits, files, and cleanup. It does not run APT, exercise actual apt descendants, close launch-registration windows, test competing signals, or compose the helper with the parent pipeline-worker and output-capture primitives.
 
-## Next action
+## Reopening condition
 
-Build one reduced source-shaped owner that uses all three proven primitives:
-
-1. parent ownership of the `update_cache` pipeline worker;
-2. worker ownership of simple and fallback commands;
-3. worker ownership of output-capturing pipelines.
-
-The combined model must cover parent-only and worker-only TERM, ordinary failures, first-signal retention, PID clearing, cleanup precedence, producer completion, no later work, and immediate rerun before any retained source patch is selected.
+Use this result if the canonical investigation reopens after measured harmful cancellation latency or an explicit decision to accept the required process-group dependencies. Do not independently turn this model into a source patch.
 
 ## Authority
 
