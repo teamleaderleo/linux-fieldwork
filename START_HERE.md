@@ -109,6 +109,8 @@ When the distinction could be unclear, label a conclusion as demonstrated behavi
 
 If a chat response, connector call, command, hosted job, or safety check stops, separate that interruption from product behavior. Use the `INTERRUPTION CHECKPOINT` in [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md), then resume from the exact repository head, raw artifacts, current receipts, and tracked records rather than chat narration.
 
+For security-related work, read [`SECURITY_RECONVENE.md`](SECURITY_RECONVENE.md). It distinguishes ordinary repairable findings from the uncommon all-red case where a result begins to look like a serious vulnerability or disclosure event and public logging should stop.
+
 Security-adjacent work does not automatically require `RECONVENE`. Continue ordinary investigation and repair when the work stays on public source, local or owned systems, synthetic fixtures, disposable state, and authorized repository actions. Typical examples include local path traversal with fake destructive commands, malformed-input crashes, signal and cleanup defects, wrong-result bugs, permission mistakes, and defense-in-depth hardening with restrictive prerequisites.
 
 Do not use a hard 7/10, 8/10, or 9/10 cutoff. Severity estimates are context only. Judge the real operation, authority crossed, deployment reach, ease of exploitation, publication delta, and whether the current public workflow remains an appropriate surface.
