@@ -7,6 +7,7 @@ imported_source="$repo_root/upstream/mmdebstrap"
 override_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/installed-command-wrapper.patch"
 sourcesfilter_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/sourcesfilter-deb822.patch"
 capability_patch="$repo_root/investigations/mmdebstrap-root-without-cap-sys-admin-hard-failure/0001-run-hook-free-capability-case-as-hard-failure.patch"
+phase_order_tool="$repo_root/tools/reorder_mmdebstrap_hook_free_phase.py"
 run_id=${RUN_ID:-"local-$(date -u +%Y%m%dT%H%M%SZ)"}
 run_dir=${RUN_DIR:-"$repo_root/investigations/mmdebstrap-autopkgtest-1141078/runs/$run_id"}
 timeout_duration=${AUTOPKGTEST_TIMEOUT:-165m}
@@ -40,7 +41,7 @@ finish_early() {
 if [[ $(id -u) -ne 0 ]]; then
   finish_early 77 "reproduction requires root inside a disposable test environment"
 fi
-for command in autopkgtest patch; do
+for command in autopkgtest patch python3; do
   if ! command -v "$command" >/dev/null 2>&1; then
     finish_early 77 "$command is unavailable"
   fi
@@ -56,6 +57,9 @@ if [[ ! -f $sourcesfilter_patch ]]; then
 fi
 if [[ ! -f $capability_patch ]]; then
   finish_early 2 "hook-free hard-failure scheduling patch is missing"
+fi
+if [[ ! -f $phase_order_tool ]]; then
+  finish_early 2 "integration-only hook-free phase ordering tool is missing"
 fi
 
 work_root=$(mktemp -d "${TMPDIR:-/tmp}/lf-mmdebstrap-autopkgtest.XXXXXXXX")
@@ -73,6 +77,8 @@ patch --batch --forward -p1 -d "$source_tree" -i "$sourcesfilter_patch" \
   >"$run_dir/sourcesfilter-patch.stdout" 2>"$run_dir/sourcesfilter-patch.stderr"
 patch --batch --forward -p1 -d "$source_tree" -i "$capability_patch" \
   >"$run_dir/capability-patch.stdout" 2>"$run_dir/capability-patch.stderr"
+python3 "$phase_order_tool" "$source_tree/debian/tests/testsuite" \
+  >"$run_dir/phase-order.stdout" 2>"$run_dir/phase-order.stderr"
 
 bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
 
@@ -82,10 +88,11 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
   printf -- '- Run ID: `%s`\n' "$run_id"
   printf -- '- Timeout: `%s`\n' "$timeout_duration"
   printf -- '- Imported source path: `%s`\n' "upstream/mmdebstrap"
-  printf -- '- Execution source: temporary copy with installed-command, Deb822 sourcesfilter, and hook-free hard-failure scheduling patches\n'
+  printf -- '- Execution source: temporary copy with installed-command, Deb822 sourcesfilter, hook-free hard-failure scheduling, and integration-only phase-order transformations\n'
   printf -- '- Wrapper purpose: execute `/usr/bin/mmdebstrap` while bypassing source-preflight checks that current tooling applies to the older packaged script\n'
   printf -- '- Sourcesfilter purpose: process current Deb822 apt source entries through python-apt exploded entries instead of asserting\n'
-  printf -- '- Scheduling purpose: run the mount-capability case in a dedicated hook-free phase while preserving ordinary failure status\n'
+  printf -- '- Scheduling purpose: retain the landing candidate that runs the mount-capability case in a dedicated hook-free phase with hard ordinary failures\n'
+  printf -- '- Integration-order purpose: run that exact hook-free block before the broad matrix, then continue the broad matrix unchanged so an unrelated earlier failure cannot hide Packet B execution\n'
   if [[ -f $imported_source/.linux-fieldwork-source.json ]]; then
     printf '\n## Imported source\n\n```json\n'
     cat "$imported_source/.linux-fieldwork-source.json"
@@ -102,10 +109,14 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
     "$override_patch" \
     "$sourcesfilter_patch" \
     "$capability_patch" \
+    "$phase_order_tool" \
     "$source_tree/debian/tests/testsuite" \
     "$source_tree/debian/tests/sourcesfilter" \
     "$source_tree/coverage.py" \
     "$source_tree/coverage.txt"
+  printf '```\n'
+  printf '\n## Integration phase ordering\n\n```text\n'
+  cat "$run_dir/phase-order.stdout"
   printf '```\n'
   printf '\n## Tool versions\n\n```text\n'
   dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
@@ -149,6 +160,7 @@ dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
   printf -- '- Source-preflight override: `installed-command-wrapper.patch`\n'
   printf -- '- Source compatibility override: `sourcesfilter-deb822.patch`\n'
   printf -- '- Test scheduling override: `0001-run-hook-free-capability-case-as-hard-failure.patch`\n'
+  printf -- '- Integration-only order: `hook-free hard phase, broad matrix, soft transition phase`\n'
   if [[ -f $console_log ]]; then
     printf -- '- Console SHA-256: `%s`\n' "$(sha256sum "$console_log" | cut -d' ' -f1)"
   fi
