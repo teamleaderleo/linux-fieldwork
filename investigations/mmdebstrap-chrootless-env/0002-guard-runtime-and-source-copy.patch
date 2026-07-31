@@ -2,7 +2,8 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
 --- a/investigations/mmdebstrap-chrootless-env/run.sh
 +++ b/investigations/mmdebstrap-chrootless-env/run.sh
 @@ -4,11 +4,83 @@
- repo_root="$(git rev-parse --show-toplevel)"
+-repo_root="$(git rev-parse --show-toplevel)"
++repo_root="$(realpath -m "$(git rev-parse --show-toplevel)")"
  source_root="$repo_root/upstream/mmdebstrap"
  result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/results"
 -runtime_parent="$(realpath -m "${RUNNER_TEMP:-/tmp}")"
