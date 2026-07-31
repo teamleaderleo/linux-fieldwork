@@ -7,7 +7,7 @@ diff --git a/coverage.txt b/coverage.txt
  Needs-Root: true
 +Needs-Hook-Free-APT-Config: true
  
- Test: unshare
+ Test: unshare-as-root-user
  Needs-Root: true
 @@ -52,6 +53,7 @@
  
