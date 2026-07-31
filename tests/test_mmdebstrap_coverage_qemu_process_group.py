@@ -47,6 +47,28 @@ Core(s) per socket: 1
 EOF
 """
 
+SIGNAL_RECEIPT = r"""
+import os
+import pathlib
+import signal
+
+_previous_sigint = signal.getsignal(signal.SIGINT)
+
+
+def _fieldwork_sigint(signum, frame):
+    root = pathlib.Path(os.environ["MARKER_DIR"])
+    (root / "coverage-sigint.received").write_text(
+        "received\n",
+        encoding="ascii",
+    )
+    if callable(_previous_sigint):
+        _previous_sigint(signum, frame)
+    raise KeyboardInterrupt
+
+
+signal.signal(signal.SIGINT, _fieldwork_sigint)
+"""
+
 
 @unittest.skipUnless(
     pathlib.Path("/proc").is_dir() and hasattr(os, "killpg"),
@@ -131,6 +153,10 @@ class MmdebstrapCoverageQemuProcessGroupTest(unittest.TestCase):
         (suite / "shared/exitstatus.txt").write_text("1\n", encoding="ascii")
         os.mkfifo(suite / "release.fifo")
         (suite / "qemu-worker.py").write_text(QEMU_WORKER, encoding="utf-8")
+        (suite / "sitecustomize.py").write_text(
+            SIGNAL_RECEIPT,
+            encoding="utf-8",
+        )
 
         (suite / "tests").mkdir()
         (suite / "tests/interrupt").write_text(
@@ -241,9 +267,13 @@ class MmdebstrapCoverageQemuProcessGroupTest(unittest.TestCase):
         self.assertGreaterEqual(len(before), 2)
 
         os.kill(process.pid, signal.SIGINT)
+        process_group.MmdebstrapCoverageProcessGroupTest.wait_for_file(
+            suite / "coverage-sigint.received",
+            process,
+        )
         if expect_survivors:
             with self.assertRaises(subprocess.TimeoutExpired):
-                process.wait(timeout=0.5)
+                process.wait(timeout=0.2)
             live = (
                 process_group.MmdebstrapCoverageProcessGroupTest.live_group_members(
                     worker_pgid
