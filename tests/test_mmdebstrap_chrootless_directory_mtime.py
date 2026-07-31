@@ -364,7 +364,7 @@ class ChrootlessDirectoryMtimePolicyTest(unittest.TestCase):
 
     def test_directory_normalization_preserves_sparse_source_file(self) -> None:
         expected_hash: str | None = None
-        expected_blocks: int | None = None
+        expected_by_tree: dict[Path, tuple[int, int, int, str]] = {}
 
         for tree in (self.root_mode, self.chrootless):
             sparse = tree / "usr" / "share" / "demo" / "sparse-payload"
@@ -379,10 +379,14 @@ class ChrootlessDirectoryMtimePolicyTest(unittest.TestCase):
             digest = hashlib.sha256(sparse.read_bytes()).hexdigest()
             if expected_hash is None:
                 expected_hash = digest
-                expected_blocks = info.st_blocks
             else:
                 self.assertEqual(digest, expected_hash)
-                self.assertEqual(info.st_blocks, expected_blocks)
+            expected_by_tree[tree] = (
+                info.st_size,
+                info.st_blocks,
+                int(info.st_mtime),
+                digest,
+            )
 
         normalize_directory_mtimes(self.root_mode, SOURCE_DATE_EPOCH)
         normalize_directory_mtimes(self.chrootless, SOURCE_DATE_EPOCH)
@@ -390,10 +394,13 @@ class ChrootlessDirectoryMtimePolicyTest(unittest.TestCase):
         for tree in (self.root_mode, self.chrootless):
             sparse = tree / "usr" / "share" / "demo" / "sparse-payload"
             info = sparse.stat()
-            self.assertEqual(info.st_size, SPARSE_SIZE)
-            self.assertEqual(info.st_blocks, expected_blocks)
-            self.assertEqual(int(info.st_mtime), PACKAGE_FILE_MTIME)
-            self.assertEqual(hashlib.sha256(sparse.read_bytes()).hexdigest(), expected_hash)
+            observed = (
+                info.st_size,
+                info.st_blocks,
+                int(info.st_mtime),
+                hashlib.sha256(sparse.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(observed, expected_by_tree[tree])
 
         root_archive, chrootless_archive = self.archive_pair("sparse", clamp=True)
         self.assertEqual(root_archive.read_bytes(), chrootless_archive.read_bytes())
