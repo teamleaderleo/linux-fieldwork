@@ -7,6 +7,7 @@ from tools.run_fieldwork_unittests import (
     DiscoveryPolicyError,
     LOCAL_METHOD_ONLY_CLASSES,
     apply_discovery_policy,
+    defining_test_class,
     discover_suite,
     iter_tests,
 )
@@ -35,6 +36,10 @@ class FieldworkUnittestDiscoveryTest(unittest.TestCase):
 
     def test_exact_duplicate_extensions_keep_only_local_methods(self) -> None:
         expected_removed = 0
+        retained_contracts = {
+            (type(test), getattr(test, "_testMethodName"))
+            for test in self.filtered_tests
+        }
 
         for target in sorted(LOCAL_METHOD_ONLY_CLASSES):
             with self.subTest(target=target):
@@ -62,6 +67,14 @@ class FieldworkUnittestDiscoveryTest(unittest.TestCase):
                 self.assertGreater(len(original_names), len(local_names))
                 self.assertEqual(filtered_names, local_names)
                 expected_removed += len(original) - len(filtered)
+
+                for test in original:
+                    method_name = getattr(test, "_testMethodName")
+                    if method_name in local_names:
+                        continue
+                    owner = defining_test_class(test_class, method_name)
+                    self.assertIsNotNone(owner)
+                    self.assertIn((owner, method_name), retained_contracts)
 
         self.assertEqual(self.summary.removed, expected_removed)
 
@@ -109,6 +122,53 @@ class FieldworkUnittestDiscoveryTest(unittest.TestCase):
             self.summary.discovered - self.summary.removed,
             self.summary.retained,
         )
+
+    def test_missing_defining_class_counterpart_fails_closed(self) -> None:
+        class ParentTest(unittest.TestCase):
+            def test_parent_contract(self) -> None:
+                pass
+
+        class ExtensionTest(ParentTest):
+            def test_local_extension(self) -> None:
+                pass
+
+        extension_id = f"{ExtensionTest.__module__}.{ExtensionTest.__name__}"
+        incomplete = unittest.TestSuite(
+            (
+                ExtensionTest("test_parent_contract"),
+                ExtensionTest("test_local_extension"),
+            )
+        )
+        with self.assertRaisesRegex(
+            DiscoveryPolicyError,
+            "without a retained defining-class counterpart",
+        ):
+            apply_discovery_policy(
+                incomplete,
+                policy_classes=frozenset({extension_id}),
+            )
+
+        complete = unittest.TestSuite(
+            (
+                ParentTest("test_parent_contract"),
+                ExtensionTest("test_parent_contract"),
+                ExtensionTest("test_local_extension"),
+            )
+        )
+        filtered, summary = apply_discovery_policy(
+            complete,
+            policy_classes=frozenset({extension_id}),
+        )
+        self.assertEqual(
+            [test.id() for test in iter_tests(filtered)],
+            [
+                ParentTest("test_parent_contract").id(),
+                ExtensionTest("test_local_extension").id(),
+            ],
+        )
+        self.assertEqual(summary.discovered, 3)
+        self.assertEqual(summary.retained, 2)
+        self.assertEqual(summary.removed, 1)
 
     def test_stale_policy_class_fails_closed(self) -> None:
         class ExampleTest(unittest.TestCase):
