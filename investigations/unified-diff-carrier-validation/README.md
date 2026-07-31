@@ -29,7 +29,7 @@ That is a patch-carrier defect, not product evidence. Catching it in the ordinar
 
 Owning issue: #294.
 
-Initial branch: `tooling/unified-diff-hunk-validator`.
+Branch: `tooling/unified-diff-hunk-validator`.
 
 Base reviewed before implementation: `078a916cbba8fe0fc2d0d5237be6c439ff80ee20`.
 
@@ -37,6 +37,7 @@ Changed surfaces:
 
 - `tools/validate_unified_diffs.py`;
 - `tests/test_validate_unified_diffs.py`;
+- `tests/fixtures/unified-diff-validator/valid.patch`;
 - `.github/workflows/linux-fieldwork-ci.yml`;
 - this record.
 
@@ -75,6 +76,7 @@ Hunk grammar and line counts are source-independent. Source applicability and ze
 
 The synthetic unit matrix covers:
 
+- the repository fixture that also triggers the changed-file workflow gate;
 - valid multi-file patches;
 - multiple hunks;
 - omitted counts;
@@ -97,15 +99,17 @@ python3 -m compileall -q tools tests
 python3 -m unittest discover -s tests -v
 ```
 
-Result: compilation passed; 9/9 focused tests passed. The local Python environment emitted an unrelated spreadsheet-runtime warmup warning before execution, but the commands completed with status 0 and the validator tests passed. Hosted exact-head repository CI remains authoritative.
+Result: compilation passed; 10/10 focused tests passed. The local Python environment emitted an unrelated spreadsheet-runtime warmup warning before execution, but the commands completed with status 0 and the validator tests passed. Hosted exact-head repository CI remains authoritative.
 
 ## Workflow behavior
 
-For pull requests, the workflow obtains the exact base and head SHAs from the event, selects added or modified `*.patch` paths with a NUL-delimited Git diff, and invokes:
+For pull requests, the workflow obtains the exact base and head SHAs from the event, writes added or modified `*.patch` paths to a disposable NUL-delimited file, and invokes:
 
 ```text
 python3 tools/validate_unified_diffs.py -- <changed patch paths>
 ```
+
+The `git diff` command runs directly under `set -e`; a discovery failure cannot be hidden as an empty patch list. The disposable list is removed by an EXIT trap. NUL delimiters preserve spaces and newlines in paths.
 
 Workflow-dispatch runs skip the changed-file step because they have no pull-request base/head pair.
 
@@ -127,7 +131,7 @@ Every investigation that proposes a patch must still apply its exact retained by
 
 ## Disposition
 
-`HOLD` until exact-head Linux Fieldwork CI passes and the complete four-file diff is reviewed.
+`HOLD` until exact-head Linux Fieldwork CI passes and the complete five-file diff is reviewed.
 
 A green result should move this internal repository tool to `MERGE LOCALLY`.
 
