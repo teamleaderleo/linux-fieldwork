@@ -112,6 +112,48 @@ An issue may declare an autonomous multi-helper push for a bounded batch. In tha
 8. Link records instead of copying large reports between them. The tracked record carries commands, fixtures, results, interpretation, and evidence limits; the issue or pull request carries routing, review state, and the current decision.
 9. Leave the repository sufficient for another person or agent to understand, reproduce, review, and continue the work even when the helper chat receives no follow-up message.
 
+## Preserve progress across interrupted sessions
+
+Chat output, tool calls, authentication, and long-running sessions can fail after useful repository work already exists. Treat chat as a convenience, not the source of truth. An interrupted or filtered response does not invalidate committed work; verify the live repository state and continue from the latest exact head.
+
+Before a long or failure-prone step, and after each meaningful semantic transition:
+
+1. push the smallest coherent branch state instead of waiting for one large final commit;
+2. update the owning issue, pull request, or status card with the exact head, changed paths, latest verified gate, current caveat, and next safe action;
+3. put commands, transcripts, fixtures, and artifacts in a tracked record rather than only in chat;
+4. mark unverified claims and any local-only state explicitly;
+5. retain the current external-contact authorization state.
+
+If output is filtered, truncated, times out, or the worker is replaced:
+
+1. stop reconstructing from memory or retrying the same long narrative;
+2. reload the live instructions, owning issue or pull request, current branch, complete diff, and exact-head checks;
+3. classify the interruption separately from product, harness, patch-packaging, dependency, or authority failures;
+4. resume from the latest durable state and rerun only the gates whose evidence expired;
+5. leave a short checkpoint when no further code change is safe.
+
+Use this compact format:
+
+```text
+RECOVERY CHECKPOINT
+Unit:
+Exact head:
+Durable files or PR:
+Last verified gate:
+Unverified or local-only state:
+Next safe action:
+External-contact state:
+```
+
+For security-relevant or destructive-looking work, preserve progress without weakening safety controls:
+
+- prefer synthetic or disposable fixtures, fake destructive commands, least privilege, and explicit cleanup;
+- distinguish ordinary correctness, containment, lifecycle, and compatibility work from high-consequence operational behavior;
+- if the work enters live credential access, stealth or persistence, destructive production activity, uncontrolled external targeting, or similarly high-risk territory, stop and request explicit human review;
+- do not rename, split, or rephrase work to evade a safety boundary. Keep the bounded facts durable and redirect the next step to a safe evidence path.
+
+The retained recovery example in [`notes/handoffs/2026-07-31-helper-b-codex-execution-recovery.md`](notes/handoffs/2026-07-31-helper-b-codex-execution-recovery.md) shows how to reconstruct progress from commits, artifacts, and exact-head checks after the live narrative becomes unreliable.
+
 ## Notes stay lightweight
 
 Use a note when the durable value is an explanation, command, workflow, source-reading lesson, or small demonstration. Notes do not need scout identities, formal review, promotion decisions, research metadata, or a full evidence packet.
