@@ -88,7 +88,9 @@ jobs:
           fi
 
   capture-bug-report:
-    if: startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') || startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')
+    if: >-
+      (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')) ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest'))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -109,7 +111,9 @@ jobs:
           retention-days: 14
 
   reproduce-mmdebstrap:
-    if: startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest') || startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')
+    if: >-
+      (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'investigation/mmdebstrap-autopkgtest')) ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'investigation/mmdebstrap-autopkgtest'))
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -136,9 +140,9 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
               apt-get install -y --no-install-recommends \
-                autopkgtest ca-certificates python3 procps util-linux
+                autopkgtest ca-certificates patch python3 procps util-linux
               apt-get clean
-              scripts/reproduce-mmdebstrap-autopkgtest.sh
+              bash scripts/reproduce-mmdebstrap-autopkgtest.sh
             '
           status=$?
           set -e
