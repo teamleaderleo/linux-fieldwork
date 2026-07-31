@@ -18,14 +18,20 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
                  continue
              if member.islnk() and hardlink_prefix.sub(
                  "", member.linkname
-@@ -367,7 +370,10 @@ def main():
-                     file=sys.stderr,
+@@ -367,6 +370,7 @@ def main():
                  )
                  hardlink_dependency_failure = True
                  break
 +            normalized_name = hardlink_prefix.sub("", member.name)
-+            type_excluded_members.discard(normalized_name)
-+            retained_member_names.add(normalized_name)
              if args.strip_components:
                  comps = member.name.split("/")
                  # just as with GNU tar, archive members with less or equal
+@@ -421,6 +425,8 @@ def main():
+             if hasattr(args, "trans"):
+                 for r, s in args.trans:
+                     member.name = r.sub(s, member.name)
++            type_excluded_members.discard(normalized_name)
++            retained_member_names.add(normalized_name)
+             if member.isfile():
+                 with in_tar.extractfile(member) as file:
+                     out_tar.addfile(member, file)
