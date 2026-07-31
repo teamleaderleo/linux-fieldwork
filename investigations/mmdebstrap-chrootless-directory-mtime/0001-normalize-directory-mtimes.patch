@@ -1,0 +1,43 @@
+--- a/mmdebstrap
++++ b/mmdebstrap
+@@ -5580,6 +5580,29 @@
+     return;
+ }
+ 
++sub normalize_directory_mtimes {
++    my $directory = shift;
++    my $timestamp = shift;
++
++    my @rootstat = lstat $directory;
++    scalar @rootstat or error "cannot stat $directory";
++    my $rootdev = $rootstat[0];
++
++    my $normalize = sub {
++        my @stat = lstat $File::Find::name;
++        scalar @stat or error "cannot stat $File::Find::name";
++        return if not -d _;
++        if ($stat[0] != $rootdev) {
++            $File::Find::prune = 1;
++            return;
++        }
++        1 == utime($timestamp, $timestamp, $File::Find::name)
++          or error "cannot set mtime on $File::Find::name";
++    };
++
++    find({ wanted => $normalize, no_chdir => 1 }, $directory);
++}
++
+ sub approx_disk_usage {
+     my $directory  = shift;
+     my $block_size = shift;
+@@ -7352,6 +7375,10 @@
+             ('tar', 'squashfs', 'ext2', 'ext4')) {
+             info "creating tarball...";
+ 
++            if (defined $ENV{SOURCE_DATE_EPOCH}) {
++                normalize_directory_mtimes($options->{root}, $mtime);
++            }
++
+             # redirect tar output to the writing end of the pipe so
+             # that the parent process can capture the output
+             open(STDOUT, '>&', $wfh) or error "cannot open STDOUT: $!";
