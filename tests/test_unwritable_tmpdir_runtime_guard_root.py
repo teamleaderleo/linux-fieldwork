@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import unittest
 
-from tests.test_unwritable_tmpdir_runtime_guard import (
-    UnwritableTmpdirRuntimeGuardTest,
-)
+from tests import test_unwritable_tmpdir_runtime_guard as runtime_guard
 
 
 class UnwritableTmpdirRuntimeGuardRootTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.helper = UnwritableTmpdirRuntimeGuardTest(methodName="runTest")
+        self.helper = runtime_guard.UnwritableTmpdirRuntimeGuardTest(
+            methodName="runTest"
+        )
         self.leaf = "linux-fieldwork-mmdebstrap-tmpdir"
 
     def test_repository_root_is_rejected_with_allowed_parent(self) -> None:
