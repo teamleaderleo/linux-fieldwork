@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - '.github/workflows/mmdebstrap-autopkgtest-artifact-receipt.yml'
+      - 'tools/mmdebstrap_autopkgtest_log.py'
+      - 'tests/test_mmdebstrap_autopkgtest_log.py'
       - 'tools/summarize_mmdebstrap_reproduction.py'
       - 'tests/test_summarize_mmdebstrap_reproduction.py'
       - 'investigations/mmdebstrap-autopkgtest-1141078/ARTIFACT-RECEIPT.md'
@@ -62,12 +64,17 @@ jobs:
 
           receipt = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
           focus = receipt["focus_case"]
-          classifier = receipt["console"]["classifier"]
+          console = receipt["console"]
+          classifier = console["classifier"]
           print(f"focus_state={focus['state']}")
           print(f"focus_before_first_failure={focus['before_first_failure']}")
           print(
               "focus_completed_before_first_failure="
               f"{focus['completed_before_first_failure']}"
+          )
+          print(
+              "focus_occurrences="
+              f"{json.dumps(focus['occurrences'], sort_keys=True)}"
           )
           print(f"first_failure_phase={classifier['phase']}")
           print(f"first_failure_signal={classifier['first_failure_signal']}")
@@ -75,9 +82,20 @@ jobs:
               "first_failed_test="
               f"{json.dumps(classifier['first_failed_test'], sort_keys=True)}"
           )
-          print(f"last_named_test={json.dumps(classifier['last_named_test'], sort_keys=True)}")
+          print(
+              "last_named_test="
+              f"{json.dumps(classifier['last_named_test'], sort_keys=True)}"
+          )
+          print(
+              "first_wrapper_failure_line="
+              f"{console['first_wrapper_failure_line']}"
+          )
+          print(f"ordering_failure_line={console['ordering_failure_line']}")
           print("failure_context:")
-          for line in receipt["console"]["failure_context"]:
+          for line in console["failure_context"]:
+              print(line)
+          print("console_tail:")
+          for line in console["tail"]:
               print(line)
           PY
 
