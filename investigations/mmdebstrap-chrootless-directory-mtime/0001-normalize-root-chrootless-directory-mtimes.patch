@@ -1,0 +1,41 @@
+diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
+--- a/upstream/mmdebstrap/mmdebstrap
++++ b/upstream/mmdebstrap/mmdebstrap
+@@ -5628,7 +5628,18 @@ sub approx_disk_usage {
+     # the above is only a heuristic and especially ext4 will consume quite
+     # a few more blocks than the heuristic above is going to compute
+     return int($installed_size * 1.2);
+ }
+ 
++sub normalize_archive_directory_mtimes {
++    my $root  = shift;
++    my $mtime = shift;
++
++    0 == system(
++        'find', $root, '-xdev', '-type', 'd', '-exec',
++        'touch', '--no-dereference', "--date=\@$mtime", '--', '{}', '+'
++      )
++      or error "cannot normalize archive directory mtimes: $?";
++}
++
+ sub main() {
+     my $before = Time::HiRes::time;
+ 
+@@ -7330,7 +7341,17 @@ sub main() {
+         close $parentsock;
+         open(STDOUT, '>&', STDERR) or error "cannot open STDOUT: $!";
+ 
+         setup($options);
++
++        if (!$options->{dryrun}
++            && exists $ENV{SOURCE_DATE_EPOCH}
++            && $options->{format} eq 'tar'
++            && any { $_ eq $options->{mode} } ('root', 'chrootless')) {
++            if (!can_execute 'touch') {
++                error "cannot find touch";
++            }
++            normalize_archive_directory_mtimes($options->{root}, $mtime);
++        }
+ 
+         print $childsock (pack('n', 0) . 'adios');
+         $childsock->flush();
