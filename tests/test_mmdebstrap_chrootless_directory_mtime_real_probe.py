@@ -76,8 +76,10 @@ class ChrootlessDirectoryMtimeRealProbeContractTest(unittest.TestCase):
         self.assertIn("refusing unbounded protected root", source)
 
         validation_end = source.index("result_dir=")
-        first_recursive_removal = source.index('rm -rf "$runtime"')
-        self.assertGreater(first_recursive_removal, validation_end)
+        stale_guard = source.index("refusing stale mount before runtime reset")
+        first_recursive_removal = source.index('rm -rf "$runtime"', stale_guard)
+        self.assertGreater(stale_guard, validation_end)
+        self.assertLess(stale_guard, first_recursive_removal)
 
     def test_probe_preserves_real_metadata_and_device_boundaries(self) -> None:
         source = PROBE.read_text(encoding="utf-8")
