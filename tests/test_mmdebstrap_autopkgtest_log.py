@@ -9,8 +9,9 @@ MODULE_PATH = (
     / "mmdebstrap_autopkgtest_log.py"
 )
 SPEC = importlib.util.spec_from_file_location("mmdebstrap_autopkgtest_log", MODULE_PATH)
+if SPEC is None or SPEC.loader is None:
+    raise RuntimeError(f"unable to load classifier module from {MODULE_PATH}")
 MODULE = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
 SPEC.loader.exec_module(MODULE)
 
 
@@ -224,6 +225,74 @@ result: FAILURE
                 "format": "tar",
             },
         )
+
+    def test_apt_package_inventory_tool_names_are_not_preflight_failures(self):
+        result = MODULE.classify_text(
+            """
+The following NEW packages will be installed:
+  libperl-critic-perl perlcritic pod2man shellcheck shfmt
+  python3-pathspec python3-platformdirs
+0 upgraded, 7 newly installed, 0 to remove.
+testsuite FAIL non-zero exit status 6
+"""
+        )
+        self.assertEqual(result["phase"], "unknown")
+        self.assertTrue(result["wrapper_failure_only"])
+        self.assertIsNone(result["first_failure_line"])
+        for tool in ("perlcritic", "pod2man", "shellcheck", "shfmt"):
+            self.assertNotIn(tool, result["signals"])
+
+    def test_bare_tool_names_in_version_inventory_are_controls(self):
+        result = MODULE.classify_text(
+            """
+perltidy 20260206
+perlcritic 1.156
+pod2man 5.42
+shellcheck 0.11.0
+shfmt 3.12.0
+testsuite FAIL non-zero exit status 6
+"""
+        )
+        self.assertEqual(result["phase"], "unknown")
+        self.assertTrue(result["wrapper_failure_only"])
+
+    def test_native_shellcheck_code_is_a_preflight_signal(self):
+        result = MODULE.classify_text(
+            """
+In coverage.sh line 12:
+foo=$bar
+    ^-- SC2086 (info): Double quote to prevent globbing.
+testsuite FAIL non-zero exit status 1
+"""
+        )
+        self.assertEqual(result["phase"], "coverage-preflight")
+        self.assertEqual(result["first_failure_signal"], "shellcheck")
+
+    def test_native_black_output_is_a_preflight_signal(self):
+        result = MODULE.classify_text(
+            """
+would reformat ./coverage.py
+Oh no! 1 file would be reformatted.
+testsuite FAIL non-zero exit status 1
+"""
+        )
+        self.assertEqual(result["phase"], "coverage-preflight")
+        self.assertEqual(result["first_failure_signal"], "black would reformat")
+
+    def test_explicit_tool_diagnostics_remain_preflight_signals(self):
+        cases = (
+            ("perlcritic failed", "perlcritic"),
+            ("pod2man error: malformed POD", "pod2man"),
+            ("shellcheck: error", "shellcheck"),
+            ("shfmt failure", "shfmt"),
+        )
+        for line, signal in cases:
+            with self.subTest(line=line):
+                result = MODULE.classify_text(
+                    f"{line}\ntestsuite FAIL non-zero exit status 1\n"
+                )
+                self.assertEqual(result["phase"], "coverage-preflight")
+                self.assertEqual(result["first_failure_signal"], signal)
 
 
 if __name__ == "__main__":
