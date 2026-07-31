@@ -116,15 +116,32 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
         self.assertIn('chmod 0755 "$source_copy"', source)
         self.assertIn('    "$source_copy"\n    --mode=chrootless', source)
         self.assertNotIn('chmod 0755 "$source_root/mmdebstrap"', source)
+
+        for before in (
+            'source_mode_before="$(stat -c %a "$source_root/mmdebstrap")"',
+            'source_hash_before="$(git hash-object "$source_root/mmdebstrap")"',
+            'source_status_before="$(git status --short -- '
+            'upstream/mmdebstrap/mmdebstrap)"',
+        ):
+            self.assertIn(before, source)
+
         self.assertIn(
             '[[ "$(stat -c %a "$source_root/mmdebstrap")" '
             '== "$source_mode_before" ]]',
             source,
         )
         self.assertIn(
-            "git diff --exit-code -- upstream/mmdebstrap/mmdebstrap",
+            '[[ "$(git hash-object "$source_root/mmdebstrap")" '
+            '== "$source_hash_before" ]]',
             source,
         )
+        self.assertIn(
+            '[[ "$(git status --short -- upstream/mmdebstrap/mmdebstrap)" '
+            '== "$source_status_before" ]]',
+            source,
+        )
+        self.assertNotIn("git diff --exit-code -- upstream/mmdebstrap/mmdebstrap", source)
+        self.assertIn("source_git_state_preserved=yes", source)
 
     def test_baseline_contains_both_confirmed_harness_defects(self) -> None:
         baseline = SOURCE_SCRIPT.read_text(encoding="utf-8")
