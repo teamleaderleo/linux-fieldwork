@@ -233,6 +233,28 @@ Ask these questions in order:
 13. Is there one canonical issue and one canonical fix carrier?
 14. Has upstream contact remained inside the authorized boundary?
 15. Could another worker resume from the repository alone, including the first incomplete step and next safe action?
+16. Which premises are fixed for this decision: source generation, operation owner, input class, lifecycle phase, platform or mode, privilege boundary, and result interface?
+17. Which adjacent contexts could still change the mechanism, compatibility claim, evidence boundary, or next decision, and what discriminator was used for each?
+18. Do the remaining concerns invalidate the claim inside those premises, or do they require a materially different experiment?
+19. What exact counterexample, identity change, claim expansion, or authority change would reopen the decision?
+
+## Decide when the bounded review is saturated
+
+A reviewer should not claim that unknown defects are impossible. The useful conclusion is narrower: the declared question is saturated inside its stated premises, and the remaining plausible concerns need a different experiment.
+
+Before stopping broad review:
+
+- classify known knowns, known unknowns, recovered unknown knowns, and the controls used against unknown unknowns;
+- confirm that every important branch inside the fixed premises has executed evidence, a distinguishing control, or an explicit source contract;
+- prove that the mechanism can lose rather than only confirming the candidate;
+- direct the adjacent search toward named caller/callee, setup/cleanup, producer/consumer, representation/metadata, ownership, mode, history, or evidence-path discriminators;
+- reconcile source, patch, branch head, checkout class, test discovery, artifact, cleanup, and rerun identities;
+- separate concerns that invalidate the present claim from successor questions that change a platform, topology, authority, integration surface, input class, or source generation;
+- write residual risks and concrete reopen triggers.
+
+Do not stop because CI is green, a planned test passed once, a fixed review count was reached, no one immediately imagined another case, or the investigation is tiring.
+
+Use [`notes/processes/cross-context-review-prevents-myopia.md`](notes/processes/cross-context-review-prevents-myopia.md) for the full known/unknown matrix, seven-part search-saturation test, residual-risk record, reopen rules, and compact receipt.
 
 ## Investigation selection heuristic
 
@@ -252,4 +274,4 @@ Avoid broad exploration that cannot name a distinguishing result, cleanup bounda
 
 Add a new entry when the same mistake or successful technique appears more than once, or when one finding generalizes cleanly across targets. Keep exact transcripts and one-off details in their investigation records; keep this guide focused on reusable judgment.
 
-Version boundary: lessons retained from Linux Fieldwork work through 2026-07-31. Revalidate tool-, distribution-, and upstream-specific details when they change.
+Version boundary: lessons retained from Linux Fieldwork work through 2026-08-01. Revalidate tool-, distribution-, and upstream-specific details when they change.
