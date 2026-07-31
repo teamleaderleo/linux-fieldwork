@@ -7,6 +7,7 @@ on:
       - 'tests/test_mmdebstrap_chrootless_directory_mtime.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime_patch_context.py'
+      - 'tests/test_mmdebstrap_chrootless_directory_mtime_product_probe.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime_real_probe.py'
       - '.github/workflows/mmdebstrap-chrootless-directory-mtime.yml'
   workflow_dispatch:
@@ -43,12 +44,15 @@ jobs:
             tests/test_mmdebstrap_chrootless_directory_mtime.py \
             tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py \
             tests/test_mmdebstrap_chrootless_directory_mtime_patch_context.py \
+            tests/test_mmdebstrap_chrootless_directory_mtime_product_probe.py \
             tests/test_mmdebstrap_chrootless_directory_mtime_real_probe.py
           python3 \
             tests/test_mmdebstrap_chrootless_directory_mtime_patch_context.py -v
           python3 tests/test_mmdebstrap_chrootless_directory_mtime.py -v
           python3 \
             tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py -v
+          python3 \
+            tests/test_mmdebstrap_chrootless_directory_mtime_product_probe.py -v
           python3 tests/test_mmdebstrap_chrootless_directory_mtime_real_probe.py -v
 
       - name: Run exact product helper on real metadata matrix twice
