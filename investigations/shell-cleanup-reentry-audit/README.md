@@ -2,7 +2,7 @@
 
 Date: 2026-07-31  
 Tracking: issue #271  
-Owner: Helper F adjacent research  
+Worker or variant: Helper F controlled TMPDIR-harness candidate  
 External contact authorized: `false`
 
 ## TL;DR
@@ -15,7 +15,7 @@ trap cleanup EXIT INT TERM
 
 A signal handler that only cleans and returns does not terminate the script. A parent-only signal can therefore run cleanup, continue into later work, and invoke cleanup a second time through `EXIT`.
 
-The candidate gives ordinary exit and signals separate handlers. It clears all related traps before cleanup, preserves an existing primary failure over cleanup failure, reports cleanup failure after ordinary success, and terminates INT/TERM as 130/143.
+The merged repair gives ordinary exit and signals separate handlers. It clears all related traps before cleanup, preserves an existing primary failure over cleanup failure, reports cleanup failure after ordinary success, and terminates INT/TERM as 130/143.
 
 ## Explain like I'm five
 
@@ -27,7 +27,7 @@ The repair turns the alarm into: remember why we are stopping, switch off the du
 
 These are repository-owned evidence harnesses. Wrong signal handling can make an interrupted run appear successful, execute later assertions or writes after cancellation, repeat recursive cleanup, or replace the first useful failure with a cleanup result.
 
-The candidate changes no imported mmdebstrap product source. It repairs the evidence-producing scripts that own their disposable runtime directories.
+The repair changes no imported mmdebstrap product source. It fixes the evidence-producing scripts that own their disposable runtime directories.
 
 ## Exact source boundary
 
@@ -58,7 +58,7 @@ printf 'later\n' >>"$log"
 exit 0
 ```
 
-Observed contract expected from the baseline model:
+Observed baseline result:
 
 ```text
 status: 0
@@ -121,18 +121,30 @@ The repeated pattern supports one reusable rule:
 
 > A signal trap that performs cleanup must clear overlapping traps and terminate with the signal-derived status. An EXIT trap must capture the primary status before cleanup and define cleanup-failure precedence.
 
+That rule is also retained in `FIELD_GUIDE.md` as the **Cleaned but still running** donut.
+
 ## Evidence boundary
 
 The focused regression models the exact trap and status logic while replacing recursive removal with an event counter. Full TMPDIR package runs remain governed by their existing hosted workflows. Bash signal delivery can be deferred while a foreground command runs; the repair controls what happens when the handler runs, not kernel or foreground-child delivery latency.
 
-The candidate does not add HUP or QUIT handling, change the runtime paths, alter product assertions, or claim that every lexical trap match is defective.
+The repair does not add HUP or QUIT handling, change the runtime paths, alter product assertions, or claim that every lexical trap match is defective.
 
 ## Cleanup and rerun
 
 Every regression case creates its own temporary directory and process. The self-signaled process terminates before the temporary directory is removed. The final case runs a signaled candidate followed immediately by a successful candidate and requires one cleanup event in each run.
 
+## Exact-head result
+
+PR #273 head `c16e1aaabd7ac82a0d0758fae4d00350ff06b3f2` passed:
+
+- Linux Fieldwork CI `30622336690` / 805;
+- explicit TMPDIR verification `30622335581` / 124;
+- deep review `30622336031` / 91.
+
+The complete diff contained exactly the two harness repairs, this investigation record, and the focused regression. PR #273 merged locally as `885225866cc4dc7a4998d3b96e0e883900666d8f` and issue #271 closed completed.
+
 ## Disposition
 
-Execute exact-head repository CI, inspect the complete four-file diff, and then choose `MERGE LOCALLY` if the matrix passes unchanged.
+**MERGED LOCALLY.** The controlled audit found and repaired one additional true positive, retained the distinguishing counter fixture, generalized the review lesson, and stopped without expanding into unrelated source.
 
-No Debian or external upstream issue, email, patch, merge request, comment, or review is authorized or made by this record.
+No Debian or external upstream issue, email, patch, merge request, comment, or review was authorized or made by this record.

@@ -174,6 +174,12 @@ A handler logs a signal but never stores it, so later code cannot distinguish in
 
 **Check:** owner-only and process-group delivery, all handled signals, first-signal retention, child cleanup, and rerun.
 
+### Cleaned but still running
+
+A signal handler performs cleanup and returns, so the script continues into later work and may invoke the same cleanup again through `EXIT`. A similar re-entry occurs when an ordinary path calls cleanup while an EXIT trap still points at it and cleanup fails.
+
+**Check:** separate ordinary EXIT from signal termination, clear or ignore overlapping traps before cleanup, define `primary or signal > cleanup > success` precedence, assert the later-work marker is absent, count cleanup calls, and run an immediate clean rerun.
+
 ## Areas that have been fruitful
 
 ### Lifecycle and interruption
