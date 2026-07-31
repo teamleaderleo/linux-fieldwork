@@ -6,6 +6,7 @@ on:
       - ".github/workflows/probe-process-group-kill.yml"
       - "investigations/process-group-kill-syntax/**"
       - "tests/test_process_group_kill_probe.py"
+      - "tests/test_process_group_kill_zero_status_selection.py"
       - "tools/probe_process_group_kill.py"
   workflow_dispatch:
 
@@ -20,7 +21,7 @@ jobs:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
 
-      - name: Run disposable sid topology matrix twice
+      - name: Run patched disposable sid topology matrix twice
         shell: bash
         run: |
           set -euo pipefail
@@ -36,28 +37,55 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
               apt-get install --yes --no-install-recommends \
-                dash procps python3
+                dash patch procps python3
               dpkg-query -W \
                 -f="\${binary:Package}\t\${Version}\t\${Architecture}\n" \
-                dash procps python3 \
+                dash patch procps python3 \
                 | tee /results/package-versions.tsv
               /bin/kill --version \
                 | tee /results/kill-version.txt
               /bin/dash -c "echo dash=\$0" \
                 | tee /results/dash-version.txt
+
+              candidate=/tmp/process-group-kill-candidate
+              mkdir -p "$candidate/tools"
+              cp tools/probe_process_group_kill.py \
+                "$candidate/tools/probe_process_group_kill.py"
+              patch_log=/results/patch-application.txt
+              patch \
+                --batch \
+                --forward \
+                --fuzz=0 \
+                --directory "$candidate" \
+                -p1 \
+                --input \
+                /work/investigations/process-group-kill-syntax/0001-require-zero-command-status.patch \
+                2>&1 | tee "$patch_log"
+              if grep -Eiq "fuzz|offset" "$patch_log"; then
+                echo "candidate patch used fuzz or offset" >&2
+                exit 1
+              fi
+              python3 -m py_compile \
+                "$candidate/tools/probe_process_group_kill.py"
+              sha256sum \
+                /work/tools/probe_process_group_kill.py \
+                /work/investigations/process-group-kill-syntax/0001-require-zero-command-status.patch \
+                "$candidate/tools/probe_process_group_kill.py" \
+                > /results/source-identities.sha256
+
               python3 -W error::ResourceWarning \
-                tools/probe_process_group_kill.py \
+                "$candidate/tools/probe_process_group_kill.py" \
                 --output /results/run-1.json \
                 > /results/run-1.stdout \
                 2> /results/run-1.stderr
               python3 -W error::ResourceWarning \
-                tools/probe_process_group_kill.py \
+                "$candidate/tools/probe_process_group_kill.py" \
                 --output /results/run-2.json \
                 > /results/run-2.stdout \
                 2> /results/run-2.stderr
             '
 
-      - name: Classify exact topology and rerun evidence
+      - name: Classify exact topology, status, and rerun evidence
         shell: bash
         run: |
           set -euo pipefail
@@ -120,6 +148,10 @@ jobs:
                       type(name) is str and name not in by_name,
                       f"run {iteration}: invalid or duplicate case name: {name!r}",
                   )
+                  require(
+                      type(result.get("returncode")) is int,
+                      f"run {iteration}: invalid returncode for {name}: {result}",
+                  )
                   by_name[name] = result
               require(
                   set(by_name) == expected_names,
@@ -129,6 +161,7 @@ jobs:
               owner = by_name["owner-only-external"]
               require(
                   owner.get("classification") == "owner-only-delivery"
+                  and owner.get("returncode") == 0
                   and owner.get("parent_signal") == 2
                   and owner.get("child_signal") is None
                   and owner.get("parent_running") is False
@@ -140,6 +173,7 @@ jobs:
               positive = by_name["python-killpg-control"]
               require(
                   positive.get("classification") == "whole-group-delivery"
+                  and positive.get("returncode") == 0
                   and positive.get("parent_signal") == 2
                   and positive.get("child_signal") == 2
                   and positive.get("parent_running") is False
@@ -156,12 +190,13 @@ jobs:
               candidate = by_name[selected]
               require(
                   candidate.get("classification") == "whole-group-delivery"
+                  and candidate.get("returncode") == 0
                   and candidate.get("parent_signal") == 2
                   and candidate.get("child_signal") == 2
                   and candidate.get("parent_running") is False
                   and candidate.get("child_running") is False
                   and candidate.get("unrelated_running") is True,
-                  f"run {iteration}: selected candidate failed topology: {candidate}",
+                  f"run {iteration}: selected candidate failed topology/status: {candidate}",
               )
               records.append((record, by_name))
 
@@ -180,7 +215,11 @@ jobs:
           )
           print("selected_candidate=" + records[0][0]["selected_candidate"])
           for name in sorted(expected_names):
-              print(f"{name}={records[0][1][name]['classification']}")
+              result = records[0][1][name]
+              print(
+                  f"{name}={result['classification']}, "
+                  f"status={result['returncode']}"
+              )
           PY
 
       - name: Upload process-group evidence
