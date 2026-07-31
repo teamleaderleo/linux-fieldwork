@@ -50,10 +50,22 @@ This file supersedes head and run-state fields in the dated `selection.md` when 
 ## Deno stdin cancellation
 
 - Linux Fieldwork issue: #258
-- public issue: Deno 30652
-- state: ready for fork probe
-- overlap result: no assignee, comments, or visible fix carrier at the recorded check
-- first execution: release and current-head pipe/PTY matrix with op trace, process exit timing, descriptor/resource ownership, cancellation/data race, signals, cleanup, and rerun
+- fork PR: `teamleaderleo/deno#3`
+- exact head: `96df32b430db1e77cb3f696fa6be255e3b463fba`
+- focused run: `30594164831`
+- latest observed state: queued
+- matrix: Deno 2.4.5 and 2.9.4; open pipe stays unwritten while JavaScript reaches `done`; observe process liveness, send one wakeup byte only when still alive; immediate EOF is the clean control
+- claim boundary: release behavior only; current fork-source behavior and product correction remain open
+
+## DuckDB Arrow union mapping revival
+
+- Linux Fieldwork issue: #262
+- public issue: DuckDB 21842
+- prior focused PR: DuckDB 21843
+- prior broad PR: DuckDB 21898
+- current classification: ready for current-head verification and prior-work reuse
+- historical result: both prior PRs were auto-closed for inactivity, not merged; the focused author explicitly retained relevance before later stale closure
+- next action: reproduce identity, out-of-range, and reordered-ID cases; compare both prior designs; rebase the focused sparse mapping carrier unless current source or active work supersedes it
 
 ## Current decisions
 
@@ -62,6 +74,7 @@ This file supersedes head and run-state fields in the dated `selection.md` when 
 3. Keep DuckDB PR #9 as the first product candidate for exact review.
 4. Treat DuckDB #256 as higher consequence and require independent review after reproduction.
 5. Treat Deno #253 as a standards-driven classification exercise unless the connect-level control fails.
-6. Start Deno #258 after one final public overlap refresh.
+6. Classify Deno #258 release behavior, then add current-head execution before designing a correction.
+7. Reuse DuckDB's closed Arrow mapping work rather than writing a third implementation.
 
 No external contact was made or authorized.
