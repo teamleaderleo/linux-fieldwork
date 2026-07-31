@@ -1,0 +1,94 @@
+diff --git a/tools/probe_process_group_kill.py b/tools/probe_process_group_kill.py
+--- a/tools/probe_process_group_kill.py
++++ b/tools/probe_process_group_kill.py
+@@ -83,6 +83,14 @@ def wait_for_signal_settle(
+         time.sleep(0.02)
+ 
+ 
++def wait_for_marked_process_exit(pid: int, signal_path: pathlib.Path) -> None:
++    """Wait for a fixture handler that recorded SIGINT to finish exiting."""
++
++    if signal_path.exists():
++        wait_for_process_exit(pid, timeout=SIGNAL_TIMEOUT_SECONDS)
++
++
+ def worker_program() -> str:
+     return r'''
+ import os
+@@ -243,6 +251,12 @@ def run_case(
+                 root / "parent.signal",
+                 root / "child.signal",
+             )
++            # The fixture writes its marker before a short bounded handler delay.
++            # Do not classify that deliberate delay as a surviving group member.
++            wait_for_marked_process_exit(parent_pid, root / "parent.signal")
++            wait_for_marked_process_exit(child_pid, root / "child.signal")
++
+             parent_signal_value = read_signal(root / "parent.signal")
+             child_signal_value = read_signal(root / "child.signal")
+             unrelated_signal_value = read_signal(root / "unrelated.signal")
+diff --git a/tests/test_process_group_kill_probe.py b/tests/test_process_group_kill_probe.py
+--- a/tests/test_process_group_kill_probe.py
++++ b/tests/test_process_group_kill_probe.py
+@@ -1,15 +1,21 @@
+ from __future__ import annotations
+ 
++import pathlib
+ import signal
++import subprocess
++import sys
++import tempfile
++import time
+ import unittest
+ 
+ from tools.probe_process_group_kill import (
+     CaseResult,
+     ProbeError,
+     classify,
+     command_cases,
++    process_running,
+     run_case,
+     run_probe,
++    wait_for_marked_process_exit,
+ )
+ 
+ 
+@@ -81,6 +87,39 @@ class ProcessGroupKillProbeTest(unittest.TestCase):
+             ),
+         )
+ 
++    def test_marked_handler_settles_before_liveness_snapshot(self) -> None:
++        with tempfile.TemporaryDirectory() as temporary:
++            marker = pathlib.Path(temporary) / "signal.marker"
++            process = subprocess.Popen(
++                [
++                    sys.executable,
++                    "-c",
++                    (
++                        "import pathlib, sys, time; "
++                        "pathlib.Path(sys.argv[1]).write_text('2', encoding='utf-8'); "
++                        "time.sleep(0.25)"
++                    ),
++                    str(marker),
++                ]
++            )
++            try:
++                deadline = time.monotonic() + 2
++                while time.monotonic() < deadline and not marker.exists():
++                    time.sleep(0.01)
++                self.assertTrue(marker.exists())
++                self.assertTrue(process_running(process.pid))
++
++                wait_for_marked_process_exit(process.pid, marker)
++
++                self.assertFalse(process_running(process.pid))
++            finally:
++                try:
++                    process.wait(timeout=1)
++                except subprocess.TimeoutExpired:
++                    process.kill()
++                    process.wait(timeout=1)
++
+     def test_owner_only_and_whole_group_controls_rerun_cleanly(self) -> None:
+         owner_builder = dict(command_cases())["owner-only-external"]
+         for iteration in range(2):
