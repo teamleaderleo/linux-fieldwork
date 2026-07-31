@@ -112,6 +112,45 @@ An issue may declare an autonomous multi-helper push for a bounded batch. In tha
 8. Link records instead of copying large reports between them. The tracked record carries commands, fixtures, results, interpretation, and evidence limits; the issue or pull request carries routing, review state, and the current decision.
 9. Leave the repository sufficient for another person or agent to understand, reproduce, review, and continue the work even when the helper chat receives no follow-up message.
 
+## Write while the work is still in progress
+
+Do not wait for the end of a long investigation to create the first durable record. Chat narration is optional and lossy; the repository is the recovery source of truth.
+
+Create or update a compact checkpoint before any step that is long-running, tool-heavy, likely to change scope, likely to produce a sensitive-looking result, or difficult to reconstruct from memory. Update it again whenever one of these facts changes:
+
+- exact branch or head;
+- bounded question;
+- first observed distinguishing result;
+- changed paths;
+- completed gate or artifact identity;
+- cleanup state;
+- evidence boundary;
+- next safe action;
+- external-contact authority.
+
+Write the checkpoint before deepening a surprising or “spicy” finding. Preserve the exact observation first; interpretation, candidate design, and broader consequence can follow. Never leave the only copy of a command, artifact ID, failing case, or next action inside a chat response that may not be delivered.
+
+Prefer one live checkpoint on the owning issue or pull request and edit it in place instead of producing a stream of partial comments. Once commands, fixtures, or results become substantial, move them into the tracked investigation and leave the live checkpoint as a pointer.
+
+Use this compact form:
+
+```text
+LIVE CHECKPOINT
+Unit:
+Owner:
+Exact head:
+Question:
+Observed so far:
+Changed paths:
+Completed gates:
+Cleanup state:
+Evidence boundary:
+Next safe action:
+External-contact state:
+```
+
+A checkpoint is not a claim that work is complete. Mark unknown, queued, skipped, unreviewed, or not-yet-executed state explicitly. Do not include secrets, private credentials, unsafe operational detail, or speculative attribution merely to make the checkpoint feel complete.
+
 ## Recover from interrupted or blocked interaction
 
 A chat response, connector call, local command, hosted job, or safety check can stop while repository work remains valid. Treat the interruption as a coordination event. It does not by itself establish a product defect, test result, or permission decision.
