@@ -35,6 +35,8 @@ class PacketBFocusedHarnessTest(unittest.TestCase):
         )
         self.assertIn("prepare_mmdebstrap_packet_b_focused.py", source)
         self.assertIn("verify_mmdebstrap_packet_b_focused.py", source)
+        self.assertEqual(source.count("autopkgtest --test-name=testsuite"), 2)
+        self.assertNotIn("--ignore-restrictions=hint-testsuite-triggers", source)
         self.assertIn("124)", source)
         self.assertNotIn("124|137)", source)
         self.assertIn("outer-timeout-neutral", source)
