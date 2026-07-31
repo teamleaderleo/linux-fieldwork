@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'investigations/mmdebstrap-chrootless-directory-mtime/**'
+      - 'tests/test_mmdebstrap_chrootless-directory-mtime.py'
+      - 'tests/test_mmdebstrap_chrootless-directory-mtime-real-probe.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime_real_probe.py'
       - '.github/workflows/mmdebstrap-chrootless-directory-mtime.yml'
@@ -14,6 +16,10 @@ permissions:
 
 jobs:
   real-metadata-boundaries:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'repair/chrootless-dir-mtime-real-boundaries-v2'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
