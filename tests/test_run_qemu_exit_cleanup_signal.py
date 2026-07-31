@@ -113,10 +113,19 @@ class RunQemuExitCleanupSignalTest(unittest.TestCase):
         cleanup_hold: bool = True,
     ) -> pathlib.Path:
         helper = first_signal.RunQemuFirstSignalCleanupTest(methodName="runTest")
+        functions, traps = helper.candidate_blocks(source)
+        if "record_cleanup_signal() {" in source:
+            functions = "\n".join(
+                (
+                    "cleanup_signal_status=0",
+                    helper.extract_function(source, "record_cleanup_signal"),
+                    functions,
+                )
+            )
         return helper.write_case(
             root,
             label,
-            helper.candidate_blocks(source),
+            (functions, traps),
             host_status=host_status,
             guest_status=guest_status,
             cleanup_failure=cleanup_failure,
@@ -217,11 +226,18 @@ class RunQemuExitCleanupSignalTest(unittest.TestCase):
             self.assertEqual(self.cleanup_log(second.parent), ["rm", "rmdir"])
             self.assertFalse((second.parent / "tmp").exists())
 
-    def test_composed_source_contract(self) -> None:
+    def test_composed_source_and_fixture_contract(self) -> None:
         with tempfile.TemporaryDirectory(prefix="run-qemu-exit-contract-") as td:
-            source = self.prepare_candidate(
-                pathlib.Path(td), include_exit_repair=True
+            root = pathlib.Path(td)
+            source = self.prepare_candidate(root, include_exit_repair=True)
+            script = self.make_case(
+                root,
+                "fixture-contract",
+                source,
+                cleanup_hold=False,
             )
+            fixture = script.read_text(encoding="utf-8")
+
         helper = first_signal.RunQemuFirstSignalCleanupTest(methodName="runTest")
         finish = helper.extract_function(source, "finish")
         exit_handler = helper.extract_function(source, "cleanup_exit")
@@ -237,6 +253,11 @@ class RunQemuExitCleanupSignalTest(unittest.TestCase):
         self.assertIn("trap '' INT TERM", signal_handler)
         self.assertIn('cleanup_signal_status=$1', recorder)
         self.assertIn('if [ "$cleanup_signal_status" -eq 0 ]; then', recorder)
+
+        self.assertEqual(fixture.count("cleanup_signal_status=0"), 1)
+        self.assertEqual(fixture.count("record_cleanup_signal() {"), 1)
+        self.assertIn("trap 'record_cleanup_signal 130' INT", fixture)
+        self.assertIn("trap 'record_cleanup_signal 143' TERM", fixture)
 
 
 if __name__ == "__main__":
