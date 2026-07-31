@@ -60,6 +60,34 @@ class RunQemuExitCleanupSignalTest(unittest.TestCase):
         self.assertEqual(syntax.returncode, 0, syntax.stdout + syntax.stderr)
         return destination.read_text(encoding="utf-8")
 
+    @staticmethod
+    def extract_exact_function(source: str, name: str) -> str:
+        marker = f"{name}() {{\n"
+        if source.startswith(marker):
+            start = 0
+        else:
+            boundary = f"\n{marker}"
+            boundary_start = source.find(boundary)
+            if boundary_start == -1:
+                raise ValueError(f"function not found at line boundary: {name}")
+            start = boundary_start + 1
+        end = source.index("\n}\n", start) + len("\n}\n")
+        return source[start:end]
+
+    def candidate_blocks(self, source: str) -> tuple[str, str]:
+        functions = "\n".join(
+            self.extract_exact_function(source, name)
+            for name in ("finish", "cleanup_exit", "cleanup_signal")
+        )
+        traps = (
+            "trap cleanup_exit EXIT\n"
+            "trap 'cleanup_signal 130' INT\n"
+            "trap 'cleanup_signal 143' TERM\n"
+        )
+        for line in traps.splitlines(keepends=True):
+            self.assertEqual(source.count(line), 1)
+        return functions, traps
+
     def run_signals_during_cleanup(
         self,
         script: pathlib.Path,
@@ -113,12 +141,14 @@ class RunQemuExitCleanupSignalTest(unittest.TestCase):
         cleanup_hold: bool = True,
     ) -> pathlib.Path:
         helper = first_signal.RunQemuFirstSignalCleanupTest(methodName="runTest")
-        functions, traps = helper.candidate_blocks(source)
+        functions, traps = self.candidate_blocks(source)
         if "record_cleanup_signal() {" in source:
+            initialization = "cleanup_signal_status=0"
+            self.assertEqual(source.count(initialization + "\n"), 1)
             functions = "\n".join(
                 (
-                    "cleanup_signal_status=0",
-                    helper.extract_function(source, "record_cleanup_signal"),
+                    initialization,
+                    self.extract_exact_function(source, "record_cleanup_signal"),
                     functions,
                 )
             )
@@ -238,11 +268,10 @@ class RunQemuExitCleanupSignalTest(unittest.TestCase):
             )
             fixture = script.read_text(encoding="utf-8")
 
-        helper = first_signal.RunQemuFirstSignalCleanupTest(methodName="runTest")
-        finish = helper.extract_function(source, "finish")
-        exit_handler = helper.extract_function(source, "cleanup_exit")
-        signal_handler = helper.extract_function(source, "cleanup_signal")
-        recorder = helper.extract_function(source, "record_cleanup_signal")
+        finish = self.extract_exact_function(source, "finish")
+        exit_handler = self.extract_exact_function(source, "cleanup_exit")
+        signal_handler = self.extract_exact_function(source, "cleanup_signal")
+        recorder = self.extract_exact_function(source, "record_cleanup_signal")
 
         self.assertIn("cleanup_signal_status=0", source)
         self.assertIn("trap '' INT TERM", finish)
@@ -256,8 +285,10 @@ class RunQemuExitCleanupSignalTest(unittest.TestCase):
 
         self.assertEqual(fixture.count("cleanup_signal_status=0"), 1)
         self.assertEqual(fixture.count("record_cleanup_signal() {"), 1)
+        self.assertEqual(fixture.count("cleanup_signal() {"), 1)
         self.assertIn("trap 'record_cleanup_signal 130' INT", fixture)
         self.assertIn("trap 'record_cleanup_signal 143' TERM", fixture)
+        self.assertIn("trap '' INT TERM", self.extract_exact_function(fixture, "cleanup_signal"))
 
 
 if __name__ == "__main__":
