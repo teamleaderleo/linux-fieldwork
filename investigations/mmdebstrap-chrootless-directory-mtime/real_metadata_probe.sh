@@ -64,8 +64,6 @@ esac
 
 case "$runtime_parent" in
   /home/runner/work/_temp|/home/runner/work/_temp/*)
-    # Hosted Actions places RUNNER_TEMP below /home/runner. That placement is
-    # accepted, but the runtime must never equal or contain HOME.
     case "$home_canonical" in
       "$runtime_canonical"|"$runtime_canonical"/*)
         echo "refusing runtime containing home: $runtime_canonical" >&2
@@ -201,7 +199,25 @@ cap_before="$(getcap -n "$cap_file")"
   exit 1
 }
 
-python3 - "$repo_root" "$tree" "$timestamp" <<'PY'
+candidate_patch="$repo_root/investigations/mmdebstrap-chrootless-directory-mtime/0001-normalize-root-chrootless-directory-mtimes.patch"
+normalizer=python-evidence-model
+if [[ -f "$candidate_patch" ]]; then
+  for command_name in patch perl; do
+    command -v "$command_name" >/dev/null 2>&1 || {
+      echo "missing product normalizer command: $command_name" >&2
+      exit 2
+    }
+  done
+  product_normalizer="$runtime/product-normalizer.pl"
+  python3 \
+    "$repo_root/investigations/mmdebstrap-chrootless-directory-mtime/prepare_product_normalizer.py" \
+    "$product_normalizer" \
+    >"$result_dir/$result_label-product-normalizer.stdout" \
+    2>"$result_dir/$result_label-product-normalizer.stderr"
+  perl "$product_normalizer" "$tree" "$timestamp"
+  normalizer=extracted-product-perl-helper
+else
+  python3 - "$repo_root" "$tree" "$timestamp" <<'PY'
 import pathlib
 import sys
 
@@ -213,6 +229,7 @@ from test_mmdebstrap_chrootless_directory_mtime import normalize_directory_mtime
 
 normalize_directory_mtimes(tree, timestamp)
 PY
+fi
 
 ordinary_after="$(stat -c '%Y' "$tree/ordinary")"
 mount_after="$(stat -c '%Y' "$mount_dir")"
@@ -236,6 +253,7 @@ summary="$result_dir/$result_label.txt"
 cat >"$summary" <<EOF
 schema_version=1
 result_label=$result_label
+normalizer=$normalizer
 normalization_timestamp=$timestamp
 root_device=$root_device
 foreign_device=$mount_device
