@@ -84,11 +84,11 @@ class MakeMirrorUpdateCacheCleanupFailureTest(unittest.TestCase):
             "#!/bin/sh\n"
             "set -eu\n"
             f"runtime={self.shell_quote(str(runtime))}\n"
-            f"cleanup_status={cleanup_status}\n"
+            f"injected_cleanup_status={cleanup_status}\n"
             "cleanupapt() {\n"
             "  printf 'cleanup\\n' >>\"$runtime/cleanup.log\"\n"
             "  rm -f \"$runtime/apt-state\"\n"
-            "  return \"$cleanup_status\"\n"
+            "  return \"$injected_cleanup_status\"\n"
             "}\n"
             + functions
             + "\n"
