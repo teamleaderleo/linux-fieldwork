@@ -59,6 +59,14 @@ Whenever an implementation mechanism changes, compare more than the headline out
 - Retain the command, status, relevant logs, artifact name, digest, and environment.
 - Re-review after every semantic change. An older green run does not validate a newer head.
 
+### Make the work resumable before it becomes complicated
+
+- Create a compact live checkpoint before a long hosted run, multi-tool source walk, broad scope change, or result that will be difficult to reconstruct.
+- Update it after the first distinguishing observation, after every semantic head change, and before switching to another work unit.
+- Keep the exact head, completed gates, first incomplete step, cleanup state, evidence boundary, and next safe action visible.
+- Treat chat narration as a transport surface. Put commands, result identities, and decision-changing observations in the repository while they are fresh.
+- Once the result stabilizes, move detail into the investigation and keep the live checkpoint as a short pointer instead of accumulating duplicate partial reports.
+
 ### Leave reusable knowledge
 
 - Write down stable lessons under `notes/`.
@@ -91,6 +99,7 @@ Whenever an implementation mechanism changes, compare more than the headline out
 - Do not maintain duplicate canonical fixes for the same defect.
 - Do not combine independent defects into one patch unless the stack and test ownership are explicit.
 - Do not silently broaden a claim beyond the exact fixture, platform, privilege level, format, signal, or protocol that ran.
+- Do not leave the only copy of a command, exact head, artifact identity, first failure, or next action in chat.
 - Do not contact an external project without explicit repository authority.
 
 ## 🍩 Donuts
@@ -122,6 +131,12 @@ A scrubbed environment removes credentials but also removes a safe value that th
 The repository suite passes while the actual privileged, Debian, matrix, or long-running job was skipped, missing, unable to obtain a merge ref, or stopped before the probe.
 
 **Check:** job presence, step conclusions, exact head, artifact contents, and real status.
+
+### Correct result, missing recovery state
+
+A branch, workflow, or chat contains useful work, but the repository does not say which head produced the observation, where execution stopped, what cleanup completed, or what command should run next.
+
+**Check:** exact head, changed paths, first distinguishing result, first incomplete step, artifact or gate identity, cleanup state, evidence boundary, and next safe action. Another worker should be able to resume without the conversation.
 
 ### Correct label, wrong event
 
@@ -211,6 +226,7 @@ Ask these questions in order:
 12. Is the durable note useful without reading the original pull request?
 13. Is there one canonical issue and one canonical fix carrier?
 14. Has upstream contact remained inside the authorized boundary?
+15. Could another worker resume from the repository alone, including the first incomplete step and next safe action?
 
 ## Investigation selection heuristic
 
@@ -230,4 +246,4 @@ Avoid broad exploration that cannot name a distinguishing result, cleanup bounda
 
 Add a new entry when the same mistake or successful technique appears more than once, or when one finding generalizes cleanly across targets. Keep exact transcripts and one-off details in their investigation records; keep this guide focused on reusable judgment.
 
-Version boundary: lessons retained from Linux Fieldwork work through 2026-07-30. Revalidate tool-, distribution-, and upstream-specific details when they change.
+Version boundary: lessons retained from Linux Fieldwork work through 2026-07-31. Revalidate tool-, distribution-, and upstream-specific details when they change.
