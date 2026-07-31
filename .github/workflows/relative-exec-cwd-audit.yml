@@ -208,8 +208,16 @@ jobs:
           import sys
 
           summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
-          assert summary["schema_version"] == 1
-          assert summary["absolute_identity"] == summary["repository_candidate"]
+          if type(summary.get("schema_version")) is not int:
+              raise SystemExit("schema_version must be an exact integer")
+          if summary["schema_version"] != 1:
+              raise SystemExit(
+                  f"unsupported schema_version: {summary['schema_version']!r}"
+              )
+          if summary.get("absolute_identity") != summary.get("repository_candidate"):
+              raise SystemExit(
+                  "absolute-path control identity differs from repository candidate"
+              )
           print(f"relative_identity={summary['relative_identity']!r}")
           print(
               "missing_child_candidate_identity="
