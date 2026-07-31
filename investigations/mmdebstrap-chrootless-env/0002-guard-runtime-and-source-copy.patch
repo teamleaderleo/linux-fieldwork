@@ -75,7 +75,7 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
  runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-env")"
  case "$runtime" in
    "$runtime_parent"/*) ;;
-@@ -28,4 +86,8 @@
+@@ -28,6 +86,10 @@
  esac
  fixture="$runtime/fixture"
  package="$runtime/lf-chrootless-env-probe_1.0_all.deb"
@@ -84,14 +84,19 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
 +source_hash_before="$(git hash-object "$source_root/mmdebstrap")"
 +source_status_before="$(git status --short -- upstream/mmdebstrap/mmdebstrap)"
  server_pid=
-@@ -47,3 +109,6 @@
+ 
+ cleanup() {
+@@ -50,6 +112,9 @@
  rm -rf "$runtime" "$result_dir"
  mkdir -p "$fixture/DEBIAN" "$fixture/usr/lib/lf-chrootless-env-probe"
  mkdir -p "$result_dir" "$runtime/home" "$runtime/xdg" "$runtime/bin"
 +mkdir -p "$(dirname "$source_copy")"
 +cp --preserve=mode "$source_root/mmdebstrap" "$source_copy"
 +chmod 0755 "$source_copy"
-@@ -198,5 +263,5 @@
+ 
+ cat >"$fixture/DEBIAN/control" <<'EOF'
+ Package: lf-chrootless-env-probe
+@@ -197,7 +262,7 @@
    printf -v hook 'mkdir -p "$1%s"; cp "%s" "$1%s"' \
      "$package_dir" "$package" "$package"
    command=(
@@ -100,13 +105,16 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
      --mode=chrootless
      --variant=custom
      --format=directory
-@@ -211,5 +276,3 @@
+@@ -210,8 +275,6 @@
    fi
    command+=( '' "$target" )
  }
 -
 -chmod 0755 "$source_root/mmdebstrap"
-@@ -426,6 +489,12 @@
+ 
+ # Negative control: dpkg itself passes the ambient environment to a
+ # chrootless maintainer script unless its caller wraps the process.
+@@ -427,7 +490,14 @@
  fakeroot_environment_preserved=yes
  safe_launch_succeeded=yes
  clean_rerun_succeeded=yes
