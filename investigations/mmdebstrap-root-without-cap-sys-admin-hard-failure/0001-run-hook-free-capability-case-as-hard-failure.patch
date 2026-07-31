@@ -1,7 +1,15 @@
 diff --git a/coverage.txt b/coverage.txt
 --- a/coverage.txt
 +++ b/coverage.txt
-@@ -52,6 +52,7 @@ Test: root-mode-inside-unshare-chroot
+@@ -24,6 +24,7 @@
+ 
+ Test: create-directory
+ Needs-Root: true
++Needs-Hook-Free-APT-Config: true
+ 
+ Test: unshare
+ Needs-Root: true
+@@ -52,6 +53,7 @@
  
  Test: root-without-cap-sys-admin
  Needs-Root: true

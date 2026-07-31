@@ -14,6 +14,7 @@ PATCH = ROOT / (
     "investigations/mmdebstrap-root-without-cap-sys-admin-hard-failure/"
     "0001-run-hook-free-capability-case-as-hard-failure.patch"
 )
+PRODUCER = SOURCE / "tests/create-directory"
 CASE = SOURCE / "tests/root-without-cap-sys-admin"
 
 
@@ -22,6 +23,20 @@ def paragraph(text: str, name: str) -> str:
     start = text.index(marker)
     end = text.find("\n\n", start)
     return text[start:] if end == -1 else text[start:end]
+
+
+def selected_hook_free_tests(text: str) -> list[str]:
+    selected: list[str] = []
+    for block in text.split("\n\n"):
+        fields: dict[str, str] = {}
+        for line in block.splitlines():
+            if ": " not in line:
+                continue
+            key, value = line.split(": ", 1)
+            fields[key] = value
+        if fields.get("Needs-Hook-Free-APT-Config") == "true":
+            selected.append(fields["Test"])
+    return selected
 
 
 def string_constants(source: str) -> set[str]:
@@ -49,7 +64,15 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
             shutil.copy2(SOURCE / relative, destination)
 
         applied = subprocess.run(
-            ["patch", "--batch", "--forward", "-p1", "-i", str(PATCH)],
+            [
+                "patch",
+                "--batch",
+                "--forward",
+                "--fuzz=0",
+                "-p1",
+                "-i",
+                str(PATCH),
+            ],
             cwd=self.tree,
             check=False,
             stdout=subprocess.PIPE,
@@ -58,6 +81,9 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        combined = (applied.stdout + applied.stderr).lower()
+        self.assertNotIn("fuzz", combined)
+        self.assertNotIn("offset", combined)
 
         self.baseline_coverage = (SOURCE / "coverage.txt").read_text(encoding="utf-8")
         self.candidate_coverage = (self.tree / "coverage.txt").read_text(
@@ -74,16 +100,21 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
             self.tree / "debian/tests/testsuite"
         ).read_text(encoding="utf-8")
 
-    def test_candidate_uses_distinct_hook_free_hard_failure_metadata(self) -> None:
-        baseline = paragraph(self.baseline_coverage, "root-without-cap-sys-admin")
-        candidate = paragraph(self.candidate_coverage, "root-without-cap-sys-admin")
+    def test_candidate_marks_producer_and_consumer_for_same_hard_phase(self) -> None:
+        for name in ("create-directory", "root-without-cap-sys-admin"):
+            with self.subTest(name=name):
+                baseline = paragraph(self.baseline_coverage, name)
+                candidate = paragraph(self.candidate_coverage, name)
+                self.assertNotIn("Needs-APT-Config: true", baseline)
+                self.assertNotIn("Needs-Hook-Free-APT-Config: true", baseline)
+                self.assertIn("Needs-Root: true", candidate)
+                self.assertIn("Needs-Hook-Free-APT-Config: true", candidate)
+                self.assertNotIn("Needs-APT-Config: true", candidate)
 
-        self.assertNotIn("Needs-APT-Config: true", baseline)
-        self.assertNotIn("Needs-Hook-Free-APT-Config: true", baseline)
-        self.assertIn("Needs-Root: true", candidate)
-        self.assertIn("Needs-Hook-Free-APT-Config: true", candidate)
-        self.assertNotIn("Needs-APT-Config: true", candidate)
-
+        self.assertEqual(
+            selected_hook_free_tests(self.candidate_coverage),
+            ["create-directory", "root-without-cap-sys-admin"],
+        )
         self.assertIn(
             'test.get("Needs-Hook-Free-APT-Config", "false") == "true"',
             self.candidate_driver,
@@ -91,6 +122,18 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
         self.assertIn("and use_host_apt_config", self.candidate_driver)
         self.assertIn(
             '("skip", "test cannot use host apt config")', self.candidate_driver
+        )
+
+    def test_fixture_producer_creates_consumer_inputs(self) -> None:
+        producer = PRODUCER.read_text(encoding="utf-8")
+        consumer = CASE.read_text(encoding="utf-8")
+        self.assertIn(">pkglist.txt", producer)
+        self.assertIn(">tar1.txt", producer)
+        self.assertIn("diff -u tar1.txt -", consumer)
+        self.assertIn("diff -u pkglist.txt -", consumer)
+        self.assertLess(
+            self.candidate_coverage.index("Test: create-directory\n"),
+            self.candidate_coverage.index("Test: root-without-cap-sys-admin\n"),
         )
 
     def test_host_apt_skip_uses_black_compatible_parenthesization(self) -> None:
