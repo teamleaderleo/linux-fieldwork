@@ -37,7 +37,8 @@ jobs:
               apt-get update
               apt-get install --yes --no-install-recommends \
                 dash procps python3
-              dpkg-query -W -f="${binary:Package}\t${Version}\t${Architecture}\n" \
+              dpkg-query -W \
+                -f="\${binary:Package}\t\${Version}\t\${Architecture}\n" \
                 dash procps python3 \
                 | tee /results/package-versions.tsv
               /bin/kill --version \
