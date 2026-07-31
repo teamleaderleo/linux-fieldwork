@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           if [[ -d tests ]] && find tests -type f -name 'test*.py' -print -quit | grep -q .; then
-            python3 -m unittest discover -s tests -v
+            python3 tools/run_fieldwork_unittests.py --verbosity 2
           fi
 
       - name: Check shell syntax and command help
@@ -77,7 +77,8 @@ jobs:
             tools/tar_manifest.py \
             tools/manifest_diff.py \
             tools/debian_bug_report.py \
-            tools/validate_unified_diffs.py; do
+            tools/validate_unified_diffs.py \
+            tools/run_fieldwork_unittests.py; do
             if [[ -f "$tool" ]]; then
               python3 "$tool" --help >/dev/null
             fi
