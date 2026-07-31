@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import pathlib
 import shutil
 import subprocess
@@ -41,17 +42,24 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
             check=False,
             timeout=30,
         )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         return script
 
     def check_parent(
         self,
         script: pathlib.Path,
         path: pathlib.Path | str,
+        *,
+        cwd: pathlib.Path = REPOSITORY_ROOT,
+        home: pathlib.Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        if home is not None:
+            environment["HOME"] = str(home)
         return subprocess.run(
             ["bash", str(script), "--check-runtime-parent", str(path)],
-            cwd=REPOSITORY_ROOT,
+            cwd=cwd,
+            env=environment,
             text=True,
             capture_output=True,
             check=False,
@@ -99,6 +107,55 @@ class ChrootlessEnvironmentHarnessSafetyPatchTests(unittest.TestCase):
                     completed = self.check_parent(script, path)
                     self.assertEqual(completed.returncode, 2)
                     self.assertIn("refusing", completed.stderr)
+
+    def test_rejects_runtime_that_contains_or_is_inside_repository(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="lf-runtime-overlap-") as temporary:
+            root = pathlib.Path(temporary)
+            script = self.apply_patch(root / "patch-tree")
+
+            for relation in ("runtime-contains-repository", "runtime-inside-repository"):
+                with self.subTest(relation=relation):
+                    parent = root / relation
+                    runtime = parent / "mmdebstrap-chrootless-env"
+                    if relation == "runtime-contains-repository":
+                        repository = runtime / "checkout"
+                    else:
+                        repository = parent
+                    repository.mkdir(parents=True)
+                    initialized = subprocess.run(
+                        ["git", "init", "-q"],
+                        cwd=repository,
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                        timeout=30,
+                    )
+                    self.assertEqual(
+                        initialized.returncode,
+                        0,
+                        initialized.stdout + initialized.stderr,
+                    )
+                    completed = self.check_parent(
+                        script,
+                        parent,
+                        cwd=repository,
+                    )
+                    self.assertEqual(completed.returncode, 2, completed.stderr)
+                    self.assertIn("repository", completed.stderr)
+
+    def test_rejects_runtime_that_contains_or_is_inside_home(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="lf-home-overlap-") as temporary:
+            root = pathlib.Path(temporary)
+            script = self.apply_patch(root / "patch-tree")
+            parent = root / "runtime-parent"
+            runtime = parent / "mmdebstrap-chrootless-env"
+
+            for home in (runtime / "home", runtime):
+                with self.subTest(home=home):
+                    home.mkdir(parents=True, exist_ok=True)
+                    completed = self.check_parent(script, parent, home=home)
+                    self.assertEqual(completed.returncode, 2, completed.stderr)
+                    self.assertIn("home", completed.stderr)
 
     def test_candidate_executes_a_preserved_runtime_copy(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
