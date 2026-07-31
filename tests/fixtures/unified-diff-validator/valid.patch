@@ -1,0 +1,8 @@
+diff --git a/example.txt b/example.txt
+index 3367afd..3e75765 100644
+--- a/example.txt
++++ b/example.txt
+@@ -1,2 +1,2 @@
+-old line
++new line
+ context line
