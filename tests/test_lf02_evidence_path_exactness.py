@@ -38,8 +38,8 @@ class LF02EvidencePathExactnessTest(unittest.TestCase):
             record = json.loads(path.read_text(encoding="utf-8"))
             decoy = f"{target}-decoy"
             record["script_log"] = [
-                f"phase=postinst script_version=3.0 dpkg_root={decoy} cwd={decoy}",
-                f"phase=postinst script_version=3.1 dpkg_root={decoy} cwd={decoy}",
+                f"phase=postinst script_version=3.0 args_hex=- dpkg_root={decoy} cwd={decoy}",
+                f"phase=postinst script_version=3.1 args_hex=- dpkg_root={decoy} cwd={decoy}",
             ]
             helpers.write_json(path, record)
 
@@ -173,9 +173,9 @@ class LF02EvidencePathExactnessTest(unittest.TestCase):
             path = results / "purge.snapshot.json"
             record = json.loads(path.read_text(encoding="utf-8"))
             record["script_log"] = [
-                f"phase=postinst phase=preinst script_version=3.0 "
+                f"phase=postinst phase=preinst script_version=3.0 args_hex=- "
                 f"dpkg_root={target} cwd={target}",
-                f"phase=postinst script_version=3.1 "
+                f"phase=postinst script_version=3.1 args_hex=- "
                 f"dpkg_root={target} cwd={target}",
             ]
             helpers.write_json(path, record)
