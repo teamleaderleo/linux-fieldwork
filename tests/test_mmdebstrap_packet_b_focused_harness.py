@@ -59,6 +59,24 @@ class PacketBFocusedHarnessTest(unittest.TestCase):
         self.assertLess(guard_block.index("if: >-"), guard_block.index("runs-on:"))
         self.assertEqual(source.count("docker run --privileged --rm"), 1)
 
+    def test_merge_identity_uses_observed_parent_and_retains_event_base(self) -> None:
+        source = WORKFLOW.read_text(encoding="utf-8")
+        start = source.index("- name: Retain exact generated-merge identity")
+        end = source.index("- name: Run only the focused producer", start)
+        block = source[start:end]
+        self.assertIn('"base_sha": revision[1]', block)
+        self.assertIn(
+            '"event_base_sha": os.environ["FIELDWORK_EVENT_BASE_SHA"]', block
+        )
+        self.assertNotIn(
+            '"base_sha": os.environ["FIELDWORK_EVENT_BASE_SHA"]', block
+        )
+        self.assertNotIn("FIELDWORK_PR_BASE_SHA", source)
+        self.assertIn('"parents": revision[1:]', block)
+        self.assertIn('"head_sha": os.environ["FIELDWORK_PR_HEAD_SHA"]', block)
+        self.assertIn('"event_sha": os.environ["FIELDWORK_EVENT_SHA"]', block)
+        self.assertIn('"expected": "synthetic-merge-ref"', block)
+
     def test_workflow_receipt_gate_is_explicit_and_optimizer_safe(self) -> None:
         source = WORKFLOW.read_text(encoding="utf-8")
         start = source.index("- name: Require focused completion")
