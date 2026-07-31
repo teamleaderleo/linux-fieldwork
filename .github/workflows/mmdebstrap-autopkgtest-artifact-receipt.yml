@@ -25,7 +25,7 @@ jobs:
       SOURCE_ARTIFACT_DIGEST: sha256:33f972dfd71c08263a0d766d9e1ded96c11407f001315a2a0c23ae9d2bf68474
       EXPECTED_HEAD: fe49686c333aea3c5b8e378e655c52fa57e9224c
       EXPECTED_BASE: c2b7c43a4b6ce883f6dcdbef8d489bcf48323266
-      EXPECTED_CHECKOUT: 37648c5bda3f406ce706b4a5be46c1ccaa354f9c
+      EXPECTED_CHECKOUT: 37648c5efd9cf80b5ae4ec063e8d6cb5b4f82d6e
     steps:
       - name: Check out receipt implementation
         uses: actions/checkout@v4
