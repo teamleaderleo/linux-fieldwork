@@ -5,42 +5,25 @@ repo_root="$(git rev-parse --show-toplevel)"
 source_root="$repo_root/upstream/mmdebstrap"
 result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/apt-authority-results"
 argv_classifier="$repo_root/tools/classify_env_argv.py"
-
-validate_runtime_parent() {
-  local requested=$1 canonical
-  canonical="$(realpath -m "$requested")"
-  case "$canonical" in
-    /tmp | /tmp/* | /var/tmp | /var/tmp/* | /home/runner/work/_temp | /home/runner/work/_temp/*) ;;
-    *)
-      echo "refusing unsafe runtime parent: $canonical" >&2
-      return 2
-      ;;
-  esac
-  printf '%s\n' "$canonical"
-}
+runtime_leaf=mmdebstrap-chrootless-apt-authority
+source "$repo_root/investigations/mmdebstrap-unwritable-tmpdir/runtime_guard.sh"
 
 if [[ ${1-} == --check-runtime-parent ]]; then
   [[ $# -eq 2 ]] || {
     echo 'usage: apt_authority_transaction.sh --check-runtime-parent PATH' >&2
     exit 2
   }
-  validate_runtime_parent "$2" >/dev/null
+  validate_disposable_runtime \
+    "$repo_root" "${HOME:-/nonexistent-home}" "$2" "$runtime_leaf" \
+    >/dev/null
   exit
 fi
 
-runtime_parent="$(validate_runtime_parent "${RUNNER_TEMP:-/tmp}")"
-runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-apt-authority")"
-[[ "$runtime" != "$runtime_parent" ]] || {
-  echo "refusing runtime equal to parent: $runtime" >&2
-  exit 2
-}
-case "$runtime" in
-  "$runtime_parent"/*) ;;
-  *)
-    echo "refusing runtime outside parent: $runtime" >&2
-    exit 2
-    ;;
-esac
+runtime="$(validate_disposable_runtime \
+  "$repo_root" \
+  "${HOME:-/nonexistent-home}" \
+  "${RUNNER_TEMP:-/tmp}" \
+  "$runtime_leaf")"
 
 result_parent="$(realpath -m "$repo_root/investigations/mmdebstrap-chrootless-env")"
 result_dir="$(realpath -m "$result_dir")"
