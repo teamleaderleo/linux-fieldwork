@@ -32,12 +32,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -d '' patches < <(
-            git diff --name-only --diff-filter=ACMRT -z \
-              "${{ github.event.pull_request.base.sha }}" \
-              "${{ github.event.pull_request.head.sha }}" \
-              -- ':(glob)**/*.patch'
-          )
+          patch_list="$(mktemp)"
+          trap 'rm -f "$patch_list"' EXIT
+          git diff --name-only --diff-filter=ACMRT -z \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            -- ':(glob)**/*.patch' >"$patch_list"
+          mapfile -d '' patches <"$patch_list"
           if ((${#patches[@]})); then
             python3 tools/validate_unified_diffs.py -- "${patches[@]}"
           else
