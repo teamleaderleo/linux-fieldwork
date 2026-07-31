@@ -57,6 +57,12 @@ def discover_suite(
     pattern: str = "test*.py",
 ) -> unittest.TestSuite:
     start_dir = start_dir.resolve()
+    repository_root = start_dir.parent
+    for import_root in (repository_root, start_dir):
+        import_path = str(import_root)
+        if import_path not in sys.path:
+            sys.path.insert(0, import_path)
+
     loader = unittest.TestLoader()
     return loader.discover(
         str(start_dir),
