@@ -42,19 +42,47 @@ for protected in "$repo_canonical" "$home_canonical"; do
     echo "refusing unbounded protected root: $protected" >&2
     exit 2
   }
-  case "$runtime" in
-    "$protected"|"$protected"/*)
-      echo "refusing runtime inside protected path: $runtime" >&2
-      exit 2
-      ;;
-  esac
-  case "$protected" in
-    "$runtime"|"$runtime"/*)
-      echo "refusing runtime containing protected path: $runtime" >&2
-      exit 2
-      ;;
-  esac
 done
+
+case "$runtime" in
+  "$repo_canonical"|"$repo_canonical"/*)
+    echo "refusing runtime inside repository: $runtime" >&2
+    exit 2
+    ;;
+esac
+case "$repo_canonical" in
+  "$runtime"|"$runtime"/*)
+    echo "refusing runtime containing repository: $runtime" >&2
+    exit 2
+    ;;
+esac
+
+case "$runtime_parent" in
+  /home/runner/work/_temp|/home/runner/work/_temp/*)
+    # Hosted Actions places RUNNER_TEMP below /home/runner. That placement is
+    # accepted, but the runtime must never equal or contain HOME.
+    case "$home_canonical" in
+      "$runtime"|"$runtime"/*)
+        echo "refusing runtime containing home: $runtime" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  *)
+    case "$runtime" in
+      "$home_canonical"|"$home_canonical"/*)
+        echo "refusing runtime inside home: $runtime" >&2
+        exit 2
+        ;;
+    esac
+    case "$home_canonical" in
+      "$runtime"|"$runtime"/*)
+        echo "refusing runtime containing home: $runtime" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+esac
 
 result_dir="$repo_root/investigations/mmdebstrap-chrootless-directory-mtime/real-boundary-results"
 tree="$runtime/tree"
@@ -66,12 +94,13 @@ cleanup() {
   set +e
   if [[ $mounted == yes ]] || mountpoint -q "$mount_dir" 2>/dev/null; then
     sudo umount "$mount_dir" || cleanup_status=$?
+    if mountpoint -q "$mount_dir" 2>/dev/null; then
+      echo "refusing recursive cleanup while mount is still active: $mount_dir" >&2
+      return "${cleanup_status:-1}"
+    fi
     mounted=no
   fi
-  rm -rf "$runtime" || {
-    status=$?
-    [[ $cleanup_status -ne 0 ]] || cleanup_status=$status
-  }
+  rm -rf "$runtime" || cleanup_status=$?
   return "$cleanup_status"
 }
 
@@ -112,15 +141,14 @@ printf 'acl bytes\n' >"$acl_file"
 printf '#!/bin/sh\nexit 0\n' >"$cap_file"
 chmod 0755 "$cap_file"
 
-setfacl -m u:nobody:rx "$tree/acl-directory"
-setfacl -m u:nobody:r "$acl_file"
-sudo setcap cap_net_bind_service=ep "$cap_file"
-
 touch -h --date="@$old_timestamp" \
   "$tree/ordinary" \
   "$tree/acl-directory" \
   "$acl_file" \
   "$cap_file"
+setfacl -m u:nobody:rx "$tree/acl-directory"
+setfacl -m u:nobody:r "$acl_file"
+sudo setcap cap_net_bind_service=ep "$cap_file"
 
 sudo mount -t tmpfs -o size=1m,mode=0755 tmpfs "$mount_dir"
 mounted=yes
@@ -210,9 +238,5 @@ cleanup
   echo "runtime survived cleanup: $runtime" >&2
   exit 1
 }
-if findmnt -rn "$mount_dir" >/dev/null 2>&1; then
-  echo "mount survived cleanup: $mount_dir" >&2
-  exit 1
-fi
 
 echo "real directory-mtime metadata boundary probe passed"
