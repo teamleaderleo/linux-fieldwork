@@ -45,6 +45,7 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
                 "patch",
                 "--batch",
                 "--forward",
+                "--fuzz=0",
                 "-p1",
                 "-i",
                 str(PATCH),
@@ -57,6 +58,7 @@ class MmdebstrapSubidAccountMatchTests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertNotIn("fuzz", (completed.stdout + completed.stderr).lower())
         syntax = subprocess.run(
             ["/bin/sh", "-n", str(candidate)],
             check=False,
