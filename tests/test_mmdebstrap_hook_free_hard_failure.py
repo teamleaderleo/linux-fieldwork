@@ -124,13 +124,12 @@ class MmdebstrapHookFreeHardFailureTest(unittest.TestCase):
             '("skip", "test cannot use host apt config")', self.candidate_driver
         )
 
-    def test_fixture_producer_creates_consumer_inputs(self) -> None:
+    def test_fixture_producer_creates_exact_consumer_input(self) -> None:
         producer = PRODUCER.read_text(encoding="utf-8")
         consumer = CASE.read_text(encoding="utf-8")
-        self.assertIn(">pkglist.txt", producer)
         self.assertIn(">tar1.txt", producer)
         self.assertIn("diff -u tar1.txt -", consumer)
-        self.assertIn("diff -u pkglist.txt -", consumer)
+        self.assertNotIn("pkglist.txt", consumer)
         self.assertLess(
             self.candidate_coverage.index("Test: create-directory\n"),
             self.candidate_coverage.index("Test: root-without-cap-sys-admin\n"),
