@@ -1,49 +1,48 @@
 # Archive-only root/chrootless directory mtime normalization candidate
 
-Tracking: issue #380 and evidence PRs #383, #386, #388, #390, and #391.
+Tracking: issue #380 and PR #395.
 
 ## TL;DR
 
-The real Debian sid `chrootless` failure is a reproducibility mismatch: root and
-chrootless tarballs have the same paths, types, modes, ownership, sizes, regular
-file bytes, and file mtimes, but 123 directory mtimes differ.
+The real Debian sid `chrootless` case produced root and chrootless tarballs
+whose paths, types, modes, ownership, sizes, regular-file bytes, and file mtimes
+matched. The only differences were 123 directory mtimes.
 
-This candidate normalizes **real same-filesystem directories only** to the
+This candidate normalizes **real directories on the archive root device** to an
 explicit `SOURCE_DATE_EPOCH`, immediately after `setup()` and before tar output,
-for `--format=tar` in root and chrootless modes.
+for root/chrootless `--format=tar` only.
 
-It does not change:
+The product helper uses the already-imported Perl `File::Find` API, `lstat`
+object identity, explicit `st_dev` comparison, `File::Find::prune`, and built-in
+`utime`. It does not shell out to `find` or `touch`.
 
-- directory or null output;
-- unshare or fakechroot behavior;
-- squashfs/ext2/ext4 image paths;
-- runs without `SOURCE_DATE_EPOCH`;
-- dry runs;
-- regular files, symlinks, hard links, xattrs, ACLs, capabilities, sparse source
-  allocation, or mounted foreign-device descendants.
-
-The retained patch is a local candidate. It is not offered upstream and is not
-yet promoted until exact repository and focused sid execution pass.
+No product source is modified in place. The retained patch applies to disposable
+source copies only.
 
 ## Explain like I'm five
 
-The two builders make the same box, but one keeps old dates on folders while the
-other writes the selected reproducible date. The test compares the whole boxes,
-so they differ.
+The two builders put the same files into the box, but one keeps old dates on
+folders. The test compares the complete tarballs, so those folder dates make the
+boxes different.
 
-The repair changes only real folder dates in the temporary archive tree. It does
-not change file dates, shortcuts, mounted folders, or directory-format output.
+The repair changes only real folder dates inside the temporary tar tree. It
+checks each object itself, skips shortcuts, and prunes another mounted device
+before changing anything there.
 
 ## Why care
 
-The package test explicitly requires root and chrootless tarballs to be
-byte-identical for four include variants. Treating directory timestamps as
-comparison noise would weaken current behavior rather than fix it.
+The current `tests/chrootless` case explicitly compares root and chrootless
+tarballs byte-for-byte for four include variants. Treating directory timestamps
+as comparison noise would weaken implemented behavior rather than repair it.
 
-A broad timestamp rewrite would also destroy package-owned regular-file mtimes.
-A tar-header rewrite would reopen archive metadata and sparse-layout risks. The
-selected candidate is the smallest mechanism that matches the demonstrated
-owner.
+Broader alternatives are worse:
+
+- full timestamp normalization destroys package-owned file mtimes;
+- tar-header rewriting reopens PAX, link, and sparse metadata risks;
+- `find -xdev -type d -exec touch` prunes descent but still evaluates the
+  foreign mountpoint itself, so it can mutate the mounted filesystem root.
+
+The selected mechanism matches the reviewed object/device boundary exactly.
 
 ## Exact source boundary
 
@@ -58,23 +57,20 @@ Candidate patch:
 
 `0001-normalize-root-chrootless-directory-mtimes.patch`
 
-Construction branch:
+Live carrier:
 
-`candidate/chrootless-directory-mtime-normalization`.
-
-The patch applies to a temporary source copy. The imported source remains
-unchanged.
+PR #395, branch `candidate/chrootless-directory-mtime-normalization-v3`.
 
 ## Demonstrated baseline
 
-Run 999, workflow `30640356619`, completed 154 Debian sid package tests and
+Workflow `30640356619` / run 999 completed 154 Debian sid package tests and
 stopped at `(242/284) chrootless`.
 
 Artifact `8798679560`, SHA-256
 `50d8ab7a20cb241ff9821b35329508ecdb0c58cbd3dec348c18d68d1dfe7a244`,
 showed 123 directory-only mtime differences.
 
-The focused synthetic matrix established:
+The focused policy matrix established:
 
 - current `--mtime` plus `--clamp-mtime` diverges on older chrootless directory
   mtimes;
@@ -82,176 +78,154 @@ The focused synthetic matrix established:
 - real-directory normalization converges and preserves package file mtime;
 - comparison-only normalization explains but does not repair output.
 
-## Selected mechanism
+## Selected product helper
 
-The candidate adds:
+The patch adds a helper with this contract:
 
-```perl
-sub normalize_archive_directory_mtimes {
-    my $root  = shift;
-    my $mtime = shift;
+1. `lstat` the archive root;
+2. require the root itself to be a real directory, not a symlink;
+3. retain the root `st_dev`;
+4. walk top-down with `File::Find` and `no_chdir`;
+5. `lstat` each object;
+6. ignore non-directories and symlinks;
+7. set `File::Find::prune` and return before mutation when `st_dev` differs;
+8. call built-in `utime` only for retained real same-device directories;
+9. fail explicitly on root stat, descendant stat, or timestamp failure.
 
-    0 == system(
-        'find', $root, '-xdev', '-type', 'd', '-exec',
-        'touch', '--no-dereference', "--date=\@$mtime", '--', '{}', '+'
-      )
-      or error "cannot normalize archive directory mtimes: $?";
-}
-```
+The helper does not add a new external command dependency.
 
-The worker invokes it only when all are true:
+## Invocation gate
 
-- not dry-run;
+The worker calls the helper only when all are true:
+
+- dry-run is false;
 - `SOURCE_DATE_EPOCH` exists;
 - format is exactly `tar`;
 - mode is exactly root or chrootless.
 
-`touch` availability is checked inside that exact gate. Unrelated modes and
-formats do not gain a new dependency.
+The call runs immediately after `setup()` and before the worker success boundary
+and tar output selection.
 
-## Why this approach
+Consequences:
 
-### Why GNU `find -xdev -type d`?
+- runs without an explicit reproducibility epoch remain unchanged;
+- directory/null output remains unchanged;
+- unshare/fakechroot remains unchanged;
+- squashfs/ext2/ext4 remains unchanged;
+- helper failure occurs before tar bytes are written.
 
-Current product tar already uses `--one-file-system` and does not follow
-symlinks. The selected walk mirrors those two material traversal boundaries:
-
-- `-xdev` prunes foreign-device mounted descendants;
-- `-type d` selects real directories under ordinary find semantics;
-- `touch --no-dereference` makes object identity explicit.
-
-### Why before tar output?
-
-The call runs:
-
-```text
-setup completes
-→ directory normalization
-→ worker sends success boundary
-→ tar output pipe is selected
-→ tar starts
-```
-
-A normalization failure therefore produces no partial tar stream. The existing
-caller may already have created an empty target file before worker execution;
-this candidate does not change that established failure behavior.
-
-### Why only explicit `SOURCE_DATE_EPOCH`?
-
-Without the variable, mmdebstrap chooses current wall-clock time for `$mtime`.
-Rewriting every directory to an implicit current timestamp would create a new
-behavior unrelated to the demonstrated reproducibility contract.
-
-### Why only tar format?
-
-The real failure is a tarball byte comparison. Squashfs/ext2/ext4 consume the
-same intermediate tar path but have additional timestamp, xattr, and filesystem
-compatibility surfaces. Directory output exposes the target tree directly and
-must not be mutated merely to satisfy an archive test.
-
-## Rejected alternatives
-
-### Full `--mtime` without clamp
-
-Converges archives but overwrites package-owned regular-file mtimes.
-
-### Comparison-only manifest normalization
-
-Leaves product bytes different and weakens the explicit `cmp` test.
-
-### Tar header rewrite
-
-Adds a second archive transformation layer and repeats the class of PAX, hard
-link, and sparse metadata hazards seen in LF-14.
-
-### General recursive Python/Perl walk
-
-Can diverge from tar's one-filesystem and symlink behavior unless it reimplements
-those boundaries. The existing GNU tools already define the target platform
-contract.
-
-### Global `touch` dependency
-
-Would make unrelated modes and formats require a tool they never execute. The
-candidate checks it only inside the selected normalization path.
+The caller may already have created an empty target file before the worker
+starts. This candidate does not change that existing failure behavior.
 
 ## Evidence inherited from the stacked matrix
 
-The composed evidence stack proves:
+The evidence stack established:
 
-- symlink-to-directory objects and outside targets are not mutated;
-- hard-link inode identity and package file mtime remain unchanged;
-- injected foreign-device subtrees are pruned before descent;
-- selected user xattrs survive source normalization and PAX archive creation;
-- sparse source size, allocation, mtime, and logical bytes remain unchanged;
-- a real tmpfs subtree remains unchanged;
-- real POSIX ACLs and file capabilities remain unchanged;
-- cleanup unmounts before recursive deletion;
-- a second clean real-boundary run succeeds.
+- symlink-to-directory and outside-target preservation;
+- hard-link inode and package file mtime preservation;
+- injected foreign-device pruning before descent;
+- selected user xattrs preserved in source and PAX headers;
+- sparse source size, allocation, mtime, and logical bytes preserved;
+- real tmpfs root/nested/sentinel unchanged;
+- real POSIX ACL and file capability unchanged;
+- stale runtime symlink rejected before cleanup;
+- stale mount refused before runtime reset;
+- unmount rechecked before recursive deletion;
+- immediate clean rerun.
 
-Real-boundary workflow `30656548394` passed at head
-`679f8b1ecae13c05013f82dc5750a424f816bd27`.
-Artifact `8803444764`, SHA-256
+Initial real-boundary workflow `30656548394` passed with artifact `8803444764`,
+SHA-256
 `60ae20d7b19d0e690bac39233f273517b16e70c52c10d8428771e3e946bdc548`.
 
-## Candidate regression
+## Exact product execution in the real probe
 
-`tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py` requires:
+The candidate branch contains
+`prepare_product_normalizer.py`. It:
 
-- exact zero-fuzz, zero-offset patch application;
-- complete Perl syntax;
-- current sid perltidy agreement when available;
-- exact helper command and failure diagnostic;
-- `touch` dependency scoped to the selected gate;
-- explicit dry-run, epoch, format, and mode predicates;
-- source order before the tar output boundary;
-- real directory normalization with regular file, symlink, hard-link, and outside
-  target preservation;
-- immediate second helper run;
-- fail-closed fake-find and fake-touch controls.
+- copies exact imported source;
+- applies the retained patch with zero fuzz and zero offset;
+- validates complete Perl syntax;
+- extracts only `normalize_archive_directory_mtimes`;
+- writes an executable Perl harness.
 
-The dedicated real-boundary workflow installs perltidy and executes this test on
-the same exact candidate head.
+When the candidate patch exists, `real_metadata_probe.sh` executes that extracted
+Perl helper against the real tmpfs/ACL/capability fixture. The receipt must say:
+
+```text
+normalizer=extracted-product-perl-helper
+```
+
+The dedicated candidate workflow rejects a fallback to the Python evidence
+model.
+
+## Candidate tests
+
+The exact candidate matrix requires:
+
+- source-independent patch grammar validation;
+- declared old-side source slices match exact imported lines;
+- `git apply --check` succeeds;
+- GNU patch zero-fuzz/zero-offset dry run succeeds;
+- exact patch application and complete Perl syntax;
+- exact `File::Find`/`lstat`/`st_dev`/`prune`/`utime` mechanism;
+- explicit dry-run, epoch, format, and mode gate;
+- source order before tar output;
+- regular-file, symlink, hard-link, outside-target, and second-run preservation;
+- missing-root, symlink-root, and injected-`utime` failure controls;
+- exact product-helper preparation and real-probe handoff;
+- current Debian sid perltidy agreement in a sid container.
+
+## Gate history and failure ownership
+
+The candidate intentionally preserves classified red runs:
+
+1. malformed hunk counts stopped before candidate execution;
+2. exact-looking hunks still missed until source ranges were regenerated;
+3. source-slice, `git apply`, and GNU patch checks then passed;
+4. Ubuntu runner perltidy 20230309 reformatted unchanged imported source, so the
+   whole-source host formatting test was invalid;
+5. formatting authority moved to a Debian sid container.
+
+These were carrier/harness failures, not product behavior results.
 
 ## Failure precedence
 
-A missing `touch`, failing `find`, or failing `touch` is an archive-preparation
-failure and remains authoritative. The helper stops before tar output begins.
+A root/descendant `lstat` failure or `utime` failure is an archive-preparation
+failure and remains authoritative before tar output begins.
 
-The candidate does not attempt rollback of directory mtimes after a partial
-normalization failure. The tree is already a disposable archive/image temporary
-root and existing outer cleanup owns its removal. A product promotion still
-requires the focused real sid case and a second complete run.
+The helper does not roll back directory mtimes after a partial failure. The tree
+is already a disposable archive/image temporary root and existing outer cleanup
+owns its removal. Product promotion still requires the real focused sid case and
+a clean rerun.
 
-## Compatibility boundary
+## Remaining promotion gate
 
-Still open after the reduced candidate gate:
+After exact repository and dedicated candidate workflows pass:
 
-- same-device bind mounts, which GNU tar `--one-file-system` also traverses;
+1. compose the patch into the disposable sid source generation;
+2. execute only the real `chrootless` case first, including all four include
+   variants;
+3. require byte-identical root/chrootless tarballs and unchanged host-root
+   receipt;
+4. rerun the focused case cleanly;
+5. continue the remaining package matrix from the next independent failure.
+
+## Evidence boundary
+
+Still open:
+
+- same-device bind mounts, which product tar also traverses;
 - mount replacement races after traversal starts;
 - SELinux/AppArmor labels;
-- unreadable or ownership-hostile directories;
-- squashfs/ext2/ext4 normalization policy;
-- sparse archive layout (source sparse allocation is preserved, but tar is not
+- ownership-hostile or concurrently replaced directories;
+- non-tar image format policy;
+- sparse archive layout (source sparse allocation is preserved; tar is not
   invoked with `--sparse` here);
 - every package set and architecture;
-- current upstream intent or acceptance.
-
-## Promotion gate
-
-Before product recommendation:
-
-1. exact repository CI and dedicated metadata/candidate workflow pass;
-2. complete candidate diff review passes;
-3. compose the candidate into a disposable sid source generation;
-4. run the focused real `chrootless` case and all four include variants;
-5. require byte-identical archives and unchanged host-root receipt;
-6. run a second clean focused execution;
-7. only then continue the remaining package matrix from the next independent
-   failure.
+- upstream intent or acceptance.
 
 ## Authority
 
 Internal Linux Fieldwork candidate only. No Debian/mmdebstrap upstream issue,
-email, patch, merge request, review, package publication, release, or deployment
-is included or authorized.
+email, patch, review, package publication, release, deployment, or merge to
+`main` is included or authorized.
