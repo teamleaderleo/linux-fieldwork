@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import pathlib
 import shutil
-import stat
 import subprocess
 import tempfile
 import unittest
@@ -86,7 +85,12 @@ class MmdebstrapChrootlessDirectoryMtimeCandidateTest(unittest.TestCase):
             helper,
         )
 
-        self.assertIn("'env',        'touch'", source)
+        global_tools_start = source.index("foreach my $tool (")
+        global_tools_end = source.index("my $dpkgversion", global_tools_start)
+        global_tools = source[global_tools_start:global_tools_end]
+        self.assertNotIn("'touch'", global_tools)
+        self.assertIn("if (!can_execute 'touch')", source)
+        self.assertIn('error "cannot find touch";', source)
         self.assertEqual(
             source.count(
                 "normalize_archive_directory_mtimes($options->{root}, $mtime);"
@@ -103,13 +107,15 @@ class MmdebstrapChrootlessDirectoryMtimeCandidateTest(unittest.TestCase):
 
         worker_start = source.index("my $worker = sub")
         setup = source.index("setup($options);", worker_start)
+        dependency = source.index("if (!can_execute 'touch')", setup)
         normalize = source.index(
             "normalize_archive_directory_mtimes($options->{root}, $mtime);",
-            setup,
+            dependency,
         )
         adios = source.index("pack('n', 0) . 'adios'", normalize)
         tar_output = source.index("open(STDOUT, '>&', $wfh)", adios)
-        self.assertLess(setup, normalize)
+        self.assertLess(setup, dependency)
+        self.assertLess(dependency, normalize)
         self.assertLess(normalize, adios)
         self.assertLess(adios, tar_output)
 
