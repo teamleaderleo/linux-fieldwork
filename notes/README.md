@@ -22,6 +22,11 @@ Start with [`../templates/note.md`](../templates/note.md).
 
 Create another category when several notes share a clear topic that fits poorly in the existing set.
 
+## Process playbooks
+
+- [`processes/cross-context-review-prevents-myopia.md`](processes/cross-context-review-prevents-myopia.md) — choose adjacent contexts, transfer defect classes, define saturation, and record reopen triggers.
+- [`processes/recent-cross-context-lessons.md`](processes/recent-cross-context-lessons.md) — refresh the live carrier before writing, classify the first failure owner, preserve command purpose and argv boundaries, verify adjacent authority, and treat workflow steps as shared state.
+
 ## Naming
 
 Use short lowercase filenames with hyphens, such as:
