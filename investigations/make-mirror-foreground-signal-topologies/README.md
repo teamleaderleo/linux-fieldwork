@@ -1,23 +1,35 @@
 # make_mirror foreground signal topology comparison
 
-State: `comparative-evaluation-active`
+State: `stopped`
 
 ## TL;DR
 
-The accepted top-level proxy lifecycle and focused `update_cache()` worker repair make eventual signal status, cleanup, and proxy ownership correct. They do not make every PID-only cancellation topology prompt while a shell waits for an unowned foreground descendant.
+The accepted top-level proxy lifecycle and focused `update_cache()` repair make eventual signal status, cleanup, and proxy ownership correct. PID-only cancellation can still wait behind an unowned foreground descendant.
 
-The retained comparison now establishes four layers:
+Comparative execution shows that prompt cancellation is technically possible, but not with one small shell repair:
 
-1. current worker-only and owner-only signals can remain deferred behind foreground work;
-2. explicit parent-worker plus worker-child ownership can make those two paths prompt in a simple chain;
-3. background parent pipelines preserve final-worker PID, input, and status for both one-line and heredoc producers;
-4. the worker's output-capturing internal pipeline cannot be owned by its final PID alone—upstream stages survive and `wait "$!"` remains blocked. An isolated `setsid` group can stop all stages and preserve output/status semantics, but adds dependencies and group policy.
+- worker-only and owner-only TERM are deferred in the current topology;
+- caller process-group TERM is prompt, but the repository does not guarantee an isolated caller group;
+- worker-child ownership fixes only worker-only delivery;
+- tracking only the final PID of an internal pipeline fails because upstream stages survive and `wait "$!"` remains blocked;
+- a composed source repair needs parent-worker ownership, simple-command ownership, fallback ownership, and output-capturing pipeline-group ownership;
+- isolated `setsid` groups preserve the tested output/status contracts, but add process-group policy and external utility dependencies not declared by the primary test dependency block.
 
-No source direction is selected yet. The simple shell-only composed approach is eliminated; the remaining comparison is between bounded internal process groups, a dedicated all-stage supervisor, and deliberately retaining eventual cancellation because the documented operational impact is limited.
+The remaining issue is cancellation latency under selected PID-only delivery topologies. Its occurrence frequency and maximum real APT delay are unknown. The accepted repairs already prevent false success, cross-owner proxy termination, duplicate cleanup, leaked proxy state, and later worker continuation after the worker trap runs.
+
+The investigation therefore stops without a source patch. Reopen only on measured harmful latency, a documented isolated-supervisor contract, an explicit dependency decision, or contradictory real-workload evidence.
+
+## In simple words
+
+A manager owns a worker, and the worker uses tools.
+
+The current repair makes everyone eventually report “stopped” and clean only their own things. A stop message sent only to the manager or worker can still wait until the currently active tool finishes.
+
+Making every stop immediate is possible, but it requires the manager to track the worker, the worker to track simple tools, and a separate mechanism to track every tool in a pipeline. That is a much larger machine for a delay that has not been measured as harmful.
 
 ## Canonical records
 
-- issue: #263;
+- owning issue: #263;
 - merged top-level lifecycle: PR #224, merge commit `386f5c8dbb01e5de1af45ac0eb325ee8567722e3`;
 - focused worker lifecycle: PR #259 at `d270f558fa7c32569ea380fd614c34edaf60b3b3`;
 - imported source blob: `6c4be092edcf23b56b63a3befe238c099c45f590`;
@@ -27,15 +39,8 @@ No source direction is selected yet. The simple shell-only composed approach is 
 - `tests/test_make_mirror_foreground_signal_topologies.py`;
 - `tests/test_make_mirror_pipeline_worker_identity.py`;
 - `tests/test_make_mirror_output_capture_pipeline_ownership.py`;
-- `tests/test_make_mirror_output_capture_semantics.py`.
-
-## In simple words
-
-A manager owns a worker, and the worker uses tools.
-
-The current repair makes everyone eventually report “stopped” and clean only their own things. But if only the manager hears “stop,” the worker and tool can finish first. If only the worker hears it, the active tool can finish first.
-
-Tracking the worker and tool works for one simple chain. The real worker also has a three-tool pipeline. Tracking only the last tool does not work because the first two can survive and keep the worker waiting. Stopping an isolated group works, but the script does not currently create or promise those groups.
+- `tests/test_make_mirror_output_capture_pipeline_contract.py`;
+- `tests/test_make_mirror_fallback_command_ownership.py`.
 
 ## Exact source boundary
 
@@ -53,9 +58,9 @@ Inside `update_cache()` it has:
 - source-filter pipelines whose no-match status is deliberately ignored;
 - an output-capturing command-substitution pipeline used to build `pkgs`.
 
-Neither PR #224 nor PR #259 introduces a pipeline-worker PID, foreground-command PID, or internal process group.
+Neither PR #224 nor PR #259 introduces a pipeline-worker PID, foreground-command PID, or internal process group. Shell traps can therefore remain deferred while unowned foreground commands run.
 
-## Executed findings
+## Executed comparison
 
 ### Current worker-only TERM
 
@@ -70,8 +75,7 @@ With the foreground child held, the worker signal remains pending. After release
 
 With the worker and child held, the owner signal remains pending. After release:
 
-- child later work exists;
-- worker later work also exists;
+- child and worker later work exist;
 - owner later work is absent;
 - final status is 143;
 - both cleanups once, proxy gone.
@@ -88,102 +92,115 @@ Worker-owned foreground child makes worker-only TERM prompt. Parent-owned pipeli
 
 For both one-line and heredoc producers:
 
-- `$!` equals the final worker's actual PID;
+- `$!` equals the final worker PID;
 - complete input reaches the worker;
 - explicit wait preserves worker status 7.
 
-### Output-capturing pipeline final PID
+### Naive output-pipeline ownership
 
 Killing the stored final-stage PID does not complete cancellation:
 
 - final stage exits;
-- producer and middle remain alive;
-- shell `wait "$!"` remains blocked on the pipeline job;
-- status 143 and cleanup complete only after upstream stages are separately terminated.
+- producer and middle stages remain alive;
+- `wait "$!"` remains blocked on the pipeline job;
+- cleanup completes only after upstream stages are separately terminated.
 
-This rejects final-PID-only ownership for the internal package-list pipeline.
+This rejects a final-PID-only output-capture helper.
 
-### Isolated output pipeline group
+### Isolated output-pipeline group
 
-`setsid /bin/sh -c PIPELINE` plus external negative-group `kill` stops all held stages, removes partial capture, and exits 143. Ordinary controls preserve:
+An isolated session/process group stops every held stage, removes partial capture, exits 143, and reruns cleanly. The retained contract matrix also preserves:
 
+- empty, unterminated, internally multiline, and multiply terminated output;
 - command-substitution trailing-newline stripping;
-- final-stage failure status 7 and rejection of partial output;
-- the target shell's existing last-stage pipeline-status rule.
+- final-stage failure status 7;
+- rejection of partial output after failure;
+- the target shell's existing rule that upstream failure is masked when the final stage succeeds.
 
-## Caller topology result
+### Fallback chain
 
-The retained README documents direct `./make_mirror.sh` invocation. Repository search found no `setsid` wrapper or isolated-group cancellation contract.
+The isolated active-command model preserves:
 
-Therefore caller-owned group delivery is a useful mitigation for controlled wrappers, not the canonical repository answer. Interactive and noninteractive callers can provide different grouping arrangements.
+- first success skips fallback;
+- first ordinary failure runs fallback;
+- second-attempt status is authoritative;
+- cancellation during the first attempt exits 143 and never starts fallback;
+- immediate rerun succeeds cleanly.
 
-## Alternatives
+## Alternatives and dispositions
 
-### A. Rely on caller process groups
+### Caller-owned process group — not selected
 
-**Disposition:** not selected as the repository answer.
+The documented invocation is direct `./make_mirror.sh`. Repository search found no `setsid` wrapper or isolated-group cancellation contract. Interactive and noninteractive callers may group processes differently. Group delivery remains useful operational guidance for controlled wrappers, not a repository guarantee.
 
-The repository does not establish a safe isolated group. Owner-PID-only behavior would remain deferred.
+### Worker-child ownership only — rejected as complete answer
 
-### B. Track worker foreground children only
+It makes worker-only delivery prompt but leaves owner-only delivery deferred and does not own the output pipeline.
 
-**Disposition:** rejected as a complete answer.
+### Final pipeline PID only — rejected by execution
 
-It fixes worker-only delivery but leaves owner-only delivery deferred and cannot by itself own the output-capturing pipeline.
+Upstream stages survive and shell wait remains blocked.
 
-### C. Track only final pipeline PIDs
+### Internal isolated process groups — technically viable, not retained
 
-**Disposition:** rejected by executed control.
+This is the smallest executed source-level mechanism that can own complete pipelines. It still requires several primitives:
 
-Upstream stages survive and `wait "$!"` remains blocked.
+1. parent ownership of every `update_cache` pipeline worker;
+2. worker ownership of simple commands and fallback attempts;
+3. worker ownership of output-capturing pipeline groups;
+4. first-signal retention and launch/PID registration at each layer;
+5. capture publication and cleanup precedence.
 
-### D. Internal isolated process groups
+It also relies on `setsid` and group-aware external `kill` behavior. The primary autopkgtest dependency block does not explicitly declare those utilities; `util-linux` and `procps` appear only in the separate trigger-hint context.
 
-**State:** still viable.
+### Dedicated all-stage supervisor — not justified
 
-Use explicit isolated groups for active worker commands/pipelines and track group leaders through parent and worker ownership.
+A Python or other helper could explicitly spawn, signal, wait, and capture every stage. Python is already used by the mirror tooling, but a new supervisor file and API would still enlarge packaging, source, and compatibility surfaces. No measured impact currently justifies that expansion.
 
-**Costs and unknowns:** `setsid` and external group-aware `kill` dependencies, first-signal retention, launch registration, direct-command/fallback integration, group-leader status, and portability.
+### Retain eventual correctness — selected stop outcome
 
-### E. Dedicated all-stage supervisor
-
-**State:** unexecuted alternative.
-
-A helper could explicitly spawn, signal, and wait every stage while capturing output. It avoids shell job assumptions but adds a helper-language/API boundary and more code.
-
-### F. Retain eventual correctness and stop
-
-**State:** viable outcome.
-
-The script is a manually invoked mirror/test-cache helper; common interactive interruption often reaches a foreground job group, while the problematic PID-only path has unknown frequency. The accepted repairs already prevent false success, cross-owner proxy cleanup, duplicate cleanup, and leaks. A broad supervisor may cost more than the bounded remaining latency issue justifies.
+PR #224 and PR #259 address the observed correctness defects. The remaining question is promptness for selected delivery topology. A broad supervision mechanism is disproportionate without evidence that the delay is frequent, long, or operationally harmful.
 
 ## Evidence summary
 
-Local retained matrices currently cover:
+Retained local records report 18 controls:
 
-- topology/source comparison: 6 tests;
-- parent pipeline PID/input/status: 2 tests;
-- output pipeline ownership: 2 tests;
-- grouped output/status semantics: 3 tests.
+- topology/source matrix: 6;
+- parent pipeline PID/input/status: 2;
+- output pipeline negative/group ownership: 2;
+- output-capture contract: 4;
+- fallback ownership: 4.
 
-Total: 13 passing local controls on the current retained head before hosted CI.
+All successful cancellation models retain once-only worker cleanup, once-only owner cleanup, no accepted partial capture, and no surviving proxy or owned stage. The negative final-PID control deliberately terminates its surviving upstream controls before completion.
 
-## Boundaries
+A fresh local rerun in the current assistant container could not begin because that container could not resolve GitHub. This is a retrieval/setup limitation, not contradictory execution evidence. Hosted CI remains queued for the retained exact head.
+
+## Evidence boundary
 
 Not proved:
 
-- actual APT signal response;
-- exact availability contract for `setsid` and external `kill` in every host environment;
-- cancellation-time heredoc producer cleanup beyond the held model;
-- multiple sequential worker/group registrations;
+- actual APT signal response or real delay distribution;
+- complete mirror, network, QEMU, package, or privileged execution;
+- availability contract for `setsid` and external group-aware `kill` across supported hosts;
 - INT/QUIT and competing first signals in proposed group helpers;
-- full mirror, network, QEMU, package, or privileged execution;
+- multiple sequential group registrations in the full loop;
 - timeout and TERM-to-KILL escalation.
 
-## Next transition
+## Reopening triggers
 
-Run hosted CI on the retained exact head. In parallel, inspect declared host/test dependencies for `setsid` and external group kill. If those dependencies are not explicit or the source mechanism requires broad helper code, select `stopped` with eventual correctness retained and reopening triggers for measured PID-only latency or a documented supervisor contract. If dependencies and a small common primitive are supported, prepare a separate design candidate rather than modifying PR #259.
+Reopen this finding only when at least one occurs:
 
-No human design decision is requested yet.
+1. a real or faithful APT workload demonstrates materially harmful PID-only cancellation latency;
+2. a supported caller/supervisor contract guarantees a safe isolated group and needs documentation or tests;
+3. the project explicitly accepts `setsid`/group-kill dependencies for this script;
+4. another source change already introduces an all-stage supervisor, reducing marginal complexity;
+5. contradictory evidence shows the accepted #224/#259 lifecycle leaks state, reports the wrong final status, or permits post-trap worker continuation.
 
-Internal Linux Fieldwork work only. External contact authorized: `false`.
+## Current disposition
+
+- State: `stopped`
+- Review result: `HOLD` source expansion; retain negative and comparative evidence
+- Implementation: none
+- Current accepted behavior: eventual cancellation correctness from #224/#259
+- User decision requested: none
+- Public upstream interaction: none; unauthorized
