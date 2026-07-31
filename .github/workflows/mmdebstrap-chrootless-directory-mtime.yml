@@ -6,6 +6,7 @@ on:
       - 'investigations/mmdebstrap-chrootless-directory-mtime/**'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py'
+      - 'tests/test_mmdebstrap_chrootless_directory_mtime_patch_context.py'
       - 'tests/test_mmdebstrap_chrootless_directory_mtime_real_probe.py'
       - '.github/workflows/mmdebstrap-chrootless-directory-mtime.yml'
   workflow_dispatch:
@@ -31,7 +32,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes acl libcap2-bin perltidy
 
-      - name: Check focused syntax, synthetic matrix, and product candidate
+      - name: Check exact patch context, synthetic matrix, and product candidate
         shell: bash
         run: |
           set -euo pipefail
@@ -40,7 +41,10 @@ jobs:
           python3 -m py_compile \
             tests/test_mmdebstrap_chrootless_directory_mtime.py \
             tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py \
+            tests/test_mmdebstrap_chrootless_directory_mtime_patch_context.py \
             tests/test_mmdebstrap_chrootless_directory_mtime_real_probe.py
+          python3 \
+            tests/test_mmdebstrap_chrootless_directory_mtime_patch_context.py -v
           python3 tests/test_mmdebstrap_chrootless_directory_mtime.py -v
           python3 \
             tests/test_mmdebstrap_chrootless_directory_mtime_candidate.py -v
