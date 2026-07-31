@@ -88,7 +88,7 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
 +source_copy="$runtime/source/mmdebstrap"
 +source_mode_before="$(stat -c %a "$source_root/mmdebstrap")"
 +source_hash_before="$(git hash-object "$source_root/mmdebstrap")"
-+source_status_before="$(git status --short -- upstream/mmdebstrap/mmdebstrap)"
++source_status_before="$(git -C "$repo_root" status --short -- upstream/mmdebstrap/mmdebstrap)"
  server_pid=
  
  cleanup() {
@@ -131,7 +131,7 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
 +
 +[[ "$(stat -c %a "$source_root/mmdebstrap")" == "$source_mode_before" ]]
 +[[ "$(git hash-object "$source_root/mmdebstrap")" == "$source_hash_before" ]]
-+[[ "$(git status --short -- upstream/mmdebstrap/mmdebstrap)" == "$source_status_before" ]]
++[[ "$(git -C "$repo_root" status --short -- upstream/mmdebstrap/mmdebstrap)" == "$source_status_before" ]]
  
  cat "$result_dir/summary.txt"
  echo "mmdebstrap chrootless environment security regression passed"
