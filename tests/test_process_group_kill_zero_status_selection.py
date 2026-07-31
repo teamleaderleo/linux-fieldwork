@@ -41,7 +41,9 @@ class ProcessGroupKillZeroStatusSelectionTest(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
-        self.assertNotIn("fuzz", (applied.stdout + applied.stderr).lower())
+        patch_output = (applied.stdout + applied.stderr).lower()
+        self.assertNotIn("fuzz", patch_output)
+        self.assertNotIn("offset", patch_output)
 
         spec = importlib.util.spec_from_file_location(
             f"probe_process_group_kill_candidate_{id(root)}",
