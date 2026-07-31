@@ -15,21 +15,23 @@ This programme turns Linux package collections, runtimes, developer tools, found
 
 ## Retained rounds
 
-- [`2026-07-31 name-brand actionable scan`](../../research/rounds/2026-07-31-name-brand-actionable-scan/selection.md) — ranked BuildKit, libarchive, util-linux, systemd, and capability-gated work; promoted five bounded investigations; retained duplicate stops.
+- [`2026-07-31 name-brand actionable scan`](../../research/rounds/2026-07-31-name-brand-actionable-scan/selection.md) — ranked BuildKit, libarchive, util-linux, systemd, and adjacent work; corrected one missed active fix; retained negative and overlap results.
 - [`2026-07-30 ecosystem candidate scan`](../../research/rounds/2026-07-30-ecosystem-candidate-scan/selection.md) — selections, environment gates, live-overlap repair, and active-fix references.
 - [`LF-35 round 001`](lanes/LF-35-package-collection-candidate-harvesting/artifacts/round-001.md) — `gomarkdoc` test restoration, Homebrew recurring intake, AAVMF capability queue, and duplicate stops.
 - [`LF-36 round 001`](lanes/LF-36-downstream-patch-retirement/artifacts/round-001.md) — canonical fixes and exact triggers for future downstream patch removal.
 
 ## First sequence
 
-1. Run the libarchive seekability/bidder matrix in investigation #230.
-2. Map the canonical util-linux `lscpu` ownership correction and stable backport boundary in investigation #234.
-3. Run the BuildKit multi-platform symlink exporter matrix in investigation #233 when the pinned container environment is available.
-4. Run systemd-oomd investigation #140 in a cgroup-v2 VM and capture ManagedOOM Varlink notifications around a user-manager reload.
-5. Build investigation #232's direct fsck/udev synchronization fixture before escalating to repeated VM boots.
-6. Compare rootful and rootless BuildKit OCI metadata in investigation #229.
-7. Keep AAVMF behind aarch64 QEMU capability.
-8. Recheck canonical fixes as they land so downstream patches and workarounds can be removed promptly.
+1. Finish DuckDB decode input-immutability investigation #254's exact candidate gate.
+2. Finish DuckDB checkpoint wrong-result investigation #256's strengthened mechanism classifier.
+3. Map the canonical util-linux `lscpu` ownership correction and stable backport boundary in investigation #234.
+4. Classify libarchive investigation #230's extraction matrix and review active upstream PR 3070 without creating a competing fix.
+5. Run the BuildKit multi-platform symlink exporter matrix in investigation #233 when the pinned container environment is available.
+6. Run systemd-oomd investigation #140 in a cgroup-v2 VM and capture ManagedOOM Varlink notifications around a user-manager reload.
+7. Build investigation #232's direct fsck/udev synchronization fixture before escalating to repeated VM boots.
+8. Compare rootful and rootless BuildKit OCI metadata in investigation #229.
+9. Keep AAVMF behind aarch64 QEMU capability.
+10. Recheck canonical fixes and ownership immediately before every branch.
 
 ## Candidate target classes
 
@@ -55,7 +57,7 @@ A package symptom stays in this programme during intake. Once evidence identifie
 
 A large intake queue is useful. Active implementation stays bounded by test and review capacity. Every promoted candidate records exact source identity, environment, commands, baseline behavior, consequence, likely owner, overlap checks, and the smallest credible next change.
 
-Promotion expires when a matching pull request, assignee, claim, or equivalent fix appears. Recheck immediately before creating a branch.
+Promotion expires when a matching pull request, assignee, claim, or equivalent fix appears. Recheck immediately before creating a branch. A missed active fix must be corrected in the tracked record and routing issue rather than left as stale history.
 
 ## Authority
 
