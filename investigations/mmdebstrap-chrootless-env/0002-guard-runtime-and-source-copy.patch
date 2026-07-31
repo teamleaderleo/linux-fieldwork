@@ -1,7 +1,7 @@
 diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mmdebstrap-chrootless-env/run.sh
 --- a/investigations/mmdebstrap-chrootless-env/run.sh
 +++ b/investigations/mmdebstrap-chrootless-env/run.sh
-@@ -4,11 +4,75 @@
+@@ -4,11 +4,83 @@
  repo_root="$(git rev-parse --show-toplevel)"
  source_root="$repo_root/upstream/mmdebstrap"
  result_dir="$repo_root/investigations/mmdebstrap-chrootless-env/results"
@@ -13,6 +13,10 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
 +validate_runtime_parent() {
 +  local candidate home_root runtime_candidate
 +  candidate="$(realpath -m "$1")"
++  if [[ "$repo_root" == / ]]; then
++    echo "refusing repository root as cleanup boundary" >&2
++    return 2
++  fi
 +  case "$candidate" in
 +    /tmp|/tmp/*|/var/tmp|/var/tmp/*|/home/runner/work/_temp|/home/runner/work/_temp/*)
 +      ;;
@@ -35,6 +39,10 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
 +      ;;
 +  esac
 +  home_root="$(realpath -m "${HOME:-/nonexistent-home}")"
++  if [[ "$home_root" == / ]]; then
++    echo "refusing home root as cleanup boundary" >&2
++    return 2
++  fi
 +  case "$candidate" in
 +    /home/runner/work/_temp|/home/runner/work/_temp/*)
 +      case "$home_root" in
@@ -81,7 +89,7 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
  runtime="$(realpath -m "$runtime_parent/mmdebstrap-chrootless-env")"
  case "$runtime" in
    "$runtime_parent"/*) ;;
-@@ -28,6 +92,10 @@
+@@ -28,6 +100,10 @@
  esac
  fixture="$runtime/fixture"
  package="$runtime/lf-chrootless-env-probe_1.0_all.deb"
@@ -92,7 +100,7 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
  server_pid=
  
  cleanup() {
-@@ -50,6 +118,9 @@
+@@ -50,6 +126,9 @@
  rm -rf "$runtime" "$result_dir"
  mkdir -p "$fixture/DEBIAN" "$fixture/usr/lib/lf-chrootless-env-probe"
  mkdir -p "$result_dir" "$runtime/home" "$runtime/xdg" "$runtime/bin"
@@ -102,8 +110,9 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
  
  cat >"$fixture/DEBIAN/control" <<'EOF'
  Package: lf-chrootless-env-probe
-@@ -197,7 +268,7 @@
+@@ -197,7 +276,7 @@
    printf -v hook 'mkdir -p "$1%s"; cp "%s" "$1%s"' \
+     "$package_dir" "$package" "$1%s"' \
      "$package_dir" "$package" "$package"
    command=(
 -    "$source_root/mmdebstrap"
@@ -111,7 +120,7 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
      --mode=chrootless
      --variant=custom
      --format=directory
-@@ -210,8 +281,6 @@
+@@ -210,8 +289,6 @@
    fi
    command+=( '' "$target" )
  }
@@ -120,7 +129,7 @@ diff --git a/investigations/mmdebstrap-chrootless-env/run.sh b/investigations/mm
  
  # Negative control: dpkg itself passes the ambient environment to a
  # chrootless maintainer script unless its caller wraps the process.
-@@ -427,7 +496,14 @@
+@@ -427,7 +504,14 @@
  fakeroot_environment_preserved=yes
  safe_launch_succeeded=yes
  clean_rerun_succeeded=yes
