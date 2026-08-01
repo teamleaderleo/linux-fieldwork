@@ -8,35 +8,32 @@ External contact authorized: `false`
 
 ## TL;DR
 
-Current `tarfilter` drops explicit parent directory entries when an exclude-all rule is followed by a nested include. A retained patch now stores the original glob, tests descendant relationships on pathname-component boundaries, and adds a focused metadata regression. The local matrix distinguishes the current algorithm from the candidate. A controlled upstream fork and a run against an exact upstream checkout remain.
+Current mmdebstrap `tarfilter` drops explicit parent directory and symlink entries when an exclude-all rule is followed by a nested include. The retained candidate stores the original glob beside the compiled matcher and uses component-bounded parent/descendant checks. The exact current `tarfilter` blob fails the focused regression; the patched exact source passes five cases and preserves parent metadata. Full repository application and upstream-native gates remain.
 
 ## Accomplished behavior
 
-Nested path includes retained explicit directory and symlink parents whose paths can lead to an included descendant. Retained entries preserved archive mode, uid, gid, mtime, and PAX metadata. Exact includes, wildcarded includes, character classes, and component-boundary negatives received focused coverage.
+Nested path includes retained explicit directory and symlink parents that can lead to an included descendant. Retained entries preserved archive mode, uid, gid, mtime, link target, and PAX metadata. Exact includes, wildcarded includes, character classes, component-boundary controls, and symlink parents received focused coverage.
 
 ## Why care
 
-Extraction tools auto-create omitted parent directories with default metadata. The reproduced exact-include case changed `usr/` from mode `0700` to `0755` and `usr/bin/` from `0711` to `0755`; the output archive also lost their uid, gid, mtime, and PAX headers.
+Extraction tools auto-create omitted parents with default metadata. In the exact reproducer, `usr/` changed from mode `0700` to `0755` and `usr/bin/` changed from `0711` to `0755`; their ownership, timestamps, and PAX metadata also disappeared from the filtered archive.
 
 ## Scope
 
 ### Included
 
-- original glob retention in `PathFilterAction`;
-- conservative parent/descendant relation using the original glob's literal prefix;
-- component-boundary protection for names such as `/usr` and `/usr2`;
-- focused archive metadata regression and coverage registration.
+- original path-glob retention in `PathFilterAction`;
+- conservative parent/descendant relation from the original glob's literal prefix;
+- component-boundary protection for `/usr` and `/usr2`;
+- directory and symlink parent metadata regression;
+- `coverage.txt` registration.
 
 ### Excluded
 
 - dotfile normalization, owned by unit 20;
 - regular-file type aliases, owned by unit 22;
-- broader tar transformation and hard-link semantics, owned by units 15 and 16;
-- external issue, fork, pull request, or maintainer contact.
-
-### Split boundary
-
-This unit changes only path-include parent retention. It leaves normalization, type classification, transformation, hard links, and unrelated PAX/idshift behavior untouched.
+- transform/PAX semantics and hard-link dependencies, owned by units 15 and 16;
+- any external issue, pull request, comment, review, or email.
 
 ## Exact identities
 
@@ -45,15 +42,17 @@ This unit changes only path-include parent retention. It leaves normalization, t
 | Upstream project | mmdebstrap |
 | Canonical repository | `josch/mmdebstrap` on Muffin Forgejo |
 | Intended base branch | `main` |
-| Upstream base commit | `77ec9be5417ee44c96343d2347145585da1b1f94` (repository page head observed 2026-07-31) |
-| Last tarfilter-changing commit | `87b9b385b38795c58bc13ffb33b8724bed27f7a0` |
+| Upstream base commit | `77ec9be5417ee44c96343d2347145585da1b1f94` |
+| Current `tarfilter` Git blob | `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
+| Last `tarfilter` commit | `87b9b385b38795c58bc13ffb33b8724bed27f7a0` |
 | Controlled fork | `NEEDS FORK` |
 | Candidate source branch | `NEEDS BRANCH` |
-| Candidate head | retained patch only; no upstream branch |
+| Patched `tarfilter` Git blob | `a7bdcb73e574aa1720b319b8531f65d10fbd2446` |
+| Candidate test Git blob | `9212cb89dfcb954d84d2f7f8e6557755d59e1986` |
 | Linux Fieldwork branch | `upstream/unit-21-tarfilter-parent-metadata` |
-| Linux Fieldwork head | updated in `HANDOFF.md` |
-| Imported/local source identity | canonical 303-line `tarfilter`; GitHub mirror blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
-| Patch or series path | `patches/0001-tarfilter-retain-parent-metadata.patch` |
+| Linux Fieldwork base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
+| Patch | `patches/0001-tarfilter-retain-parent-metadata.patch` |
+| Patch SHA-256 | `8bdd156eb375114c3f3be80c4433a06f6ac8a6d8e189023a02d39774d80c2f74` |
 | Proposed destination | canonical mmdebstrap Forgejo repository |
 | Delivery method | Forgejo fork and pull request; `NEEDS FORK` |
 
@@ -62,7 +61,6 @@ This unit changes only path-include parent retention. It leaves normalization, t
 - Priority-zero unit: #397 unit 21
 - Owning Linux Fieldwork issue: #39
 - Canonical Linux Fieldwork PR or composition: none
-- Predecessor issues and PRs: none beyond #39
 - Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
 - Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
 - Tests and receipts: [`TESTS.md`](TESTS.md)
@@ -75,41 +73,40 @@ This unit changes only path-include parent retention. It leaves normalization, t
 
 ### Demonstrated
 
-- the current translated-regex prefix calculation yields no useful descendant relation for `/usr/bin/tool`;
-- baseline output contains only `usr/bin/tool`;
-- GNU tar 1.35 extraction creates omitted parents as `0755`;
-- the candidate archive retains `usr` mode `0700` and `usr/bin` mode `0711`, plus uid, gid, mtime, and PAX markers;
-- exact, wildcard, character-class, component-boundary, unrelated-path, and leading-wildcard relation cases pass in the retained local matrix;
-- the retained patch applies to an exact-context synthetic fixture, its Python hunk compiles, and its shell test parses;
-- the proposed upstream test passes against a focused candidate implementation.
+- exact current source blob `ad776…` fails the focused test at the exact-include case and emits only `usr/bin/tool`;
+- candidate source blob `a7bd…` passes exact, wildcard, character-class, component-boundary, and symlink-parent cases;
+- directory metadata survives: `usr` mode `0700`, uid/gid `11/21`, mtime `1700000001`, PAX marker `usr-parent`; `usr/bin` mode `0711`, uid/gid `12/22`, mtime `1700000002`, PAX marker `bin-parent`;
+- symlink metadata survives: link target `usr/bin`, mode `0777`, mtime `1700000008`, and PAX marker `symlink-parent`;
+- `python3 -m py_compile tarfilter`, `sh -n tests/tarfilter-parent-metadata`, focused execution, and `git diff --check` pass on the patched exact source;
+- active upstream issue and pull-request listings expose no equivalent parent-metadata work as of 2026-08-01.
 
-### Not yet demonstrated
+### Pending demonstration
 
-- patch application to an exact checkout of canonical upstream head;
-- execution of the new test through `coverage.py` on the full upstream candidate;
-- full mmdebstrap formatting, lint, coverage, package, and integration gates;
-- maintainer acceptance of conservative over-inclusion behavior.
+- application of the complete three-file patch to a full canonical checkout at `77ec…`;
+- `CMD=./mmdebstrap ./coverage.py tarfilter-parent-metadata`;
+- Black and broader repository gates on one exact candidate head;
+- complete upstream diff review and final overlap recheck.
 
 ### Compatibility boundary
 
-The candidate keeps the existing last-match-wins file decision. Its special directory/symlink retention remains conservative, matching dpkg's documented preference for retaining extra parents to avoid unpack failures. Component boundaries prevent `/usr` from being treated as an ancestor of `/usr2`.
+Ordinary last-match-wins filtering continues through the compiled regex. The special directory/symlink retention remains conservative, matching dpkg's documented preference for retaining extra parents. Component separators prevent plain string-prefix aliases.
 
 ## Candidate organization
 
-One retained patch forms a single review unit:
+One patch forms the review unit:
 
 1. `tarfilter: retain parent metadata for nested path includes`
 
-Source and regression belong together because the test directly exercises the changed path-filter tuple and parent-retention predicate.
+Source and regression belong together because the test directly constrains the changed tuple and parent-retention predicate.
 
 ## Current disposition
 
-`ACTIVE` — a controlled fork or exact canonical checkout is required to apply the retained patch and run upstream-native gates.
+`ACTIVE` — exact full-checkout application and upstream-native focused execution remain.
 
 ## Next human decision
 
-Authorize creation or use of a controlled mmdebstrap fork when ready for exact-candidate validation. This does not authorize upstream contact or submission.
+A controlled fork or full canonical checkout becomes useful for final candidate validation. External publication still requires a separate explicit authorization.
 
 ## Authority
 
-Internal repository reads, branch creation, packet commits, local reproduction, patch drafting, and issue checkpoints are authorized. External contact remains unauthorized, and none occurred.
+Internal reads, branches, commits, local execution, patch drafting, review, and issue checkpoints are authorized. External contact remains unauthorized; none occurred.
