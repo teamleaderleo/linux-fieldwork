@@ -1,0 +1,21 @@
+Unit: 20 tarfilter dotfile identity
+Date: 2026-08-01
+Candidate tarfilter SHA-256: fdd55d9a6737bf1b5992da0254b0d6804f2b7f7598a385ed2f5b50f5196991de
+Test SHA-256: e9d4fc52860b718a6997c16770b98482c610a7016f0cd369c8da042ed113cc3d
+
+Cleanup before rerun:
+- removed the first temporary apply tree;
+- created a fresh apply tree;
+- copied the unmodified source and coverage registration context;
+- applied the retained patch again;
+- compiled the resulting tarfilter with python3 -m py_compile.
+
+Command:
+MMTARFILTER=/tmp/unit20-final-apply/tarfilter /tmp/unit20-final-apply/tests/tarfilter-path-dotfiles
+
+Exit status: 0
+Output: empty
+Raw stdout/stderr SHA-256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+Interpretation:
+The focused candidate survives a fresh patch application and immediate rerun without retained process, archive, or temporary-file state.
