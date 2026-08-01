@@ -1,0 +1,162 @@
+diff --git a/coverage.txt b/coverage.txt
+index 092a7a2..348d177 100644
+--- a/coverage.txt
++++ b/coverage.txt
+@@ -1,4 +1,6 @@
+ Test: tarfilter-idshift
+ Needs-QEMU: true
+ 
++Test: tarfilter-parent-metadata
++
+ Test: progress-bars-on-fake-tty
+diff --git a/tarfilter b/tarfilter
+index 7d1e4f7..bc84056 100644
+--- a/tarfilter
++++ b/tarfilter
+@@ -10,7 +10,7 @@ class PathFilterAction(argparse.Action):
+     def __call__(self, parser, namespace, values, option_string=None):
+         items = getattr(namespace, "pathfilter", [])
+         regex = re.compile(fnmatch.translate(values))
+-        items.append((self.dest, regex))
++        items.append((self.dest, values, regex))
+         setattr(namespace, "pathfilter", items)
+ 
+ 
+@@ -28,18 +28,23 @@ def main():
+         # normalize path and make it absolute by stripping off all leading
+         # dots and slashes and then prepending a slash
+         name = "/" + member.name.lstrip("./")
+-        for t, r in args.pathfilter:
++        for t, _glob, r in args.pathfilter:
+             if r.match(name) is not None:
+                 if t == "path_include":
+                     skip = False
+                 else:
+                     skip = True
+         if skip and (member.isdir() or member.issym()):
+-            for t, r in args.pathfilter:
++            path = name.rstrip("/")
++            for t, glob, _regex in args.pathfilter:
+                 if t != "path_include":
+                     continue
+-                prefix = prefix_prog.sub(r"\1", r.pattern)
+-                prefix = prefix.rstrip("/")
+-                if name.startswith(prefix):
++                prefix = prefix_prog.sub(r"\1", glob).rstrip("/")
++                if (
++                    not prefix
++                    or path == prefix
++                    or path.startswith(prefix + "/")
++                    or prefix.startswith(path + "/")
++                ):
+                     return False
+         return skip
+diff --git a/tests/tarfilter-parent-metadata b/tests/tarfilter-parent-metadata
+new file mode 100755
+index 0000000..b2fbd4f
+--- /dev/null
++++ b/tests/tarfilter-parent-metadata
+@@ -0,0 +1,103 @@
++#!/bin/sh
++set -eu
++export LC_ALL=C.UTF-8
++
++tmpdir=$(mktemp -d)
++trap 'rm -rf "$tmpdir"' EXIT INT TERM HUP
++
++MMTARFILTER=
++[ -x /usr/bin/mmtarfilter ] && MMTARFILTER=/usr/bin/mmtarfilter
++[ -x ./tarfilter ] && MMTARFILTER=./tarfilter
++[ -n "$MMTARFILTER" ]
++
++python3 - "$tmpdir/input.tar" <<'PY'
++import io
++import sys
++import tarfile
++
++out = sys.argv[1]
++with tarfile.open(out, "w", format=tarfile.PAX_FORMAT) as tf:
++    entries = [
++        (
++            "usr", tarfile.DIRTYPE, 0o700, 11, 21, 1700000001,
++            b"", "usr-parent",
++        ),
++        (
++            "usr/bin", tarfile.DIRTYPE, 0o711, 12, 22, 1700000002,
++            b"", "bin-parent",
++        ),
++        (
++            "usr/bin/tool", tarfile.REGTYPE, 0o755, 13, 23,
++            1700000003, b"tool\n", None,
++        ),
++        (
++            "usr2", tarfile.DIRTYPE, 0o750, 14, 24, 1700000004,
++            b"", "boundary-parent",
++        ),
++        (
++            "usr2/tool", tarfile.REGTYPE, 0o755, 15, 25,
++            1700000005, b"other\n", None,
++        ),
++        (
++            "opt", tarfile.DIRTYPE, 0o705, 16, 26, 1700000006,
++            b"", "unrelated-parent",
++        ),
++        (
++            "opt/tool", tarfile.REGTYPE, 0o755, 17, 27,
++            1700000007, b"opt\n", None,
++        ),
++    ]
++    for name, kind, mode, uid, gid, mtime, data, marker in entries:
++        member = tarfile.TarInfo(name)
++        member.type = kind
++        member.mode = mode
++        member.uid = uid
++        member.gid = gid
++        member.mtime = mtime
++        if marker:
++            member.pax_headers = {"SCHILY.xattr.user.unit21": marker}
++        if kind == tarfile.REGTYPE:
++            member.size = len(data)
++            tf.addfile(member, io.BytesIO(data))
++        else:
++            tf.addfile(member)
++PY
++
++check_case() {
++  label=$1
++  include=$2
++  expected=$3
++  output="$tmpdir/$label.tar"
++  "$MMTARFILTER" --path-exclude='/*' --path-include="$include" \
++    <"$tmpdir/input.tar" >"$output"
++  python3 - "$output" "$expected" <<'PY'
++import json
++import sys
++import tarfile
++
++archive, expected_json = sys.argv[1:]
++expected = json.loads(expected_json)
++with tarfile.open(archive, "r") as tf:
++    members = list(tf)
++actual = [m.name for m in members]
++assert actual == expected, (actual, expected)
++metadata = {m.name: m for m in members}
++if "usr" in metadata:
++    assert metadata["usr"].mode == 0o700
++    assert metadata["usr"].uid == 11
++    assert metadata["usr"].gid == 21
++    assert metadata["usr"].mtime == 1700000001
++    assert metadata["usr"].pax_headers["SCHILY.xattr.user.unit21"] == "usr-parent"
++if "usr/bin" in metadata:
++    assert metadata["usr/bin"].mode == 0o711
++    assert metadata["usr/bin"].uid == 12
++    assert metadata["usr/bin"].gid == 22
++    assert metadata["usr/bin"].mtime == 1700000002
++    assert metadata["usr/bin"].pax_headers["SCHILY.xattr.user.unit21"] == "bin-parent"
++PY
++}
++
++check_case exact '/usr/bin/tool' '["usr", "usr/bin", "usr/bin/tool"]'
++check_case wildcard '/usr/*/tool' '["usr", "usr/bin", "usr/bin/tool"]'
++check_case character_class '/usr/[bs]in/tool' '["usr", "usr/bin", "usr/bin/tool"]'
++check_case component_boundary '/usr2/tool' '["usr2", "usr2/tool"]'

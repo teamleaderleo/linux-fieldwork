@@ -1,0 +1,115 @@
+{
+  "baseline": {
+    "extracted_modes": {
+      "usr": "0755",
+      "usr/bin": "0755",
+      "usr/bin/tool": "0755"
+    },
+    "members": [
+      {
+        "gid": 23,
+        "linkname": "",
+        "mode": "0755",
+        "mtime": 1700000003,
+        "name": "usr/bin/tool",
+        "pax": {},
+        "type": "file",
+        "uid": 13
+      }
+    ]
+  },
+  "candidate": {
+    "extracted_modes": {
+      "usr": "0700",
+      "usr/bin": "0711",
+      "usr/bin/tool": "0755"
+    },
+    "members": [
+      {
+        "gid": 21,
+        "linkname": "",
+        "mode": "0700",
+        "mtime": 1700000001,
+        "name": "usr",
+        "pax": {
+          "SCHILY.xattr.user.unit21": "usr-parent"
+        },
+        "type": "dir",
+        "uid": 11
+      },
+      {
+        "gid": 22,
+        "linkname": "",
+        "mode": "0711",
+        "mtime": 1700000002,
+        "name": "usr/bin",
+        "pax": {
+          "SCHILY.xattr.user.unit21": "bin-parent"
+        },
+        "type": "dir",
+        "uid": 12
+      },
+      {
+        "gid": 23,
+        "linkname": "",
+        "mode": "0755",
+        "mtime": 1700000003,
+        "name": "usr/bin/tool",
+        "pax": {},
+        "type": "file",
+        "uid": 13
+      }
+    ]
+  },
+  "python": "3.13.5",
+  "relation_matrix": [
+    {
+      "case": "exact ancestors",
+      "include": "/usr/bin/tool",
+      "member": "/usr",
+      "retained": true
+    },
+    {
+      "case": "exact immediate parent",
+      "include": "/usr/bin/tool",
+      "member": "/usr/bin",
+      "retained": true
+    },
+    {
+      "case": "fixed-prefix ancestor",
+      "include": "/usr/bin/*",
+      "member": "/usr",
+      "retained": true
+    },
+    {
+      "case": "wildcard descendant",
+      "include": "/usr/*/tool",
+      "member": "/usr/bin",
+      "retained": true
+    },
+    {
+      "case": "character-class descendant",
+      "include": "/usr/[bs]in/tool",
+      "member": "/usr/bin",
+      "retained": true
+    },
+    {
+      "case": "component boundary",
+      "include": "/usr2/tool",
+      "member": "/usr",
+      "retained": false
+    },
+    {
+      "case": "unrelated",
+      "include": "/usr/bin/tool",
+      "member": "/opt",
+      "retained": false
+    },
+    {
+      "case": "leading wildcard conservative",
+      "include": "*/tool",
+      "member": "/opt",
+      "retained": true
+    }
+  ]
+}
