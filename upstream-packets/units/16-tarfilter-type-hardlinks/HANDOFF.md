@@ -7,7 +7,7 @@ Linux Fieldwork branch: `upstream/unit-16-tarfilter-type-hardlinks`
 Internal draft PR: #399  
 External-contact state: unauthorized; none made
 
-The selected final-projected-identity candidate is internally green on focused and inherited matrices. The packet now carries the clean unit-15 prerequisite, PR #310 lifecycle/duplicate predecessor, selected final-only patch, rejected alias patch, focused and expanded tests, exact CI history, destination research, decisions, and withheld upstream drafts.
+The selected final-projected-identity candidate is internally green on focused and inherited matrices. The packet carries the clean unit-15 prerequisite, PR #310 lifecycle/duplicate predecessor, selected final-only patch, rejected alias patch, focused and expanded tests, exact CI history, destination research, decisions, current drafts, complete branch fence, and this handoff.
 
 ## Exact branch and candidate identities
 
@@ -40,11 +40,12 @@ Use the branch ref for the latest packet head. Documentation commits after the t
 7. Implemented final projected identity for excluded members and retained hard-link targets.
 8. Preserved original input member and target names for stderr.
 9. Added focused strip/final-name tests and inherited prefix, duplicate, lifecycle, filter, transform, collision, and scope controls.
-10. Added a direct strip-only failure control and rejected alias projection because it misattributes that failure to type exclusion.
+10. Added direct strip-only and uppercase-`H` failure controls and rejected alias projection because it misattributes those failures to type exclusion.
 11. Preserved the mechanically green alias patch under `patches/rejected/`.
 12. Removed accidental duplicate focused-test discovery from the inherited module.
-13. Updated README, source map, deep dive, tests, decisions, upstream drafts, and this handoff.
-14. Resolved the intended public destination as the Debian mmdebstrap Salsa project on `master`; no fork was created and no contact was made.
+13. Resolved the intended public destination as the Debian mmdebstrap Salsa project on `master`.
+14. Completed branch review: exactly 14 added files, comprising 2 tests, 8 packet records, 3 active patches, and 1 rejected patch; imported source remains unchanged.
+15. Updated README, source map, deep dive, tests, decisions, withheld upstream drafts, and this handoff.
 
 ## Selected behavior
 
@@ -131,6 +132,7 @@ After the clean expanded rerun:
 - [x] rejected alias policy preserved with discriminator;
 - [x] focused and inherited selected-policy gates green;
 - [x] destination and intended base branch identified;
+- [x] complete 14-file branch fence reviewed;
 - [ ] clean expanded run complete;
 - [ ] unchanged-head rerun complete;
 - [ ] current upstream base commit fetched;
