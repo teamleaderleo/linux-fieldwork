@@ -2,148 +2,139 @@
 
 Date: 2026-08-01  
 State: `READY FOR AUTHORIZATION`  
-Worker or variant: `GPT-5.6 Thinking`  
-Linux Fieldwork branch: `upstream/unit-11-coverage-backend-cancellation`  
-Internal review surface: PR #401, ready for review  
-Last content head before this handoff commit: `89456fbfa298412ddbab363adc8057a5a28a1c7e`  
+Linux Fieldwork packet: `teamleaderleo/linux-fieldwork#401`  
+Clean target review: `teamleaderleo/mmdebstrap#4`  
 External contact authorized: `false`  
 External contact made: `none`
 
 ## Exact stopping point
 
-The technical unit is complete for its selected responsive-topology claim.
+The source unit is technically complete for its bounded TERM-responsive claim.
 
-The packet contains:
+Completed:
 
-- upstream-root product patch;
-- durable null/source verifier;
-- exact canonical Actions carrier;
-- current identities and carrier map;
-- mechanism, compatibility, rejected alternatives, and reopening triggers;
-- exact current-upstream test receipts and artifact digests;
-- polished upstream issue and pull-request drafts;
-- authorization-ready decision record.
+- exact canonical base and source identity;
+- clean one-file controlled target branch;
+- zero-fuzz patch and source byte equivalence;
+- focused target execution twice;
+- refined null/QEMU-wrapper/passwordless-sudo execution twice with no skips;
+- project-native ordinary source/interface slice twice;
+- source-only submission-shape decision;
+- complete same-account clean-diff self-review;
+- clean PR ready for eligible independent review;
+- polished upstream draft;
+- no canonical-upstream contact.
 
-The selected product mechanism is:
+First incomplete step:
+
+- eligible independent complete-diff acceptance on `teamleaderleo/mmdebstrap#4`.
+
+## Exact target identity
+
+- canonical repository: `https://gitlab.mister-muffin.de/josch/mmdebstrap`;
+- exact base: `77ec9be5417ee44c96343d2347145585da1b1f94`;
+- base `coverage.py` blob: `9a522484aef05deae514a98e4b6adf5feb6c886d`;
+- controlled repository: `teamleaderleo/mmdebstrap`;
+- snapshot branch: `linux-fieldwork/upstream-main-snapshot`;
+- clean source branch: `linux-fieldwork/unit-11-coverage-backend-cancellation`;
+- clean source head: `431614b3af58ba4f70791aa1d42cf5b71c965dd2`;
+- candidate `coverage.py` blob: `9e31f21cf37228257b5e0705d9ecb13b7a66e40f`;
+- changed files: `coverage.py` only;
+- diff: 8 additions, 3 deletions;
+- patch blob: `f1a2c75adfa009b6f1ac29e5a31bef526400444f`;
+- clean review surface: `teamleaderleo/mmdebstrap#4`, ready for independent review.
+
+## Selected mechanism
 
 ```python
 proc = subprocess.Popen(argv, start_new_session=True)
-...
 try:
-    os.killpg(proc.pid, signal.SIGTERM)
-except ProcessLookupError:
-    pass
-proc.wait()
-print("interrupted by SIGINT", file=sys.stderr)
-raise SystemExit(130)
+    proc.wait()
+except KeyboardInterrupt:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    proc.wait()
+    print("interrupted by SIGINT", file=sys.stderr)
+    raise SystemExit(130)
 ```
 
-The retained patch is:
+## Focused target receipt
 
-`upstream-packets/units/11-coverage-backend-cancellation/patches/0001-coverage-own-selected-backend-group.patch`
+Run `30706007117`: success.
 
-## Exact identities
+- job `91385135488`: zero-fuzz application, byte equivalence, compilation, 6/6 twice;
+- job `91385135449`: 14/14 twice, no skips, actual sudo controls;
+- artifacts `8820336271` and `8820337503` with retained SHA-256 digests;
+- cleanup and immediate rerun succeeded.
 
-- canonical upstream repository: `https://gitlab.mister-muffin.de/josch/mmdebstrap`;
-- intended branch: `main`;
-- exact upstream base executed: `77ec9be5417ee44c96343d2347145585da1b1f94`;
-- last upstream commit touching `coverage.py`: `c82fc7e261c7a2fd85e499484108408fd42331d2`;
-- canonical/imported `coverage.py` blob: `9a522484aef05deae514a98e4b6adf5feb6c886d`;
-- canonical `run_null.sh` blob: `e0a8c106f9d3d636baea286d2ab33834748dffc9`;
-- canonical `run_qemu.sh` blob: `426aeeb854173569b24e64d6eb85019f45bdf0b6`;
-- packet patch blob: `f1a2c75adfa009b6f1ac29e5a31bef526400444f`;
-- historical prefixed patch blob: `4f2a749e50d42655ebb6519ca6550d2f666985bc`;
-- mechanism carrier: PR #313 `e90fc438f530f7bd78ffd6fd1ba24c665bd96913`;
-- refined test carrier: PR #339 `8253ab2ef6fed22b34fc5f5d6d20cda75c25e2c7`;
-- refined QEMU test blob: `0c2a050faf8e98320fc0c4fe4634d46bdf7f0dfa`;
-- controlled fork: `NEEDS FORK`.
+See `artifacts/2026-08-01-controlled-target-run.md`.
 
-## Final exact execution receipt
+## Ordinary project-native receipt
 
-Linux Fieldwork Actions run `30689911760` passed on branch head `83efaa3b3baee05c6b8f96138a3ee619942ce984`.
+Run `30706633832`, job `91386769087`: success.
 
-### Canonical packet-patch job
+- command: `./coverage.sh help man version`;
+- first pass: 3/3;
+- immediate rerun: 3/3;
+- real `coverage.py` inventory and `run_null.sh` executed;
+- artifact `8820528312`;
+- SHA-256 `13986015aebc37cd3624f5114baa2a599f3c3dccb01e838b367287b2585b8f55`.
 
-- job: `91342674259`;
-- exact canonical checkout: success;
-- canonical/imported source blob equality: success;
-- packet patch application with `--fuzz=0`: success twice;
-- Python compilation: success;
-- six null/source/status controls: 6/6 twice;
-- artifact: `8815289674`;
-- artifact SHA-256: `25e62dec929f27e628816568d6264f2bee45474c00b00c3c047f53209608ef1d`.
+The exact base has a proven unrelated Black failure on unchanged canonical `tarfilter` blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`. The successful gate isolates only that exact blob and retains normal Black checks for the changed source.
 
-### Canonical refined topology job
+See `artifacts/2026-08-01-ordinary-source-slice.md`.
 
-- job: `91342674164`;
-- exact PR #339 regression carrier materialized: success;
-- canonical source and wrappers copied into carrier: success;
-- exact test-blob assertions: success;
-- null, QEMU-wrapper, and actual passwordless-sudo controls: 14/14 twice;
-- no skips;
-- first pass: 3.874 seconds;
-- immediate rerun: 3.599 seconds;
-- artifact: `8815290820`;
-- artifact SHA-256: `63634782bfd230129238ee71aa60ad83ae5b43dfcf3291123cfdbd0770bdf63e`.
+## Source-only decision
+
+The clean target diff contains no native regression file.
+
+The target suite treats each non-dot `tests/` entry as a `coverage.txt`-indexed shell-template package scenario. A native test of the outer coverage orchestrator would require a recursive miniature coverage tree substantially larger than the source correction.
+
+The deterministic external reproducer and exact target receipts are retained. Reopen this decision if eligible review or upstream policy requires a recursive native test.
+
+See `artifacts/2026-08-01-source-only-submission-shape.md`.
 
 ## Latest distinguishing result
 
-| Variant | Driver status | Nested responsive work before deliberate release | Later work |
-| --- | ---: | --- | --- |
-| imported baseline | 0 after release | alive | yes |
-| status-only predecessor | 130 after release | alive | yes |
-| selected group candidate | 130 | no live in-group process | no |
-
-The refined QEMU controls recorded Python SIGINT-handler entry before releasing losing-control survivors. The sudo controls executed as root through passwordless sudo; they did not skip.
-
-## Work completed in the continuation session
-
-1. Confirmed shell DNS remained unavailable.
-2. Cross-checked a public mirror and canonical checkout against imported blob `9a5224...`.
-3. Added `scripts/test_current_import.py` with source-blob assertion, zero-fuzz application, compilation, and six focused controls.
-4. Added the unit-specific Actions workflow.
-5. Opened internal PR #401 as the execution and review surface.
-6. Ran exact canonical packet-patch controls twice.
-7. Ran exact PR #313 null/QEMU/sudo controls twice against canonical source.
-8. Re-ran the complete topology matrix using PR #339's handler-entry refinement.
-9. Recorded exact jobs, source blobs, patch blobs, test blobs, artifacts, digests, cleanup, and rerun results.
-10. Promoted the packet and index to `READY FOR AUTHORIZATION`.
-11. Marked internal PR #401 ready for review.
-12. Made no upstream contact.
-
-## First incomplete step
-
-Human decision: choose `SEND` or `HOLD`.
-
-A `SEND` decision must explicitly authorize:
-
-1. creation or use of a controlled mmdebstrap fork;
-2. creation of a candidate branch from current canonical `main`;
-3. public Forgejo pull-request submission and any related public comments.
-
-## Next safe action before authorization
-
-Review internal PR #401 and the packet diff. Preserve the current state and avoid creating any upstream fork, issue, pull request, review, email, or comment.
-
-## Next action after explicit SEND authorization
-
-1. Refresh canonical `main` and compare it with `77ec9be...`.
-2. Create or select the controlled fork.
-3. Create the candidate branch from the refreshed exact base.
-4. Apply the retained patch with zero fuzz.
-5. Re-run the packet verifier and refined topology gate if the base changed.
-6. Refresh `UPSTREAM_PR.md` links and exact identities.
-7. Submit only the authorized public surface.
-8. Record the public reference and submitted commit/patch identity in every packet surface and issue #397.
+| Variant | Status | Later work |
+| --- | ---: | --- |
+| imported baseline | 0 after deliberate release | yes |
+| status-only predecessor | 130 after release | yes |
+| selected group candidate | 130 | no |
 
 ## Evidence limits
 
-- real QEMU/debvm and prepared-mirror package operations remain outside the focused controls;
-- TERM-resistant, deferring, or group-escaping descendants remain outside the selected claim;
-- non-Linux behavior remains outside the project/runtime target;
-- upstream CI and maintainer review begin after authorized submission.
+- arbitrary TERM-resistant or group-escaping descendant drain;
+- repeated-SIGINT and escalation policy;
+- full prepared-mirror 283-entry package matrix;
+- real QEMU/debvm package operations;
+- non-Linux behavior;
+- public upstream CI and maintainer review.
 
-These limits are recorded and accepted for this narrow unit. Issue #341 retains the stronger cleanup-policy reopening matrix.
+These remain visible limits, not contradictions of the selected responsive-topology result.
+
+## Next safe action
+
+An eligible non-author reviews the complete one-file diff on `teamleaderleo/mmdebstrap#4` and either:
+
+- accepts it;
+- requests a concrete source or claim change;
+- requires a recursive native test;
+- requires broader prepared-mirror execution;
+- records a specific hold condition.
+
+Do not assign an unrelated account merely to clear the gate.
+
+## After independent acceptance
+
+1. refresh canonical `main` and compare it with `77ec9be...`;
+2. refresh overlap, contribution policy, and AI-disclosure requirements;
+3. update exact public links and source identity if the base moved;
+4. request explicit authority for the exact public action;
+5. submit only the authorized surface;
+6. record the public reference and submitted identity in all packet surfaces.
 
 ## Recovery guide
 
@@ -151,14 +142,13 @@ Read in this order:
 
 1. `README.md`;
 2. `TESTS.md`;
-3. `DECISIONS.md`;
-4. `SOURCE_MAP.md`;
-5. retained patch;
+3. `artifacts/2026-08-01-controlled-target-run.md`;
+4. `artifacts/2026-08-01-ordinary-source-slice.md`;
+5. `artifacts/2026-08-01-source-only-submission-shape.md`;
 6. `UPSTREAM_PR.md`;
-7. PR #401.
+7. clean target PR `teamleaderleo/mmdebstrap#4`;
+8. packet PR `teamleaderleo/linux-fieldwork#401`.
 
-Use issue #397 for routing. This packet is the durable technical record.
+## Authority
 
-## Authorization boundary
-
-Internal review and packet maintenance may continue. Public upstream interaction requires explicit authorization. No upstream contact occurred.
+Internal review and packet maintenance may continue. Public canonical-upstream interaction requires explicit authorization. None occurred.
