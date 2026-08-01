@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Move the retained hook-free hard phase ahead of the broad mmdebstrap matrix."""
+"""Transform the disposable mmdebstrap package-test execution order."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import pathlib
 import sys
 from dataclasses import dataclass
@@ -18,10 +19,13 @@ HOOK_MARKER = (
 SOFT_MARKER = (
     "# run only those tests that were skipped because of USE_HOST_APT_CONFIG=yes but\n"
 )
+FOCUS_END_MARKER = (
+    "\nfi\n\n# subtract 10 seconds to account for the inaccuracy in measuring time\n"
+)
 
 
 class OrderingError(RuntimeError):
-    """Raised when the exact integration-only source boundary is not present."""
+    """Raised when the exact integration-only source boundary is absent."""
 
 
 @dataclass(frozen=True)
@@ -40,6 +44,18 @@ def _single_position(text: str, marker: str, label: str) -> int:
     return text.index(marker)
 
 
+def _result(original: str, transformed: str) -> OrderingResult:
+    original_digest = hashlib.sha256(original.encode("utf-8")).hexdigest()
+    transformed_digest = hashlib.sha256(transformed.encode("utf-8")).hexdigest()
+    if original_digest == transformed_digest:
+        raise OrderingError("transformation produced identical bytes")
+    return OrderingResult(
+        text=transformed,
+        original_sha256=original_digest,
+        reordered_sha256=transformed_digest,
+    )
+
+
 def reorder_hook_free_phase(text: str) -> OrderingResult:
     """Return a testsuite with the exact retained hook-free block moved earlier."""
 
@@ -55,9 +71,7 @@ def reorder_hook_free_phase(text: str) -> OrderingResult:
 
     hook_block = text[hook:soft]
     if "Needs-Hook-Free-APT-Config" not in hook_block:
-        raise OrderingError(
-            "hook-free block does not contain its metadata selector"
-        )
+        raise OrderingError("hook-free block does not contain its metadata selector")
     if 'CMD="mmdebstrap"' not in hook_block:
         raise OrderingError("hook-free block does not use the hook-free command")
     if "exit \"$ret\"" not in hook_block:
@@ -96,23 +110,52 @@ def reorder_hook_free_phase(text: str) -> OrderingResult:
             "hook-free hard < broad < soft transition"
         )
 
-    original_digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    reordered_digest = hashlib.sha256(reordered.encode("utf-8")).hexdigest()
-    if original_digest == reordered_digest:
-        raise OrderingError("reordering produced identical bytes")
+    return _result(text, reordered)
 
-    return OrderingResult(
-        text=reordered,
-        original_sha256=original_digest,
-        reordered_sha256=reordered_digest,
-    )
+
+def focus_named_case(text: str, case_name: str) -> OrderingResult:
+    """Replace the broad matrix with one named case and exit after its result."""
+
+    if case_name != "dev-ptmx":
+        raise OrderingError(f"unsupported focused case: {case_name!r}")
+
+    broad = _single_position(text, BROAD_MARKER, "broad-phase")
+    hook = _single_position(text, HOOK_MARKER, "hook-free hard-phase")
+    soft = _single_position(text, SOFT_MARKER, "soft transition-phase")
+    if not broad < hook < soft:
+        raise OrderingError(
+            "focused carrier expects product ordering broad < hook-free hard < "
+            f"soft transition; observed broad={broad}, hook={hook}, soft={soft}"
+        )
+
+    old_invocation = '"$SRC/coverage.sh" --exitfirst || ret=$?'
+    new_invocation = '"$SRC/coverage.py" --exitfirst dev-ptmx || ret=$?'
+    if text.count(old_invocation) != 1:
+        raise OrderingError(
+            "expected exactly one broad coverage invocation before focusing"
+        )
+    focused = text.replace(old_invocation, new_invocation, 1)
+
+    focused_broad = _single_position(focused, BROAD_MARKER, "focused broad-phase")
+    end = focused.find(FOCUS_END_MARKER, focused_broad)
+    if end < 0:
+        raise OrderingError("focused broad result boundary was not found")
+    insertion = end + len("\nfi\n")
+    focused = focused[:insertion] + "exit 0\n" + focused[insertion:]
+
+    if focused.count("--exitfirst dev-ptmx") != 1:
+        raise OrderingError("focused case invocation is not unique")
+    if focused.index("exit 0\n", focused_broad) > focused.index(HOOK_MARKER):
+        raise OrderingError("focused exit does not precede the unrelated hook-free phase")
+
+    return _result(text, focused)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Move the exact retained hook-free hard-failure block ahead of the "
-            "broad mmdebstrap matrix for the disposable integration carrier."
+            "Move the retained hook-free block ahead of the broad matrix, or "
+            "focus the disposable carrier when UNIT09_FOCUS is set."
         )
     )
     parser.add_argument("testsuite", type=pathlib.Path)
@@ -127,18 +170,24 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     path = args.testsuite
+    focus = os.environ.get("UNIT09_FOCUS", "")
     try:
         original = path.read_text(encoding="utf-8")
-        result = reorder_hook_free_phase(original)
+        if focus:
+            result = focus_named_case(original, focus)
+            mode = f"focused-{focus}"
+        else:
+            result = reorder_hook_free_phase(original)
+            mode = "hook-free-hard,broad,soft-transition"
         if not args.check:
             path.write_text(result.text, encoding="utf-8")
     except (OSError, UnicodeError, OrderingError) as error:
-        print(f"hook-free phase reorder failed: {error}", file=sys.stderr)
+        print(f"package-test transformation failed: {error}", file=sys.stderr)
         return 2
 
     print(f"original_sha256={result.original_sha256}")
     print(f"reordered_sha256={result.reordered_sha256}")
-    print("integration_order=hook-free-hard,broad,soft-transition")
+    print(f"integration_order={mode}")
     return 0
 
 
