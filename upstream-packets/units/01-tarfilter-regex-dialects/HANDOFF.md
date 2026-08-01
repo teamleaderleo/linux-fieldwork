@@ -5,7 +5,7 @@
 State: `ACTIVE`  
 Linux Fieldwork branch: `upstream/unit-01-tarfilter-regex-dialects`  
 Branch base at claim: `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`  
-Commit immediately before this handoff: `ef7a4d138c89bd55fd3911c2c8ddd800f5ccf359`  
+Commit immediately before this handoff: `e9ae74337173a6c56988c20c8562d9a12b38deca`  
 Exact branch head containing this handoff: recorded in the current `UNIT CHECKPOINT` comment on issue #397  
 External contact authorized: `false`  
 External contact made: `none`
@@ -56,9 +56,11 @@ External contact made: `none`
 
 - read issue #397, its durable-workspace comment, `upstream-packets/README.md`, and `upstream-packets/INDEX.md`;
 - claimed unit 01 and created `upstream/unit-01-tarfilter-regex-dialects`;
-- read owning issue #212 and the full linked carrier chain, including issues #36, #63, #98, and #108; PRs #48, #56, #68, #102, #113, #151, #202, #203, #211, #216, and #220; and the relevant PR review/checkpoint discussion;
-- identified PR #202 as a duplicate repair and PR #203 as a superseded proof carrier;
-- identified merged PR #220 as the canonical accepted-neighbor proof;
+- read owning issue #212 and the linked carrier chain through source prerequisites, review-discovered proof, and explicit boundary records;
+- completed `CARRIER_AUDIT.md` covering issues #25, #28, #29, #36, #51, #63, #98, #108, #117, and #125; PRs #33, #48, #56, #68, #102, #113, #122, #135, #151, #202, #203, #211, #216, and #220;
+- classified PR #202 as a duplicate repair and PR #203 as a superseded proof carrier;
+- classified merged PR #220 as the canonical accepted-neighbor proof;
+- kept issue #117/PR #122, issue #125/PR #135, and issues #28/#29/PR #33 outside unit 01 according to their explicit boundaries and issue #397;
 - pinned exact source, patch, test, carrier-head, merge, and hosted-run identities;
 - reviewed the executable patch order and baseline/candidate expectations in all three focused test modules;
 - refreshed official Debian archive evidence for source version `1.5.7-3`, release tag `6fde9997`, and 11,453-byte `tarfilter`;
@@ -67,13 +69,13 @@ External contact made: `none`
 - refreshed Debian BTS and web-indexed Salsa overlap searches; no equivalent tarfilter regex-dialect carrier appeared;
 - attempted Git and Debian archive transfer into the local shell and recorded DNS failures verbatim;
 - kept package-source corroboration separate from the unresolved exact canonical Salsa gate;
-- updated `README.md`, `SOURCE_MAP.md`, `DEEP_DIVE.md`, `TESTS.md`, `DECISIONS.md`, `UPSTREAM_PR.md`, and this handoff.
+- updated `README.md`, `SOURCE_MAP.md`, `CARRIER_AUDIT.md`, `DEEP_DIVE.md`, `TESTS.md`, `DECISIONS.md`, `UPSTREAM_PR.md`, and this handoff.
 
 ## Latest distinguishing result
 
-The current Debian package generation remains `1.5.7-3`, and its published `tarfilter` size matches the package-version mirror carrying the exact Linux Fieldwork imported blob. The complete internal proof chain is green through PR #220, including the three accepted neighbors of the active Python-group guard.
+The current Debian package generation remains `1.5.7-3`, and a package-version mirror of that generation carries the exact Linux Fieldwork imported `tarfilter` blob. The complete internal proof chain is green through PR #220, including the three accepted neighbors of the active Python-group guard.
 
-This advances source freshness, test-entrypoint knowledge, proof completeness, and overlap evidence. The unit remains `ACTIVE` because exact current Salsa `master`, its `tarfilter` blob, and a fresh current-source candidate run remain unresolved.
+This advances source freshness, native-test knowledge, carrier completeness, proof completeness, and overlap evidence. The unit remains `ACTIVE` because exact current Salsa `master`, its `tarfilter` blob, and a fresh current-source candidate run remain unresolved.
 
 ## Exact transfer failures
 
@@ -120,8 +122,8 @@ Immediately record both outputs in `README.md`, `SOURCE_MAP.md`, `TESTS.md`, and
 5. Record every conflict, exact candidate file hash, complete diff, and candidate head.
 6. Adapt the focused Linux Fieldwork harness to consume the exact current-source candidate.
 7. Run Python compilation and the complete GNU differential matrix.
-8. Keep the rebased candidate at upstream-tree `./tarfilter`; select the exact transform-related native test names from current `coverage.txt` and `tests/`; run them through `coverage.py`.
-9. Run the appropriate broader native suite, clean all generated state, and rerun the focused commands immediately.
+8. Keep the rebased candidate at upstream-tree `./tarfilter`; select exact transform-related native test names from current `coverage.txt` and `tests/`; run them through `coverage.py`.
+9. Run the appropriate broader native suite, clean all generated state, and rerun focused commands immediately.
 10. Review the complete diff and exact live Salsa overlap.
 11. Leave the unit `READY FOR AUTHORIZATION`, `HOLD`, or `SPLIT` with one precise reason.
 
