@@ -1,35 +1,67 @@
-# Deep dive — final-name identity for type-excluded hard-link targets
+# Deep dive — final projected identity for type-excluded hard links
 
-## Question and observed failure
+## Question and demonstrated failure
 
-When `tarfilter` removes a member by type, then later rewrites archive member names and hard-link targets through component stripping or transforms, which name domain decides whether a retained hard link still has an emitted target?
+When a type filter removes an archive member before component stripping and transforms run, which identity decides whether a later retained hard link still has a target?
 
-The current composed predecessor uses normalized input names. The emitted archive uses rewritten names. Issue #335 identifies both error directions created by that mismatch.
+The PR #310 predecessor stores normalized input names. Extractors resolve hard links against emitted names. That mismatch creates a demonstrated false rejection:
 
-## Source mechanism
+1. retain regular `prefix/base`;
+2. exclude symlink `root/base`;
+3. retain hard link `root/peer -> root/base`;
+4. apply `--type-exclude=SYMTYPE --strip-components=1`.
 
-The imported loop performs decisions in this order:
+The predecessor rejects `root/peer -> root/base`, although output rewriting would produce valid `base` plus `peer -> base`. The selected candidate uses final projected identities and emits an extractable one-inode result.
 
-1. path filter;
-2. type filter;
-3. component stripping;
-4. PAX filtering and ID shift;
-5. transforms;
+## Exact source mechanism
+
+The composed stream processes each member through these logical operations:
+
+1. path filtering;
+2. type filtering;
+3. member and hard-link target component stripping;
+4. PAX filtering and ID shifting;
+5. scoped transforms;
 6. output.
 
-The PR #68 carrier extends steps 3 and 5 so hard-link targets follow member-path rewrites and stale PAX reference metadata is removed.
+Patch 0001 adds:
 
-PR #248 records normalized names skipped at step 2 and checks a retained hard-link target immediately after step 2. PR #310 adds retained-name state and moves successful retention updates immediately before output, while preserving the early dependency check. Timing of retained state is correct; the checked identity still belongs to the pre-rewrite input domain.
+- normalized names removed by type;
+- names actually retained;
+- first-known dependency rejection;
+- loop break followed by normal tar-context close and status 1.
 
-## Reproduction narrative
+Its dependency check occurs before steps 3 through 5. Its retained update occurs after those steps but uses a saved input identity. Lifecycle timing is correct; identity timing is wrong.
 
-### False rejection
+Patch 0002 introduces one `rewrite_name()` path backed by unit 15's `_sed_substitute`:
 
-Input order:
+- excluded members use member-name scope `r`;
+- retained member names use scope `r`;
+- retained hard-link targets use scope `h`;
+- symlink text follows scope `s` and does not enter hard-link availability state;
+- a strip result with too few components returns no projected identity.
 
-1. regular `prefix/base`;
-2. type-excluded symlink `root/base`;
-3. hard link `root/peer -> root/base`.
+The dependency decision compares normalized final projected identities. The diagnostic prints the original input member and target strings.
+
+## Selected invariant
+
+A retained hard link is accepted when its final projected target identity is already available among retained final member identities.
+
+A type-excluded occurrence marks only its surviving final projected member identity unavailable, and only while no retained occurrence supplies that same identity.
+
+A known unavailable dependency stops before the hard-link member is written. The tar stream finalizes before status 1.
+
+## Reproduction and result matrix
+
+### Valid final target previously rejected
+
+Input:
+
+```text
+regular prefix/base
+symlink root/base -> missing
+hard link root/peer -> root/base
+```
 
 Options:
 
@@ -37,135 +69,188 @@ Options:
 --type-exclude=SYMTYPE --strip-components=1
 ```
 
-The emitted regular target becomes `base`. The hard link would become `peer -> base`. The predecessor sees excluded input identity `root/base` before rewriting the hard-link target and stops with status 1. Its finalized partial archive contains only `base`.
+Predecessor:
 
-A direct expected archive containing `base` and `peer -> base` extracts successfully and preserves one inode, proving the rejected dependency is valid in final-name space.
+- status 1;
+- diagnostic names `root/peer -> root/base`;
+- finalized partial archive containing regular `base`.
 
-### False acceptance
+Selected candidate:
 
-Input order:
+- status 0;
+- archive contains regular `base` and hard link `peer -> base`;
+- GNU tar extracts successfully;
+- both files share one inode.
 
-1. type-excluded regular `root/base`;
-2. hard link `prefix/peer -> prefix/root/base`.
+### Genuine removed final target
 
-Options:
+Input regular `root/base` followed by hard link `root/peer -> root/base`; option `--type-exclude=REGTYPE`.
+
+Selected candidate:
+
+- status 1;
+- original-name diagnostic;
+- no hard-link member emitted;
+- finalized valid empty archive.
+
+### Strip-dropped target and dependent link
+
+A one-component target name and hard-link target are both dropped by `--strip-components=1`. Input-name state previously rejected. Final projection produces no target identity and no retained hard-link member, so the selected candidate returns status 0 with a valid empty archive.
+
+## Attribution boundary
+
+### Strip-only reference failure
+
+Input:
 
 ```text
---type-exclude=REGTYPE --strip-components=1
+regular root/base
+hard link prefix/peer -> prefix/root/base
 ```
 
-The predecessor compares `prefix/root/base` against excluded input identity `root/base` and allows the hard link. Component stripping then emits `peer -> root/base`. No `root/base` member exists in output. The filter returns status 0 and GNU tar extraction fails.
+`--strip-components=1` already emits:
+
+```text
+regular base
+hard link peer -> root/base
+```
+
+GNU tar extraction fails even with no type exclusion. Adding `--type-exclude=REGTYPE` removes `base` but does not create the reference mismatch. Unit 16 therefore preserves status 0 and the same broken retained link. Unit 15 owns the general strip-reference behavior.
+
+### Transform `H` scope failure
+
+`--transform=s,^root/,,H` transforms member names while leaving hard-link target text unchanged. The direct archive is already broken. Type exclusion does not claim this dependency through intermediate aliases.
+
+These controls reject a broader “any alias ever seen” policy.
 
 ## Approach history
 
-### Approach A — member-local filtering
+### Member-local type filtering
 
-- Mechanism: skip each matching type independently.
-- Evidence: PR #244 exact-head execution.
-- Result: status 0 with a dangling hard link after removing its regular target.
-- Disposition: rejected for this tarfilter-specific type option.
+- Removes matching members independently.
+- PR #244 demonstrates status 0 with a dangling hard link.
+- Rejected for the tarfilter-specific type option.
 
-### Approach B — focused input-name rejection
+### Input-name focused rejection
 
-- Mechanism: remember normalized type-skipped input names and reject retained hard links targeting them.
-- Evidence: PR #248 candidate matrix.
-- Result: catches target-before-link dependency breaks and preserves independent type filters.
-- Cost: early `exit(1)` originally interrupted archive finalization; raw exclusion state ignored retained duplicate names.
-- Disposition: superseded by PR #310 repairs.
+- PR #248 remembers normalized type-skipped input names.
+- Catches genuine target-before-link removal.
+- Originally interrupted archive finalization and mishandled duplicate names.
+- Superseded by PR #310.
 
-### Approach C — finalized rejection plus retained duplicate state
+### Finalized rejection and retained duplicate state
 
-- Mechanism: break the loop, close the tar stream, exit afterward; track names actually retained and keep an earlier target available across an excluded duplicate.
-- Evidence: PR #310 carrier and focused duplicate/strip-skipped tests.
-- Result: repairs output lifecycle, valid duplicates, and premature retention updates.
-- Cost: dependency check and exclusion identity remain pre-rewrite.
-- Disposition: retained as the predecessor for unit 16.
+- PR #310 closes the output stream before status 1.
+- Preserves an earlier retained target across a later excluded duplicate.
+- Updates retention after later skip decisions.
+- Selected as patch-0001 predecessor.
 
-### Approach D — final emitted-name state
+### Alias projection
 
-- Mechanism: project excluded occurrences and retained hard-link targets through the same rewrite operation used for output, then compare availability in one final-name domain.
-- Evidence: issue #335 design direction; unit 16 two-case discriminator.
-- Result: pending candidate implementation and execution.
-- Compatibility requirements: preserve transform target scopes, PAX cleanup, duplicate handling, finalized failure output, and target-before-link streaming.
-- Disposition: selected direction for the next candidate.
+- Stored input, post-strip, and post-transform aliases.
+- Passed all 442 tests in run `30690434953`.
+- Direct controls prove over-attribution: it reports a type-filter failure for an archive already broken by strip processing.
+- Rejected and retained under `patches/rejected/`.
 
-## Selected correction constraints
+### Final projected identity
 
-The correction should introduce one explicit rewrite path that can be applied consistently to:
+- Stores one surviving final identity per excluded or retained member.
+- Uses hard-link target scope for retained references.
+- Preserves original strings for diagnostics.
+- Selected.
 
-- a retained member name before output;
-- a retained hard-link target before dependency checking;
-- a type-excluded member name for availability projection.
+## Clean prerequisite selection
 
-The function must express whether rewriting drops the identity entirely, as component stripping does for paths with too few components. It must honor transform target scopes: excluded member projection follows member-name scope, while hard-link target projection follows hard-link scope.
+The historical PR #68 patch records reviewed transform and target-scope behavior, yet its parser hunk does not apply with zero fuzz to exact imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`. Runs `30689716762`, `30690001217`, and `30690165287` preserved that packaging evidence.
 
-State should represent final emitted target availability. Duplicate occurrences require reference-count or equivalent occurrence-aware handling if later output-name collisions can add or remove availability. The first bounded candidate may retain set semantics only after executable collision controls establish that one retained occurrence is enough and excluded later occurrences cannot erase it.
-
-## Why the changes belong together
-
-Type exclusion creates the unavailable-target event. Strip and transform operations define the final identity used by archive extractors. Hard-link dependency validation becomes correct only when those operations share one naming contract. Splitting the final-name projection from the dependency check would preserve the current mismatch.
+Unit 15 regenerated the transform/metadata candidate against the imported blob. Unit 16 retains that exact patch as 0000 and generates patches 0001 and 0002 for its five-field transform tuple and `_sed_substitute` helper.
 
 ## Compatibility analysis
 
-### Bytes and logical content
+### Content and links
 
-A valid retained target plus hard link should remain extractable with shared content and inode identity. A missing target should produce status 1 before the broken member is written.
+Valid retained targets preserve content and inode identity. Removed targets produce no dangling member.
 
 ### Status and stderr
 
-The focused diagnostic remains:
+Known type-owned dependency breaks return status 1 with:
 
 ```text
 hard-link target excluded by type filter: MEMBER -> TARGET
 ```
 
-The displayed names need a deliberate policy: original input names are useful for diagnosis, while the decision uses final rewritten identities. The candidate should retain original names for the message unless tests reveal ambiguity.
+`MEMBER` and `TARGET` are original input strings. Final projected identities remain internal decision state.
 
 ### Archive lifecycle
 
-The output tar context must close before status 1. A rejected first dependency leaves a finalized partial or empty archive.
+The loop breaks at the first known dependency. The output context writes its trailer before the process exits 1. Partial or empty output remains syntactically valid.
 
-### Metadata
+### Duplicate and collision semantics
 
-Member and hard-link target rewrites must clear stale PAX `path` and `linkpath` exactly as the PR #68 carrier does. Unit 16 adds no independent PAX encoding policy.
+A retained final identity clears an unavailable marker and remains available across later excluded duplicate occurrences. Transform collisions are handled in the same final identity domain. Set semantics are sufficient for target-before-link streaming because one retained occurrence supplies the extractor-visible target.
+
+### Prefix normalization
+
+Repeated leading `/`, `./`, and `../` components compare as GNU tar-equivalent archive-root spellings. `.../` remains distinct. The direct invalid control for `.../root/base` stays allowed.
+
+### Independent type filters
+
+Excluding hard links alone leaves a transformed regular target and extracts successfully. Excluding both regular and hard-link types produces an empty archive. The successful control runs twice immediately.
+
+### PAX metadata
+
+Unit 15 clears stale `path` and `linkpath` when names change. Unit 16 reuses that behavior and adds no encoding policy.
 
 ### Streaming and memory
 
-Target-before-link handling can remain streaming with archive-sized name state. Link-before-target support requires buffering and stays outside this unit.
+The candidate preserves target-before-link streaming and stores archive-sized name sets. Link-before-target order and arbitrary graph buffering stay excluded.
 
-### Path-filter semantics
+### Path filters
 
-Dpkg-compatible path filtering remains unchanged. This unit acts only on `--type-exclude` dependency state.
+Dpkg-compatible path filtering remains unchanged.
 
-## Rejected alternatives
+## Executed evidence
 
-### Silently skip the dependent hard link
+### Selected focused gate
 
-This removes an allowed member and hides the dependency decision.
+Run `30690541675`, job `91344358024`, exact head `ec55994f0db12044f9c7ef9f843fe42aec7393e6`:
 
-### Materialize target bytes
+- 4 patch files and 11 hunks validated;
+- compilation passed;
+- 442 tests passed;
+- all four focused cases passed;
+- shell and command-help gates passed.
 
-This changes hard-link semantics, requires payload retention, and widens memory ownership.
+### Inherited gate
 
-### Buffer arbitrary graphs
+Run `30690583438`, job `91344466738`, head `300b51056ded64a56ec3998bc639a57e9ea81125`:
 
-This expands the unit beyond the valid target-before-link baseline and changes the streaming model.
+- 4 patch files and 11 hunks validated;
+- compilation passed;
+- 450 tests passed;
+- prefix, independent-filter rerun, first-peer, and duplicate-target cases passed;
+- shell and command-help gates passed.
 
-### Compare both raw and final strings
+That run also exposed four accidental duplicate focused tests through a module-level class alias. Commit `7fe46662141fa39a3b18ae1baba29b2b39f6c330` changes the import to a module reference. The clean expanded rerun is `30691015678`.
 
-Dual-domain acceptance can hide contradictions and permit broken output when either spelling happens to match. One final emitted-name domain gives a coherent invariant.
+## Why the patches belong together
 
-## Open discriminators
+Patch 0002 depends on the rewrite semantics and `_sed_substitute` introduced by patch 0000, and it replaces the input-name state introduced by patch 0001. Reviewing the final identity rule without those exact prerequisites would hide its behavior and hunk ownership.
 
-1. Exact execution of both strip cases on the packet-composed predecessor.
-2. Transform-scope controls for excluded-name projection and hard-link target projection.
-3. Output-name collision controls across duplicate retained and excluded occurrences.
-4. Full inherited PR #248 and PR #310 matrices on the selected correction.
-5. Complete current-main CI after cleanup and immediate rerun.
+For upstream delivery, the human reviewer may choose one integrated source commit or an ordered series. The packet preserves the three logical layers for review and rebase.
+
+## Remaining work
+
+1. complete clean expanded run `30691015678` and confirm 449 discovered tests;
+2. run one unchanged-head complete rerun;
+3. fetch current Salsa `master`, record its exact commit, and rebase the series with zero fuzz;
+4. complete final diff review against that base;
+5. create or select a controlled Salsa fork only after authorization;
+6. update submission drafts with final upstream identities.
 
 ## Evidence boundary
 
-Current packet evidence covers source and carrier review plus prepared executable characterization. Package pipelines, other extractors, other platforms, privileged metadata, link-before-target order, and arbitrary dependency graphs remain unexecuted or excluded.
+Executed evidence covers the imported tarfilter, Python tarfile-generated fixtures, GNU tar extraction, target-before-link ordering, Linux Fieldwork CI on Ubuntu 24.04, and the declared strip/transform/type matrix. Package pipelines, other extractors, other platforms, privileged metadata, link-before-target order, and arbitrary graphs remain outside the demonstrated claim.
 
 ## Authority
 
