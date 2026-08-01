@@ -1,66 +1,101 @@
 # Decision log — unit 16
 
-## 2026-08-01 — use PR #310 as the immediate predecessor
+## 2026-08-01 — use PR #310 as the lifecycle and duplicate-state predecessor
 
-**Decision:** Treat PR #310 head `32dfa36a6feb533bc1126a11ef33979e45b410ec` as the canonical lifecycle and duplicate-state predecessor, composed after the PR #68 transform/strip carrier.
+**Decision:** Preserve PR #310 head `32dfa36a6feb533bc1126a11ef33979e45b410ec` as the immediate type-hardlink predecessor.
 
-**Reason:** PR #310 repairs three defects in the first rejection candidate: archive finalization, retained duplicate targets, and retained-state updates before later skip decisions. Issue #335 explicitly starts from that repaired boundary.
+**Reason:** PR #310 finalizes the output archive before returning status 1, preserves earlier retained duplicate targets, and records retention only after later skip decisions.
 
-**Evidence:** Issues #243 and #335; PRs #248, #310, and #68; packet `SOURCE_MAP.md`.
+**Evidence:** Issues #243 and #335; PRs #248 and #310; packet patch `0001-compose-pr310-predecessor-on-transform-carrier.patch`.
 
 **Alternatives considered:**
 
-- PR #248 alone: preserves known lifecycle and duplicate-state defects.
-- PR #281: mixes stale transform/PAX carrier work and is superseded by PR #310.
+- PR #248 alone retains lifecycle and duplicate-state defects.
+- PR #281 mixes a superseded transform carrier with the duplicate repair.
 
-**Consequences:** The packet carries a clean combined predecessor patch targeted after the canonical transform/strip patch. Candidate work begins at final-name identity.
+**Consequences:** Unit 16 begins from the repaired streaming lifecycle and duplicate-name behavior.
 
-**Reopen trigger:** A complete diff review finds that the packet-local composition diverges behaviorally from PR #310.
+**Reopen trigger:** A complete diff or inherited matrix shows behavioral divergence from PR #310.
 
 **Authority effect:** Internal work only; external-contact state unchanged.
 
 ---
 
-## 2026-08-01 — characterize both failure directions before selecting code
+## 2026-08-01 — restack on unit 15's clean transform/metadata prerequisite
 
-**Decision:** Add executable false-rejection and false-acceptance strip fixtures before writing the final-name correction.
+**Decision:** Use packet patch `0000-unit15-transform-metadata-prerequisite.patch`, copied byte-for-byte from unit 15, as the canonical rewrite prerequisite.
 
-**Reason:** A correction that fixes only rejection can still emit dangling hard links, while a correction that fixes only acceptance can still reject valid archives. Both outcomes need one shared invariant.
+**Reason:** The historical PR #68 patch carries the right reviewed behavior but its parser hunk fails zero-fuzz application against exact imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`. Unit 15 regenerated the transform/metadata candidate with clean application and five-field transform tuples.
 
-**Evidence:** Issue #335 fixtures; `tests/test_tarfilter_type_excluded_final_name_identity.py`.
+**Evidence:** CI runs `30689716762`, `30690001217`, and `30690165287` reached the historical PR #68 application failure; unit 15 patch blob `38510533dc015182f3e87e9d2f3777eea5b8c93b`; unit 16 commit `70cb20cdc3d27044a4369678fc62ba1ce23f1849`.
 
 **Alternatives considered:**
 
-- Move the dependency check after strip with no excluded-name projection: insufficient for excluded members because they currently leave the loop before rewriting.
-- Compare raw and rewritten strings: creates dual-domain ambiguity.
-- Begin with transform collisions: wider than the first bounded discriminator.
+- Repair the historical PR #68 hunk again inside unit 16, duplicating unit 15 ownership.
+- Keep offset/fuzz application, weakening the exact composition contract.
 
-**Consequences:** The first selected candidate must turn both characterization outcomes green and then survive transform-scope controls.
+**Consequences:** Patches `0001` and `0002` are generated for `_sed_substitute` and the five-field tuple `(regex, replacement, occurrence, global_after, scopes)`.
 
-**Reopen trigger:** Exact execution contradicts either expected predecessor result.
+**Reopen trigger:** Unit 15 supersedes the retained clean prerequisite with different candidate bytes.
 
 **Authority effect:** Internal work only; external-contact state unchanged.
 
 ---
 
-## 2026-08-01 — use one final emitted-name domain
+## 2026-08-01 — use final projected identities for type-filter ownership
 
-**Decision:** Select a shared rewrite operation for retained member names, retained hard-link targets, and type-excluded member projection as the candidate direction.
+**Decision:** Record type-excluded targets and retained hard-link targets in their final projected name domain after component stripping and applicable transform scopes.
 
-**Reason:** Archive extractors resolve hard links using emitted names. Pre-rewrite input identity causes both observed failure directions. A single final-name domain yields one availability invariant.
+**Reason:** Extractors resolve hard links against emitted names. The PR #310 predecessor compares input spellings before later rewrites, causing a valid emitted target to be rejected. Final projected identity accepts the valid `base` target and still rejects a genuine removed `base` target.
 
-**Evidence:** `DEEP_DIVE.md`, issue #335 source boundary, and the prepared two-case test.
+**Evidence:** `tests/test_tarfilter_type_excluded_final_name_identity.py`; selected patch `0002-use-rewritten-identities-for-type-hardlinks.patch`.
 
 **Alternatives considered:**
 
-- silently skip dependent links;
-- materialize payloads;
-- buffer arbitrary dependency graphs;
-- accept a match in either raw or final domain.
+- Input-name state preserves the demonstrated false rejection.
+- Payload materialization changes type-filter meaning and requires content retention.
+- Arbitrary graph buffering widens the streaming model.
 
-**Consequences:** The helper must represent dropped identities, member-name transform scope, hard-link target transform scope, and PAX cleanup ownership. Duplicate and collision controls decide the exact state container.
+**Consequences:** Original member and target spellings remain available for diagnostics while dependency state uses projected final names.
 
-**Reopen trigger:** GNU tar differential controls show that excluded-member projection follows a different operation than emitted member naming for an in-scope option.
+**Reopen trigger:** Transform-scope or inherited compatibility controls show a final-name mismatch caused by the selected projection.
+
+**Authority effect:** Internal work only; external-contact state unchanged.
+
+---
+
+## 2026-08-01 — reject alias projection and keep intrinsic rewrite breaks outside unit 16
+
+**Decision:** Track only the final projected identity of a type-excluded member. Intermediate input and post-strip aliases are excluded from dependency state.
+
+**Reason:** The strip fixture `root/base` plus `prefix/peer -> prefix/root/base` already emits `base` and broken `peer -> root/base` when no type filter is active. Alias projection converts that existing rewrite failure into `hard-link target excluded by type filter`, assigning the failure to an option that did not create the broken reference.
+
+**Evidence:** The direct no-type-filter control in `tests/test_tarfilter_type_excluded_final_name_identity.py`; rejected patch `patches/rejected/0002-alias-projection-overattributes-strip-breaks.patch`; run `30690434953` passed all 442 tests on the alias candidate and therefore proves the candidate's behavior exactly.
+
+**Alternatives considered:**
+
+- Accept any input, strip-stage, or transform-stage alias.
+- Reject every final dangling hard link regardless of the operation that created it.
+
+**Consequences:** Intrinsic strip or transform reference failures remain with unit 15's rewrite semantics. Unit 16 rejects only a final hard-link target identity that corresponds to a member removed by the active type filter.
+
+**Reopen trigger:** A direct unfiltered control becomes valid while the type-filtered output alone becomes broken.
+
+**Authority effect:** Internal work only; external-contact state unchanged.
+
+---
+
+## 2026-08-01 — preserve rejected candidate evidence
+
+**Decision:** Retain the alias-projection patch under `patches/rejected/`.
+
+**Reason:** Its green full gate demonstrates implementation viability while the direct control demonstrates policy overreach. Keeping both facts prevents a later worker from recreating an attractive but incorrectly attributed fix.
+
+**Evidence:** Run `30690434953`, job `91344069265`: 3 patch files and 9 hunks validated, 442 tests passed, shell/help gates passed.
+
+**Consequences:** The active `0002` patch remains the final-only candidate. The rejected patch is evidence and stays outside the applied series.
+
+**Reopen trigger:** Upstream explicitly chooses a general final-archive validity policy spanning strip, transform, and type filtering.
 
 **Authority effect:** Internal work only; external-contact state unchanged.
 
@@ -68,4 +103,4 @@
 
 ## Final disposition
 
-`ACTIVE` on 2026-08-01. The branch contains executable characterization and a selected correction direction. Exact-head execution, candidate implementation, inherited matrix reruns, and complete-gate evidence remain.
+`ACTIVE` on 2026-08-01. The clean prerequisite, repaired predecessor, final-only candidate, focused matrix, inherited matrix, and rejected alias evidence are present. Selected-head execution, immediate rerun, complete-diff review, and packet closeout remain.
