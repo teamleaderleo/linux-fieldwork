@@ -1,120 +1,307 @@
 # Deep dive
 
-## Question and observed failure
+## Bounded question
 
-`tarfilter` converts an archive member name into the absolute-looking key used by `--path-exclude` and `--path-include`. Current upstream performs:
+How should `tarfilter` convert an archive member name into the absolute-looking key used by `--path-exclude` and `--path-include` while preserving filename identity, archive-root identity, filter ordering, and the existing output archive?
+
+The current source performs:
 
 ```python
 name = "/" + member.name.lstrip("./")
 ```
 
-`str.lstrip()` treats its argument as a character set. It removes every leading `.` and `/`, so `.config`, `./.config`, and `config` all become `/config`. It also turns `../config` into `/config`.
+`str.lstrip()` treats `"./"` as a character set. It therefore erases every leading dot and slash instead of parsing complete pathname prefixes.
 
-The focused baseline test fails immediately because `--path-exclude=/.config` retains all dotfile spellings. The inverse test also proves `--path-exclude=/config` removes dotfiles and the parent-component spelling `../config`.
+Examples:
+
+```text
+.config       -> /config
+./.config     -> /config
+config        -> /config
+..name        -> /name
+...name       -> /name
+../config     -> /config
+```
+
+The failure belongs to source matching-key construction. It is independent of archive emission, payload reading, packaging, environment, and the original test harness.
 
 ## Source mechanism
 
-Path filters are compiled from shell globs by `PathFilterAction`. `path_filter_should_skip()` computes a normalized matching key and evaluates the filters in command-line order. The matching key is local; this unit does not rewrite `member.name` in the output archive.
+`PathFilterAction` compiles each shell glob with `fnmatch.translate()` and stores filters in command-line order. `path_filter_should_skip()`:
 
-The defect sits entirely in the matching-key conversion. Filter ordering, glob compilation, parent-retention logic, archive streaming, and member emission remain unchanged.
+1. constructs one matching key from `member.name`;
+2. evaluates every include/exclude matcher in order;
+3. retains the last matching decision;
+4. has separate parent-retention behavior for directories and symlinks;
+5. returns a boolean without rewriting `member.name`.
 
-## Selected correction
+This unit changes only step 1. Member emission, link targets, payload bytes, PAX filtering, type filtering, transforms, stripping, ID shifting, and parent-prefix code remain untouched.
 
-The candidate adds:
+## Deep-work chronology
 
-```python
-def normalize_filter_path(name):
-    while name.startswith(("./", "/")):
-        name = name[2:] if name.startswith("./") else name[1:]
-    return "/" + name
+### Observation 1 — the canonical defect is broader than one dotfile
+
+The original report centered on `.config` versus `config`. Direct source review shows the same call aliases multi-dot names and a leading `..` component. The bounded invariant became:
+
+> Matching-key construction may remove complete leading archive syntax prefixes. It may not delete bytes from the first real pathname component.
+
+### Observation 2 — the first green replacement changed root identity
+
+The first candidate consumed leading `/` and `./` tokens and returned `"/" + name`. It repaired dotfiles and parent components, yet produced:
+
+```text
+.     -> /.
+./.   -> /.
+/./.  -> /.
 ```
 
-This loop consumes only complete syntax prefixes:
+GNU tar treats these as archive-root spellings, and the old implementation mapped them to `/`. This was a candidate regression hidden by the first test matrix.
 
-- `/` — redundant leading absolute marker;
-- `./` — explicit current-directory archive prefix.
+The selected correction adds one explicit root case:
 
-A leading `.` followed by any character other than `/` remains filename data. A leading `..` remains a complete path component.
+```python
+if name == ".":
+    name = ""
+```
 
-The loop also handles alternating prefixes such as `/./.config`, which the earlier combined carrier's `while startswith("./"); lstrip("/")` order leaves as `/./.config`.
+### Observation 3 — dpkg and tar answer different compatibility questions
 
-## Reproduction matrix
+A disposable `.deb` differential ran dpkg 1.22.22 against isolated roots and admin directories.
 
-The test creates these member names:
+Results:
+
+- `./.config` matches `/.config` and stays distinct from `/config`.
+- `./config` matches `/config` and stays distinct from `/.config`.
+- `./..name` and `./...name` retain their first component.
+- bare `.config` and repeated `././.config` extract to `.config` but do not match dpkg's native filter path.
+
+Therefore:
+
+- dpkg compatibility directly supports the ordinary package-member spelling `./path`;
+- repeated and alternating leading prefixes are a consumer-path extension, not evidence of exact dpkg equivalence.
+
+A separate GNU tar 1.35 probe shows that these leading spellings all extract to the same `.config` pathname:
 
 ```text
 .config
-config
-..name
-...name
 ./.config
-./config
 ././.config
-././config
 /./.config
-/config
-../config
+//./.config
+.//.config
+/.//.config
 ```
 
-It checks:
+It also shows that `.`, `./`, `./.`, `/.`, `/./`, and `//./.` all address extraction root.
 
-1. Excluding `/.config` removes only dotfile-equivalent spellings.
-2. Excluding `/config` removes only ordinary-name spellings.
-3. Multi-dot names and `../config` retain identity.
-4. Exclude-all plus include `/.config` restores only dotfile equivalents.
-5. Exclude-all plus include `/..name` restores only `..name`.
+### Observation 4 — whole-path normalization is a different unit
 
-Baseline: exit 1. Candidate: exit 0. Fresh application and rerun: exit 0.
+GNU tar also maps `foo/./.config` and `foo/.config` to the same extracted pathname. Applying `posixpath.normpath()` would reproduce that consumer behavior, but it would also collapse `../config`, erase internal components everywhere, and broaden the claim from leading syntax prefixes to whole-path component semantics.
+
+The internal-dot case is retained as a residual successor question. It does not enter this patch silently.
+
+### Observation 5 — the evidence executable had ambiguous authority
+
+The first test selected `/usr/bin/mmtarfilter` before `./tarfilter`. A host package could therefore make the registered test pass or fail against a system executable while the checkout candidate remained untested.
+
+The current order is:
+
+1. explicit `MMTARFILTER`;
+2. checkout-local `./tarfilter`;
+3. `/usr/bin/mmtarfilter` fallback.
+
+The workflow also passes an explicit exact path for direct execution.
+
+### Observation 6 — patch content and executable mode require separate checks
+
+A Git patch can declare `new file mode 100755`, while GNU `patch` applies text and commonly creates a non-executable file. The exact gate now performs:
+
+1. `patch --dry-run --fuzz=0` to detect offsets or fuzz;
+2. `git apply --check --verbose` for Git patch validity;
+3. `git apply --verbose` to preserve file mode;
+4. `test -x tests/tarfilter-path-dotfiles`.
+
+This prevents a clean hunk application from certifying an unusable upstream test.
 
 ## Approach history
 
-### Character-set stripping
+### A — current character-set stripping
 
-Rejected. `lstrip("./")` erases filename dots and parent components.
+**Mechanism:** `member.name.lstrip("./")`.
 
-### `posixpath.normpath()`
+**Result:** rejected. It aliases dotfiles, multi-dot names, and parent-component spellings with ordinary names.
 
-Rejected. It would collapse `.` and `..` components and would change the identity used for filtering beyond the intended archive-prefix conversion.
+**Losing controls:** `.config`, `..name`, `...name`, `../config`.
 
-### One optional `./` removal followed by slash stripping
+### B — remove one optional `./`, then leading slashes
 
-Superseded. It repairs common `./.config` inputs, yet alternating prefix spellings such as `/./.config` retain an extra `./` in the matching key. The selected loop handles every leading complete `/` or `./` token.
+**Mechanism:** one `removeprefix("./")`-style operation followed by slash removal.
 
-### Reuse the combined path-matching patch
+**Result:** rejected. Repeated and alternating leading archive spellings remain partially unparsed.
 
-Rejected for this unit. That patch changes `PathFilterAction` tuple contents and parent-retention logic owned by unit 21. It also traveled in PR #33 beside sparse and no-option changes. Unit 20 has an independent source hunk and regression.
+**Losing control:** `././.config`.
+
+### C — whole-path `posixpath.normpath()`
+
+**Mechanism:** canonicalize all dot components.
+
+**Result:** rejected for this unit. It collapses `../config` and internal `foo/./.config`, changing identity outside the leading-prefix boundary.
+
+**Losing controls:** `../config`, `foo/./.config`.
+
+### D — consume all leading `/` and `./` tokens
+
+**Mechanism:** loop over complete leading tokens.
+
+**Initial result:** repaired dotfiles and traversal-looking names, but mapped archive-root marker `.` to `/.`.
+
+**Disposition:** superseded by E.
+
+### E — complete leading-token parsing plus explicit root marker
+
+**Mechanism:** consume complete leading `/` and `./` tokens; map a remaining lone `.` to empty; prepend one `/`.
+
+**Result:** selected.
+
+**Why selected:** it is the smallest implementation that wins the current defect, repeated-prefix controls, parent-component controls, and root-alias controls without entering internal component normalization.
+
+## Selected correction
+
+```python
+def normalize_filter_path(name):
+    # Remove only complete archive syntax prefixes. Leading dots that are
+    # part of the first pathname component remain part of its identity.
+    while name.startswith(("./", "/")):
+        name = name[2:] if name.startswith("./") else name[1:]
+    if name == ".":
+        name = ""
+    return "/" + name
+```
+
+The retained upstream patch adds this helper, replaces one call site, registers one test, and adds that test.
+
+## Expanded regression ownership
+
+The current upstream-style test verifies:
+
+### Matching semantics
+
+- `/.config` excludes only dotfile-equivalent leading spellings.
+- `/config` excludes only plain-name equivalents.
+- `..name`, `...name`, `../config`, and `./../config` retain identity.
+- include-after-exclude restores the expected dotfile set.
+- reversing include/exclude order produces the opposite last-match result.
+- `/..name` restores only `..name`.
+- `/` matches all tested archive-root aliases.
+
+### Representation and metadata
+
+- regular file payload bytes survive for retained members;
+- modes, uid/gid, timestamps, and custom PAX headers survive;
+- directory type and metadata survive;
+- symlink type and target survive;
+- hard-link type and target survive;
+- excluding each dot-prefixed type removes only that member.
+
+### Evidence authority
+
+- explicit executable selection is supported;
+- checkout-local executable wins over a system package;
+- the Git patch preserves executable test mode;
+- the registered runner invokes the copied checkout test.
 
 ## Compatibility analysis
 
-- Filter patterns remain absolute-looking `/path` values as documented.
-- Repeated leading slashes continue to normalize to one leading slash.
-- Repeated and alternating `./` prefixes normalize to the underlying member name.
-- `.config`, `..name`, and `...name` retain their complete first component.
-- `../config` remains `/../config` for matching and cannot alias `/config`.
-- Output member names, payload bytes, modes, ownership, timestamps, PAX headers, link targets, and archive ordering are untouched by this patch.
-- Filter evaluation order and include-after-exclude behavior are unchanged.
-- Parent metadata retention remains unchanged and belongs to unit 21.
+### Preserved
 
-## Negative controls
+- documented filter patterns remain absolute-looking `/path` values;
+- filter ordering remains last-match-wins;
+- member names in output remain byte-for-byte the same strings supplied by `tarfile`;
+- retained payload bytes and metadata remain under existing emission behavior;
+- link targets remain untouched;
+- parent-retention code remains untouched;
+- leading slashes still collapse to one matching slash;
+- ordinary `./path` package members follow dpkg's path identity;
+- archive-root spellings continue to match `/`.
 
-The baseline fails the same upstream-style test that the candidate passes. The failure output contains all dotfile-equivalent names after `--path-exclude=/.config`, proving the detector can lose. A separate five-test unittest execution produced five baseline failures and five candidate passes.
+### Deliberately extended
 
-## Current upstream and overlap review
+Repeated and alternating leading `/` and `./` spellings receive the same matching identity because GNU tar consumes them as the same pathname. The packet labels this as a tar-consumer extension instead of calling it native dpkg behavior.
 
-The official repository page observed on 2026-08-01 reports main head `77ec9be5417ee44c96343d2347145585da1b1f94`. The `tarfilter` page reports the file's latest commit as `87b9b385b38795c58bc13ffb33b8724bed27f7a0` and still displays the faulty line.
+### Deliberately held outside
 
-Searches of the upstream issue and pull-request surfaces for `tarfilter`, `dotfile`, `path normalization`, and `lstrip("./")` produced no active equivalent carrier. This is a search result, not a guarantee against an unindexed private or unpublished change.
+Internal `.` components, such as `foo/./.config`, stay unchanged in the matching key. GNU tar consumer behavior suggests a possible successor, while resolving it requires a broader compatibility matrix for `.` and `..` across all components.
 
-## Evidence boundary
+## Negative controls and mutation adequacy
 
-Executed locally against an exact byte copy of the current upstream `tarfilter` file. The retained patch also updates `coverage.txt` and adds an upstream-style shell test. A complete upstream checkout and runner invocation remain pending because no controlled fork or checkout was available in this session.
+The retained mutation script makes four attractive alternatives lose:
 
-## Remaining discriminator
+- source baseline: dotfile and parent-component aliases;
+- one-prefix implementation: repeated prefix failure;
+- `normpath`: traversal and internal-component over-normalization;
+- first candidate: root-marker regression.
 
-Apply the patch to a complete checkout at upstream main `77ec9be5417ee44c96343d2347145585da1b1f94` and run:
+This prevents the detector from classifying every implementation as success and shows that the selected logic wins for the intended reason.
 
-```sh
-CMD=./mmdebstrap ./coverage.py tarfilter-path-dotfiles
-```
+## Current upstream and historical review
 
-A passing registered test plus complete three-file diff review would clear the remaining technical gate before authorization review.
+The canonical repository page observed on 2026-08-01 reports main `77ec9be5417ee44c96343d2347145585da1b1f94`. The `tarfilter` file still carries the faulty line. Its latest commit title records a 2024 intent to accept paths beyond one leading slash, which is consistent with reviewing relative and repeated leading spellings instead of assuming canonical package paths only.
+
+Directed public searches covered:
+
+- `tarfilter`;
+- `dotfile`;
+- `path normalization`;
+- `lstrip("./")`;
+- the exact source commit and title.
+
+No active equivalent public carrier was found. This is bounded search evidence, not proof against unpublished or unindexed work.
+
+## Known/unknown matrix
+
+| Area | Known | Remaining discriminator |
+| --- | --- | --- |
+| Source owner | Matching-key conversion in `path_filter_should_skip()` | None for unit boundary |
+| Ordinary dpkg path | `./path` matches absolute-looking filter key | Exact-head runner receipt |
+| Repeated leading prefixes | GNU tar extracts them to one consumer pathname | Maintainer compatibility review after authorization |
+| Archive root | Selected helper preserves `/` identity | Exact-head regression run |
+| Internal `.` component | GNU tar collapses it | Separate successor design and matrix |
+| Parent metadata | Existing independent defect in unit 21 | Unit 21 work |
+| Output metadata | Current regression covers retained member forms | Exact runner artifact |
+| Patch transport | Git application preserves executable mode | Exact runner log |
+| Binary authority | Checkout-local selection fixed | Exact runner trace |
+| Active overlap | Directed public search found none | Recheck immediately before authorization |
+
+## Review saturation and stop rule
+
+The unit may advance from `ACTIVE` only after all of these are true on one exact final head:
+
+1. canonical source commit and blobs are verified;
+2. current expanded baseline loses;
+3. current candidate passes directly;
+4. the registered `coverage.py` test passes;
+5. zero-offset dry-run and Git application pass;
+6. exact three-file upstream diff is reviewed;
+7. syntax, shellcheck, and shfmt pass;
+8. cleanup and immediate rerun pass;
+9. dpkg, GNU tar, and mutation probes pass;
+10. artifacts and hashes are retained;
+11. active overlap is rechecked;
+12. the internal-dot residual is recorded without broadening this unit.
+
+A green first candidate or one direct shell invocation does not satisfy this stop rule.
+
+## Reopen triggers
+
+Reopen or redesign the selected correction if any of these occur:
+
+- canonical upstream changes `tarfilter` or the test runner;
+- exact-head CI exposes a source, test, runner, environment, or cleanup failure;
+- a public equivalent patch appears;
+- maintainer guidance rejects repeated-prefix consumer normalization;
+- internal dot-segment review proves the leading-only boundary incoherent;
+- Python `tarfile`, GNU tar, or dpkg behavior changes in a supported environment.
+
+## Current incomplete discriminator
+
+The latest exact-head workflow must complete and its first result must be classified. The workflow is the authoritative gate for canonical checkout, real patch application, registered test execution, cleanup/rerun, and artifact capture.

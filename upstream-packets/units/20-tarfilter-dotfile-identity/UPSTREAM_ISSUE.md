@@ -1,30 +1,37 @@
 # Upstream issue draft
 
-## Disposition
-
-A standalone issue appears unnecessary because the patch and regression are small and self-contained. Use this draft only if the maintainer prefers issue-first discussion.
-
 ## Title
 
 tarfilter path matching aliases dotfiles with ordinary names
 
 ## Body
 
-`tarfilter` currently normalizes archive member names for path filtering with:
+`tarfilter` currently builds the absolute-looking path used by `--path-exclude` and `--path-include` with:
 
 ```python
 name = "/" + member.name.lstrip("./")
 ```
 
-`str.lstrip()` treats `"./"` as a set of characters. It removes filename dots as well as archive prefixes, so `.config` and `config` both match as `/config`. Parent-component spellings such as `../config` also collapse to `/config`.
+`str.lstrip()` treats its argument as a character set. It removes every leading dot and slash instead of one or more complete archive prefixes.
 
-A minimal archive containing `.config`, `config`, `..name`, `...name`, and their `./`-prefixed spellings shows both directions:
+This causes distinct members to share a matching key:
 
-- `--path-exclude=/.config` fails to remove the dotfile;
-- `--path-exclude=/config` removes the dotfile and `../config` along with the ordinary name.
+```text
+.config    -> /config
+config     -> /config
+..name     -> /name
+../config  -> /config
+```
 
-The proposed correction consumes only complete leading `/` and `./` archive syntax prefixes. Dots belonging to the first pathname component remain part of the matching identity.
+A minimal consequence is:
 
-A focused test covers exclude and include behavior for `.config`, `..name`, `...name`, repeated and alternating archive prefixes, ordinary names, and `../config`.
+- `--path-exclude=/.config` can retain `.config`;
+- `--path-exclude=/config` can remove both `.config` and `config`.
 
-No upstream contact has been made. This text remains an internal draft pending explicit authorization.
+A focused correction can parse complete leading `/` and `./` prefixes, preserve the first real pathname component, and keep archive-root spellings matched as `/`.
+
+A regression should cover both exclusion directions, include-after-exclude ordering, multi-dot names, leading parent components, archive-root spellings, and retained file/link metadata.
+
+## Publication state
+
+Fallback issue draft only. A tested code patch and pull-request draft exist internally. External issue creation requires explicit authorization.

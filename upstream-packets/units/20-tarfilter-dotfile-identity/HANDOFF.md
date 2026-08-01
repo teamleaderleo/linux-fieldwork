@@ -7,10 +7,11 @@
 - Worker: GPT-5.6 Thinking
 - Linux Fieldwork branch: `upstream/unit-20-tarfilter-dotfile-identity`
 - Linux Fieldwork base: `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Exact technical packet head before this handoff commit: `c1dafeb6c17622c6b2f13b72b33be0dfef4aca2c`
+- Internal draft PR: #408
+- Last semantic technical head before this documentation batch: `7b92189ace1de4138d753830f8032c244f1276c6`
 - External-contact state: unauthorized; internal work only
 
-This `HANDOFF.md` commit follows the technical packet head and changes only the durable handoff. The exact final branch tip is recorded in the unit checkpoint on issue #397.
+The final branch tip after this documentation batch is recorded in the unit checkpoint on issue #397. This handoff deliberately leaves the unit `ACTIVE`; the final exact-head workflow and artifact review remain incomplete.
 
 ## Exact upstream identities
 
@@ -18,70 +19,132 @@ This `HANDOFF.md` commit follows the technical packet head and changes only the 
 - Base branch: `main`
 - Main head observed 2026-08-01: `77ec9be5417ee44c96343d2347145585da1b1f94`
 - `tarfilter` last-change commit: `87b9b385b38795c58bc13ffb33b8724bed27f7a0`
-- Imported source blob: `ad776167a8473d5d15dbe22e850f4f6db35cf278`
-- Imported source SHA-256: `442b056aeb414aef0e33d59b6235623ca4d6072c62272508281d126cb3f3d957`
+- Source blob: `ad776167a8473d5d15dbe22e850f4f6db35cf278`
+- `coverage.txt` blob: `87f4cccf5fc646c82600672113830419e20b95dd`
+- `coverage.py` blob: `9a522484aef05deae514a98e4b6adf5feb6c886d`
+- `run_null.sh` blob: `e0a8c106f9d3d636baea286d2ab33834748dffc9`
 - Controlled upstream fork: `NEEDS FORK`
 - Intended delivery: Forgejo fork and pull request
 
+## Current candidate identities
+
+- Patch: `patches/0001-tarfilter-preserve-dotfile-identity.patch`
+- Patch Git blob: `fca86c0a45cb7f7c2e8534b4dacf8b2dafd55342`
+- Locally computed patch SHA-256: `e9a71c6afe34f3170c27cc81a93006bf5d6eb2fe863fd7dd32e7f46c8719171b`
+- Test: `tests/tarfilter-path-dotfiles`
+- Test Git blob: `516f4e1f3a38175257b68a9d9e524495d7531564`
+- Locally computed test SHA-256: `9fbc4c1146bdeb199713eb51279ce439e78ff96fc7be711f68b2278aa052e910`
+- Workflow blob before documentation batch: `bf769608742c71e4f3bdd2a1c700905ac1d0c02a`
+
+The workflow recomputes these hashes on the exact canonical checkout. Use the artifact hashes as final execution identities.
+
 ## Completed work
 
-1. Read issue #397, packet README, packet index, issue #38, duplicate issue #28, issues #29 and #39, PR #33, the combined patches, focused tests, and the existing path-filter investigation.
-2. Claimed unit 20 on issue #397.
-3. Created branch `upstream/unit-20-tarfilter-dotfile-identity` from current Linux Fieldwork main.
-4. Confirmed current upstream still contains `member.name.lstrip("./")`.
-5. Split unit 20 from the older combined carrier.
-6. Selected complete-prefix parsing that consumes leading `/` and `./` tokens while preserving filename dots and `..` components.
-7. Added an upstream-style test and `coverage.txt` registration.
-8. Retained the three-file patch at `patches/0001-tarfilter-preserve-dotfile-identity.patch`.
-9. Ran a losing baseline, passing candidate, clean application, compilation, and immediate rerun.
-10. Reviewed the complete diff and searched the public upstream issue/PR surface for active equivalent work.
-11. Wrote the issue fallback, pull-request draft, decisions, source map, deep dive, test record, and receipts.
+1. Read issue #397, packet README and index, repository start and field guides, cross-context notes, issue #38, duplicate issue #28, issues #29 and #39, PR #33, every combined patch, and every focused test carrier.
+2. Claimed unit 20 and created `upstream/unit-20-tarfilter-dotfile-identity` from current Linux Fieldwork main.
+3. Confirmed canonical mmdebstrap main and exact source/test-runner blobs.
+4. Confirmed current upstream still uses `member.name.lstrip("./")`.
+5. Split the dotfile source hunk from no-option, sparse, parent-retention, wildcard-parent, transform, PAX, and hard-link dependency work.
+6. Built a focused three-file upstream patch.
+7. Expanded the upstream-style test from a narrow name set to a 249-line matrix covering ordering, root aliases, ordinary and multi-dot names, parent components, repeated leading prefixes, file types, payload, metadata, and link targets.
+8. Ran and retained a real dpkg 1.22.22 path-filter differential.
+9. Ran and retained a GNU tar 1.35 consumer path matrix.
+10. Added a mutation matrix making four attractive alternatives lose.
+11. Found and repaired the first candidate's archive-root regression.
+12. Found and repaired ambiguous test executable authority.
+13. Found and repaired Git executable-mode loss in the patch gate.
+14. Added an exact canonical-source workflow with identity checks, baseline loss, two fresh candidate generations, direct and registered execution, cleanup, rerun, differentials, hashes, and artifacts.
+15. Added branch-scoped concurrency to cancel future superseded exact-head generations.
+16. Opened internal draft PR #408 as the review and CI carrier.
+17. Rewrote the packet with explicit known/unknowns, residual risk, stop conditions, and reopen triggers.
 
-## Exact candidate identities
+## Selected correction
 
-- Patch SHA-256: `2a62ae1ff84c1c613a0db89d1172e7f987164a472df0ea5da0e3b5b9037388c8`
-- Candidate `tarfilter` SHA-256: `fdd55d9a6737bf1b5992da0254b0d6804f2b7f7598a385ed2f5b50f5196991de`
-- Test SHA-256: `e9d4fc52860b718a6997c16770b98482c610a7016f0cd369c8da042ed113cc3d`
-
-## Latest distinguishing result
-
-```text
-baseline upstream-style test: exit 1
-candidate upstream-style test: exit 0
-fresh patch application: exit 0, no fuzz or offset reported
-python3 -m py_compile: exit 0
-immediate clean rerun: exit 0
+```python
+def normalize_filter_path(name):
+    while name.startswith(("./", "/")):
+        name = name[2:] if name.startswith("./") else name[1:]
+    if name == ".":
+        name = ""
+    return "/" + name
 ```
 
-The baseline retained every `.config` spelling under `--path-exclude=/.config`. The candidate passes exclude and include checks for `.config`, `config`, `..name`, `...name`, repeated and alternating archive prefixes, and `../config`.
+The helper removes only complete leading archive syntax prefixes, preserves dots and leading `..` components, and keeps archive-root aliases matched as `/`.
 
-## Cleanup state
+## Distinguishing evidence
 
-Temporary source copies, apply trees, generated archives, and test outputs were local scratch state. No process, mount, socket, lock, container, or generated archive remains intentionally active. Durable receipts and hashes are in `artifacts/`.
+### Current source loses
+
+- `.config` aliases `config`.
+- `..name` and `...name` lose dots.
+- `../config` aliases `/config`.
+
+### First candidate loses
+
+- `.`, `./.`, and `/.` map to `/.`, changing archive-root matching.
+
+### Selected candidate wins the local discriminators
+
+- complete leading-prefix mapping matrix;
+- root aliases;
+- real dpkg ordinary-package path identity;
+- GNU tar leading-prefix consumer identity;
+- regular, directory, symlink, and hard-link metadata controls;
+- explicit executable authority;
+- Git patch mode preservation design.
+
+See `DEEP_DIVE.md`, `TESTS.md`, and `artifacts/`.
+
+## Current exact-execution state
+
+- Draft PR: #408
+- Workflow: `Unit 20 tarfilter dotfile identity`
+- Last run before documentation batch: `30691603829`
+- Last observed state: queued
+- That run targets semantic technical head `7b92189ace1de4138d753830f8032c244f1276c6`.
+- The documentation batch creates a replacement exact head and workflow generation.
 
 ## First incomplete step
 
-Obtain or create the controlled upstream checkout/fork, check out exact main `77ec9be5417ee44c96343d2347145585da1b1f94`, and run:
+Fetch the newest workflow run for the final branch tip, then:
 
-```sh
-patch -p1 < upstream-packets/units/20-tarfilter-dotfile-identity/patches/0001-tarfilter-preserve-dotfile-identity.patch
-CMD=./mmdebstrap ./coverage.py tarfilter-path-dotfiles
-```
+1. inspect job steps and logs;
+2. classify the first result as source, candidate, test, runner, environment, cleanup, or evidence;
+3. repair any failure and rerun from a fresh final head;
+4. download the `unit-20-canonical-upstream-gate` artifact;
+5. retain the run ID, job ID, artifact ID, hashes, candidate diff, baseline output, direct output, registered output, cleanup status, and rerun output in the packet;
+6. perform the final active-overlap recheck and complete-diff review.
 
-Record the exact fork repository, candidate branch, candidate commit, full runner output, cleanup, and rerun.
+## Stop condition
 
-## Next safe action
+Advance to `READY FOR AUTHORIZATION` only when one exact final head passes all of:
 
-Perform the complete-checkout application and registered focused test. Then review the exact three-file diff from the controlled fork. A clean result can advance the unit toward `READY FOR AUTHORIZATION`.
+- canonical commit and blob verification;
+- current expanded losing baseline;
+- direct candidate test;
+- registered `coverage.py` test;
+- zero-fuzz dry-run and Git application;
+- executable test-mode assertion;
+- exact three-file upstream diff;
+- syntax, shellcheck, and shfmt;
+- cleanup and immediate rerun;
+- dpkg, GNU tar, and mutation probes;
+- artifact and hash retention;
+- overlap recheck;
+- residual internal-dot question recorded outside the patch.
 
-## Unexecuted gates
+## Residual and successor boundary
 
-- registered `coverage.py` invocation in a complete current-upstream checkout;
-- full `coverage.sh` suite;
-- Debian package/autopkgtest execution;
-- cross-version Python matrix;
-- controlled-fork compare/diff and exact upstream candidate commit.
+GNU tar treats `foo/./.config` as `foo/.config`. Unit 20 retains that as a successor question because whole-path normalization also affects `..` and exceeds the leading-prefix claim. Do not silently broaden the current patch.
+
+Parent metadata retention remains unit 21. No-option passthrough remains unit 18.
+
+## Cleanup state
+
+Local disposable `.deb` roots, tar extraction directories, generated archives, and mutation outputs were removed after their receipts were retained. No process, mount, socket, lock, container, or generated archive remains intentionally active.
+
+Hosted workflow cleanup must still be verified from the final artifact.
 
 ## Publication boundary
 
-No upstream issue, pull request, comment, email, review, or other external contact has been created. Explicit authorization remains required.
+No upstream issue, pull request, comment, email, review, or other external contact has been created. Linux Fieldwork PR #408 and issue #397 comments are internal repository coordination. Explicit authorization remains required for upstream contact.

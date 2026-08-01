@@ -6,29 +6,39 @@ tarfilter: preserve dotfile identity during path matching
 
 ## Body
 
-Path-filter matching now removes only complete leading `/` and `./` archive syntax prefixes. Leading dots that belong to a filename or parent component remain part of the matching identity.
+Path-filter matching now removes complete leading archive prefixes instead of stripping every leading `.` and `/` character.
 
-Previously, `member.name.lstrip("./")` treated its argument as a character set. That made `.config` alias `config` and could make `../config` match `/config`.
+Previously, this conversion:
+
+```python
+name = "/" + member.name.lstrip("./")
+```
+
+made names such as `.config`, `..name`, and `../config` lose pathname data. As a result, a filter for `/config` could also match `.config`, while a filter for `/.config` could miss the requested member.
+
+The new matching-key helper:
+
+- removes complete leading `/` and `./` prefixes;
+- preserves dots that belong to the first real component;
+- preserves a leading `..` component;
+- keeps archive-root spellings matched as `/`;
+- leaves output member names and link targets unchanged.
 
 The new `tarfilter-path-dotfiles` test covers:
 
 - excluding `.config` without excluding `config`;
 - excluding `config` without excluding `.config`;
-- preserving `..name`, `...name`, and `../config`;
-- repeated and alternating archive prefix spellings;
-- include-after-exclude restoration for `.config` and `..name`.
+- include-after-exclude and option-order behavior;
+- `.config`, `..name`, `...name`, and leading parent components;
+- repeated leading archive-prefix spellings;
+- archive-root spellings;
+- regular files, directories, symlinks, and hard links;
+- retained payload bytes, modes, uid/gid, timestamps, PAX headers, and link targets.
 
-Focused validation:
-
-```text
-baseline test: exit 1
-candidate test: exit 0
-fresh patch application and rerun: exit 0
-python3 -m py_compile: exit 0
-```
+Ordinary package members stored as `./path` retain dpkg-compatible filter identity. Additional repeated leading-prefix cases follow the pathname identity used by GNU tar during extraction.
 
 The change is limited to `tarfilter`, one `coverage.txt` registration, and one focused test.
 
 ## Publication state
 
-Internal draft. External contact and pull-request creation require explicit authorization.
+Internal draft. External contact and upstream pull-request creation require explicit authorization.
