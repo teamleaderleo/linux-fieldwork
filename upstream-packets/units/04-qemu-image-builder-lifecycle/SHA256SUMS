@@ -1,0 +1,3 @@
+0ef272d4613e1744957630c5de7da081e248601f934aa98efb43ea22b143c4dd  patches/0001-qemu-builder-atomic-publication-and-signal-lifecycle.patch
+e94d0c4b39af0d2479044d59f225d27267766828ba8e402481f866d330156f80  tests/test_packet_patch.py
+f115c359b216cb723835fb1b4fe8e62a4efd27ed4fe98d57b375ae8646e9a102  test-output.txt
