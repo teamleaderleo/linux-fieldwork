@@ -2,82 +2,79 @@
 
 ## 2026-08-01 — Keep unit 09 bounded to one test dependency
 
-**Decision:** add `bsdutils` only to the generated-root include set in `tests/dev-ptmx`.
+**Decision:** the owned correction is explicit selection of `bsdutils` in the generated root used by `tests/dev-ptmx`.
 
-**Reason:** the recovered transcript identifies the first unavailable operation as inner-root `script(1)`. The provider and missing selection are exact. Runtime code and broader package-test harness behavior lie outside this owner.
+**Reason:** recovered Debian CI run `72574145` failed first and only on inner-root `script(1)`. `bsdutils` provides `/usr/bin/script`; runtime code and broader harness behavior are separate owners.
 
-**Supersedes:** provisional hypotheses in early issue `#53` comments involving adduser, mount hardening, mirror state, package-universe drift, and namespace behavior.
+## 2026-08-01 — Retain the Linux Fieldwork candidate as evidence
 
-## 2026-08-01 — Preserve PR #89 as validated internal evidence
+**Decision:** preserve controlled-fork commit `43082a6bc959e2d7cefae48f52e045cc90869287`, the retained patch, exact-blob regression, and current-sid artifacts.
 
-**Decision:** retain merged PR `#89` head `9db9f4d9ae423a5c0dbd2255c05decf14fbe9d66` and CI run `30539827917` as the original static validation.
+**Evidence:**
 
-**Reason:** PR `#86` carried diverged history and was explicitly superseded. PR `#89` rebuilt the candidate on current Linux Fieldwork main and received an accepting exact-head review.
+- baseline blob `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`;
+- Linux Fieldwork candidate blob `fa93b4b845ff4927a72f258364bd920e8c7dc573`;
+- one commit, one file, one insertion, one deletion;
+- static run `30690010699` passed;
+- current-sid runs `30690241513` and `30690452822` passed root and unshare variants and cleaned every generated root.
 
-## 2026-08-01 — Produce an upstream-rooted patch
+**Boundary:** the controlled repository follows the Deepin `1.5.7-3` import and is not canonical ancestry.
 
-**Decision:** retain `patches/0001-tests-include-bsdutils-for-dev-ptmx.patch` with path `tests/dev-ptmx`.
+## 2026-08-01 — Use a networked internal runner for canonical read-only audit
 
-**Reason:** the earlier internal patch targets the Linux Fieldwork import prefix and is unsuitable as a direct upstream carrier.
+**Decision:** clear the canonical-access hold through internal draft PR `#411` rather than treating local DNS failure as terminal.
 
-## 2026-08-01 — Use the user GitHub fork as a downstream implementation carrier
+**Audit identity:** run `30704384974`, job `91380861751`, artifact `8819850852`, digest `sha256:0504ab41ec727ffb87c5f803a6dc0611534ce0df0c0eadc2587a998808de9c2b`.
 
-**Decision:** create `teamleaderleo/mmdebstrap:linux-fieldwork/unit-09-dev-ptmx-bsdutils` from `master` head `574048f2a720057b75e56622003932f344dc700a` and commit the one-line source correction at `43082a6bc959e2d7cefae48f52e045cc90869287`.
+**Method:** mirror-clone canonical Forgejo and Debian Salsa repositories, inventory every ref, inspect complete `tests/dev-ptmx` history, and capture public issue, pull-request, BTS, and mailing-list search responses. All operations were read-only.
 
-**Evidence:** baseline blob `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`; candidate blob `fa93b4b845ff4927a72f258364bd920e8c7dc573`; compare is one commit, one file, one insertion, one deletion.
+## 2026-08-01 — Correct the initial audit classifier
 
-**Boundary:** this fork follows `deepin-community/mmdebstrap` and Debian `1.5.7-3` packaging history. It is a valid package-execution carrier and does not establish canonical Forgejo ancestry.
+**Decision:** reject the initial summary field `corrected_include_history_present=false` as an ordering-sensitive false negative.
 
-## 2026-08-01 — Treat GitHub mirror freshness as unresolved
+**Reason:** the first exact pickaxe searched Linux Fieldwork's ordering:
 
-**Decision:** no accessible GitHub repository may stand in for canonical Forgejo `main`.
+```text
+bsdutils,gcc,libc6-dev,python3,passwd
+```
 
-**Evidence:** the newest inspected GitHub fork, `RubisetCie/mmdebstrap`, has unrelated local commits after the same Deepin base and still carries baseline blob `ca1cde...`. No GitHub repository contains advertised canonical commit `77ec9be5417ee44c96343d2347145585da1b1f94`.
+Canonical history uses:
 
-**Consequence:** mailing-list, Debian-series, and Forgejo-history overlap review remains mandatory before external delivery.
+```text
+gcc,libc6-dev,python3,passwd,bsdutils
+```
 
-## 2026-08-01 — Accept exact packet static validation
+Full path-history review found the exact canonical correction. Broad tracker and mailing-list regex hit counts also included unrelated substring matches and are secondary evidence.
 
-**Decision:** accept Linux Fieldwork run `30690010699` at packet head `a4303b4bf3c02fb4acfc16337e53b68b08626862` as the exact packet regression result.
+## 2026-08-01 — Accept canonical successor ownership
 
-**Evidence:** patch validation, Python compilation, complete repository unit suite, shell syntax, and command-help checks passed. The regression requires exact baseline/candidate Git blobs, zero fuzz/offset, one changed line, and unchanged customize hooks.
+**Decision:** canonical commit `c75b58e3c88b1f49626b9ee073e9e9688d38922c` owns the correction.
 
-## 2026-08-01 — Accept current-sid dynamic confirmation and rerun
+```text
+author date: 2025-11-16T00:04:44+01:00
+subject: make_mirror.sh,tests/dev-ptmx: explicitly install bsdutils for script utility
+parent: 6de6403eca9d606a88ce8f6eb0bba097d9f7369e
+resulting tests/dev-ptmx blob: 258a7f9579b2a2b91b6758952851296b44197ae0
+```
 
-**Decision:** treat runs `30690241513` and `30690452822` as positive current-sid execution and rerun evidence for the candidate.
+The correction is present on canonical `develop` head `6e1e572bc49456daab7fd1274b1f3b8ec4a1c248` and tag `1.5.7+develop`. Canonical `main` head `77ec9be5417ee44c96343d2347145585da1b1f94` still has baseline blob `ca1cde...`.
 
-**Evidence:** both disposable sid containers ran installed `mmdebstrap 1.5.7-3` with `bsdutils 1:2.42.2-2`. Root and unshare `dev-ptmx` cases passed in both runs, both inner `script` hooks printed `foobar`, copied logs contained no missing-command signature, `/tmp/test.c` and `/tmp/log` were removed, and mmdebstrap removed each temporary root.
+## 2026-08-01 — Retire the external submission
 
-**Wrapper interpretation:** autopkgtest returned status `2` because the unrelated `hint-testsuite-triggers` entry was skipped. The selected `testsuite` result was `PASS` in both artifacts.
+**Decision:** move unit 09 from `HOLD` to `RETIRED`.
 
-**Preferred receipt:** run `30690452822`, artifact `8815724078`, digest `sha256:897189064d42e06367ab652f590eb5827388dce8d883c042f079e49a7662273e`, because the unit patch applied as an independent fifth zero-fuzz/zero-offset carrier.
+**Reason:** equivalent work already landed in canonical development history. Opening a competing issue or pull request would duplicate existing upstream ownership.
 
-## 2026-08-01 — Close the full-cache execution carrier
+**Consequences:**
 
-**Decision:** close internal draft PR `#403` as superseded.
+- no canonical fork branch or external pull request is needed;
+- the Linux Fieldwork candidate remains historical confirmation only;
+- close internal audit PR `#411` as completed evidence;
+- close optional direct-run PR `#407` as unnecessary after preserving any result;
+- normal observation of `develop` promotion requires no contact.
 
-**Reason:** it produced the needed current-sid double pass but spent most of its execution budget building the complete package-test mirror. Its red controls and positive artifacts are retained in the packet.
+## 2026-08-01 — Preserve authorization boundary
 
-## 2026-08-01 — Retain direct PR #407 as optional cleaner confirmation
+**Decision:** no mmdebstrap or Debian upstream contact is created.
 
-**Decision:** leave draft PR `#407` queued as an internal refinement, not a prerequisite for ownership or dynamic confirmation.
-
-**Purpose:** seed sid `InRelease`, use the public Debian mirror directly, run only `coverage.py --exitfirst --mode=root --variant=apt dev-ptmx`, and record explicit residual mount/file/process checks with a zero-status wrapper.
-
-## 2026-08-01 — Move unit 09 to HOLD on canonical-source access
-
-**Decision:** unit state becomes `HOLD`.
-
-**Single blocker:** exact canonical Forgejo `main` bytes and history are unavailable in this execution environment.
-
-**Discriminator:** fetch advertised head `77ec9be5417ee44c96343d2347145585da1b1f94` or a fresher verified head, inspect `tests/dev-ptmx` and mailing-list-carried overlap, then apply the packet patch with zero fuzz and zero offset.
-
-- Equivalent correction already present: retire the external submission.
-- Dependency still absent and patch applies cleanly: prepare the canonical fork branch and move to `READY FOR AUTHORIZATION`.
-- Test intent changed: reopen the ownership analysis.
-
-## 2026-08-01 — Preserve final delivery on canonical Forgejo
-
-**Decision:** the GitHub downstream branch is staging and evidence only. Intended final delivery remains a fork of `josch/mmdebstrap` and a pull request against canonical `main`.
-
-**Authority:** external creation, comment, issue, pull request, email, or other contact requires explicit authorization. No mmdebstrap or Debian upstream contact occurred.
+**Evidence:** no external issue, pull request, comment, review, email, or mailing-list message occurred during investigation, execution, or canonical audit.
