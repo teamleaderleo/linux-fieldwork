@@ -1,0 +1,28 @@
+Unit 15 patch application receipts
+Date: 2026-08-01
+
+Exact imported baseline:
+  Git blob: ad776167a8473d5d15dbe22e850f4f6db35cf278
+  SHA-256: 442b056aeb414aef0e33d59b6235623ca4d6072c62272508281d126cb3f3d957
+
+Historical carrier composition:
+  PR #68 patch Git blob: 1703984aa0c030e5131618a3541ee85bfd68ec65
+  PR #102 patch Git blob: 81828a468854e7ec9ef4cda9626b9c57314afba3
+  git apply --check: PASS for both in order
+  git apply result: PASS for both in order
+  Observed offsets:
+    PR #68: -2, +2, -2 lines
+    PR #102: +25, +20, +20, +38 lines
+
+GNU patch portability observation:
+  patch 2.8 rejected the first parser hunk of the historical PR #68 patch.
+  This is a retained carrier/application portability result, not a product failure.
+
+Regenerated candidate:
+  Path: patches/0001-tarfilter-transform-metadata.patch
+  SHA-256: 4d8cb2f180cb7798a15195c2dcfac164b409f68a18c69d507cfc624d4725703c
+  Source diff: 1 file changed, 179 insertions, 23 deletions
+  Command:
+    patch --fuzz=0 -p1 -d CANDIDATE -i patches/0001-tarfilter-transform-metadata.patch
+  Result: PASS, no fuzz, no offsets, output byte-identical to composed source
+  Candidate source SHA-256: adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e

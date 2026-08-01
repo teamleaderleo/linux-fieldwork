@@ -1,0 +1,55 @@
+{
+  "baseline_blob": "ad776167a8473d5d15dbe22e850f4f6db35cf278",
+  "candidate_sha256": "adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e",
+  "cases": [
+    {
+      "case": "source_identity",
+      "git_blob": "ad776167a8473d5d15dbe22e850f4f6db35cf278",
+      "result": "pass"
+    },
+    {
+      "candidate": {
+        "s#a#x\\#y#": "x#y/a",
+        "s/a/[&]/": "[a]/a",
+        "s/a/b/": "b/a",
+        "s/a/b/g": "b/b"
+      },
+      "case": "replacement_language",
+      "negative": {
+        "s/a/b/": "b/b",
+        "s/a/b/g": "rejected"
+      },
+      "result": "pass"
+    },
+    {
+      "S": "symlink target preserved",
+      "case": "target_scopes",
+      "default": "rsh",
+      "result": "pass"
+    },
+    {
+      "case": "strip_and_pax",
+      "long_leaf_bytes": 120,
+      "result": "pass"
+    },
+    {
+      "candidate": {
+        "s/A/b/i2g": "a/b/b/b",
+        "s/a/b/0": "b/a/a/a",
+        "s/a/b/0g": "b/b/b/b",
+        "s/a/b/2": "a/b/a/a",
+        "s/a/b/22": "a/a/a/a",
+        "s/a/b/2g": "a/b/b/b",
+        "s/a/b/2g3": "a/a/b/b",
+        "s/a/b/g2": "a/b/b/b"
+      },
+      "case": "numeric_occurrences",
+      "non_ascii": "rejected",
+      "predecessor": "rejected numeric selector",
+      "result": "pass"
+    }
+  ],
+  "python": "3.13.5",
+  "status": "PASS",
+  "tar": "tar (GNU tar) 1.35"
+}
