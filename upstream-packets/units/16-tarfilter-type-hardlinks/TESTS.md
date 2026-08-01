@@ -9,7 +9,9 @@
 | Transform/strip patch | blob `1703984aa0c030e5131618a3541ee85bfd68ec65` |
 | PR #310 predecessor | head `32dfa36a6feb533bc1126a11ef33979e45b410ec` |
 | Packet predecessor patch | `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch` |
+| Final-identity candidate patch | `patches/0002-use-rewritten-identities-for-type-hardlinks.patch` |
 | Focused test | `tests/test_tarfilter_type_excluded_final_name_identity.py` |
+| Candidate matrix head | `655cd649df333d93082f98136e15740e3630950a` |
 | Internal PR | #399 |
 
 ## Focused command
@@ -18,7 +20,7 @@
 python3 -m unittest tests.test_tarfilter_type_excluded_final_name_identity -v
 ```
 
-The test performs these setup gates for each case:
+The test performs these setup gates:
 
 ```sh
 patch --batch --forward --fuzz=0 -p1 \
@@ -26,60 +28,86 @@ patch --batch --forward --fuzz=0 -p1 \
 patch --batch --forward --fuzz=0 -p1 \
   -i upstream-packets/units/16-tarfilter-type-hardlinks/patches/0001-compose-pr310-predecessor-on-transform-carrier.patch
 python3 -m py_compile upstream/mmdebstrap/tarfilter
+patch --batch --forward --fuzz=0 -p1 \
+  -i upstream-packets/units/16-tarfilter-type-hardlinks/patches/0002-use-rewritten-identities-for-type-hardlinks.patch
+python3 -m py_compile upstream/mmdebstrap/tarfilter
 ```
 
-All patch application and source execution occurs in `TemporaryDirectory` copies.
+The imported source bytes are captured when the test module is imported. Each case writes those frozen bytes into its own `TemporaryDirectory`, so earlier tests cannot mutate the source selected for composition.
 
-## Matrix
+## Red-to-green matrix
 
-| Case | Input and options | Required predecessor result | Extractor control |
+| Case | Input and options | Required predecessor result | Required candidate result |
 | --- | --- | --- | --- |
-| false rejection | regular `prefix/base`; excluded symlink `root/base`; hard link `root/peer -> root/base`; `--type-exclude=SYMTYPE --strip-components=1` | status 1; focused input-name diagnostic; finalized partial archive containing regular `base` | direct expected `base` plus `peer -> base` archive extracts and shares one inode |
-| false acceptance | excluded regular `root/base`; hard link `prefix/peer -> prefix/root/base`; `--type-exclude=REGTYPE --strip-components=1` | status 0; emitted `peer -> root/base` with no target member | GNU tar extraction returns nonzero and creates neither target nor peer |
+| false rejection | regular `prefix/base`; excluded symlink `root/base`; hard link `root/peer -> root/base`; `--type-exclude=SYMTYPE --strip-components=1` | status 1; finalized partial archive containing regular `base` | status 0; `base` plus `peer -> base`; GNU tar extraction succeeds and preserves one inode |
+| false acceptance | excluded regular `root/base`; hard link `prefix/peer -> prefix/root/base`; `--type-exclude=REGTYPE --strip-components=1` | status 0; broken `peer -> root/base` | status 1; original-name diagnostic; finalized valid empty archive |
+| genuine removed target | excluded regular `root/base`; hard link `root/peer -> root/base`; `--type-exclude=REGTYPE` | status 1; empty archive | status 1; same focused diagnostic and empty archive |
+| strip-dropped target and link | regular `base`; excluded symlink `base`; hard link `root/peer -> base`; `--type-exclude=SYMTYPE --strip-components=1` | status 1 under input-name checking | status 0; finalized valid empty archive because both the target identity and dependent link are dropped by strip semantics |
 
-## Prepared assertions
+## Exact CI history
 
-### False rejection
+### Run 1100 — malformed predecessor carrier
 
-- exact two-patch zero-fuzz composition;
-- Python compilation succeeds;
-- predecessor status equals 1;
-- stderr contains `hard-link target excluded by type filter: root/peer -> root/base`;
-- output map equals `{base: REGTYPE}`;
-- partial output extracts successfully and contains `final-name-target\n`;
-- direct expected output extracts successfully;
-- direct expected `base` and `peer` share one inode.
+- technical head: `ac21c095faae34fcd3cec3e4a7beae5a83979fe1`;
+- run: `30674423172`;
+- job: `91298597515`;
+- result: failure in `Validate changed patch carriers`;
+- exact evidence:
 
-### False acceptance
+```text
+patches/0001-compose-pr310-predecessor-on-transform-carrier.patch:4:
+hunk count mismatch: declared old/new 12/31, observed 11/29
+```
 
-- exact two-patch zero-fuzz composition;
-- Python compilation succeeds;
-- predecessor status equals 0;
-- output map equals `{peer: LNKTYPE -> root/base}`;
-- GNU tar extraction returns nonzero;
-- output tree contains neither `root/base` nor `peer`.
+Compilation and tests did not run. Commit `9ecda06a2ec7ba6dc7fade41d3ad13842220a741` corrected only the hunk header to `11/29`.
 
-## CI receipt
+### Run 1118 — carrier valid, test source contaminated by suite order
 
-Initial characterization head: `ac21c095faae34fcd3cec3e4a7beae5a83979fe1`.
+- head: `9ecda06a2ec7ba6dc7fade41d3ad13842220a741`;
+- run: `30689716762`;
+- job: `91342161441`;
+- patch validation: passed, `1 patch file` and `3 hunks`;
+- Python compilation: passed;
+- full discovery: retained 440 tests;
+- result: 438 passed, the two unit-16 tests failed before source execution.
 
-Linux Fieldwork CI run `30674423172` / run number 1100 was queued after draft PR #399 opened. The packet documentation commits advanced the PR head afterward, so the final exact-head run must be recorded in this file before disposition changes.
+Exact setup failure in each test:
+
+```text
+patching file upstream/mmdebstrap/tarfilter
+Hunk #1 FAILED at 68.
+Hunk #2 succeeded at 275 (offset 2 lines).
+Hunk #3 succeeded at 299 (offset -2 lines).
+1 out of 3 hunks FAILED
+```
+
+The focused test copied the live repository source at execution time. Earlier transform tests can modify that file in their own negative-control workflow, so the selected bytes depended on discovery order. Commit `f71f7b0462cca85a94417665214b5a91918c1f42` freezes `SOURCE_BYTES` at module import and writes those exact bytes into each disposable candidate tree.
+
+### Run 1127 — final-identity candidate matrix
+
+- exact technical head: `655cd649df333d93082f98136e15740e3630950a`;
+- run: `30690001217`;
+- patch validation: passed;
+- Python compilation: passed;
+- full unit suite: in progress at this record update.
+
+Record the final job ID, result, focused assertions, cleanup, and immediate rerun after completion.
 
 ## Baseline evidence inherited from carriers
 
 - PR #244 run `30590931312` passed at characterization head `c853da482a04a5ad49b53478b49e540fd4208b27`.
 - PR #244 current-head integrity run `30594719522` passed at `d58deabce19ee98d506970674b537cb091381c5b`.
-- PR #310 records current repair head `32dfa36a6feb533bc1126a11ef33979e45b410ec`; its latest run state must be treated as carrier evidence only, not unit-16 final-name evidence.
+- PR #310 records current repair head `32dfa36a6feb533bc1126a11ef33979e45b410ec`; its result is predecessor evidence, not final-name candidate acceptance.
 
 ## Cleanup and rerun
 
-The focused test creates archives, patched source copies, extraction directories, and bytecode below Python temporary directories. It opens no network connections, modifies no packages, creates no devices, and retains no process or filesystem state after the test process exits.
+The focused test creates archives, patched source copies, extraction directories, rejects, and bytecode below Python temporary directories. It opens no network connections, modifies no packages, creates no devices, and retains no process or filesystem state after the test process exits.
 
 An immediate exact-command rerun remains required after the first successful exact-head execution.
 
 ## Tests pending
 
-- focused test on the final packet head;
+- completed receipt for run `30690001217`;
 - immediate focused rerun after cleanup;
 - transform-scope projection controls;
 - output-name collision and duplicate-occurrence controls;
@@ -90,4 +118,4 @@ An immediate exact-command rerun remains required after the first successful exa
 
 ## Interpretation rule
 
-A green characterization proves the predecessor has both final-name failure directions under the declared fixtures. It does not accept a correction. Candidate acceptance requires a new patch, red-to-green comparison, inherited matrix execution, cleanup, rerun, and complete-gate evidence on one exact head.
+A green four-case matrix proves the selected final-identity correction for the declared fixtures. Candidate acceptance still requires inherited matrices, collision and transform-scope controls, cleanup, immediate rerun, complete-diff review, and a complete current gate on one exact head.
