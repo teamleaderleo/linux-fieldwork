@@ -38,14 +38,32 @@
 
 **Reason:** #397 names all six categories. The prior regression directly proved only transform and ID shift beyond the no-operation matrix.
 
-## 2026-08-01 — state remains ACTIVE
+## 2026-08-01 — exact blob reconstruction is admissible execution evidence
 
-**Decision:** keep the unit `ACTIVE`.
+**Decision:** accept the clean local reconstruction for the focused branch gate.
 
-**Reason:** a clean exact-branch test run and current upstream overlap refresh remain. A controlled fork also remains absent.
+**Reason:** the shell had no network DNS, while GitHub content access remained available. Source, patch, regression, and upstream-shaped patch Git blob hashes were recomputed and matched the branch identities before execution. The focused suite then passed twice, and temporary state cleaned completely.
 
-**Ready trigger:** committed regression passes from a clean checkout, overlap search finds no active equivalent, complete diff review stays bounded, and the upstream-shaped patch applies to the exact current base.
+**Limit:** this does not claim a complete Linux Fieldwork checkout or replace the historical repository-wide CI receipt from PR #46.
+
+## 2026-08-01 — move to READY FOR AUTHORIZATION
+
+**Decision:** set unit 18 to `READY FOR AUTHORIZATION`.
+
+**Reason:**
+
+- current upstream still carries the exact defect on the recorded base;
+- the refreshed Linux Fieldwork and upstream-shaped patches apply with zero fuzz;
+- the exact committed focused regression passes twice and covers every required operation category;
+- cleanup and rerun are clean;
+- the complete branch diff is bounded to patch packaging, focused tests, and packet records;
+- current visible upstream issue and pull-request searches reveal no equivalent active work;
+- final issue and pull-request drafts are complete.
+
+**Remaining human decision:** authorize or decline creation/use of a controlled public fork and upstream submission.
+
+**Reopen trigger:** upstream `main` moves, an equivalent report/patch appears, or fork-native execution exposes a different result.
 
 ## External-contact decision
 
-External contact remains unauthorized. No issue, pull request, comment, email, review, or patch submission was sent upstream.
+External contact remains unauthorized. No issue, pull request, comment, email, review, fork publication, or patch submission was sent upstream.
