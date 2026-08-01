@@ -42,7 +42,7 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
               apt-get install -y --no-install-recommends \
-                bsdutils ca-certificates curl mmdebstrap patch \
+                bsdutils ca-certificates curl mmdebstrap patch procps \
                 python3 python3-debian shellcheck shfmt sudo util-linux
               apt-get clean
               bash scripts/reproduce-mmdebstrap-dev-ptmx-direct.sh
