@@ -1,10 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -202,12 +202,14 @@ def main():
-     )
-     args = parser.parse_args()
-     if (
+@@ -204,7 +204,9 @@
          not hasattr(args, "pathfilter")
          and not hasattr(args, "paxfilter")
          and not hasattr(args, "typefilter")
@@ -15,4 +12,3 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
      ):
          from shutil import copyfileobj
  
-         copyfileobj(sys.stdin.buffer, sys.stdout.buffer)
