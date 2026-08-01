@@ -3,11 +3,18 @@
 ## Environment
 
 - Date: 2026-08-01
-- Python: container default Python 3
-- Required local commands present: `patch`, GNU `tar`, gzip/bzip2/xz support through Python `tarfile`
+- Python: `3.13.5`
+- GNU tar: `1.35`
+- GNU patch: `2.8`
 - Exact baseline Git blob: `ad776167a8473d5d15dbe22e850f4f6db35cf278`
+- Exact Linux Fieldwork patch blob: `44428ecf8d83a6edf2fca4f4da030129daacb13f`
+- Exact committed regression blob: `0b8a0e092a6dd2bf7481e077e7c7ec0f27b461bb`
+- Exact upstream-shaped patch blob: `9f856f389c7a991813dbe9d959edaf94c1155dec`
 - Current upstream repository base observed: `77ec9be5417ee44c96343d2347145585da1b1f94`
 - Current upstream tarfilter commit observed: `87b9b385b38795c58bc13ffb33b8724bed27f7a0`
+- Durable receipt: `artifacts/2026-08-01-focused-regression.json`
+
+The shell environment had no network DNS, so the exact branch files were reconstructed from GitHub content blobs. Git blob hashes were recomputed before execution and matched all four identities above.
 
 ## Historical exact-head evidence
 
@@ -37,11 +44,9 @@ Commands:
 
 ```text
 patch --dry-run --fuzz=0 -p1 -d /tmp/u18apply \
-  -i /tmp/u18repo/refreshed.patch
+  -i investigations/tarfilter-no-option-passthrough/tarfilter-no-option-passthrough.patch
 patch --fuzz=0 -p1 -d /tmp/u18apply \
-  -i /tmp/u18repo/refreshed.patch
-cmp /tmp/u18apply/upstream/mmdebstrap/tarfilter \
-  /tmp/u18repo/upstream/mmdebstrap/tarfilter.candidate
+  -i investigations/tarfilter-no-option-passthrough/tarfilter-no-option-passthrough.patch
 python3 -m py_compile /tmp/u18apply/upstream/mmdebstrap/tarfilter
 ```
 
@@ -52,51 +57,49 @@ checking file upstream/mmdebstrap/tarfilter
 patching file upstream/mmdebstrap/tarfilter
 ```
 
-`cmp` and `py_compile` exited 0. No fuzz or offset appeared.
+Application and compilation exited 0 with zero fuzz and zero offset.
 
-## Retained upstream-shaped patch
+## Exact committed-blob focused regression
 
-Commands:
+Command from the reconstructed branch root:
 
 ```text
-patch --dry-run --fuzz=0 -p1 -d /tmp/u18-upstream-apply \
-  -i /tmp/u18-upstream.patch
-patch --fuzz=0 -p1 -d /tmp/u18-upstream-apply \
-  -i /tmp/u18-upstream.patch
-python3 -m py_compile /tmp/u18-upstream-apply/tarfilter
+python3 -m unittest -v tests.test_tarfilter_no_option_passthrough
 ```
 
-Observed:
+First execution:
 
 ```text
-checking file tarfilter
-patching file tarfilter
-```
+test_candidate_does_not_bypass_any_active_operation ... ok
+test_candidate_preserves_no_option_archives_byte_for_byte ... ok
+test_unmodified_source_proves_no_option_path_is_not_passthrough ... ok
 
-Compilation exited 0. The retained packet patch is:
-
-```text
-patches/0001-tarfilter-restore-no-option-passthrough.patch
-```
-
-## Expanded local behavior matrix
-
-A temporary test driver used the exact source blob and refreshed patch. Command:
-
-```text
-python3 /tmp/u18repo/enhanced_test.py
-```
-
-Observed:
-
-```text
-test_baseline_rewrites_gzip ... ok
-test_candidate_byte_identity_including_sparse ... ok
-test_each_active_operation_bypasses_copy ... ok
-
-Ran 3 tests in 8.119s
+Ran 3 tests in 10.181s
 
 OK
+EXIT_STATUS=0
+```
+
+Clean rerun after compilation:
+
+```text
+python3 -m py_compile \
+  upstream/mmdebstrap/tarfilter \
+  tests/test_tarfilter_no_option_passthrough.py
+python3 -m unittest -v tests.test_tarfilter_no_option_passthrough
+```
+
+Observed:
+
+```text
+test_candidate_does_not_bypass_any_active_operation ... ok
+test_candidate_preserves_no_option_archives_byte_for_byte ... ok
+test_unmodified_source_proves_no_option_path_is_not_passthrough ... ok
+
+Ran 3 tests in 8.617s
+
+OK
+RERUN_EXIT_STATUS=0
 ```
 
 ### Assertions executed
@@ -118,21 +121,52 @@ OK
 | active transform | — | member renamed | PASS |
 | active ID shift | — | uid/gid incremented | PASS |
 
-## Cleanup and rerun state
+## Retained upstream-shaped patch
 
-The temporary source copies contain no processes, mounts, sockets, or containers. Temporary directories were local under `/tmp`; cleanup is completed before handoff. The committed branch regression itself still requires execution from a clean checkout or hosted job.
-
-## Unexecuted gates
-
-1. Clean checkout command:
+Commands against an exact copy of current `tarfilter`:
 
 ```text
-python3 -m unittest -v tests.test_tarfilter_no_option_passthrough
+patch --dry-run --fuzz=0 -p1 -d /tmp/u18-upstream-apply \
+  -i patches/0001-tarfilter-restore-no-option-passthrough.patch
+patch --fuzz=0 -p1 -d /tmp/u18-upstream-apply \
+  -i patches/0001-tarfilter-restore-no-option-passthrough.patch
+python3 -m py_compile /tmp/u18-upstream-apply/tarfilter
 ```
 
-2. Complete branch unit-test suite or equivalent hosted Linux Fieldwork CI.
-3. Final overlap refresh in canonical upstream issues and pull requests.
-4. Apply packet patch to a controlled upstream fork once one exists.
+Observed:
+
+```text
+checking file tarfilter
+patching file tarfilter
+UPSTREAM_PATCH_APPLY=PASS
+```
+
+The patched source SHA-256 was:
+
+```text
+8fec7cf1b1c6e314714e9a0347a7485f41d176e5cbc2769904f10af84a07e4ac
+```
+
+## Complete-diff review
+
+`main...upstream/unit-18-tarfilter-no-option-passthrough` was reviewed as 11 commits ahead, zero behind before this receipt update. The product delta is limited to:
+
+- one exact patch-context refresh with unchanged selected source behavior;
+- one focused regression expansion enforcing `--fuzz=0` and all six active-operation categories;
+- the durable unit packet and upstream-shaped patch.
+
+No imported source, workflow, dependency, generated archive, or unrelated tarfilter semantic change is present.
+
+## Cleanup and rerun state
+
+Both focused executions used `TemporaryDirectory` fixtures. After the rerun, no `/tmp/tarfilter-no-option-*` directory remained. The standalone upstream-apply directory was removed by an EXIT trap. No processes, mounts, sockets, containers, or generated repository files remain.
+
+## Evidence limits
+
+- A complete Linux Fieldwork repository suite was not rerun in this shell because the environment lacked network DNS and a complete checkout was unavailable.
+- Historical full CI remains green on the accepted source behavior through PR #46 run `30534506273`.
+- The current branch changes after that run are an exact patch-context repair, focused test expansion, and packet records; the exact changed regression passed twice.
+- A controlled upstream fork and fork-native commit remain authorization-dependent.
 
 ## Rerun commands
 
