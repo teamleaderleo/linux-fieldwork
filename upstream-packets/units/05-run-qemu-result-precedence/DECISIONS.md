@@ -1,8 +1,8 @@
 # Decisions — unit 05
 
-## 2026-08-01 — adopt event-order result precedence
+## 2026-08-01 — preserve event-order result precedence
 
-Decision: retain the canonical order:
+Decision:
 
 ```text
 captured host failure
@@ -12,63 +12,89 @@ captured host failure
 > success
 ```
 
-Reason: the host result is captured before cleanup, and the guest result is completed before `debvm-run` returns. A later cleanup signal reports cancellation after success while preserving an earlier authoritative failure.
+Reason: host and completed guest outcomes become authoritative before ordinary cleanup signals and cleanup failures.
 
-Supersedes: the intermediate patch-3 policy `host > cleanup-time signal > guest > cleanup > success`.
+Reopen trigger: upstream changes guest-result publication so it remains provisional when host cleanup begins.
 
-Reopen trigger: upstream changes guest-result publication so the guest result remains provisional when host cleanup begins.
+## 2026-08-01 — expand the canonical candidate to five ordered commits
 
-## 2026-08-01 — retain four ordered patches
+Decision: the controlled candidate is the five-commit head `6efe6945f9f89cff57fe84086ede7bda747c3879`, rather than the historical four-commit head `457095c6f89655ab12b7055307f519e71bb0dbca`.
 
-Decision: package the candidate as four patches in the canonical review order.
+Reason: complete-diff adjacent-context review found two deterministic handler-entry windows in the four-commit source:
 
-Reason: each patch closes one distinct negative control, and each intermediate composition explains the next correction. A squashed patch would erase useful review and regression boundaries.
+- TERM followed by INT before explicit-handler trap replacement returned 130 instead of retaining 143;
+- completed guest failure 1 followed by TERM before ordinary-cleanup recorder installation returned 143 instead of 1.
 
-Reopen trigger: current upstream source diverges enough that the sequence becomes artificial or conflict-heavy. In that case, produce source-aligned commits preserving the same four logical steps or document a justified smaller composition.
+Patch 5 closes both windows and preserves all previous controls.
+
+Reopen trigger: canonical-upstream source alignment proves a smaller mechanism closes the same windows with equal or stronger evidence.
+
+## 2026-08-01 — disable overlapping signals in the trap action
+
+Decision: use trap actions that run `trap "" INT TERM` before entering explicit or recorder handlers.
+
+Reason: disabling overlap inside the handler body leaves at least one shell command before the transition. A deterministic widened fixture proved that a second signal can enter there and replace first-signal ownership.
+
+Rejected: another top-of-function assignment or delayed trap transition.
+
+## 2026-08-01 — mark ordinary cleanup with the status-capture command
+
+Decision:
+
+```sh
+rv=$? cleanup_phase=exit
+```
+
+Reason: an assignment-only shell command can capture the incoming result and expose ordinary-cleanup phase without an intervening command. A signal selected immediately afterward can be routed back into the ordinary-cleanup recorder path.
+
+Reopen trigger: target shell portability review rejects this POSIX assignment-only use or current upstream supports a clearer source-aligned transition with the same control.
+
+## 2026-08-01 — retain early cleanup signals and return to ordinary cleanup
+
+Decision: when `cleanup_signal()` sees `cleanup_phase=exit`, record the first signal and return instead of beginning explicit-signal finalization.
+
+Reason: this preserves completed host/guest ownership, allows ordinary cleanup to continue, and lets later recorder traps retain first-writer semantics.
+
+## 2026-08-01 — keep five review boundaries
+
+Decision: retain five logical patches in the packet.
+
+Reason: each patch has a distinct losing control. Patch 5 is a complete-diff repair class—handler transition atomicity—rather than a prose-only cleanup.
+
+A canonical rebase may restack commits when source context requires it, but the five mechanisms and controls must remain reviewable.
+
+## 2026-08-01 — classify local harness interruptions as fixture failures
+
+Decision: discard two preliminary harness results before the authoritative run.
+
+Reasons:
+
+1. the first harness waited for a cleanup barrier before sending the signal that enters cleanup;
+2. the second expected ordinary baseline EXIT cleanup to re-enter, while re-entry belongs to the explicit-signal baseline path.
+
+Product code remained unchanged. The corrected matrix passed 58/58.
 
 ## 2026-08-01 — retain PR #290 as fixture history only
 
-Decision: record PR #290 in the source map without importing a fifth product patch.
+Decision: PR #290 contributes fixture lessons, not a product patch.
 
-Reason: its useful exact-boundary fixture repair was adopted by the later canonical #282 head. Its remaining generated-string assertion used an ambiguous substring and the branch was superseded.
+Reason: its exact-boundary extraction repair was adopted by later canonical tests; its product state was superseded.
 
-Reopen trigger: a rebased upstream test harness recreates the omitted-recorder or function-alias defect.
+## 2026-08-01 — use disposition HOLD
 
-## 2026-08-01 — treat equal published file size as a clue
+Decision: set the unit to `HOLD` with two named authoritative blockers:
 
-Decision: record that Debian Sources lists version `1.5.7-3` `run_qemu.sh` at 2,029 bytes, matching the imported source size, while withholding a byte-identity claim.
+1. current canonical Salsa base/overlap reconciliation;
+2. current upstream-native QEMU-classified execution on the exact rebased candidate.
 
-Reason: file size alone cannot establish content identity.
+Reason: the controlled candidate and reduced evidence are technically complete enough to identify the next decision, but issue #397 forbids `READY FOR AUTHORIZATION` until canonical-upstream identity, overlap, and native tests are recorded.
 
-Reopen trigger: live raw source becomes available; replace this observation with exact Git blob and SHA-256 comparison.
-
-## 2026-08-01 — keep the unit ACTIVE
-
-Decision: use disposition `ACTIVE`.
-
-Reason: the internal composition, patch extraction, and local application receipt are complete. Current Salsa `master` identity, live application, upstream-native tests, and current-carrier search remain incomplete.
-
-Transition to `READY FOR AUTHORIZATION` when:
-
-- the exact live upstream base is recorded;
-- the candidate applies or is rebased cleanly;
-- focused and ordinary upstream gates pass on the exact candidate;
-- current equivalent upstream work has been checked;
-- the packet drafts match the final source delta;
-- the branch survives cleanup and rerun.
+This HOLD assigns no task to the user. Resume through repository or hosted execution when those capabilities are available.
 
 ## 2026-08-01 — preserve external-contact boundary
 
-Decision: make no upstream contact and create no public upstream branch, issue, merge request, comment, review, email, or mailing-list post.
+Decision: create no upstream issue, merge request, comment, review, email, or mailing-list post.
 
-Reason: issue #397 authorizes internal technical work only. The user repeated the same boundary for this pass.
+Reason: issue #397 authorizes internal technical work only. No explicit unit-05 publication authorization exists.
 
-Reopen trigger: explicit authorization from the repository owner naming the permitted contact or publication action.
-
-## 2026-08-01 — controlled fork remains unresolved
-
-Decision: record `NEEDS FORK` and avoid creating one during this extraction pass.
-
-Reason: this pass could complete the packet and local patch checks without a fork. Fork creation should serve a concrete rebase/test or publication need.
-
-Reopen trigger: a runtime with canonical Salsa access is available and a controlled fork is required for internal candidate execution or explicitly authorized publication.
+Reopen trigger: repository owner explicitly authorizes a named external action and destination.
