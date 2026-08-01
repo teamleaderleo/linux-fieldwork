@@ -10,7 +10,9 @@ External contact authorized: `false`
 
 PR #224 supplies the selected top-level `make_mirror.sh` lifecycle patch. It terminates after signal cleanup, waits for each owned proxy, closes both proxy launch-to-PID registration windows, retains the first signal, applies cache and QEMU cleanup only under real ownership, preserves an active published cache, and permits immediate clean reruns.
 
-Public `mmdebstrap` `main` still uses the exact imported `make_mirror.sh` blob, so the candidate remains current at the byte level. A fresh zero-fuzz application, `/bin/sh -n`, focused rerun, and controlled-fork complete-diff review remain before authorization readiness. The attempted local checkout failed at DNS resolution before retrieval and produced no candidate result.
+The user supplied `teamleaderleo/mmdebstrap` as a controlled GitHub fork. Its repository history follows the `deepin-community/mmdebstrap` packaging lineage rather than canonical upstream Forgejo history, but its `master` branch carries the exact current `make_mirror.sh` blob required by this unit. A dedicated candidate branch now exists. The fork therefore solves source transport and branch ownership for unit 13 without proving that every file or commit is synchronized with canonical upstream.
+
+Fresh source application, `/bin/sh -n`, focused rerun, and complete candidate diff remain before authorization readiness. The local execution runner still cannot resolve `github.com`, so this pass produced no fresh shell-test result.
 
 ## Accomplished behavior
 
@@ -45,7 +47,7 @@ The baseline can turn cancellation into success or a later unrelated failure. It
 
 ### Split boundary
 
-Unit 13 owns the parent shell and its top-level resources. Unit 14 owns the `update_cache()` worker subshell and its APT-root cleanup. PRs #305/#324 are read and recorded as adjacent evidence, while their source patch remains outside this candidate.
+Unit 13 owns the parent shell and its top-level resources. Unit 14 owns the `update_cache()` worker subshell and its APT-root cleanup. PRs #305/#324 are adjacent evidence; their patch remains outside this candidate.
 
 ## Exact identities
 
@@ -53,22 +55,24 @@ Unit 13 owns the parent shell and its top-level resources. Unit 14 owns the `upd
 | --- | --- |
 | Upstream project | mmdebstrap |
 | Canonical repository | `https://gitlab.mister-muffin.de/josch/mmdebstrap` |
-| Intended base branch | `main` |
-| Upstream base commit | `77ec9be5417ee44c96343d2347145585da1b1f94` |
-| Controlled fork | `NEEDS FORK` |
-| Candidate source branch | `NEEDS BRANCH` |
-| Candidate head | retained patch from PR #224 head `13b3c529e983b3ad967725f99f4e31d867fa4742`; no upstream branch yet |
+| Intended upstream base branch | `main` |
+| Canonical upstream base commit | `77ec9be5417ee44c96343d2347145585da1b1f94` |
+| Canonical upstream file identity | `make_mirror.sh` blob `6c4be092edcf23b56b63a3befe238c099c45f590` |
+| Controlled GitHub fork | `teamleaderleo/mmdebstrap` |
+| Fork provenance | fork of `deepin-community/mmdebstrap`; downstream packaging lineage |
+| Fork default branch | `master` at `574048f2a720057b75e56622003932f344dc700a` |
+| Fork file identity | `make_mirror.sh` blob `6c4be092edcf23b56b63a3befe238c099c45f590` |
+| Candidate source branch | `linux-fieldwork/unit-13-make-mirror-top-level-lifecycle` |
+| Candidate branch head | `574048f2a720057b75e56622003932f344dc700a` before source application |
+| Candidate source identity | retained patch from PR #224 head `13b3c529e983b3ad967725f99f4e31d867fa4742` |
 | Linux Fieldwork branch | `upstream/unit-13-make-mirror-top-level-lifecycle` |
-| Linux Fieldwork evidence head before summary/handoff | `d044a4b5b8fc22329f0f6b972e54032acdf628c2` |
 | Linux Fieldwork branch base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Imported/local source identity | `make_mirror.sh` blob `6c4be092edcf23b56b63a3befe238c099c45f590` |
-| Public source identity | same blob on Forgejo `main` and Debian dgit, checked 2026-08-01 |
 | Canonical patch blob | `25f9474945a6eb0efa52415f1fcd18e784655d59` |
 | Packet patch | `patches/0001-make-mirror-top-level-signal-proxy-ownership.patch` |
-| Proposed destination | `josch/mmdebstrap` Forgejo |
-| Delivery method | controlled Forgejo fork and pull request; issue when useful |
+| Proposed destination | canonical `josch/mmdebstrap` Forgejo after explicit authorization |
+| Current branch purpose | controlled execution and review transport; no upstream contact |
 
-The issue #397 `UNIT CHECKPOINT` records the exact branch tip after `HANDOFF.md` is written.
+The controlled GitHub fork is suitable for this unit because the changed file has exact byte identity with canonical upstream. Its unrelated commit lineage must remain explicit in every comparison and draft.
 
 ## Canonical links
 
@@ -76,7 +80,7 @@ The issue #397 `UNIT CHECKPOINT` records the exact branch tip after `HANDOFF.md`
 - Owning Linux Fieldwork issue: #157
 - Canonical Linux Fieldwork composition: merged PR #224
 - Parent predecessor carriers: PRs #159 and #205
-- Adjacent worker carriers read for boundary: PRs #305 and #324
+- Adjacent worker carriers: PRs #305 and #324
 - Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
 - Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
 - Tests and receipts: [`TESTS.md`](TESTS.md)
@@ -100,20 +104,22 @@ The issue #397 `UNIT CHECKPOINT` records the exact branch tip after `HANDOFF.md`
 - an active published cache survives late cleanup;
 - immediate unsignaled reruns succeed;
 - exact #224 focused matrix passed twice and exact-head CI `30586490855` passed;
-- current public and imported source blobs match exactly.
+- canonical upstream, Debian dgit, Linux Fieldwork import, and controlled fork carry the same `make_mirror.sh` blob;
+- the controlled candidate branch exists and is currently identical to fork `master`.
 
 ### Not yet demonstrated
 
-- fresh zero-fuzz patch application on a newly retrieved checkout of the current public base;
-- fresh complete shell syntax and focused unittest execution on this unit branch;
-- complete diff on a controlled upstream fork branch;
+- source patch committed on the controlled candidate branch;
+- fresh zero-fuzz patch application against the controlled fork checkout;
+- fresh complete shell syntax and focused unittest execution;
+- complete diff of the patched candidate branch;
 - full upstream `make_mirror.sh` mirror build;
 - upstream `coverage.sh` after the candidate;
 - escalation, HUP, process-group, hostile-descendant, and permanently blocking cleanup behavior.
 
 ### Compatibility boundary
 
-The candidate uses numeric conventional signal statuses and does not re-raise signals. Parent-only delivery may remain deferred during an unrelated foreground wait. Cleanup helper failure can leave retained state while the primary command or signal status remains authoritative. The proxy receives TERM only; no escalation policy is added.
+The candidate uses conventional numeric signal statuses and does not re-raise signals. Parent-only delivery may remain deferred during an unrelated foreground wait. Cleanup helper failure can leave retained state while the primary command or signal status remains authoritative. The proxy receives TERM only; no escalation policy is added.
 
 ## Candidate organization
 
@@ -127,12 +133,12 @@ The packet retains two focused regression modules as evidence. Their final upstr
 
 `ACTIVE` — technical execution remains.
 
-The canonical patch, exact source base, split boundary, public drafts, and historical evidence are complete. Fresh application and focused execution are the first incomplete technical step.
+The canonical patch, exact source base, split boundary, controlled branch, public drafts, and historical evidence are complete. Source application and focused execution are the first incomplete technical step.
 
 ## Next human decision
 
-No human send decision is needed yet. After fresh application, focused tests, and complete controlled-fork diff pass, the repository owner chooses whether to authorize fork creation and public preparation.
+No send decision is needed yet. The controlled branch may be used for internal source application and testing. Any pull request, issue, comment, email, or canonical-upstream fork action still requires explicit authorization.
 
 ## Authority
 
-Internal Linux Fieldwork reads, branch creation, packet commits, test attempts, source review, public read-only overlap checks, and draft preparation are authorized. External issue creation, fork/branch publication, pull request, email, comment, review, or other upstream contact remains unauthorized. None occurred.
+The user's creation of `teamleaderleo/mmdebstrap` supplied a controlled fork for internal work. This pass created the dedicated candidate branch in that fork and made no contact with canonical upstream. External issue creation, pull request, email, comment, review, or other upstream interaction remains unauthorized.
