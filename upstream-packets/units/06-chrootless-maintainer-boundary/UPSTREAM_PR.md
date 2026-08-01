@@ -4,7 +4,7 @@ Status: draft only; external contact unauthorized. Rewrite exact base/head and r
 
 ## Summary
 
-This series made the chrootless dpkg/maintainer-script boundary explicit for both direct Essential installation and apt-managed package installation.
+This series made the chrootless dpkg/maintainer-script launch boundary explicit for both direct Essential installation and apt-managed package installation.
 
 It:
 
@@ -57,6 +57,12 @@ Required gates:
 - non-chrootless control;
 - source restoration and cleanup.
 
+## Explicit non-goals
+
+This series does not disable or replace dpkg's system configuration files. Dpkg may still read `/etc/dpkg/dpkg.cfg.d/*` and `/etc/dpkg/dpkg.cfg`; command-bearing `pre-invoke`, `post-invoke`, and `status-logger` settings therefore remain active. Linux Fieldwork has a separate reproducer for that boundary. A complete correction appears to require either a dpkg configuration-selection interface or a separately reviewed fail-closed mmdebstrap policy.
+
+This series also does not change APT's shutdown/sleep inhibitor policy. That path has its own exact APT controls and compatibility decision.
+
 ## Limits
 
-Chrootless package scripts still execute on the host and can access same-user host resources through other paths. Variable-name detection cannot cover every secret representation. The absolute wrapper path currently targets Debian/Linux `/usr/bin/env`.
+Chrootless package scripts still execute on the host and can access same-user host resources through other paths. Variable-name detection cannot cover every secret representation. The absolute wrapper path currently targets Debian/Linux `/usr/bin/env`. System dpkg configuration and host setup-hook authority remain outside this patch series.
