@@ -1,0 +1,41 @@
+Unit 23 installed-package reproduction
+Date: 2026-08-01
+
+Environment
+- Debian GNU/Linux 13 (trixie), version 13.3
+- kernel 6.12.13, x86_64
+- util-linux package 2.41-5 amd64
+- /usr/bin/lscpu SHA-256 e3c6e0c09d617cb9e77a3655f79a7a83d2dd865e49eabeccfbaa0335c9ff722e
+- ELF build ID 4b19bc20bdb3e57033c4f7ed08f5830ade29c1bf
+
+Fixture
+The temporary sysroot follows util-linux v2.41 tests/ts/lscpu/mk-input.sh blob a19bad3739beae3218eb9f26467db96b266887f8. It copies the relevant proc and sys files, then fixes these identities:
+
+kernel_max: 15
+possible: 0-15
+present: 0-15
+valid online: 0-15
+node0 cpumap: 0000ffff
+failing online mutation: 5,12-%
+
+The reusable runner is scripts/reproduce-trixie-lscpu-cpuset.sh.
+
+Result matrix
+baseline valid text: rc 0; stdout SHA-256 9136807693721c13afd3297713490d01822c15a42b1fcc88d186d635d57195b3; empty stderr
+baseline valid JSON: rc 0; stdout SHA-256 f6eeb31a4e5adb467743cc299272e94b8bf93ff0f748c90c9e042065141ee7ef; valid JSON; empty stderr
+baseline malformed text: rc 139; empty stdout and stderr
+baseline malformed JSON: rc 139; empty stdout and stderr
+
+The complete matrix ran twice in fresh temporary directories. Both results files were byte-identical with SHA-256 b04c504addc4e335c0f38d9c32cd4d9ac0fa54ac85d76b4cd552f77881aef1f7.
+
+Losing control
+The same malformed input with kernel_max 239 exited 0. Its stdout SHA-256 was 102848bb9ca8e1081cbd7c837b3c19194b19f3b92608188021e629e1ff562e40 and stderr was empty. Cpuset allocation sizing is therefore a required reproducer dimension.
+
+Debug run
+The bounded malformed fixture with LSCPU_DEBUG=all exited 139. Stderr was 25037 bytes with SHA-256 23e1c58da7106a922246c526e6932dee42a8596a70d53640c740b3bb1ed98a65. The trace reached ordinary context cleanup, released CPU objects 0 through 15, printed the type-cleanup phase, and terminated before the later successful cleanup messages.
+
+Cleanup
+Core files were disabled. Every fixture lived below /tmp and was removed. No mounts, host sysfs writes, package changes, sockets, locks, or surviving processes remained.
+
+Candidate state
+Internal draft PR #404 and Actions run 30690430825 own the exact Debian 2.41-5 source build, zero-fuzz canonical patch application, and candidate binary matrix. This receipt claims only the installed-package baseline result.
