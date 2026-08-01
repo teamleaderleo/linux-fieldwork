@@ -1,6 +1,6 @@
 # Unit 18 — mmdebstrap tarfilter byte-preserving no-option passthrough
 
-State: `ACTIVE`  
+State: `READY FOR AUTHORIZATION`  
 Priority-zero issue: #397, unit 18  
 Worker or variant: `GPT-5.6 Thinking`  
 Linux Fieldwork branch: `upstream/unit-18-tarfilter-no-option-passthrough`  
@@ -8,7 +8,9 @@ External contact authorized: `false`
 
 ## TL;DR
 
-Current mmdebstrap `main` still routes a no-option `tarfilter` invocation through Python tar parsing because `argparse` always creates `args.strip_components`. The retained correction now applies to the exact source with `--fuzz=0`, copies no-operation input byte-for-byte, and tests every modifying option category. An exact branch test run and final overlap refresh remain before authorization readiness.
+Current mmdebstrap `main` still routes a no-option `tarfilter` invocation through Python tar parsing because `argparse` always creates `args.strip_components`. The retained correction applies to the exact current source with `--fuzz=0`, copies no-operation input byte-for-byte, and tests every modifying option category. The exact committed regression passed twice, the complete branch diff remains bounded, and the current visible upstream issue/pull-request search found no equivalent work.
+
+The technical packet is complete. Human authorization is required before creating or using a public controlled fork or contacting upstream.
 
 ## Accomplished behavior
 
@@ -47,15 +49,19 @@ PR #23 owns active sparse rewriting. Units 15, 19, 20, and 21 own adjacent tarfi
 | Intended base branch | `main` |
 | Upstream base commit | `77ec9be5417ee44c96343d2347145585da1b1f94` |
 | Current upstream tarfilter commit | `87b9b385b38795c58bc13ffb33b8724bed27f7a0` |
-| Controlled fork | `NEEDS FORK` |
-| Candidate source branch | `NEEDS FORK` |
-| Candidate source/test head | `748f95cf0470d2c9ba96b8432c3cac7d2267aaeb` plus packet commits |
+| Controlled fork | `NEEDS FORK — authorization required` |
+| Candidate source branch | `NEEDS FORK — authorization required` |
+| Exact candidate patch blob | `9f856f389c7a991813dbe9d959edaf94c1155dec` |
+| Patched `tarfilter` SHA-256 | `8fec7cf1b1c6e314714e9a0347a7485f41d176e5cbc2769904f10af84a07e4ac` |
+| Candidate source/test head | `748f95cf0470d2c9ba96b8432c3cac7d2267aaeb` plus packet/receipt commits |
 | Linux Fieldwork branch | `upstream/unit-18-tarfilter-no-option-passthrough` |
 | Linux Fieldwork head | branch `HEAD`; exact final SHA is recorded in the #397 checkpoint |
 | Imported/local source identity | Git blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
-| Patch path | `investigations/tarfilter-no-option-passthrough/tarfilter-no-option-passthrough.patch` |
+| Linux Fieldwork patch blob | `44428ecf8d83a6edf2fca4f4da030129daacb13f` |
+| Committed regression blob | `0b8a0e092a6dd2bf7481e077e7c7ec0f27b461bb` |
+| Patch path | `patches/0001-tarfilter-restore-no-option-passthrough.patch` |
 | Proposed destination | canonical mmdebstrap repository |
-| Delivery method | `Gitea fork and pull request`; controlled fork required |
+| Delivery method | `Gitea/Forgejo fork and pull request`; controlled fork required |
 
 ## Canonical links
 
@@ -67,6 +73,7 @@ PR #23 owns active sparse rewriting. Units 15, 19, 20, and 21 own adjacent tarfi
 - Related active-sparse carrier: #23
 - Investigation: `investigations/tarfilter-no-option-passthrough/README.md`
 - Reusable note: `notes/filesystems/no-op-archive-filters-must-preserve-bytes.md`
+- Exact focused receipt: `artifacts/2026-08-01-focused-regression.json`
 - Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
 - Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
 - Tests and receipts: [`TESTS.md`](TESTS.md)
@@ -79,19 +86,23 @@ PR #23 owns active sparse rewriting. Units 15, 19, 20, and 21 own adjacent tarfi
 
 ### Demonstrated
 
-- current upstream displays the same six modifying option categories and unreachable guard;
-- local imported source is byte-identical to the current upstream `tarfilter` content shown at its last file commit;
-- the previous retained patch applied with fuzz 2;
-- the refreshed patch applies with `patch --fuzz=0` and compiles;
+- canonical upstream remains at repository head `77ec9be5417ee44c96343d2347145585da1b1f94` and displays the same unreachable guard in `tarfilter` commit `87b9b385b38795c58bc13ffb33b8724bed27f7a0`;
+- the old retained patch applied with fuzz 2, while the refreshed patch applies with `patch --fuzz=0` and compiles;
+- exact source, patch, regression, and upstream-shaped patch blob identities were recomputed before execution;
+- the committed focused suite passed 3/3 in `10.181s`, then passed 3/3 on a clean rerun in `8.617s`;
 - the baseline rewrites gzip input;
 - the candidate preserves plain, gzip, bzip2, xz, GNU sparse, strip-zero, and ID-shift-zero inputs byte-for-byte;
-- each active operation category produces its expected semantic result.
+- each active operation category produces its expected semantic result;
+- the upstream-shaped patch applies with zero fuzz and produces patched-source SHA-256 `8fec7cf1…`;
+- the complete branch diff contains only patch packaging, focused tests, and the unit packet;
+- the six currently visible open upstream issues are unrelated, and targeted issue/pull-request searches found no no-option passthrough equivalent.
 
-### Yet to demonstrate
+### Authorization-dependent work
 
-- exact committed branch test execution in a clean checkout or hosted job;
-- final current overlap search across upstream issues and pull requests;
-- controlled fork identity and candidate source commit.
+- create or identify the controlled public fork;
+- apply the retained patch as one fork-native commit;
+- run the same focused commands in that checkout;
+- submit the prepared pull request only after explicit authorization.
 
 ### Compatibility boundary
 
@@ -106,11 +117,11 @@ One source patch and its focused regression belong together:
 
 ## Current disposition
 
-`ACTIVE` — one clean exact-branch test run and current overlap refresh remain.
+`READY FOR AUTHORIZATION` — the technical scavenger hunt is complete. The remaining decision is whether to authorize controlled-fork creation and upstream submission.
 
 ## Next human decision
 
-No human decision is required yet. After the remaining technical gates, the repository owner chooses whether to authorize creating the controlled fork and contacting upstream.
+Authorize or decline creation/use of a controlled mmdebstrap fork and submission of the prepared pull request. External contact remains separately unauthorized until that decision is explicit.
 
 ## Authority
 
