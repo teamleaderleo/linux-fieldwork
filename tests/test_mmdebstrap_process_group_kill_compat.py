@@ -238,8 +238,16 @@ class MmdebstrapProcessGroupKillCompatibilityTest(unittest.TestCase):
         self.assertIn('apply_exact_patch signal "$signal_patch"', script)
         self.assertIn('"$source_tree/tests/sigint-during-customize-hook"', script)
         self.assertIn("Integration signal override", script)
+        self.assertIn(
+            'unit09_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/dev-ptmx-bsdutils-source.patch"',
+            script,
+        )
+        self.assertIn('if [[ ! -f $unit09_patch ]]; then', script)
+        self.assertIn('apply_exact_patch unit09 "$unit09_patch"', script)
+        self.assertIn('"$source_tree/tests/dev-ptmx"', script)
+        self.assertIn("Unit-09 source correction", script)
         self.assertIn("zero fuzz and zero offset", script)
-        self.assertEqual(script.count("apply_exact_patch "), 4)
+        self.assertEqual(script.count("apply_exact_patch "), 5)
 
 
 if __name__ == "__main__":
