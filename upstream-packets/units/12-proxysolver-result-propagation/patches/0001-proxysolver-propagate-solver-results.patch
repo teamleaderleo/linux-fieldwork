@@ -1,0 +1,29 @@
+diff --git a/proxysolver b/proxysolver
+index 5cd51fa..13aef71 100644
+--- a/proxysolver
++++ b/proxysolver
+@@ -15,6 +15,7 @@ import subprocess
+ import sys
+ import os
+ import getpass
++import signal
+ 
+ if not os.path.exists("/usr/lib/apt/solvers/apt"):
+     print(
+@@ -47,6 +48,16 @@ try:
+             for line in p.stdout:
+                 print(line, end="")
+                 f.write(line)
++            returncode = p.wait()
++    if returncode < 0:
++        sys.stdout.flush()
++        signum = -returncode
++        if signum not in (signal.SIGKILL, signal.SIGSTOP):
++            signal.signal(signum, signal.SIG_DFL)
++            signal.pthread_sigmask(signal.SIG_UNBLOCK, {signum})
++        os.kill(os.getpid(), signum)
++    if returncode != 0:
++        raise SystemExit(returncode)
+ except (FileNotFoundError, PermissionError) as e:
+     print(
+         """Error: ERR_CREATE_FILE
