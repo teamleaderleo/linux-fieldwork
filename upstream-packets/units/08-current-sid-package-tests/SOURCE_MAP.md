@@ -53,6 +53,15 @@
 - `patches/0004-tests-run-capability-case-in-phase-local-hook-free-pass.patch`
 - `patches/series`
 
+## Linux Fieldwork execution gate
+
+- `tests/test_upstream_packet_unit_08_current_sid_package_tests.py`
+- committed at `7782872ae2f731a27ed672df3a37b1d3b1581aa4`;
+- copies the five changed imported-source files into a temporary tree;
+- applies the exact ordered series twice with `patch --fuzz=0`;
+- rejects any fuzz or offset receipt and checks every expected patched path;
+- compiles transformed Python, parses transformed shell, compares deterministic candidate digests, and verifies the imported source bytes remain unchanged.
+
 ## Explicitly excluded local files
 
 - `.github/workflows/*` related to disposable sid reproduction or signal probing;
