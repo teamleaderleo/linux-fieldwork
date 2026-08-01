@@ -106,13 +106,109 @@ Contract:
 - require both inner `script -c` hooks and all customize hooks to remain in the original order;
 - remove each temporary directory through `TemporaryDirectory` cleanup.
 
-CI state: draft PR `#402` opened to execute Linux Fieldwork CI. Record the final exact workflow head and result after the latest packet commit settles.
+### Packet-carrier red control
+
+Run `30689859933` rejected the first retained patch before tests:
+
+```text
+invalid hunk-body prefix '2'
+hunk count mismatch: declared old/new 8/8, observed 8/7
+```
+
+Classification: packet-format failure, zero package claim. The carrier was replaced with a pure count-correct unified diff.
+
+### Exact static success
+
+```text
+unit head: a4303b4bf3c02fb4acfc16337e53b68b08626862
+workflow run: 30690010699
+changed patch validation: success
+Python compilation: success
+complete repository unit suite: success
+shell syntax and command help: success
+privileged package jobs: correctly skipped
+```
+
+This is the current authoritative static result for the packet branch before adding the execution receipts below.
+
+## Focused current-sid execution carrier
+
+Internal draft PR `#403` uses the proven disposable Debian sid carrier from PR `#361` and exits after `coverage.py --exitfirst dev-ptmx`. It changes only the temporary imported source and contacts no external project.
+
+### Attempt 1 — focus hunk conflict
+
+```text
+workflow run: 30690124748
+execution head: 8fa7ea7e857ac966c0473468178a460731a485db
+artifact ID: 8815363717
+artifact digest: sha256:b52556a4a6735e553daf5daf01d865d8ef68edad9f9ec3b448c699e8cc4432d3
+classification: carrier-preflight-failure
+package claim: zero
+```
+
+Exact patch output:
+
+```text
+patching file debian/tests/testsuite
+Hunk #2 FAILED at 189.
+1 out of 2 hunks FAILED
+patching file tests/dev-ptmx
+```
+
+The unit-09 source hunk applied. The focus edit conflicted with the capability patch that had already changed the testsuite. The focus transformation moved into an environment-gated post-patch tool.
+
+### Attempt 2 — bundled patch breaks repository fixtures
+
+```text
+workflow run: 30690241513
+execution head: 501c19c7147b2452350069fda5375c4cdbc7ab7c
+BTS capture: success
+focused sid container: in progress when this receipt was written
+lab-tools: failure
+```
+
+The sid carrier crossed patch preflight and entered real package work. The repository suite found four fixture failures because `installed-command-wrapper.patch` had been expanded to include `tests/dev-ptmx`, while established wrapper tests intentionally construct a fixture containing only `debian/tests/testsuite`.
+
+Exact failure boundary:
+
+```text
+can't find file to patch at input line 48
+diff --git a/tests/dev-ptmx b/tests/dev-ptmx
+No file to patch. Skipping patch.
+```
+
+Classification: carrier composition defect. The unit-09 source candidate remains unchanged.
+
+### Attempt 3 — independent exact patch carrier
+
+```text
+execution head: 55b603aa9a819217c19055a7becc91cf4832f082
+workflow run: 30690452822
+status at receipt: queued behind attempt 2
+```
+
+Repair:
+
+- restore `installed-command-wrapper.patch` to its proven testsuite-only bytes;
+- apply `dev-ptmx-bsdutils-source.patch` as a fifth independent exact patch;
+- retain zero-fuzz/zero-offset receipts for every patch;
+- set `UNIT09_FOCUS=dev-ptmx` only in PR `#403`;
+- transform the already-composed testsuite after all patches;
+- run only the named case and exit before unrelated phases.
+
+Attempt 3 must produce both a green repository suite and a focused sid result on the same exact head before it becomes authoritative.
 
 ## Current Debian source relevance
 
-Debian sid currently carries source package `mmdebstrap 1.5.7-3`. Unit 08 identifies the exact Debian executable base as tag `debian/1.5.7-3`, commit `6fde999741f4fe1e7bf38079acf29432ef87a35e`. The controlled GitHub carrier is therefore relevant to a current-sid package execution of this specific one-line correction.
+Debian sid carries the `mmdebstrap 1.5.7` source generation. Unit 08 identifies the exact Debian executable base as tag `debian/1.5.7-3`, commit `6fde999741f4fe1e7bf38079acf29432ef87a35e`. The controlled GitHub carrier is therefore relevant to current-sid package execution of this one-line correction.
 
 The carrier cannot establish canonical Forgejo freshness. Missing canonical-main or mailing-list patches remain an overlap/rebase concern before final upstream delivery.
+
+## Canonical and mailing-list overlap search
+
+Public indexed searches for `dev-ptmx`, `bsdutils`, and the exact corrected include line found no equivalent canonical issue, pull request, Debian BTS item, or mailing-list result. The official canonical page advertises `main` at `77ec9be5417ee44c96343d2347145585da1b1f94`.
+
+Search absence is supporting evidence only. Exact canonical bytes and history remain the final overlap gate.
 
 ## Canonical network checkout attempts
 
@@ -131,9 +227,22 @@ Could not resolve host: gitlab.mister-muffin.de
 Could not resolve host: github.com
 ```
 
-The connected GitHub API remained available. The official canonical repository page remained readable and advertised `main` at `77ec9be5417ee44c96343d2347145585da1b1f94`.
+The connected GitHub API remained available. The official canonical repository page remained readable.
 
-## Unexecuted gates
+## Remaining gates
+
+### Authoritative focused current-sid pass
+
+Complete PR `#403` run `30690452822` or its exact successor. Record mirror identity, package universe, candidate commit, command, exit status, artifact ID and digest, named result, and cleanup state.
+
+### Cleanup and immediate rerun
+
+After the first focused pass:
+
+- verify the generated root is removed;
+- verify no listener, mount, container, or temporary source tree survives;
+- rerun the exact candidate and command;
+- compare result and first-result coordinates.
 
 ### Canonical current-head application and overlap review
 
@@ -141,28 +250,6 @@ Obtain exact canonical Forgejo bytes at `77ec9be5417ee44c96343d2347145585da1b1f9
 
 Expected: one changed include line, or retirement if equivalent work already landed.
 
-### Focused current-sid run
-
-Use the unit-08 disposable package-test carrier or its successor. Apply the candidate to the temporary Debian `1.5.7-3` source copy and select:
-
-```text
-dev-ptmx
-mode=root
-variant=apt
-dist=unstable or current sid
-```
-
-Record exact mirror identity, package universe, candidate commit, command, exit status, retained artifact digest, first failure or success line, and cleanup result.
-
-### Cleanup and immediate rerun
-
-After the first focused run:
-
-- verify the generated root is removed;
-- verify no listener, mount, container, or temporary source tree survives;
-- rerun the exact candidate and command;
-- compare result and first-failure coordinates.
-
 ## Current test disposition
 
-Historical ownership, prior static validation, controlled-fork application, exact one-file compare, and candidate blob verification are complete. Draft PR `#402` CI, canonical-current overlap review, current-sid named execution, cleanup verification, and immediate rerun remain open.
+Historical ownership, prior static validation, controlled-fork application, exact one-file compare, candidate blob verification, and packet-branch CI are complete. The authoritative focused sid pass, cleanup verification, immediate rerun, and canonical-current overlap review remain open.
