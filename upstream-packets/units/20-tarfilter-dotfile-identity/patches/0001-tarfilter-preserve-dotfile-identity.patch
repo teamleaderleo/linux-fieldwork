@@ -13,7 +13,7 @@ diff --git a/coverage.txt b/coverage.txt
 diff --git a/tarfilter b/tarfilter
 --- a/tarfilter
 +++ b/tarfilter
-@@ -214,13 +214,18 @@ Lastly, shift user id and group id of each entry by the value given by the
+@@ -214,13 +214,20 @@ Lastly, shift user id and group id of each entry by the value given by the
      # same logic as in dpkg/src/filters.c/filter_should_skip()
      prefix_prog = re.compile(r"^([^*?[\\]*).*")
  
@@ -22,6 +22,8 @@ diff --git a/tarfilter b/tarfilter
 +        # part of the first pathname component remain part of its identity.
 +        while name.startswith(("./", "/")):
 +            name = name[2:] if name.startswith("./") else name[1:]
++        if name == ".":
++            name = ""
 +        return "/" + name
 +
      def path_filter_should_skip(member):
@@ -39,7 +41,7 @@ diff --git a/tests/tarfilter-path-dotfiles b/tests/tarfilter-path-dotfiles
 new file mode 100755
 --- /dev/null
 +++ b/tests/tarfilter-path-dotfiles
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,177 @@
 +#!/bin/sh
 +set -eu
 +export LC_ALL=C.UTF-8
@@ -56,7 +58,64 @@ new file mode 100755
 +import tarfile
 +
 +mmtarfilter = sys.argv[1]
-+members = (
++
++
++def archive_bytes(entries):
++    output = io.BytesIO()
++    with tarfile.open(fileobj=output, mode="w", format=tarfile.PAX_FORMAT) as archive:
++        for member, payload in entries:
++            archive.addfile(member, None if payload is None else io.BytesIO(payload))
++    return output.getvalue()
++
++
++def regular(name, payload, mode=0o640, pax=None):
++    member = tarfile.TarInfo(name)
++    member.mode = mode
++    member.mtime = 946684800
++    member.size = len(payload)
++    member.pax_headers = dict(pax or {})
++    return member, payload
++
++
++def directory(name, mode=0o751, pax=None):
++    member = tarfile.TarInfo(name)
++    member.type = tarfile.DIRTYPE
++    member.mode = mode
++    member.mtime = 946684800
++    member.pax_headers = dict(pax or {})
++    return member, None
++
++
++def symlink(name, target, mode=0o777, pax=None):
++    member = tarfile.TarInfo(name)
++    member.type = tarfile.SYMTYPE
++    member.linkname = target
++    member.mode = mode
++    member.mtime = 946684800
++    member.pax_headers = dict(pax or {})
++    return member, None
++
++
++def run_filter(source, *options):
++    result = subprocess.run(
++        [sys.executable, mmtarfilter, *options],
++        input=source,
++        stdout=subprocess.PIPE,
++        stderr=subprocess.PIPE,
++        check=False,
++    )
++    if result.returncode:
++        sys.stderr.buffer.write(result.stderr)
++        raise SystemExit(result.returncode)
++    return result.stdout
++
++
++def members_by_name(result):
++    with tarfile.open(fileobj=io.BytesIO(result), mode="r:*") as archive:
++        return {member.name: member for member in archive.getmembers()}
++
++
++spellings = (
 +    ".config",
 +    "config",
 +    "..name",
@@ -69,50 +128,94 @@ new file mode 100755
 +    "/config",
 +    "../config",
 +)
++source = archive_bytes(
++    [regular(name, f"member-{index}:{name}\n".encode()) for index, name in enumerate(spellings)]
++)
 +dotfiles = {".config", "./.config", "././.config", "/./.config"}
 +plain = {"config", "./config", "././config", "/config"}
++identity_controls = {"..name", "...name", "../config"}
 +
-+
-+def fixture():
-+    output = io.BytesIO()
-+    with tarfile.open(fileobj=output, mode="w", format=tarfile.PAX_FORMAT) as archive:
-+        for index, name in enumerate(members):
-+            payload = f"member-{index}:{name}\n".encode()
-+            member = tarfile.TarInfo(name)
-+            member.mode = 0o644
-+            member.size = len(payload)
-+            archive.addfile(member, io.BytesIO(payload))
-+    return output.getvalue()
-+
-+
-+def filtered_names(*options):
-+    result = subprocess.run(
-+        [sys.executable, mmtarfilter, *options],
-+        input=fixture(),
-+        stdout=subprocess.PIPE,
-+        stderr=subprocess.PIPE,
-+        check=False,
-+    )
-+    if result.returncode:
-+        sys.stderr.buffer.write(result.stderr)
-+        raise SystemExit(result.returncode)
-+    with tarfile.open(fileobj=io.BytesIO(result.stdout), mode="r:*") as archive:
-+        return set(archive.getnames())
-+
-+
-+names = filtered_names("--path-exclude=/.config")
++names = set(members_by_name(run_filter(source, "--path-exclude=/.config")))
 +assert dotfiles.isdisjoint(names), names
 +assert plain <= names, names
-+assert {"..name", "...name", "../config"} <= names, names
++assert identity_controls <= names, names
 +
-+names = filtered_names("--path-exclude=/config")
++names = set(members_by_name(run_filter(source, "--path-exclude=/config")))
 +assert plain.isdisjoint(names), names
 +assert dotfiles <= names, names
-+assert {"..name", "...name", "../config"} <= names, names
++assert identity_controls <= names, names
 +
-+names = filtered_names("--path-exclude=/*", "--path-include=/.config")
++names = set(
++    members_by_name(
++        run_filter(source, "--path-exclude=/*", "--path-include=/.config")
++    )
++)
 +assert names == dotfiles, names
 +
-+names = filtered_names("--path-exclude=/*", "--path-include=/..name")
++names = set(
++    members_by_name(
++        run_filter(source, "--path-include=/.config", "--path-exclude=/*")
++    )
++)
++assert not names, names
++
++names = set(
++    members_by_name(
++        run_filter(source, "--path-exclude=/*", "--path-include=/..name")
++    )
++)
 +assert names == {"..name"}, names
++
++root_spellings = (".", "./", "./.", "/.", "/./", "//./.")
++root_source = archive_bytes([directory(name) for name in root_spellings])
++root_names = set(members_by_name(run_filter(root_source, "--path-exclude=/")))
++assert not root_names, root_names
++
++metadata_source = archive_bytes(
++    [
++        regular(
++            "./.config",
++            b"dotfile-payload\n",
++            mode=0o604,
++            pax={"unit20.kind": "dotfile"},
++        ),
++        regular(
++            "./config",
++            b"plain-payload\n",
++            mode=0o640,
++            pax={"unit20.kind": "plain"},
++        ),
++        directory(
++            "./.cache",
++            mode=0o701,
++            pax={"unit20.kind": "directory"},
++        ),
++        symlink(
++            "./.config-link",
++            ".config",
++            mode=0o777,
++            pax={"unit20.kind": "symlink"},
++        ),
++    ]
++)
++retained = members_by_name(run_filter(metadata_source, "--path-exclude=/.config"))
++assert set(retained) == {"./config", "./.cache", "./.config-link"}, retained
++assert retained["./config"].isfile()
++assert retained["./config"].mode == 0o640
++assert retained["./config"].mtime == 946684800
++assert retained["./config"].pax_headers["unit20.kind"] == "plain"
++assert retained["./.cache"].isdir()
++assert retained["./.cache"].mode == 0o701
++assert retained["./.cache"].pax_headers["unit20.kind"] == "directory"
++assert retained["./.config-link"].issym()
++assert retained["./.config-link"].linkname == ".config"
++assert retained["./.config-link"].pax_headers["unit20.kind"] == "symlink"
++
++retained = members_by_name(run_filter(metadata_source, "--path-exclude=/.cache"))
++assert "./.cache" not in retained, retained
++assert {"./.config", "./config", "./.config-link"} <= set(retained), retained
++
++retained = members_by_name(run_filter(metadata_source, "--path-exclude=/.config-link"))
++assert "./.config-link" not in retained, retained
++assert {"./.config", "./config", "./.cache"} <= set(retained), retained
 +PY
