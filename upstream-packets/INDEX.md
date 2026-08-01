@@ -15,7 +15,7 @@ This index maps each contribution unit to its durable packet directory. Issue #3
 | 06 | 2 | mmdebstrap chrootless maintainer-script boundary hardening | Composition or justified split needed | `units/06-chrootless-maintainer-boundary/` |
 | 07 | 2 | mmdebstrap file-mirror-automount: setup and cleanup confinement | Focused candidate; current rebase needed | `units/07-file-mirror-confinement/` |
 | 08 | 2 | mmdebstrap package tests: current-sid phase-correct execution | Compose product test corrections | `units/08-current-sid-package-tests/` |
-| 09 | 2 | mmdebstrap package tests: declare `bsdutils` for `dev-ptmx` | HOLD: canonical Forgejo byte/history review | `units/09-dev-ptmx-bsdutils/` |
+| 09 | 2 | mmdebstrap package tests: declare `bsdutils` for `dev-ptmx` | RETIRED: canonical `develop` commit `c75b58e3` | `units/09-dev-ptmx-bsdutils/` |
 | 10 | 2 | mmdebstrap package tests: exact subordinate-ID account matching | Small bounded candidate | `units/10-subid-exact-match/` |
 | 11 | 2 | mmdebstrap coverage.py: cancellation owns selected backend group | Narrow candidate review-ready | `units/11-coverage-backend-cancellation/` |
 | 12 | 2 | mmdebstrap proxysolver: faithful ordinary and signal results | Compose small source unit | `units/12-proxysolver-result-propagation/` |
