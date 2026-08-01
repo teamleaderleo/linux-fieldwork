@@ -1,0 +1,20 @@
+probe=lf-dpkg-config-probe
+dpkg_version=1.22.22
+uid=0
+system_config_files=/etc/dpkg/dpkg.cfg,/etc/dpkg/dpkg.cfg.d/docker,/etc/dpkg/dpkg.cfg.d/docker-apt-speedup,
+
+phase=user case=inherited rc=0 markers=logger,pre,post, files= user_log=yes system_log=no target_log=no
+phase=user case=appended-controls rc=141 markers=logger,pre, files= user_log=no system_log=no target_log=yes
+stderr_begin phase=user case=appended-controls
+stderr_end phase=user case=appended-controls
+phase=user case=scrubbed rc=0 markers= files=opt, user_log=no system_log=no target_log=yes
+phase=user case=scrubbed-plus-include rc=0 markers= files=opt,doc, user_log=no system_log=no target_log=yes
+phase=system case=scrubbed-baseline rc=0 markers=logger,pre,post, files= user_log=no system_log=no target_log=no
+phase=system case=appended-command-controls rc=141 markers=logger,pre, files= user_log=no system_log=no target_log=yes
+stderr_begin phase=system case=appended-command-controls
+stderr_end phase=system case=appended-command-controls
+phase=system case=neutralize-data-only rc=0 markers=logger,pre,post, files=opt,doc, user_log=no system_log=no target_log=yes
+cleanup=system-config-absent
+
+runner_sha256=f5c73af6112006f79eb738438143deb4776a741aefac17d5850c0b6da0337edc
+artifact_sha256=ebc5df68f37350ea973fb5dbec39875cf1578a27dad88fa6dca2f1a2b72ebf76
