@@ -31,6 +31,8 @@ The ownership fixture starts a disposable parent-owned proxy process and a real 
 
 The cleanup-time fixture places a deterministic barrier inside `cleanupapt`. On the predecessor, ordinary cleanup plus TERM stops after the cleanup `start` marker and leaves APT state; explicit TERM followed by INT can exit by SIGINT. On the candidate, INT/QUIT/TERM during ordinary cleanup produce 130/131/143, later handled signals cannot replace the selected result, cleanup reaches `end`, state is removed, and an immediate unsignaled rerun succeeds.
 
+The collapsed source candidate was built twice. The first controlled staging build used a downstream-history GitHub branch whose `make_mirror.sh` blob matched canonical upstream exactly. The final build cloned current canonical Forgejo `main`, mirrored its real history to `linux-fieldwork/upstream-main-snapshot`, applied the fixed patch with zero fuzz, and committed one source change at `b2a9a09b36fd13f22a024ebf8522ac58543eac28`. Ten candidate-facing lifecycle cases passed on that exact source in 3.459 seconds.
+
 ## Approach history
 
 ### Approach A — cleanup-only combined trap
@@ -58,13 +60,23 @@ The cleanup-time fixture places a deterministic barrier inside `cleanupapt`. On 
 - Result: held. The remaining problem is unmeasured cancellation latency, while the larger mechanism adds dependency, portability, and lifecycle cost.
 - Reopen discriminator: measured harmful APT cancellation latency or an accepted isolated-group/supervisor contract.
 
+### Approach E — rewrite the user fork's default branch
+
+- Mechanism: force the downstream-history `master` branch to canonical upstream.
+- Result: rejected. The branch carries independent downstream history that the unit does not own.
+- Selected alternative: preserve `master`, mirror canonical Forgejo history to a dedicated snapshot branch, and build the candidate directly on that snapshot.
+
 ## Selected correction
 
-One upstream patch combines the two landed internal patches because they edit the same `update_cache()` finalizer and jointly define one observable worker lifecycle. Splitting them would submit an intermediate state with a known cleanup-time signal gap.
+One source patch combines the two landed internal patches because they edit the same `update_cache()` finalizer and jointly define one observable worker lifecycle. Splitting them would submit an intermediate state with a known cleanup-time signal gap.
+
+The final controlled source branch is `linux-fieldwork/unit-14-make-mirror-update-cache-upstream-main`. Its base is exact canonical upstream `77ec9be5417ee44c96343d2347145585da1b1f94`; its source commit is `b2a9a09b36fd13f22a024ebf8522ac58543eac28` before the project-native regression commit.
 
 ## Why the changes belong together
 
-Ownership, signal termination, once-only cleanup, cleanup-time signal retention, and result precedence share one state machine and overlapping source lines. The cleanup-time repair depends on the common finalizer introduced by the ownership repair. One patch presents the complete final behavior without asking upstream to review or temporarily accept the known intermediate gap.
+Ownership, signal termination, once-only cleanup, cleanup-time signal retention, and result precedence share one state machine and overlapping source lines. The cleanup-time repair depends on the common finalizer introduced by the ownership repair. One source commit presents the complete final behavior without asking upstream to review or temporarily accept the known intermediate gap.
+
+A project-native regression belongs in the same pull request as a separate test commit. It verifies the final source through the repository's `tests/` and `coverage.txt` conventions without mixing test mechanics into the source patch.
 
 ## Compatibility analysis
 
@@ -87,34 +99,42 @@ Ownership, signal termination, once-only cleanup, cleanup-time signal retention,
 
 ### Supported shell and tools
 
-The retained matrices execute real `/bin/sh`. The patch uses shell functions, integer tests, variable assignment, `trap`, and `exit`, all already used by the script. No new external command or package dependency is added.
+The retained and exact-candidate matrices execute real `/bin/sh`. The patch uses shell functions, integer tests, variable assignment, `trap`, and `exit`, all already used by the script. No new runtime command or package dependency is added.
+
+The proposed native regression is a repository test shell file that invokes Python's standard library to drive deterministic real-shell cases. The project test runner itself is Python and already requires Python 3. The regression adds no product runtime dependency.
 
 ## Negative controls and losing mutations
 
 The baseline ownership fixture loses with false status 0, later continuation, duplicate cleanup, and wrong-owner proxy kill. The predecessor cleanup-time fixture loses by default signal termination after cleanup `start`, retained APT state, and signal replacement. Cleanup status 74 controls establish that the detector distinguishes success, primary failure, signal, and cleanup failure. Immediate reruns distinguish complete cleanup from a test that checks status alone.
 
+The exact-candidate adapter selects candidate-facing cases from the retained modules and replaces their old patch-construction hooks with the final source file. This proves the collapsed source identity while preserving the original negative controls as separate provenance.
+
 ## Current upstream and historical review
 
-Official upstream `main` was observed at `77ec9be5417ee44c96343d2347145585da1b1f94` on 2026-07-31. `make_mirror.sh` remained blob `6c4be092edcf23b56b63a3befe238c099c45f590`, matching the retained import. Indexed official issue/PR searches found no equivalent public work. This is an observed search result, not proof that unindexed or new work is absent.
+A hosted clone on 2026-08-01 confirmed canonical Forgejo `main` remains `77ec9be5417ee44c96343d2347145585da1b1f94`. `make_mirror.sh` remains blob `6c4be092edcf23b56b63a3befe238c099c45f590`. The controlled snapshot branch preserves that exact history.
+
+Indexed official issue/PR searches on 2026-07-31 found no equivalent public work. This is an observed search result, not proof that unindexed or newly created work is absent. A direct live recheck remains required before authorization.
 
 Historical carrier roles and exact heads are preserved in `SOURCE_MAP.md`. PR #286 and PR #324 are the canonical component implementations. Earlier PRs are construction history. PR #224 is the adjacent top-level owner repair. PR #264 is the explicit hold on broader supervision.
 
 ## Remaining questions
 
-1. **Full-tree single-patch application:** apply the packet patch to a controlled checkout of upstream commit `77ec9be...` and require zero fuzz/offset plus `/bin/sh -n make_mirror.sh`.
-2. **Upstream-native gate:** select the smallest native entry point that exercises source parsing without running the network mirror, and state separately whether a complete `make_mirror.sh` run is practical.
-3. **Candidate diff:** create a controlled fork/branch and review the complete one-file source diff.
-4. **Overlap freshness:** inspect the live upstream issue and pull-request lists immediately before authorization.
+1. **Project-native regression result:** complete the hosted `tests/make-mirror-update-cache-worker-lifecycle` run with shellcheck, upstream shfmt options, direct execution, coverage registration, and diff hygiene.
+2. **Native harness entry point:** decide whether direct execution of the registered focused test is sufficient, or whether a complete `coverage.py` invocation is worth the required prebuilt mirror state.
+3. **Overlap freshness:** inspect the live upstream issue and pull-request lists immediately before authorization.
+4. **Delivery route:** create a canonical Forgejo-compatible fork/branch or confirm an accepted patch submission route. The GitHub branches are controlled staging and evidence surfaces.
 
 ## Evidence boundary
 
-The retained regressions use real shells, pipelines, signals, owned subprocesses, waits, deterministic cleanup barriers, and disposable files. They do not run APT, network downloads, a full mirror loop, root operations, QEMU, process-group delivery, HUP, escalation, hostile descendants, or permanently blocking cleanup. This pass did not create a controlled upstream checkout because direct container DNS resolution failed. The exact source blob match removes source drift, while full-tree application of the newly collapsed single carrier remains an explicit gate.
+The retained regressions use real shells, pipelines, signals, owned subprocesses, waits, deterministic cleanup barriers, and disposable files. They do not run APT, network downloads, a full mirror loop, root operations, QEMU, process-group delivery, HUP, escalation, hostile descendants, or permanently blocking cleanup.
+
+The exact canonical clone, zero-fuzz application, shell syntax, diff hygiene, ownership assertions, complete one-file review, and ten-case dynamic matrix have all run on the canonical-ancestry candidate. A complete mirror build remains outside the focused gate because it introduces network and package-state variables unrelated to the shell lifecycle discriminator.
 
 ## Reopen triggers
 
 - upstream changes the `update_cache()` source blob or surrounding trap lifecycle;
 - a live equivalent upstream issue/PR appears;
-- the combined patch fails zero-offset application while the two provenance patches still apply;
-- an upstream maintainer requests a two-commit review sequence;
+- the project-native test contradicts the retained or exact-candidate matrix;
+- an upstream maintainer requests a two-commit source sequence;
 - real APT execution contradicts the retained lifecycle result;
 - measured harmful descendant cancellation latency clears the PR #264 hold.
