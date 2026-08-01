@@ -106,6 +106,42 @@
 
 **Authority effect:** No external authorization.
 
+---
+
+## 2026-08-01 — reject PR #395 live head as an access-time-preserving candidate
+
+**Decision:** Keep PR #395 live head `74c996394819c3a717d55193d84336c2e06b3b7c` unselected and treat it as construction history.
+
+**Reason:** The helper uses `utime($mtime, $mtime, $File::Find::name)`, which assigns the epoch to both directory access time and modification time. The candidate tests positively require that call and contain no directory-atime reversing control. The same helper also retains the already-rejected path check-to-mutation identity gap.
+
+**Evidence:** complete nine-file review in [`LIVE_HEAD_REVIEW.md`](LIVE_HEAD_REVIEW.md).
+
+**Alternatives considered:** accept atime mutation as harmless; inherit the earlier PR body claim; run the focused sid case before repairing the candidate.
+
+**Consequences:** A future candidate must first add a losing directory-atime control and preserve observed directory atime. Authority selection remains a separate prerequisite. No focused sid promotion belongs to this head.
+
+**Reopen trigger:** a new exact head preserves directory atime, closes or explicitly resolves mutation authority, and runs the real metadata matrix.
+
+**Authority effect:** Internal review only; external contact remains unauthorized.
+
+---
+
+## 2026-08-01 — classify PR #395 dedicated run as incomplete candidate evidence
+
+**Decision:** Record dedicated run `30659899105` / 25 as a formatting-gate failure, not a product metadata result.
+
+**Reason:** Exact patch, syntax, and synthetic candidate tests passed. Whole-source sid `perltidy` comparison then failed at char 1676, line 42. The real product-helper metadata step was skipped and no receipt artifact existed.
+
+**Evidence:** job `91253360438` logs and [`LIVE_HEAD_REVIEW.md`](LIVE_HEAD_REVIEW.md).
+
+**Alternatives considered:** inherit the earlier PR #391 real-metadata receipt as proof of the live PR #395 helper; describe the dedicated run as candidate-green.
+
+**Consequences:** PR #391 remains evidence for the earlier reviewed metadata mechanism only. PR #395 live head has no real product-helper receipt.
+
+**Reopen trigger:** a corrected exact head runs a scoped formatting gate and executes the real product helper twice with retained receipts.
+
+**Authority effect:** No external authorization.
+
 ## Final disposition
 
-`HOLD` as of 2026-08-01. The exact blocker is archive-boundary operation authority. The next discriminator is repeated root/chrootless process evidence immediately after setup and immediately before tar. External contact remains unauthorized and none occurred.
+`HOLD` as of 2026-08-01. The primary unit blocker is archive-boundary operation authority. The next discriminator is repeated root/chrootless process evidence immediately after setup and immediately before tar. PR #395 also requires directory-atime repair and a completed real product-helper gate. External contact remains unauthorized and none occurred.
