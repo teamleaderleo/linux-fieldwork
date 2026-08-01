@@ -1,0 +1,52 @@
+Unit 23 controlled util-linux fork receipt
+Date: 2026-08-01
+External contact authorized: false
+External contact made: none
+
+Controlled repository: teamleaderleo/util-linux
+Canonical stable fix in fork: 3cd5f1dd69495864f3046cdbcefa104786fe5a27
+Canonical fix origin: 4581ede384f22983d6155768635ce43cb5304cb0
+
+Fork-only CI base branch:
+  linux-fieldwork/unit-23-lscpu-cpuset-native-base
+  head 7669d148543822d56ffffa31d2f399f078f8e117
+
+Fork-only CI gate branch:
+  linux-fieldwork/unit-23-lscpu-cpuset-native-gate
+  head 95ebc67e521195741040ffebb58756b259fb69b2
+
+Internal controlled-fork draft PR:
+  teamleaderleo/util-linux#1
+  base linux-fieldwork/unit-23-lscpu-cpuset-native-base
+  head linux-fieldwork/unit-23-lscpu-cpuset-native-gate
+  product source changes: zero beyond the already-landed stable fix
+  execution-only changed files: workflow plus deterministic cpuset gate script
+
+Observable PR workflow runs:
+  30691835019 Linux Fieldwork unit 23 lscpu cpuset gate — queued
+  30691835043 Build test — queued
+
+Existing Linux Fieldwork package runs:
+  30690810870 — queued
+  30690831292 — queued
+
+Native gate design:
+  - use util-linux .github/workflows/cibuild-setup-ubuntu.sh
+  - use util-linux .github/workflows/cibuild.sh CONFIGUREFAST MAKE
+  - make check-programs
+  - sudo -E make check TS_OPTS="--parallel=1 lscpu"
+  - run deterministic valid and malformed text/JSON sysroot cases twice
+  - require malformed cases to exit 0 without allocator abort diagnostics
+  - retain exact head, lib/path.c blob, built lscpu digest, test outputs, and diffs
+
+Current first incomplete step:
+  classify the first completed run and retain its exact job, artifact, digest,
+  valid-output, malformed-output, cleanup, and rerun evidence.
+
+Current failure owner:
+  hosted execution queue. No source, patch, build, native-test, or fixture result
+  can be inferred before a job starts.
+
+Cleanup state:
+  no local checkout was created because the runtime could not resolve github.com.
+  no process, mount, package installation, sysroot, or external state remains.
