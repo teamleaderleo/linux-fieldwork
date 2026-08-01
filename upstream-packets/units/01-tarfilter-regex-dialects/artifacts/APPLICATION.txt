@@ -1,0 +1,45 @@
+Unit 01 exact application receipt — 2026-08-01
+
+User fork:
+  repository: teamleaderleo/mmdebstrap
+  branch: master
+  head: 574048f2a720057b75e56622003932f344dc700a
+  tarfilter blob: ad776167a8473d5d15dbe22e850f4f6db35cf278
+
+Public-upstream identity reused from unit 15:
+  repository: https://gitlab.mister-muffin.de/josch/mmdebstrap
+  branch: main
+  commit: 77ec9be5417ee44c96343d2347145585da1b1f94
+  relevant tarfilter blob: ad776167a8473d5d15dbe22e850f4f6db35cf278
+
+Prerequisite patch:
+  file: patches/0001-transform-metadata-prerequisite.patch
+  source: unit 15 regenerated patch
+  patch Git blob: 38510533dc015182f3e87e9d2f3777eea5b8c93b
+  patch SHA-256: 4d8cb2f180cb7798a15195c2dcfac164b409f68a18c69d507cfc624d4725703c
+  result tarfilter blob: adb330efcc941bf5e646f195c245a3184e42f8e2
+  GNU patch 2.8: zero fuzz, zero offsets
+
+Historical regex carrier attempt:
+  core patch blob: 2d7c457b83700d51b173efd0825128b6853a5f47
+  edge patch blob: 9994ac2272f23872b7f6e00a20f7282cb9b8cce3
+  result applying the historical core patch after the clean prerequisite:
+    hunk 1 applied with offset +25
+    hunk 2 applied with offset +19
+    hunk 3 failed
+  interpretation: carrier/context incompatibility; do not force or accept offsets.
+
+Regenerated regex patch:
+  file: patches/0002-tarfilter-regex-dialects.patch
+  patch Git blob: 7e7d37a77b0215af033b0c97770c83cce130911a
+  patch SHA-256: 2c3312f732b2fa0f1a04c92d7633c8a1e7bc9c2c7a6b52a6d150096d6a8f1746
+  result tarfilter blob: ca8e656c036172230c796a8a12cb17f262108c39
+  result tarfilter SHA-256: 47e73119f2418fb1e7c47f3eb8f6e82e86a5903ff5c73c68fa5c5ac047ff6308
+
+Dry run and real application:
+  Hunk #1 succeeded at 145.
+  Hunk #2 succeeded at 395.
+  Hunk #3 succeeded at 425.
+  zero fuzz, zero offsets
+  reapplied bytes exactly matched the regenerated candidate
+  Python compilation passed
