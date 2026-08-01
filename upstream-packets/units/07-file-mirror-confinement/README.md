@@ -8,9 +8,9 @@ External contact authorized: `false`
 
 ## TL;DR
 
-The merged Linux Fieldwork carrier already proves a coherent setup-plus-cleanup repair for `hooks/file-mirror-automount`: resolve sources and destinations, require every target to remain a strict child of the generated root, preserve the configured `file:` URI path for terminal source symlinks, reject every parent component, store constrained NUL-delimited cleanup entries, and preflight the complete marker before destructive actions.
+The merged Linux Fieldwork carrier proves one setup-plus-cleanup repair for `hooks/file-mirror-automount`: resolve sources and destinations, require targets to remain strict children of the generated root, preserve the configured `file:` URI path for terminal source symlinks, reject every parent component, store constrained NUL-delimited cleanup entries, and preflight the complete marker before destructive actions.
 
-This pass reconciled the carrier with current upstream `main`, composed the three retained local patches into one upstream-path patch, and verified exact application plus POSIX shell syntax. The packet remains `ACTIVE` until the complete fake destructive-command matrix is rerun from the packet patch and the full upstream-facing diff receives an exact-head review.
+This pass applied the composed packet patch to the controlled GitHub fork `teamleaderleo/mmdebstrap`. The candidate branch is `linux-fieldwork/unit-07-file-mirror-confinement` at `8b8dce6910badeda1e72e28f471fa220a22eea7d`, based on `master@574048f2a720057b75e56622003932f344dc700a`. The complete fork diff contains only the setup and cleanup hooks. The exact candidate bytes passed shell syntax and a disposable 10-check fake-command matrix. No pull request or upstream contact was created.
 
 ## Accomplished behavior
 
@@ -20,7 +20,7 @@ Cleanup treats the marker as untrusted input. It validates every entry before th
 
 ## Why care
 
-The baseline constructs `mount`, hook-helper copy/upload, `umount`, and `rm -r` targets through textual path concatenation. Traversal components, a destination-parent symlink, a generated root resolving to `/`, or a corrupted marker can therefore select a host path outside the generated root. Sequential cleanup can also remove valid early entries before discovering a later escape.
+The baseline constructs `mount`, hook-helper copy/upload, `umount`, and `rm -r` targets through textual path concatenation. Traversal components, a destination-parent symlink, a generated root resolving to `/`, or a corrupted marker can select a host path outside the generated root. Sequential cleanup can also remove valid early entries before discovering a later escape.
 
 ## Scope
 
@@ -43,7 +43,7 @@ The baseline constructs `mount`, hook-helper copy/upload, `umount`, and `rm -r` 
 - Debian package-test dependency and current-sid lanes tracked by #53;
 - descriptor-relative pathname operations;
 - private mount namespaces;
-- a privileged real-mount integration fixture;
+- privileged real-mount integration;
 - real non-root hook-socket transfer.
 
 ### Split boundary
@@ -57,25 +57,31 @@ The adjacent carriers change package-test scheduling or service lifecycle. They 
 | Upstream project | mmdebstrap |
 | Canonical repository | `https://gitlab.mister-muffin.de/josch/mmdebstrap` |
 | Intended base branch | `main` |
-| Upstream base commit | `77ec9be5417ee44c96343d2347145585da1b1f94` |
-| Controlled fork | `NEEDS FORK` |
-| Candidate source branch | `NEEDS FORK` |
-| Candidate head | packet patch SHA-256 `928533ff01be39ba66c5350f7951706fd7f017448449c2671bb95a271db75f25` |
+| Canonical upstream head observed | `77ec9be5417ee44c96343d2347145585da1b1f94` |
+| Controlled test fork | `https://github.com/teamleaderleo/mmdebstrap` |
+| Fork base branch | `master` |
+| Fork base commit | `574048f2a720057b75e56622003932f344dc700a` |
+| Candidate source branch | `linux-fieldwork/unit-07-file-mirror-confinement` |
+| Candidate head | `8b8dce6910badeda1e72e28f471fa220a22eea7d` |
+| Candidate setup Git blob | `80bf3f3ef4f5535ca802d91ac8bc6f3c2999a70c` |
+| Candidate cleanup Git blob | `30ff2c56d83b5bedd91ec62e65f4c6a18bd4a6f6` |
+| Candidate setup SHA-256 | `f750be95ada2a3e39c972653158092f907f153ff0ca07c2200a326bcc11920be` |
+| Candidate cleanup SHA-256 | `867443a4fd2737f5275c11180f1f17d6f7bc92d487e476327834764c06a8afc7` |
 | Linux Fieldwork branch | `upstream/unit-07-file-mirror-confinement` |
 | Linux Fieldwork base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Imported/local source identity | setup blob `6ccbdaf2ba97c77c4e5223ac5280acd51a998424`; cleanup blob `b6b9b46afdd9dad01df3abcb514475326162e42c` |
-| Patch or series path | `patches/0001-file-mirror-automount-containment.patch` |
+| Baseline setup blob | `6ccbdaf2ba97c77c4e5223ac5280acd51a998424` |
+| Baseline cleanup blob | `b6b9b46afdd9dad01df3abcb514475326162e42c` |
+| Patch path | `patches/0001-file-mirror-automount-containment.patch` |
+| Patch SHA-256 | `928533ff01be39ba66c5350f7951706fd7f017448449c2671bb95a271db75f25` |
 | Proposed destination | canonical mmdebstrap Forgejo repository |
-| Delivery method | Forgejo fork and pull request; explicit authorization still required |
+| Delivery method | upstream pull request after explicit authorization; current GitHub fork is a controlled test carrier |
 
 ## Canonical links
 
 - Priority-zero unit: #397 unit 07
 - Owning Linux Fieldwork issue: #164
 - Canonical Linux Fieldwork PR: #179
-- Adjacent scheduling carrier: #153 / PR #158
-- Adjacent HTTP readiness carrier: #79 / PR #90
-- Central package-test history: #53
+- Controlled fork candidate: `teamleaderleo/mmdebstrap` branch `linux-fieldwork/unit-07-file-mirror-confinement`
 - Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
 - Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
 - Tests and receipts: [`TESTS.md`](TESTS.md)
@@ -88,20 +94,20 @@ The adjacent carriers change package-test scheduling or service lifecycle. They 
 
 ### Demonstrated
 
-- current official upstream head identified;
-- official hook history shows no file-mirror change after the March 2024 hook commit;
-- Debian sid remains on mmdebstrap `1.5.7-3`;
-- current packaged setup and cleanup blobs match the Linux Fieldwork imported blobs exactly;
-- retained patches 0001, 0002, and 0003 apply in order to those exact source bytes;
-- the composed upstream-path patch applies the complete final contract;
-- both resulting scripts pass `/bin/sh -n`;
-- historical exact-head carrier CI run `30580904313` passed the five-file fake-action matrix at PR #179 head `6db473c5e3e462a93f9ba0bc975dbc46164f863b`.
+- canonical upstream and packaged-source identities were reconciled;
+- fork baseline hook blobs equal the packet baseline exactly;
+- the composed patch maps to a fork branch with only two changed paths;
+- fork candidate head is two commits ahead and zero commits behind its base;
+- both candidate scripts pass `/bin/sh -n`;
+- candidate content hashes equal the packet receipts;
+- a fresh disposable 10-check matrix passed traversal rejection, root refusal, ordinary repository mapping, terminal source-symlink reachability, parent-component rejection, local package confinement, root cleanup preflight/correction/rerun, fakechroot cleanup preflight/correction/rerun, and cleanup symlink-escape rejection;
+- historical exact-head carrier CI run `30580904313` passed the broader five-file regression set at PR #179 head `6db473c5e3e462a93f583e7c33a76a93ed1102b8`.
 
 ### Not yet demonstrated
 
-- packet-patch execution of the complete five-file fake destructive-command matrix on the unit branch;
-- hosted CI for the packet branch exact head;
-- exact-head complete-diff review of the packet patch and public drafts;
+- hosted CI attached to fork candidate head `8b8dce6910badeda1e72e28f471fa220a22eea7d`;
+- exact-current canonical Forgejo archive application at `77ec9be5417ee44c96343d2347145585da1b1f94`;
+- final overlap search immediately before authorization;
 - real bind mount/unmount and real non-root hook-helper transfer.
 
 ### Compatibility boundary
@@ -115,18 +121,21 @@ The adjacent carriers change package-test scheduling or service lifecycle. They 
 
 ## Candidate organization
 
-One composed patch is proposed upstream because both hook files implement one lifecycle promise and the three local patches are review-history increments rather than independent user-facing features.
+The controlled fork currently has two commits because GitHub contents writes were applied file by file:
 
-1. `patches/0001-file-mirror-automount-containment.patch` — setup containment, URI-path compatibility, parent-component policy, canonical markers, cleanup preflight, and action-time revalidation.
+1. `b18095f0a9916ad70872f6740ffae033fda9b034` — setup target confinement and URI-path behavior;
+2. `8b8dce6910badeda1e72e28f471fa220a22eea7d` — cleanup marker preflight and action-time revalidation.
+
+The public upstream packet remains one logical setup/cleanup unit. Commit organization can be squashed or retained after review.
 
 ## Current disposition
 
-`ACTIVE` — current-source reconciliation and a composed patch are complete; packet-exact matrix execution and exact-head review remain.
+`ACTIVE` — the controlled fork candidate and disposable exact-byte matrix are complete. Hosted exact-head CI, canonical-archive application, final overlap review, and authorization remain.
 
 ## Next human decision
 
-After the remaining internal gates pass, decide whether to authorize creation of a controlled fork and an upstream pull request.
+After the remaining internal gates pass, decide whether to authorize an upstream submission and which repository transport to use.
 
 ## Authority
 
-Internal repository reads, branch work, tests, patch composition, review, and drafting are authorized. External issue creation, fork creation, pull request creation, comments, email, or any other upstream contact remain unauthorized and have not occurred.
+Internal repository reads, controlled-fork branch work, tests, patch composition, review, and drafting are authorized. No pull request, upstream issue, comment, email, or review was created. External contact remains unauthorized.
