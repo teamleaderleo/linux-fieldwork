@@ -9,7 +9,7 @@
 | Descriptor carrier | PR #389 `0319755b71ec594f2019cf40cd3cf9ee68ad7d60` |
 | Authority matrix | PR #394 `cffc0ce00f57050539a0e11f11e609d13e9ca604` |
 | Packet branch base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Local platform | Linux 6.12.13 x86_64 GNU/Linux |
+| Local platform for packet probe | Linux 6.12.13 x86_64 GNU/Linux |
 | Runtime | Python 3.13.5 |
 | Privilege boundary | unprivileged synthetic `/proc` process controls |
 
@@ -47,7 +47,7 @@ python3 -m unittest -v \
   upstream-packets/units/17-directory-mtime-authority/scripts/test_archive_boundary_process_probe.py
 ```
 
-The local execution used an equivalent temporary path before the files were committed:
+The executed local command used an equivalent temporary path before commit:
 
 ```text
 cd /tmp/unit17
@@ -78,7 +78,7 @@ af284d8df31844bd556a1627aa41cea9cce7b6c1b12f399429f30a7ca5236043  test-output.tx
 
 The committed text matches the executed files. No hosted artifact was produced for this local synthetic run.
 
-## Focused matrix
+## Packet probe focused matrix
 
 | Case | Losing behavior | Required behavior | Result |
 | --- | --- | --- | --- |
@@ -106,19 +106,57 @@ python3 archive_boundary_process_probe.py \
   --output receipts/root-run-N-before-tar.json
 ```
 
-Repeat for root and chrootless from clean disposable state. The source integration edit is intentionally absent pending exact review of the live candidate generation.
+Repeat for root and chrootless from clean disposable state. The source integration edit remains absent pending exact review of the selected execution carrier.
+
+## PR #395 live-head complete-diff review
+
+Review record: [`LIVE_HEAD_REVIEW.md`](LIVE_HEAD_REVIEW.md).
+
+All nine live changed paths were read. Two product blockers were confirmed:
+
+1. the helper calls `utime($mtime, $mtime, $File::Find::name)`, assigning the epoch to directory access time and modification time;
+2. path-based `lstat` followed by path-based `utime` retains the check-to-mutation replacement and authority gap.
+
+The candidate test positively requires the two-epoch `utime` call and contains no directory-atime reversing control. The real metadata probe also lacks a directory-atime assertion.
+
+### Exact current-head executions
+
+| Run | Exact head/merge | Result |
+| --- | --- | --- |
+| Linux Fieldwork CI `30659899178` / 1099 | head `74c996394819c3a717d55193d84336c2e06b3b7c` | SUCCESS |
+| dedicated workflow `30659899105` / 25, job `91253360438` | generated merge `a7fa7fe838e499ee52912c7be276cc89cfad4dec` | FAILURE |
+
+Dedicated job step results:
+
+| Step | Result |
+| --- | --- |
+| exact patch context, synthetic matrix, and product candidate | PASS |
+| current Debian sid formatting | FAIL |
+| exact product helper on real metadata matrix twice | SKIPPED |
+| upload receipts | completed; no files found |
+
+The sid container applied the retained patch exactly and `perl -c` passed. Whole-source `perltidy` comparison then failed:
+
+```text
+/tmp/.../mmdebstrap /tmp/mmdebstrap.tdy differ: char 1676, line 42
+```
+
+Classification: formatting-gate ownership failure. The live head has no real product-helper metadata receipt. PR #391's earlier artifact cannot be silently inherited as execution of PR #395's exact helper.
 
 ## Patch application and rebase
 
 - packet branch base: `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- product patch application: NOT RUN in this pass
-- probe source integration patch: NOT WRITTEN in this pass
-- current PR #395 complete diff: filenames reviewed; live-head delta beyond body identity still needs complete patch review
+- product patch application in this packet: NOT RUN
+- probe source integration patch: NOT WRITTEN
+- PR #395 live complete diff: REVIEWED; see `LIVE_HEAD_REVIEW.md`
+- current upstream rebase: NOT RUN
 - public upstream overlap: NOT SEARCHED in this pass
 
 ## Cleanup and rerun
 
-The synthetic tests terminated live helper processes, reaped the zombie helper through its worker, removed temporary roots and receipt directories, and left no packet runtime residue. The full focused command then passed once from a clean temporary directory. No mounts, sockets, containers, package roots, or imported-source changes were created.
+The synthetic probe tests terminated live helper processes, reaped the zombie helper through its worker, removed temporary roots and receipt directories, and left no packet runtime residue. No mounts, sockets, containers, package roots, or imported-source changes were created by this packet pass.
+
+The dedicated PR #395 job created no real-boundary receipt directory because execution stopped before the real metadata step. GitHub's artifact action reported no files found.
 
 ## Tests not run
 
@@ -127,6 +165,8 @@ The synthetic tests terminated live helper processes, reaped the zombie helper t
 - adjacent uninstrumented package result control;
 - repeated clean executions at both phases;
 - source integration patch application, syntax, and formatting;
+- directory-atime losing control against PR #395;
+- repaired access-time-preserving candidate execution;
 - selected product candidate focused sid `chrootless` execution;
 - immediate real package rerun;
 - complete package matrix;
@@ -138,8 +178,10 @@ The synthetic tests terminated live helper processes, reaped the zombie helper t
 
 The first local probe execution failed because the live-child test sampled `/proc` before the child announced that `chdir` and file open had completed. The harness was repaired with a readiness line from the child. The production probe logic was unchanged. The repaired command passed all four tests.
 
-A later test-edit attempt introduced a local indentation error while replacing cleanup code; the file was repaired before the final executed hashes above. No failing version was committed.
+A later local test-edit attempt introduced an indentation error while replacing cleanup code; the file was repaired before the recorded hashes. No failing version was committed.
+
+PR #395 dedicated run `30659899105` failed at whole-source sid formatting. That red result belongs to the formatting gate and prevented the real product-helper matrix from running.
 
 ## Final evidence statement
 
-The packet probe can record the process identity signals demanded by issue #392 and its own controls lose when live/zombie/self-exclusion behavior is wrong. This result establishes probe mechanics only. It says nothing yet about real mmdebstrap quiescence or the winning product implementation.
+The packet probe can record the process identity signals demanded by issue #392, and its controls lose when live/zombie/self-exclusion behavior is wrong. Complete PR #395 review proves the live helper overwrites directory atime and still uses unsafe pathname authority. Real mmdebstrap quiescence and a winning product implementation remain unproved.
