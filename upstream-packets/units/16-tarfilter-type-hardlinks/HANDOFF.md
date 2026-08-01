@@ -7,111 +7,151 @@ Linux Fieldwork branch: `upstream/unit-16-tarfilter-type-hardlinks`
 Internal draft PR: #399  
 External-contact state: unauthorized; none made
 
-The packet has been created and filled. The branch retains a packet-local composed predecessor, an executable two-case final-name characterization, exact carrier identities, test commands, design decisions, and withheld upstream drafts.
+The selected final-projected-identity candidate is internally green on focused and inherited matrices. The packet now carries the clean unit-15 prerequisite, PR #310 lifecycle/duplicate predecessor, selected final-only patch, rejected alias patch, focused and expanded tests, exact CI history, destination research, decisions, and withheld upstream drafts.
 
-## Exact heads and identities
+## Exact branch and candidate identities
 
 | Item | Identity |
 | --- | --- |
 | Linux Fieldwork base | `main` at `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Technical characterization head | `ac21c095faae34fcd3cec3e4a7beae5a83979fe1` |
-| Latest packet head before this handoff commit | `f8d940bf73dff006fbb5db6c2c93490bde254ace` |
 | Imported tarfilter blob | `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
-| Transform/strip patch blob | `1703984aa0c030e5131618a3541ee85bfd68ec65` |
-| PR #248 head | `f1b013832b5f3b073a9131de83ce89077771a7ea` |
-| PR #310 head | `32dfa36a6feb533bc1126a11ef33979e45b410ec` |
-| Packet predecessor patch commit | `0a79e81085d6769387f314ad1ead0ad2274c2616` |
-| Focused test commit | `ac21c095faae34fcd3cec3e4a7beae5a83979fe1` |
+| Unit-15 prerequisite | `patches/0000-unit15-transform-metadata-prerequisite.patch` |
+| Lifecycle/duplicate predecessor | `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch` |
+| Selected final-only correction | `patches/0002-use-rewritten-identities-for-type-hardlinks.patch` |
+| Rejected alias policy | `patches/rejected/0002-alias-projection-overattributes-strip-breaks.patch` |
+| First focused green head | `ec55994f0db12044f9c7ef9f843fe42aec7393e6` |
+| Inherited green head | `300b51056ded64a56ec3998bc639a57e9ea81125` |
+| Expanded matrix head | `371802ab8728f149ddbac5a959e83ca8d0edef2d` |
+| Duplicate-cleanup head | `7fe46662141fa39a3b18ae1baba29b2b39f6c330` |
+| Canonical upstream repository | `https://salsa.debian.org/debian/mmdebstrap.git` |
+| Intended upstream branch | `master` |
+| Controlled fork | `NEEDS FORK` |
 
-The branch tip after this file is the commit returned by the GitHub contents write; use the branch ref as the packet head.
+Use the branch ref for the latest packet head. Documentation commits after the technical heads do not change candidate or test bytes.
 
 ## Completed work
 
-1. Read issue #397, packet workflow README, packet index, and the direct canonical carriers for unit 16.
-2. Read the executed baseline PR #244 and canonical transform/strip PR #68.
-3. Claimed unit 16 on issue #397.
-4. Created `upstream/unit-16-tarfilter-type-hardlinks` from current `main`.
-5. Opened internal draft PR #399 to obtain pull-request CI.
-6. Retained `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch`.
-7. Added `tests/test_tarfilter_type_excluded_final_name_identity.py`.
-8. Encoded both issue #335 strip discriminators:
-   - valid final target falsely rejected;
-   - missing final target falsely accepted.
-9. Required zero-fuzz two-patch application, Python compilation, emitted member maps, finalized partial output, GNU tar extraction, and inode identity controls.
-10. Filled README, source map, deep dive, tests, decisions, withheld upstream drafts, and this handoff.
+1. Read issue #397, packet workflow, packet index, and every direct unit carrier.
+2. Claimed unit 16 and created the canonical branch and packet.
+3. Preserved the executed PR #244 baseline and PR #310 lifecycle/duplicate predecessor.
+4. Rejected the historical PR #68 patch as a zero-fuzz carrier after exact-source CI failures.
+5. Copied unit 15's clean transform/metadata prerequisite byte-for-byte into patch 0000.
+6. Restacked the PR #310 predecessor against unit 15's five-field transform representation.
+7. Implemented final projected identity for excluded members and retained hard-link targets.
+8. Preserved original input member and target names for stderr.
+9. Added focused strip/final-name tests and inherited prefix, duplicate, lifecycle, filter, transform, collision, and scope controls.
+10. Added a direct strip-only failure control and rejected alias projection because it misattributes that failure to type exclusion.
+11. Preserved the mechanically green alias patch under `patches/rejected/`.
+12. Removed accidental duplicate focused-test discovery from the inherited module.
+13. Updated README, source map, deep dive, tests, decisions, upstream drafts, and this handoff.
+14. Resolved the intended public destination as the Debian mmdebstrap Salsa project on `master`; no fork was created and no contact was made.
 
-## Latest distinguishing evidence
+## Selected behavior
 
-### Source and carrier evidence
+A retained hard link is accepted when its final projected target identity is already available among retained final member identities.
 
-PR #310 records retained state under normalized input identity and checks a hard-link target before strip and transform rewriting. PR #68 rewrites both emitted member names and hard-link targets. The two operations therefore use different identity domains.
+A type-excluded occurrence marks its surviving final projected member identity unavailable only while no retained occurrence supplies that identity.
 
-### Prepared executable evidence
+A known type-owned dependency failure stops before the hard-link member is written. The tar output context closes before status 1. Original input names appear in the diagnostic.
 
-At technical head `ac21c095faae34fcd3cec3e4a7beae5a83979fe1`, the focused test requires:
+Intermediate aliases are deliberately excluded. A broken reference already produced by strip or transform behavior without type exclusion remains outside unit 16.
 
-- false rejection: status 1 and partial `{base: REGTYPE}` while a direct `{base, peer -> base}` archive extracts with one inode;
-- false acceptance: status 0 and `{peer: LNKTYPE -> root/base}` followed by GNU tar extraction failure.
+## Exact executed evidence
 
-### CI state
+### Selected focused gate
 
-- Linux Fieldwork CI run `30674423172` / run 1100 was queued for exact technical head `ac21c095faae34fcd3cec3e4a7beae5a83979fe1`.
-- Linux Fieldwork CI run `30674597791` / run 1107 was queued for packet head `f8d940bf73dff006fbb5db6c2c93490bde254ace`.
-- At handoff creation, `lab-tools` remained queued and the unrelated jobs were skipped.
+Run `30690541675`, job `91344358024`, head `ec55994f0db12044f9c7ef9f843fe42aec7393e6`:
 
-Treat the characterization as prepared until one exact technical-head run completes and its job logs are reviewed.
+- 4 patch files and 11 hunks validated;
+- Python compilation passed;
+- 442 tests passed in 164.133 seconds;
+- all four focused unit-16 cases passed;
+- shell syntax and command-help gates passed.
 
-## Cleanup state
+### Inherited gate
 
-No local repository clone survived; the container could not resolve GitHub during direct clone. All durable work lives on the Linux Fieldwork branch and PR #399.
+Run `30690583438`, job `91344466738`, head `300b51056ded64a56ec3998bc639a57e9ea81125`:
 
-The committed test uses `TemporaryDirectory` for patched sources, archives, and extraction trees. It creates no persistent process, socket, mount, lock, package mutation, device node, or external network activity.
+- 4 patch files and 11 hunks validated;
+- Python compilation passed;
+- 450 tests passed in 162.772 seconds;
+- prefix equivalence, independent-filter rerun, first-peer stopping, and retained duplicate controls passed;
+- shell syntax and command-help gates passed.
+
+This run executed four focused tests twice because the inherited module imported the focused `TestCase` as a class alias. Commit `7fe46662141fa39a3b18ae1baba29b2b39f6c330` replaces that alias with a module import.
+
+### Rejected policy evidence
+
+Run `30690434953`, job `91344069265`, head `87af719648d5fc43e616030e61dc6182d9273d3e` passed all 442 tests on the alias-projection candidate. The direct strip-only control demonstrates policy overreach, so that green candidate remains rejected evidence.
+
+### Red transition evidence
+
+Run `30690507583`, job `91344268061`, head `85c00c3d42be14b5774fb5c5222bb57484af7f0d` passed 441 of 442 tests. The sole failure was the superseded expectation that the final-only candidate would reject the strip-only broken reference. The other three focused cases passed.
+
+### Pending clean expanded evidence
+
+- transform-scope expansion run: `30690790494`, head `371802ab8728f149ddbac5a959e83ca8d0edef2d`;
+- duplicate-clean expanded run: `30691015678`, head `7fe46662141fa39a3b18ae1baba29b2b39f6c330`;
+- expected clean selected-test count: 449.
 
 ## First incomplete step
 
-Inspect Linux Fieldwork CI run `30674423172`. When `lab-tools` completes, fetch its job steps and logs. Confirm that:
+Inspect run `30691015678` when `lab-tools` completes. Fetch its job logs and confirm:
 
-```sh
-python3 -m unittest tests.test_tarfilter_type_excluded_final_name_identity -v
-```
+- patch validation succeeds for the active series;
+- compilation succeeds;
+- discovery retains 449 tests after exact inherited duplicate removal;
+- all focused, inherited, and transform-scope unit-16 tests pass;
+- shell syntax and command-help gates pass.
 
-ran on exact head `ac21c095faae34fcd3cec3e4a7beae5a83979fe1` and both characterization tests passed.
+If the run is green, trigger or obtain one unchanged-head complete rerun and record its exact run, job, head, test count, and elapsed time.
 
-If patch application fails, repair only `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch` against the canonical PR #68 patch and rerun. If assertions differ, record the exact emitted map, status, stderr, and GNU tar result before changing the expected mechanism.
+If the run fails, preserve the exact assertion, status, stderr, member map, extraction result, and source identity before editing.
 
 ## Next safe technical action
 
-After exact characterization passes:
+After the clean expanded rerun:
 
-1. extract one shared name-rewrite helper from the PR #68 carrier that returns either a final identity or a dropped result;
-2. use member-name scope to project type-excluded names;
-3. use hard-link scope to project retained hard-link targets before dependency checking;
-4. keep original names for the diagnostic;
-5. add red-to-green assertions for both strip cases;
-6. add transform-scope and output-name collision controls;
-7. rerun inherited PR #248 and PR #310 matrices, cleanup, immediate rerun, and the complete gate.
+1. fetch current `master` from `https://salsa.debian.org/debian/mmdebstrap.git` and record the exact commit;
+2. compare current upstream `tarfilter` with imported blob `ad776167...`;
+3. regenerate or rebase patches 0000 through 0002 with zero fuzz;
+4. run the focused and inherited matrices against that exact upstream source;
+5. complete a fresh source diff review;
+6. record whether unit 15's prerequisite is still required in full or partially present upstream;
+7. keep `NEEDS FORK` until explicit authorization permits creating or selecting a controlled Salsa fork.
 
-## Selected invariant
+## Complete-review checklist
 
-A retained hard link is valid when its final rewritten target identity is already available among emitted final member identities. A type-excluded occurrence marks its projected final member identity unavailable only when no retained occurrence supplies that target. Rejection occurs before writing the broken hard-link member and after allowing the tar context to finalize.
+- [x] original baseline carrier read;
+- [x] PR #248 candidate read;
+- [x] PR #310 lifecycle/duplicate repair read;
+- [x] issue #335 final-name question read;
+- [x] unit-15 clean prerequisite read and copied exactly;
+- [x] active patch series reviewed in order;
+- [x] rejected alias policy preserved with discriminator;
+- [x] focused and inherited selected-policy gates green;
+- [x] destination and intended base branch identified;
+- [ ] clean expanded run complete;
+- [ ] unchanged-head rerun complete;
+- [ ] current upstream base commit fetched;
+- [ ] current-master zero-fuzz rebase complete;
+- [ ] current-upstream complete diff reviewed;
+- [ ] controlled fork selected or created after authorization.
+
+## Cleanup state
+
+All candidate source copies, patch applications, archives, extraction directories, and bytecode live below `TemporaryDirectory`. CI leaves no persistent process, socket, mount, lock, package mutation, device node, or caller-selected deletion root.
+
+No local repository clone or upstream fork was retained. Durable work lives on the Linux Fieldwork branch and PR #399.
 
 ## Open questions
 
-- Whether final availability needs occurrence counts instead of sets once transform collisions are introduced.
-- How a type-excluded member whose projected identity is dropped by component stripping should affect state; the likely result is no unavailable emitted identity.
-- Whether diagnostics should include both original and final target spellings when they differ.
-- Current upstream destination, base branch, and controlled fork.
-
-## Tests still required
-
-- exact technical-head focused CI result and logs;
-- immediate focused rerun;
-- transform scope controls for member versus hard-link target projection;
-- duplicate/output-name collision controls;
-- inherited PR #248 and PR #310 matrices;
-- complete current-main gate on the selected correction;
-- package pipeline, other extractors, platforms, and privileged metadata where later authorized and useful.
+- exact current Salsa `master` commit and overlap with unit 15;
+- whether the upstream submission should be one integrated commit or an ordered series;
+- whether final availability needs occurrence counts under a future link-before-target or rollback design;
+- package-level diagnostic effects in current mmdebstrap pipelines;
+- whether an upstream issue adds value once a merge request is ready.
 
 ## External-contact guard
 
-Do not open or comment on any external upstream issue, pull request, merge request, mailing list, email thread, package tracker, or release channel without explicit authorization. Internal Linux Fieldwork work and issue #397 checkpoints remain authorized.
+Do not create or use a Salsa fork, open an issue or merge request, post a comment, send email, submit a patch, upload a package, or contact any external maintainer without explicit authorization. Public-source reads and internal Linux Fieldwork work remain authorized.
