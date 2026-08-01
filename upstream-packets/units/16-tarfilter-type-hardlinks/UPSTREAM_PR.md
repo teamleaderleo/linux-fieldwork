@@ -30,7 +30,7 @@ Tracking intermediate aliases creates the opposite attribution error: it can bla
 2. add finalized type-dependency rejection and retained duplicate-target state;
 3. replace input-name dependency state with final projected identities.
 
-For a final upstream merge request, these layers may be squashed if the current `master` source already carries part of the prerequisite.
+For a final upstream merge request, these layers may be squashed if current `master` already carries part of the prerequisite.
 
 ## Tests
 
@@ -53,6 +53,17 @@ The executed matrix covers:
 - zero-fuzz patch application, Python compilation, GNU tar extraction, finalized output, and inode identity.
 
 Internal selected-policy gate `30690541675` passed 442 tests. Inherited gate `30690583438` passed 450 tests before duplicate-discovery cleanup. The clean expanded rerun is `30691015678`.
+
+## Review fence
+
+The Linux Fieldwork branch adds exactly 14 files:
+
+- 2 executable tests;
+- 8 packet records and drafts;
+- 3 active ordered patches;
+- 1 rejected patch retained as evidence.
+
+The imported tarfilter file is unchanged on the branch.
 
 ## Scope
 
