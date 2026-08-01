@@ -11,14 +11,20 @@ This unit owns one package-test dependency correction: `tests/dev-ptmx` executes
 - Linux Fieldwork issue: `#397`, unit `09`
 - Linux Fieldwork branch: `upstream/unit-09-dev-ptmx-bsdutils`
 - Linux Fieldwork base: `main` at `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
+- Internal validation PR: draft `#402`
 - Packet directory: `upstream-packets/units/09-dev-ptmx-bsdutils/`
 - Imported source: `upstream/mmdebstrap/tests/dev-ptmx`, blob `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`
 - Canonical upstream repository: `josch/mmdebstrap` on Muffin Forgejo
-- Upstream branch: `main`
-- Upstream head advertised during this pass: `77ec9be5417ee44c96343d2347145585da1b1f94`
-- Upstream source path: `tests/dev-ptmx`
-- Controlled upstream fork: `NEEDS FORK`
-- Intended delivery: Forgejo fork and pull request
+- Canonical upstream branch: `main`
+- Canonical upstream head advertised during this work: `77ec9be5417ee44c96343d2347145585da1b1f94`
+- Canonical upstream source path: `tests/dev-ptmx`
+- Controlled GitHub carrier: `teamleaderleo/mmdebstrap`
+- Carrier provenance: downstream fork of `deepin-community/mmdebstrap`, both at `master` head `574048f2a720057b75e56622003932f344dc700a`
+- Carrier base generation: `mmdebstrap 1.5.7-3`
+- Carrier candidate branch: `linux-fieldwork/unit-09-dev-ptmx-bsdutils`
+- Carrier candidate head: `43082a6bc959e2d7cefae48f52e045cc90869287`
+- Carrier candidate blob: `fa93b4b845ff4927a72f258364bd920e8c7dc573`
+- Intended final delivery: canonical Forgejo fork and pull request after authorization
 - External-contact state: unauthorized; internal work only
 
 ## Historical owner
@@ -65,13 +71,18 @@ Existing Linux Fieldwork evidence and regression remain canonical inputs:
 - `investigations/mmdebstrap-dev-ptmx-bsdutils/0001-include-bsdutils.patch`
 - `investigations/mmdebstrap-dev-ptmx-bsdutils/debci-72574145-summary.json`
 - `tests/test_mmdebstrap_dev_ptmx_dependency.py`
+- `tests/test_upstream_packet_unit_09_dev_ptmx_bsdutils.py`
 
 ## Current result
 
-The imported current source still has the baseline include line at source line 122 and retains exactly two inner `script -c` customize hooks. PR `#89` previously validated the same one-line candidate at exact head `9db9f4d9ae423a5c0dbd2255c05decf14fbe9d66`; Linux Fieldwork CI run `30539827917` passed.
+The controlled GitHub carrier base has the exact same `tests/dev-ptmx` blob as the Linux Fieldwork import: `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`. The candidate commit `43082a6bc959e2d7cefae48f52e045cc90869287` is one commit ahead of that base and changes exactly one file with one insertion and one deletion. Its resulting blob is `fa93b4b845ff4927a72f258364bd920e8c7dc573`.
 
-Direct network checkout of the canonical upstream repository failed in this execution environment because DNS resolution for `gitlab.mister-muffin.de` was unavailable. The official repository page was readable and advertised the upstream head above. Exact raw-byte application to that upstream commit and the current-sid named package-test execution remain open gates.
+The packet regression independently applies the upstream-rooted patch to a temporary `tests/dev-ptmx`, requires both exact Git blob identities, rejects fuzz and offset, requires the one-line include delta, and preserves all customize hooks in order. Draft internal PR `#402` exists only to execute this gate.
+
+Debian sid currently carries source package `mmdebstrap 1.5.7-3`, so this downstream carrier is useful for the current Debian package case. Its Git history is the Deepin downstream packaging history, not canonical mmdebstrap ancestry. Missing mailing-list or canonical-main patches therefore remain a freshness risk for final upstream delivery.
+
+The official canonical repository page advertises `main` at `77ec9be5417ee44c96343d2347145585da1b1f94`. Direct canonical clone and raw-file retrieval remain unavailable in this execution environment because DNS resolution fails.
 
 ## Next decision
 
-Fetch or fork exact upstream head `77ec9be5417ee44c96343d2347145585da1b1f94`, apply the retained upstream-path patch with zero fuzz and zero offset, run the focused static assertions, then run `dev-ptmx --mode=root --variant=apt` through the reusable disposable sid harness with cleanup and immediate rerun.
+Complete draft PR `#402` CI, record the exact result, then use the current unit-08 disposable sid carrier to run the named `dev-ptmx --mode=root --variant=apt` case against candidate commit `43082a6bc959e2d7cefae48f52e045cc90869287`, with cleanup and immediate rerun. Before external authorization, obtain canonical Forgejo `main`, search overlap and mailing-list-carried changes, and reapply or rebase the one-line candidate there.
