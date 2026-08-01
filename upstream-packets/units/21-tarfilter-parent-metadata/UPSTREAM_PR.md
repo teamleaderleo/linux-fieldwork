@@ -36,7 +36,8 @@ Executed on exact current `tarfilter` source:
 
 - baseline focused test: expected failure, only leaf emitted;
 - patched focused test: five cases pass;
-- Python compilation, shell syntax, and diff whitespace checks pass.
+- Python compilation, shell syntax, and diff whitespace checks pass;
+- source-level comparison against current dpkg parent-retention code: eight assertions pass.
 
 Pending on a full canonical checkout:
 
@@ -47,19 +48,22 @@ Pending on a full canonical checkout:
 
 Ordinary rule precedence and matcher behavior remain unchanged. The change affects only the existing excluded-directory/symlink parent-retention path.
 
+Current dpkg uses the original pattern and a one-direction plain prefix comparison. This change follows dpkg's conservative wildcard intent while correcting two edge behaviors: exact nested includes now retain their ancestors, and component separators prevent `/usr` from retaining `/usr2`. It does not claim exact predicate parity with dpkg.
+
 ## Proposed commits or patch order
 
 1. `tarfilter: retain parent metadata for nested path includes`
 
 ## Reviewer notes
 
-The two comparison directions serve different patterns: exact includes need the include prefix to recognize ancestors; a wildcard before the current path component needs the current path to recognize the fixed prefix. `/` boundaries prevent lexical prefix aliases.
+The two comparison directions serve different patterns: exact includes need the include prefix to recognize ancestors; a wildcard before the current path component needs the current path to recognize the fixed prefix. `/` boundaries prevent lexical prefix aliases. The retained `artifacts/dpkg-comparison.json` records the intentional difference from current dpkg behavior.
 
 ## Submission checklist
 
 - [ ] Full candidate checkout created from current upstream base.
 - [ ] Complete upstream diff reviewed.
 - [x] Baseline loses and candidate passes focused controls.
+- [x] dpkg compatibility boundary recorded.
 - [ ] Upstream-native focused test passes.
 - [x] Public overlap reviewed on 2026-08-01.
 - [ ] Fork/branch delivery path exists.
