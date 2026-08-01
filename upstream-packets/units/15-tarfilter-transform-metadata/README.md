@@ -8,7 +8,9 @@ External contact authorized: `false`
 
 ## TL;DR
 
-The canonical Linux Fieldwork transform, target-scope, hard-link, PAX, and numeric-occurrence carriers were composed into one clean patch against the exact current upstream `tarfilter` source. The composed candidate passes a baseline/candidate differential matrix against GNU tar 1.35 and applies with GNU `patch --fuzz=0`. Upstream-native repository gates and a controlled upstream fork/branch remain incomplete.
+The canonical transform, target-scope, hard-link, PAX, and numeric-occurrence carriers are now materialized in the controlled fork `teamleaderleo/mmdebstrap` on branch `linux-fieldwork/unit-15-tarfilter-transform-metadata`. That branch starts at the exact canonical upstream commit `77ec9be5417ee44c96343d2347145585da1b1f94` and ends at `505bf81079a3b76c7d56bffa8097c1b5a494898e`.
+
+The fork contains the source candidate, an upstream-native test under `tests/`, and its `coverage.txt` registration. A clean local exact-source rerun makes the baseline fail at the first-replacement assertion and makes the candidate pass twice with no retained temporary directories. Full `coverage.py`, shellcheck, shfmt, package, and hosted gates remain incomplete.
 
 ## Accomplished behavior
 
@@ -16,7 +18,7 @@ The candidate parses the retained GNU tar substitution subset, applies first-onl
 
 ## Why care
 
-The baseline can silently rename every match, reject valid numeric/global flags, leave hard-link and symlink references stale, preserve obsolete PAX names, and emit archives that fail extraction or contain paths different from the requested transform.
+The baseline can rename every match, reject valid numeric/global flags, leave hard-link and symlink references stale, preserve obsolete PAX names, and emit archives that fail extraction or contain paths different from the requested transform.
 
 ## Scope
 
@@ -29,7 +31,8 @@ The baseline can silently rename every match, reject valid numeric/global flags,
 - numeric occurrence selectors, zero behavior, and last decimal-run selection;
 - hard-link target repair for `--strip-components`;
 - stale PAX `path` and `linkpath` removal/regeneration;
-- GNU tar differential checks, extraction, inode identity, cleanup, and immediate rerun.
+- GNU tar differential checks, extraction, inode identity, cleanup, and immediate rerun;
+- upstream-native test file and `coverage.txt` registration in the controlled fork.
 
 ### Excluded
 
@@ -44,7 +47,7 @@ The baseline can silently rename every match, reject valid numeric/global flags,
 
 ### Split boundary
 
-Start with one semantic patch because parsing state, replacement count, target scopes, link rewriting, and PAX invalidation converge in `TransformAction` and the single archive-member loop. Reconsider a two-commit ordered series only after upstream-native review demonstrates an independently reviewable parser/replacement commit and a link/PAX commit without duplicate parser or loop edits.
+Start with one semantic source patch because parsing state, replacement count, target scopes, link rewriting, and PAX invalidation converge in `TransformAction` and the archive-member loop. The fork currently uses three commits only to keep source, native test, and test registration identities explicit. Reconsider a two-source-commit series only if final review demonstrates an independently mergeable parser/replacement boundary and link/PAX boundary without duplicate edits.
 
 ## Exact identities
 
@@ -54,15 +57,28 @@ Start with one semantic patch because parsing state, replacement count, target s
 | Canonical repository | `https://gitlab.mister-muffin.de/josch/mmdebstrap` |
 | Intended base branch | `main` |
 | Upstream base commit | `77ec9be5417ee44c96343d2347145585da1b1f94` |
-| Controlled fork | `NEEDS FORK` |
-| Candidate source branch | `NEEDS BRANCH` |
-| Candidate head | local composed source SHA-256 `adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e` |
+| Controlled fork | `teamleaderleo/mmdebstrap` |
+| Controlled base branch | `linux-fieldwork/upstream-main-snapshot` at `77ec9be5417ee44c96343d2347145585da1b1f94` |
+| Candidate source branch | `linux-fieldwork/unit-15-tarfilter-transform-metadata` |
+| Candidate branch head | `505bf81079a3b76c7d56bffa8097c1b5a494898e` |
+| Source commit | `f7833615824ad99023c21a495840d10f64c6401a` |
+| Native-test commit | `f7337a7d2f33d280c8e5b1576dd729f4d076c13a` |
+| Coverage-registration commit | `505bf81079a3b76c7d56bffa8097c1b5a494898e` |
+| Candidate source Git blob | `adb330efcc941bf5e646f195c245a3184e42f8e2` |
+| Candidate source SHA-256 | `adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e` |
+| Native-test Git blob | `bc9fb4e0593df5a37dee986308ebb62abc4b6839` |
+| Native-test SHA-256 | `adab3852d9c8e719d64a24e1aed386d2eeccb45a43922f854d7458aa486f8caa` |
+| Coverage Git blob | `fdac8b9f86b04e48af6476c32b649b1ed4bda95a` |
 | Linux Fieldwork branch | `upstream/unit-15-tarfilter-transform-metadata` |
-| Linux Fieldwork base head | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Imported/local source identity | Git blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`; SHA-256 `442b056aeb414aef0e33d59b6235623ca4d6072c62272508281d126cb3f3d957` |
-| Patch or series path | `patches/0001-tarfilter-transform-metadata.patch` |
+| Imported source identity | Git blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`; SHA-256 `442b056aeb414aef0e33d59b6235623ca4d6072c62272508281d126cb3f3d957` |
+| Retained patch | `patches/0001-tarfilter-transform-metadata.patch`; SHA-256 `4d8cb2f180cb7798a15195c2dcfac164b409f68a18c69d507cfc624d4725703c` |
+| Native test receipt | `artifacts/FORK_NATIVE_TEST.txt`; SHA-256 `74d0ceff423a8bbc57bd5e8ae4dff3aa6ba1cfc105ebdbfd47d717f9e20f33a1` |
 | Proposed destination | `josch/mmdebstrap` Forgejo pull request |
-| Delivery method | controlled fork branch and pull request; `NEEDS FORK` |
+| Delivery method | controlled fork branch and pull request after explicit authorization |
+
+## Fork history decision
+
+The fork's legacy `master` is a separate Deepin packaging history and has no common ancestor with the canonical source snapshot. It remains untouched. Unit 15 is based on the existing controlled snapshot branch instead of force-replacing or rewriting `master`.
 
 ## Canonical links
 
@@ -82,38 +98,36 @@ Start with one semantic patch because parsing state, replacement count, target s
 
 ### Demonstrated
 
-- Current upstream `main` still points to a `tarfilter` whose relevant implementation matches imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`.
-- The exact PR #68 patch blob `1703984aa0c030e5131618a3541ee85bfd68ec65` and PR #102 patch blob `81828a468854e7ec9ef4cda9626b9c57314afba3` compose with `git apply --check`.
-- A regenerated one-file patch applies with GNU patch 2.8 using `--fuzz=0` and produces the tested candidate byte-for-byte.
-- The focused matrix passes four times with identical JSON output on Python 3.13.5 and GNU tar 1.35.
+- The controlled base branch resolves exactly to current canonical upstream commit `77ec9be5417ee44c96343d2347145585da1b1f94`.
+- The fork candidate is three commits ahead and zero commits behind that base.
+- The complete fork diff contains only `tarfilter`, `tests/tarfilter-transform-metadata`, and `coverage.txt`.
+- The regenerated source patch applies with GNU patch 2.8 using `--fuzz=0` and produces the fork source bytes.
+- The upstream-native test fails on the exact baseline with status `1` at `AssertionError: s/a/b/`.
+- The same test passes twice on the candidate with status `0` and `tarfilter transform metadata: PASS`.
+- Python compilation and POSIX shell syntax checks pass.
+- The focused packet matrix remains green with identical JSON across repeated runs.
+- The test rerun leaves zero matching temporary directories.
 
 ### Not yet demonstrated
 
-- Upstream repository test-suite integration.
-- A complete review in a current upstream checkout rather than the exact source-file materialization.
-- Formatting or project-specific lint expectations.
-- Controlled fork, candidate commit, and public destination branch.
-- Maintainer preference for one commit versus an ordered two-commit series.
+- Execution through `coverage.py` in a complete checkout with its required mirror state.
+- Shellcheck and shfmt: both tools were absent in the execution container.
+- Relevant package/build tests or hosted CI.
+- Other Python, GNU tar, distribution, and architecture combinations.
+- Maintainer preference for one commit versus an ordered series.
 
 ### Compatibility boundary
 
 The candidate preserves the existing Python regular-expression pattern dialect. Unit 01 owns GNU basic/extended regex translation. This unit claims the tested replacement, selector, scope, link, and PAX behavior only.
 
-## Candidate organization
-
-1. `tarfilter: keep transform names and metadata consistent`
-   - one clean source patch generated from exact baseline to composed candidate;
-   - focused upstream test conversion remains the next code task.
-2. A later split into parser/replacement and link/PAX commits is permitted only when the complete upstream diff supports it without overlapping source edits.
-
 ## Current disposition
 
-`ACTIVE` — focused source composition and differential proof are complete; upstream-native integration and the controlled candidate branch remain.
+`ACTIVE` — the controlled fork, exact candidate head, native regression, registration, direct baseline/candidate run, cleanup, and rerun are complete. The first incomplete gate is execution through the upstream `coverage.py` path in a complete checkout, followed by formatting and relevant package gates.
 
 ## Next human decision
 
-No send decision yet. The next repository-owner decision arrives after upstream-native tests and complete-diff review establish the final one-commit or ordered-series form.
+No send decision exists. After the remaining gates and complete release-diff review, the packet can move to `READY FOR AUTHORIZATION` or name one concrete hold.
 
 ## Authority
 
-Internal rebasing, testing, review, packet preparation, and branch work are authorized by #397. External contact remains unauthorized, and none occurred.
+Internal fork branches, tests, review, packet preparation, and issue checkpoints are authorized by #397. No issue, pull request, merge request, email, comment, or review was sent upstream.
