@@ -10,7 +10,7 @@ External contact authorized: `false`
 - Linux Fieldwork repository: `teamleaderleo/linux-fieldwork`
 - Branch: `upstream/unit-22-tarfilter-regular-type-class`
 - Branch base: `main@6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Exact branch head immediately before this HANDOFF refresh: `15feb47bb73d6a7292e12340d9ac0886f15e4f80`
+- Exact branch head immediately before this final HANDOFF refresh: `abaec2a076de2ae02505dc5846bb6429dd2f6119`
 - Current branch head: the commit that updates this file; issue #397 checkpoint records the exact resulting SHA.
 - Packet: `upstream-packets/units/22-tarfilter-regular-type-class/`
 
@@ -48,13 +48,13 @@ The previous `HOLD` disposition was wrong. Missing native-test execution is tech
 5. Created the canonical Linux Fieldwork branch and full packet bundle.
 6. Retained the one-line source patch and self-contained archive-level regression.
 7. Recorded exact baseline/candidate/CI evidence and source ownership.
-8. Drafted upstream issue and pull-request text without sending either.
-9. Identified canonical current upstream as `josch/mmdebstrap` `main@77ec9be5417ee44c96343d2347145585da1b1f94`.
-10. Confirmed the current upstream source still carries the defective selector mapping.
-11. Identified the upstream-native individual-test command through `coverage.py`.
-12. Re-read active units 01, 15, and 16. They own separate code paths and create no final-order blocker for unit 22.
-13. Corrected `README.md`, `SOURCE_MAP.md`, `TESTS.md`, `DECISIONS.md`, and this handoff from `HOLD` to `ACTIVE` and from Salsa packaging identity to canonical Forgejo upstream identity.
-14. Attempted source materialization from Git endpoints; DNS resolution failed before checkout.
+8. Identified canonical current upstream as `josch/mmdebstrap` `main@77ec9be5417ee44c96343d2347145585da1b1f94`.
+9. Confirmed the current upstream source still carries the defective selector mapping.
+10. Identified the upstream-native individual-test command through `coverage.py`.
+11. Re-read active units 01, 15, and 16. They own separate code paths and create no final-order blocker for unit 22.
+12. Corrected `README.md`, `SOURCE_MAP.md`, `TESTS.md`, `DECISIONS.md`, both upstream drafts, and this handoff from `HOLD` to `ACTIVE` and from Salsa packaging identity to canonical Forgejo upstream identity.
+13. Fixed the upstream issue-draft title typo and replaced stale merge-request terminology/base placeholders.
+14. Attempted source materialization from upstream, Salsa, GitHub, and Linux Fieldwork Git endpoints; DNS resolution failed before checkout.
 
 ## Latest distinguishing result
 
