@@ -1,28 +1,28 @@
 # Unit 05 — mmdebstrap `run_qemu.sh` result precedence
 
-State: `ACTIVE`  
+State: `HOLD`  
 Priority-zero issue: #397, unit 05  
-Worker or variant: `GPT-5.6 Thinking upstream extraction pass`  
+Worker or variant: `GPT-5.6 Thinking upstream extraction and complete-diff repair`  
 Linux Fieldwork branch: `upstream/unit-05-run-qemu-result-precedence`  
 External contact authorized: `false`
 
 ## TL;DR
 
-The controlled GitHub mirror is now usable as the candidate repository. Its `master` branch is commit `574048f2a720057b75e56622003932f344dc700a`, and repository-root `run_qemu.sh` is exactly Git blob `426aeeb854173569b24e64d6eb85019f45bdf0b6`, byte-identical to the source used by the canonical Linux Fieldwork work.
-
-A four-commit candidate branch now exists at:
+The controlled mirror base is exact, the candidate is a five-commit one-file series, and the retained lifecycle matrix is green. Complete-diff review found two deterministic signal-handler setup windows in the earlier four-commit candidate; commit `6efe6945f9f89cff57fe84086ede7bda747c3879` closes both windows without changing the selected result order.
 
 ```text
 repository: teamleaderleo/mmdebstrap
-branch: linux-fieldwork/unit-05-run-qemu-result-precedence
-head: 457095c6f89655ab12b7055307f519e71bb0dbca
 base: 574048f2a720057b75e56622003932f344dc700a
-relation: four commits ahead, zero behind
+branch: linux-fieldwork/unit-05-run-qemu-result-precedence
+head: 6efe6945f9f89cff57fe84086ede7bda747c3879
+relation: five commits ahead, zero behind
 changed files: run_qemu.sh only
-final blob: 3e8d4dc07f91d246a372749eb49ff9489c21c7b7
+final blob: 1fc816d6fe982351f6519fd1458329112eebdcfb
+bytes: 3095
+SHA-256: 434e7b6b9c32e30b506ea6af121608414c42b668c329e6395e75e19dc09ff276
 ```
 
-The selected result order is:
+Selected result order:
 
 ```text
 captured host failure
@@ -32,118 +32,94 @@ captured host failure
 > success
 ```
 
-The candidate bytes match the previously validated composed script: 2,924 bytes, SHA-256 `8d2b0fdef2c93fcd3d97f296dfe58d3cbe198e8a02ac85930aa8c3c89aedb90f`, and `/bin/sh -n` succeeds.
+The unit is on `HOLD` for two named gates: reconcile against current canonical Salsa `master` and active equivalent work; then run mmdebstrap's current QEMU-classified project tests on the exact rebased head. The user has no fetch or setup task.
+
+## Explain like I'm five
+
+The wrapper can learn several bad outcomes while shutting down: the host command failed, the guest failed, someone interrupted it, or cleanup failed. It must remember the first outcome that already owned the result and still finish cleaning up.
+
+The earlier candidate did that after each handler was fully set up, but a second signal could arrive during the few commands used to enter a handler. The fifth commit closes those entry windows before other handler work begins.
+
+## Why care
+
+Without explicit precedence, a timeout can become a generic guest failure, a completed guest failure can become a later signal, or a second signal can replace the first. Those results point debugging at the wrong owner. Interrupting cleanup can also leave temporary state behind.
 
 ## Accomplished behavior
 
 `run_qemu.sh` now:
 
-- captures the host command result before cleanup;
+- captures the host result before cleanup;
 - separates ordinary EXIT cleanup from explicit INT and TERM cleanup;
-- preserves host failure ahead of guest and cleanup outcomes;
-- treats completed guest nonzero, malformed, unreadable, or missing status as failure 1 when no host failure exists;
+- preserves host failure ahead of guest, signal, and cleanup outcomes;
+- treats completed nonzero, malformed, unreadable, or missing guest status as failure 1 when the host succeeded;
 - retains the first INT or TERM received during ordinary cleanup;
-- keeps later handled INT and TERM from replacing an established signal result or interrupting bounded cleanup;
+- disables overlapping INT/TERM handling in each signal trap action before entering the handler;
+- marks ordinary cleanup in the same assignment-only command that captures `$?`;
+- prevents an early cleanup signal from bypassing completed guest precedence;
+- prevents a second explicit signal from replacing the first during handler entry;
 - retains the first cleanup failure while later cleanup actions continue;
-- runs cleanup once;
-- keeps a completed guest failure ahead of a later cleanup-time signal.
-
-## Why care
-
-The original shared `EXIT INT TERM` handler could overwrite timeout or host failure with generic guest failure, return guest-dependent results for INT or TERM, re-enter cleanup, lose first-signal identity, ignore cancellation during ordinary cleanup, and replace a completed guest failure with a later cleanup event.
-
-Those outcomes misclassify the failure owner and can leave temporary state behind.
-
-## Scope
-
-### Included
-
-- repository-root `run_qemu.sh`;
-- result selection and cleanup ownership;
-- separate EXIT and explicit-signal handlers;
-- first-writer signal retention;
-- first cleanup-failure retention;
-- four reviewable source commits;
-- exact source, blob, compare, and syntax receipts.
-
-### Excluded
-
-- QEMU and `debvm-run` command construction;
-- timeout policy;
-- process-group delivery or escalation;
-- HUP and QUIT policy;
-- guest image, network, mount, root, or package-install execution;
-- public issue, pull request, merge request, comment, email, or review.
+- runs cleanup once and supports an immediate clean rerun.
 
 ## Exact identities
 
 | Identity | Value |
 | --- | --- |
-| Upstream project | mmdebstrap |
 | Canonical repository | `https://salsa.debian.org/debian/mmdebstrap.git` |
-| Intended base branch | `master` |
-| Controlled mirror/fork | `https://github.com/teamleaderleo/mmdebstrap` |
-| Mirror base commit | `574048f2a720057b75e56622003932f344dc700a` |
-| Mirror base `run_qemu.sh` blob | `426aeeb854173569b24e64d6eb85019f45bdf0b6` |
-| Candidate source branch | `linux-fieldwork/unit-05-run-qemu-result-precedence` |
-| Candidate head | `457095c6f89655ab12b7055307f519e71bb0dbca` |
-| Candidate final `run_qemu.sh` blob | `3e8d4dc07f91d246a372749eb49ff9489c21c7b7` |
-| Candidate SHA-256 | `8d2b0fdef2c93fcd3d97f296dfe58d3cbe198e8a02ac85930aa8c3c89aedb90f` |
+| Intended canonical branch | `master` |
+| Controlled mirror | `https://github.com/teamleaderleo/mmdebstrap` |
+| Controlled base | `574048f2a720057b75e56622003932f344dc700a` |
+| Base `run_qemu.sh` blob | `426aeeb854173569b24e64d6eb85019f45bdf0b6` |
+| Candidate branch | `linux-fieldwork/unit-05-run-qemu-result-precedence` |
+| Candidate head | `6efe6945f9f89cff57fe84086ede7bda747c3879` |
+| Candidate `run_qemu.sh` blob | `1fc816d6fe982351f6519fd1458329112eebdcfb` |
+| Candidate SHA-256 | `434e7b6b9c32e30b506ea6af121608414c42b668c329e6395e75e19dc09ff276` |
+| Candidate size | 3,095 bytes |
 | Linux Fieldwork branch | `upstream/unit-05-run-qemu-result-precedence` |
-| Retained patch series | [`patches/`](patches/) |
-| Proposed destination | canonical repository-root `run_qemu.sh` |
-| Delivery method | Salsa fork and merge request after explicit authorization |
+| Delivery method | Salsa merge request after explicit authorization |
 
 ## Candidate commits
 
-1. `614fb26a4f0724618a5eecd3ce1bee12454ff7de` — preserve the primary result through cleanup.
+1. `614fb26a4f0724618a5eecd3ce1bee12454ff7de` — preserve primary result through cleanup.
 2. `cb6ef6d6c2b1368b3603b2ec06635c3815f31e11` — retain the first handled signal through cleanup.
-3. `13cf34fd87d44b4d37c6767fdbd153b2ef535a57` — retain signals received during ordinary EXIT cleanup.
-4. `457095c6f89655ab12b7055307f519e71bb0dbca` — preserve completed guest failure before a later cleanup signal.
+3. `13cf34fd87d44b4d37c6767fdbd153b2ef535a57` — retain signals during ordinary EXIT cleanup.
+4. `457095c6f89655ab12b7055307f519e71bb0dbca` — preserve completed guest failure before cleanup signal.
+5. `6efe6945f9f89cff57fe84086ede7bda747c3879` — close explicit-signal and ordinary-EXIT handler setup windows.
 
-The direct compare against mirror `master` is one modified file with 61 additions and 10 deletions.
-
-## Canonical Linux Fieldwork lineage
-
-- owning issue: #269;
-- event-order review: #297;
-- component carriers: PRs #270, #282, #290, and #304;
-- canonical composition: PR #319;
-- canonical composition head: `2fe3f99364df29de217536dc35a4d03b10f49640`;
-- canonical merge: `b196d6b45f496d8eb2d763922532ad257f24bba8`;
-- exact-head CI: run `30628645668`, job 889, success, 276 tests.
+Compare against controlled `master`: five commits ahead, zero behind, one modified file, 64 additions, and 10 deletions.
 
 ## Demonstrated
 
-- The controlled mirror base file is exactly the imported source blob.
-- The four packet patches apply in order without errors to that source.
-- The final candidate bytes equal the previously validated composed bytes.
-- `/bin/sh -n` succeeds on the final candidate.
-- The candidate branch is four commits ahead, zero behind, and changes only `run_qemu.sh`.
-- The canonical focused suite previously passed on the same source transformation and retains every predecessor negative control.
+- The controlled base file is exactly the imported Linux Fieldwork source blob.
+- Patches 1–4 apply without fuzz or offsets; patch 5 is retained as the complete-diff repair.
+- `/bin/sh -n` succeeds on the exact fifth-commit source.
+- The established controlled-fork lifecycle matrix passes 58/58 checks.
+- Four predecessor policies retain deterministic losing controls.
+- Four-commit candidate setup windows lose first-signal and completed-guest precedence.
+- Fifth-commit widened controls return 143, 1, and 143 as required while cleanup completes.
+- Immediate rerun remains clean in the reduced `/bin/sh` fixtures.
 
-## Remaining technical gates
+Receipts:
 
-1. Search the current canonical Salsa project for equivalent active work when access is available.
-2. Confirm the canonical Salsa `master` file remains byte-compatible with mirror base blob `426aeeb…` before any submission.
-3. Run current upstream ordinary checks on candidate head `457095c6…`.
-4. Run an authorized bounded QEMU/`debvm-run` smoke test only when a disposable environment exists.
-5. Refresh the merge-request draft with the final canonical base identity.
+- [`artifacts/2026-08-01-controlled-fork-lifecycle-matrix.txt`](artifacts/2026-08-01-controlled-fork-lifecycle-matrix.txt)
+- [`artifacts/2026-08-01-handler-setup-window-repair.txt`](artifacts/2026-08-01-handler-setup-window-repair.txt)
 
-The user has no fetch command or repository setup task. The controlled mirror and candidate branch already exist.
+## Scope
 
-## Current disposition
+Included: `run_qemu.sh` result selection, handler transitions, once-only bounded cleanup, first-writer signal retention, exact fork commits, reduced lifecycle fixtures, cleanup, and rerun.
 
-`ACTIVE` — the source candidate is complete on the controlled mirror. Remaining work is canonical-host reconciliation and upstream-native execution.
+Excluded: QEMU command construction, timeout duration, HUP/QUIT policy, process-group escalation, guest-image content, networking, mounts, package installation, and public upstream contact.
+
+## HOLD gates
+
+1. Resolve current canonical Salsa `master` and `run_qemu.sh` identities and search current issues, branches, and merge requests for equivalent work.
+2. Rebase when required and run current mmdebstrap QEMU-classified focused/ordinary tests through `coverage.py` or `coverage.sh` on the exact candidate head.
+3. Execute the checked-in `tests/test_run_qemu_handler_setup_windows.py` from a complete Linux Fieldwork checkout or hosted CI and retain its exact run identity.
+4. Refresh the final draft after those gates and rerun cleanup and focused controls on the exact resulting head.
 
 ## Next human decision
 
-After the remaining checks, choose one:
-
-- authorize preparation or submission of a Salsa merge request;
-- hold for more testing;
-- retire if canonical upstream already contains equivalent work.
+No publication decision is requested yet. After the HOLD gates, choose authorization, further hold, split, or retirement if canonical upstream already contains equivalent work.
 
 ## Authority
 
-Internal repository reads, branch creation, commits, tests, packet writing, and issue checkpoints are authorized. External contact remains unauthorized, and none has been made.
+Internal reads, branches, commits, reduced tests, packet updates, and issue checkpoints are authorized. No upstream issue, merge request, comment, review, email, or mailing-list message has been authorized or created.
