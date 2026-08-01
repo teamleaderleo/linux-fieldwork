@@ -10,6 +10,9 @@
 | Proposed test blob | `9212cb89dfcb954d84d2f7f8e6557755d59e1986` |
 | Patch SHA-256 | `8bdd156eb375114c3f3be80c4433a06f6ac8a6d8e189023a02d39774d80c2f74` |
 | Local matrix SHA-256 | `f061350cf1e975dadad5e6e812ad0219cf664bfbfce6d4963e7459a45873a3b1` |
+| dpkg comparison script SHA-256 | `8d6132cc74cf43c42ed473c08f0d449e270c78d8ba480b2b2b5cd27fdb6aff4c` |
+| dpkg comparison artifact SHA-256 | `65fbceebbb1b0dc7fdadcb13662dc039bc976adddb4989ee9dde4ba77281aa3b` |
+| dpkg source file blob | `guillemj/dpkg main:src/main/filters.c@4fc1600a5717726faddc2fb556730f217e7f22a2` |
 | Platform | Debian GNU/Linux 13.3, x86_64, kernel `6.12.13` |
 | Runtime | Python `3.13.5`; GNU tar `1.35` |
 
@@ -69,17 +72,42 @@ focused_five_case_test=PASS
 git_diff_check=PASS
 ```
 
+## dpkg compatibility comparison
+
+### Command
+
+```sh
+python3 -m py_compile scripts/compare-dpkg-parent-retention.py
+python3 scripts/compare-dpkg-parent-retention.py \
+  > artifacts/dpkg-comparison.json
+```
+
+### Observed result
+
+- status: `0`;
+- eight assertions passed;
+- exact nested ancestors: dpkg model `false`, candidate `true`;
+- wildcard and leading-wildcard conservatism: both `true`;
+- `/usr` or `/usr/*` against `/usr2`: dpkg model `true`, candidate `false`;
+- unrelated path: both `false`;
+- artifact: `artifacts/dpkg-comparison.json`, SHA-256 `65fbceeb…`.
+
+The model is a direct transcription of the fixed-prefix calculation and `strncmp()` comparison in dpkg source blob `4fc1600…`. It is source-level evidence rather than a compiled dpkg integration test.
+
 ## Matrix
 
-| Case | Baseline | Candidate | Evidence |
+| Case | Baseline/reference | Candidate | Evidence |
 | --- | --- | --- | --- |
-| Exact `/usr/bin/tool` | only leaf | both parents + leaf | focused test; matrix |
-| Wildcard `/usr/*/tool` | parent relation broken | `usr` and `usr/bin` retained | focused test |
-| Class `/usr/[bs]in/tool` | parent relation broken | chain retained | focused test |
-| Boundary `/usr2/tool` | vulnerable to naive prefix fix | only `usr2` chain | focused test |
-| Symlink `/linkroot/tool` | symlink omitted | symlink + leaf; target and metadata retained | focused test; matrix |
+| Exact `/usr/bin/tool` | exact current source emits only leaf | both parents + leaf | focused test; local matrix |
+| Wildcard `/usr/*/tool` | current translated prefix broken | `usr` and `usr/bin` retained | focused test |
+| Class `/usr/[bs]in/tool` | current translated prefix broken | chain retained | focused test |
+| Boundary `/usr2/tool` | naive raw prefix can alias names | only `usr2` chain | focused test |
+| Symlink `/linkroot/tool` | symlink omitted | symlink + leaf; target and metadata retained | focused test; local matrix |
 | Extracted parent modes | `0755`, `0755` | `0700`, `0711` | `artifacts/local-matrix.json` |
-| Leading wildcard `*/tool` | conservative policy path | parent retained | relation matrix |
+| Exact ancestor versus dpkg | dpkg one-direction model drops parent | candidate retains parent | `artifacts/dpkg-comparison.json` |
+| Wildcard conservatism versus dpkg | dpkg retains | candidate retains | same artifact |
+| Sibling prefix `/usr`→`/usr2` | dpkg plain prefix retains | candidate rejects | same artifact |
+| Leading wildcard `*/tool` | dpkg retains all candidates | candidate retains all candidates | same artifact |
 | Cleanup and immediate rerun | temporary files removed | repeated result matched | local execution |
 
 ## Patch application and rebase
@@ -111,10 +139,11 @@ git_diff_check=PASS
 | Python compile | PASS | same receipt |
 | shell syntax | PASS | same receipt |
 | diff whitespace | PASS | same receipt |
+| dpkg source-model comparison | PASS, eight cases | `artifacts/dpkg-comparison.json`, SHA-256 `65fbceeb…` |
 
 ## Cleanup and rerun
 
-Temporary archive, extraction, and baseline-test directories were removed. No process, socket, mount, lock, container, cache entry, or host mutation remains. Durable packet artifacts are intentional retained state.
+Temporary archive, extraction, baseline-test, comparison, and bytecode directories were removed. No process, socket, mount, lock, container, cache entry, or host mutation remains. Durable packet artifacts are intentional retained state.
 
 ## Tests pending
 
@@ -122,8 +151,9 @@ Temporary archive, extraction, and baseline-test directories were removed. No pr
 - native `coverage.py` selector;
 - Black on the complete checkout;
 - broader repository and package gates;
-- hosted CI on an exact candidate branch.
+- hosted CI on an exact candidate branch;
+- compiled dpkg behavior comparison, only if maintainers request parity evidence.
 
 ## Final evidence statement
 
-The exact current `tarfilter` source loses parent entries for the minimal include. The retained patch changes that exact source into a candidate that passes five focused cases and preserves directory and symlink metadata. Repository integration and project-native execution remain the first incomplete technical gate.
+The exact current `tarfilter` source loses parent entries for the minimal include. The retained patch changes that exact source into a candidate that passes five focused cases and preserves directory and symlink metadata. The dpkg comparison establishes the deliberate compatibility boundary: preserve wildcard conservatism, add exact ancestry, and remove plain-prefix sibling aliases. Repository integration and project-native execution remain the first incomplete technical gate.
