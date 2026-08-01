@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -346,12 +346,31 @@ def main():
+@@ -346,11 +346,29 @@ def main():
      with tarfile.open(fileobj=sys.stdin.buffer, mode="r|*") as in_tar, tarfile.open(
          fileobj=sys.stdout.buffer, mode="w|", format=tarfile.PAX_FORMAT
      ) as out_tar:
