@@ -46,14 +46,15 @@ scripts/probe-fsck-udev-lock-identity.sh
 The disposable probe:
 
 1. attaches a temporary image to a loop device;
-2. supplies a fake `fsck.ext4` that blocks after launch;
-3. runs current `fsck -l` against the loop device;
-4. requires `/run/fsck/<loop>.lock` to exist and be held exclusively;
-5. attempts a nonblocking shared flock on the whole loop device while fsck is active;
-6. releases fsck;
-7. holds an exclusive flock on the whole loop device;
-8. requires the same shared probe to fail;
-9. records file identities, kernel locks, versions, statuses, and cleanup.
+2. overlays only the container mount namespace's `queue/rotational` view with `1`, because current `fsck -l` intentionally skips non-rotating devices;
+3. supplies a fake `fsck.ext4` first in `PATH` and blocks it after launch;
+4. runs current `fsck -l` against the loop device;
+5. requires `/run/fsck/<loop>.lock` to exist and be held exclusively;
+6. attempts a nonblocking shared flock on the whole loop device while fsck is active;
+7. releases fsck;
+8. holds an exclusive flock on the whole loop device;
+9. requires the same shared probe to fail;
+10. records file identities, kernel locks, versions, statuses, mount override, checker identity, and cleanup.
 
 Expected distinguishing result:
 
@@ -65,9 +66,43 @@ whole-device shared probe during whole-device LOCK_EX: nonzero
 
 That result proves lock-domain independence and validates the documented device-node control. It does not prove the reported metadata race.
 
+## Attempt 1 — checker-dispatch and rotational preflight
+
+```text
+PR: 413
+head: 5045f2fba8b68f389d453fd26cd347eaf52b489a
+workflow: 30705124327
+job: 91382810762
+artifact: 8820074565
+artifact digest: sha256:7e4506082d11087eee2f6326c5dfb4bf9ad590870a8323d6da0446f02743c1ce
+classification: carrier-preflight-failure
+product claim: zero
+```
+
+The static carrier tests passed. The container reported:
+
+```text
+Loop sysfs rotational: 0
+e2fsck: need terminal for interactive repairs
+fsck front-end exited before holding the checker and lock file
+```
+
+Two preconditions were wrong:
+
+- `FSCK_PATH` did not override util-linux's checker search; the real `e2fsck` ran;
+- even with correct checker dispatch, `fsck -l` would skip a loop device whose queue reports `rotational=0`.
+
+Repair:
+
+- prepend the fake checker directory to `PATH`;
+- bind a regular file containing `1` over the loop queue's rotational attribute inside the disposable container mount namespace;
+- record original/effective values and the bind mount;
+- unmount the override before detaching the loop device;
+- require the fake checker executable and argv receipts.
+
 ## Next gate
 
-After a positive identity result, add a synchronized real ext4 fixture:
+Rerun the exact repaired carrier. After a positive identity result, add a synchronized real ext4 fixture:
 
 - stable UUID on a loop-backed partition;
 - controlled e2fsck final-superblock write window;
