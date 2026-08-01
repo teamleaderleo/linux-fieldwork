@@ -68,7 +68,7 @@ Focused PR #172 remains signal-mechanism evidence and PR #192 remains publicatio
 | Linux Fieldwork branch | `upstream/unit-04-qemu-image-builder-lifecycle` |
 | Linux Fieldwork starting head | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
 | Imported/local source identity | Git blob `bb7bce0fd6e37d61a063b1ccb0700a6c8c0cf7b3`; identical to public mirror file |
-| Patch or series path | `patches/0001-mmdebstrap-autopkgtest-build-qemu-publish-atomically.patch` |
+| Patch or series path | `patches/0001-qemu-builder-atomic-publication-and-signal-lifecycle.patch` |
 | Proposed destination | mmdebstrap Forgejo pull request |
 | Delivery method | One pull request after explicit authorization |
 
@@ -111,7 +111,7 @@ Publication replaces the final pathname itself, including a symlink, through ren
 
 One patch belongs in one pull request because cleanup ownership, signal termination, private construction, and publication touch the same lifecycle and must be reviewed together.
 
-1. `0001-mmdebstrap-autopkgtest-build-qemu-publish-atomically.patch`
+1. `0001-qemu-builder-atomic-publication-and-signal-lifecycle.patch`
 
 ## Current disposition
 
