@@ -24,7 +24,7 @@ This index maps each contribution unit to its durable packet directory. Issue #3
 | 15 | 2 | mmdebstrap tarfilter: transform, target, and PAX metadata semantics | Substantial internal composition | `units/15-tarfilter-transform-metadata/` |
 | 16 | 2 | mmdebstrap tarfilter: type-excluded hard-link dependency handling | Resolve final-name identity and compose | `units/16-tarfilter-type-hardlinks/` |
 | 17 | 2 | mmdebstrap archive output: deterministic directory mtimes | HOLD: operation-authority policy | `units/17-directory-mtime-authority/` |
-| 18 | 3 | mmdebstrap tarfilter: byte-preserving no-option passthrough | Clear fix; candidate needed | `units/18-tarfilter-no-option-passthrough/` |
+| 18 | 3 | mmdebstrap tarfilter: byte-preserving no-option passthrough | READY FOR AUTHORIZATION | `units/18-tarfilter-no-option-passthrough/` |
 | 19 | 3 | mmdebstrap tarfilter: preserve shifted PAX uid/gid semantics | Clear fix; candidate needed | `units/19-tarfilter-pax-idshift/` |
 | 20 | 3 | mmdebstrap tarfilter: preserve dotfile identity during normalization | Clear fix; candidate needed | `units/20-tarfilter-dotfile-identity/` |
 | 21 | 3 | mmdebstrap tarfilter: retain parent metadata for nested includes | Design and compatibility matrix needed | `units/21-tarfilter-parent-metadata/` |
