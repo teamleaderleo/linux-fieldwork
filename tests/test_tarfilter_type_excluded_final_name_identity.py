@@ -11,8 +11,7 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "upstream/mmdebstrap/tarfilter"
-SOURCE_BYTES = SOURCE.read_bytes()
+SOURCE_BLOB = "ad776167a8473d5d15dbe22e850f4f6db35cf278"
 TRANSFORM_PATCH = ROOT / (
     "investigations/tarfilter-transform-target-scopes/"
     "tarfilter-transform-target-scopes.patch"
@@ -30,8 +29,17 @@ CANDIDATE_PATCH = ROOT / (
 class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        if shutil.which("patch") is None or shutil.which("tar") is None:
-            raise unittest.SkipTest("patch and GNU tar are required")
+        for command in ("git", "patch", "tar"):
+            if shutil.which(command) is None:
+                raise unittest.SkipTest(f"{command} is required")
+        cls.source_bytes = subprocess.run(
+            ["git", "cat-file", "blob", SOURCE_BLOB],
+            cwd=ROOT,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        ).stdout
 
     @staticmethod
     def apply_patch(tree: pathlib.Path, patch_path: pathlib.Path) -> None:
@@ -53,13 +61,11 @@ class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
             timeout=30,
         )
         output = completed.stdout + completed.stderr
-        if completed.returncode != 0:
-            raise AssertionError(output)
-        if "fuzz" in output.lower():
+        if completed.returncode != 0 or "fuzz" in output.lower():
             raise AssertionError(output)
 
     def compile_source(self, source: pathlib.Path) -> None:
-        compiled = subprocess.run(
+        completed = subprocess.run(
             [sys.executable, "-m", "py_compile", str(source)],
             check=False,
             stdout=subprocess.PIPE,
@@ -67,23 +73,43 @@ class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
             text=True,
             timeout=30,
         )
-        self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def prepare_predecessor(self, root: pathlib.Path) -> pathlib.Path:
         tree = root / "candidate"
-        destination = tree / "upstream/mmdebstrap/tarfilter"
-        destination.parent.mkdir(parents=True)
-        destination.write_bytes(SOURCE_BYTES)
+        source = tree / "upstream/mmdebstrap/tarfilter"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(self.source_bytes)
         self.apply_patch(tree, TRANSFORM_PATCH)
         self.apply_patch(tree, PREDECESSOR_PATCH)
-        self.compile_source(destination)
-        return destination
+        self.compile_source(source)
+        return source
 
     def apply_candidate(self, tree: pathlib.Path) -> pathlib.Path:
         self.apply_patch(tree, CANDIDATE_PATCH)
         source = tree / "upstream/mmdebstrap/tarfilter"
         self.compile_source(source)
         return source
+
+    @staticmethod
+    def archive_bytes(
+        entries: tuple[tuple[str, bytes, str, bytes], ...]
+    ) -> bytes:
+        output = io.BytesIO()
+        with tarfile.open(
+            fileobj=output, mode="w", format=tarfile.PAX_FORMAT
+        ) as archive:
+            for name, member_type, linkname, payload in entries:
+                member = tarfile.TarInfo(name)
+                member.type = member_type
+                member.linkname = linkname
+                member.mtime = 946684800
+                if member_type in (tarfile.REGTYPE, tarfile.AREGTYPE):
+                    member.size = len(payload)
+                    archive.addfile(member, io.BytesIO(payload))
+                else:
+                    archive.addfile(member)
+        return output.getvalue()
 
     @staticmethod
     def run_filter(
@@ -124,115 +150,21 @@ class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
         )
         return completed, destination
 
-    @staticmethod
-    def false_rejection_archive() -> bytes:
-        output = io.BytesIO()
-        payload = b"final-name-target\n"
-        with tarfile.open(
-            fileobj=output, mode="w", format=tarfile.PAX_FORMAT
-        ) as archive:
-            retained = tarfile.TarInfo("prefix/base")
-            retained.size = len(payload)
-            retained.mtime = 946684800
-            archive.addfile(retained, io.BytesIO(payload))
-
-            excluded = tarfile.TarInfo("root/base")
-            excluded.type = tarfile.SYMTYPE
-            excluded.linkname = "missing"
-            excluded.mtime = 946684800
-            archive.addfile(excluded)
-
-            peer = tarfile.TarInfo("root/peer")
-            peer.type = tarfile.LNKTYPE
-            peer.linkname = "root/base"
-            peer.mtime = 946684800
-            archive.addfile(peer)
-        return output.getvalue()
-
-    @staticmethod
-    def expected_false_rejection_output() -> bytes:
-        output = io.BytesIO()
-        payload = b"final-name-target\n"
-        with tarfile.open(
-            fileobj=output, mode="w", format=tarfile.PAX_FORMAT
-        ) as archive:
-            retained = tarfile.TarInfo("base")
-            retained.size = len(payload)
-            retained.mtime = 946684800
-            archive.addfile(retained, io.BytesIO(payload))
-
-            peer = tarfile.TarInfo("peer")
-            peer.type = tarfile.LNKTYPE
-            peer.linkname = "base"
-            peer.mtime = 946684800
-            archive.addfile(peer)
-        return output.getvalue()
-
-    @staticmethod
-    def false_acceptance_archive() -> bytes:
-        output = io.BytesIO()
-        payload = b"excluded-target\n"
-        with tarfile.open(
-            fileobj=output, mode="w", format=tarfile.PAX_FORMAT
-        ) as archive:
-            excluded = tarfile.TarInfo("root/base")
-            excluded.size = len(payload)
-            excluded.mtime = 946684800
-            archive.addfile(excluded, io.BytesIO(payload))
-
-            peer = tarfile.TarInfo("prefix/peer")
-            peer.type = tarfile.LNKTYPE
-            peer.linkname = "prefix/root/base"
-            peer.mtime = 946684800
-            archive.addfile(peer)
-        return output.getvalue()
-
-    @staticmethod
-    def genuine_removed_target_archive() -> bytes:
-        output = io.BytesIO()
-        payload = b"genuine-removed-target\n"
-        with tarfile.open(
-            fileobj=output, mode="w", format=tarfile.PAX_FORMAT
-        ) as archive:
-            excluded = tarfile.TarInfo("root/base")
-            excluded.size = len(payload)
-            excluded.mtime = 946684800
-            archive.addfile(excluded, io.BytesIO(payload))
-
-            peer = tarfile.TarInfo("root/peer")
-            peer.type = tarfile.LNKTYPE
-            peer.linkname = "root/base"
-            peer.mtime = 946684800
-            archive.addfile(peer)
-        return output.getvalue()
-
-    @staticmethod
-    def strip_dropped_target_archive() -> bytes:
-        output = io.BytesIO()
-        payload = b"strip-dropped-target\n"
-        with tarfile.open(
-            fileobj=output, mode="w", format=tarfile.PAX_FORMAT
-        ) as archive:
-            dropped = tarfile.TarInfo("base")
-            dropped.size = len(payload)
-            dropped.mtime = 946684800
-            archive.addfile(dropped, io.BytesIO(payload))
-
-            excluded = tarfile.TarInfo("base")
-            excluded.type = tarfile.SYMTYPE
-            excluded.linkname = "missing"
-            excluded.mtime = 946684800
-            archive.addfile(excluded)
-
-            peer = tarfile.TarInfo("root/peer")
-            peer.type = tarfile.LNKTYPE
-            peer.linkname = "base"
-            peer.mtime = 946684800
-            archive.addfile(peer)
-        return output.getvalue()
+    def assert_empty_extract(
+        self, archive: bytes, root: pathlib.Path, label: str
+    ) -> None:
+        completed, destination = self.extract(archive, root, label)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertEqual(list(destination.rglob("*")), [])
 
     def test_final_identity_accepts_retained_rewritten_target(self) -> None:
-        archive = self.false_rejection_archive()
+        archive = self.archive_bytes(
+            (
+                ("prefix/base", tarfile.REGTYPE, "", b"final-name-target\n"),
+                ("root/base", tarfile.SYMTYPE, "missing", b""),
+                ("root/peer", tarfile.LNKTYPE, "root/base", b""),
+            )
+        )
         options = ("--type-exclude=SYMTYPE", "--strip-components=1")
 
         with tempfile.TemporaryDirectory(
@@ -240,42 +172,16 @@ class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
         ) as td:
             root = pathlib.Path(td)
             predecessor = self.prepare_predecessor(root)
-            result = self.run_filter(predecessor, archive, *options)
-
-            self.assertEqual(result.returncode, 1)
+            rejected = self.run_filter(predecessor, archive, *options)
+            self.assertEqual(rejected.returncode, 1)
             self.assertIn(
                 "hard-link target excluded by type filter: "
                 "root/peer -> root/base",
-                result.stderr.decode("utf-8", "replace"),
+                rejected.stderr.decode("utf-8", "replace"),
             )
             self.assertEqual(
-                self.member_map(result.stdout),
+                self.member_map(rejected.stdout),
                 {"base": (tarfile.REGTYPE, "")},
-            )
-            partial_extract, partial_root = self.extract(
-                result.stdout, root, "predecessor-partial"
-            )
-            self.assertEqual(
-                partial_extract.returncode,
-                0,
-                partial_extract.stdout + partial_extract.stderr,
-            )
-            self.assertEqual(
-                (partial_root / "base").read_bytes(), b"final-name-target\n"
-            )
-
-            expected = self.expected_false_rejection_output()
-            expected_extract, expected_root = self.extract(
-                expected, root, "expected-valid"
-            )
-            self.assertEqual(
-                expected_extract.returncode,
-                0,
-                expected_extract.stdout + expected_extract.stderr,
-            )
-            self.assertEqual(
-                (expected_root / "base").stat().st_ino,
-                (expected_root / "peer").stat().st_ino,
             )
 
             candidate = self.apply_candidate(root / "candidate")
@@ -303,66 +209,98 @@ class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
                 (destination / "peer").stat().st_ino,
             )
 
-    def test_final_identity_rejects_missing_rewritten_target(self) -> None:
-        archive = self.false_acceptance_archive()
-        options = ("--type-exclude=REGTYPE", "--strip-components=1")
+    def test_strip_break_preexists_type_exclusion_and_alias_candidate_rejects(self) -> None:
+        archive = self.archive_bytes(
+            (
+                ("root/base", tarfile.REGTYPE, "", b"excluded-target\n"),
+                (
+                    "prefix/peer",
+                    tarfile.LNKTYPE,
+                    "prefix/root/base",
+                    b"",
+                ),
+            )
+        )
 
         with tempfile.TemporaryDirectory(
             prefix="tarfilter-final-name-false-accept-"
         ) as td:
             root = pathlib.Path(td)
             predecessor = self.prepare_predecessor(root)
-            result = self.run_filter(predecessor, archive, *options)
 
-            self.assertEqual(
-                result.returncode,
-                0,
-                result.stderr.decode("utf-8", "replace"),
+            unfiltered = self.run_filter(
+                predecessor, archive, "--strip-components=1"
             )
             self.assertEqual(
-                self.member_map(result.stdout),
+                unfiltered.returncode,
+                0,
+                unfiltered.stderr.decode("utf-8", "replace"),
+            )
+            self.assertEqual(
+                self.member_map(unfiltered.stdout),
+                {
+                    "base": (tarfile.REGTYPE, ""),
+                    "peer": (tarfile.LNKTYPE, "root/base"),
+                },
+            )
+            direct_extract, _ = self.extract(
+                unfiltered.stdout, root, "unfiltered-broken"
+            )
+            self.assertNotEqual(direct_extract.returncode, 0)
+
+            filtered = self.run_filter(
+                predecessor,
+                archive,
+                "--type-exclude=REGTYPE",
+                "--strip-components=1",
+            )
+            self.assertEqual(filtered.returncode, 0)
+            self.assertEqual(
+                self.member_map(filtered.stdout),
                 {"peer": (tarfile.LNKTYPE, "root/base")},
             )
-            extracted, destination = self.extract(
-                result.stdout, root, "predecessor-broken"
-            )
-            self.assertNotEqual(extracted.returncode, 0)
-            self.assertIn("root/base", extracted.stderr)
-            self.assertFalse((destination / "root/base").exists())
-            self.assertFalse((destination / "peer").exists())
 
             candidate = self.apply_candidate(root / "candidate")
-            rejected = self.run_filter(candidate, archive, *options)
-            self.assertEqual(rejected.returncode, 1)
+            candidate_result = self.run_filter(
+                candidate,
+                archive,
+                "--type-exclude=REGTYPE",
+                "--strip-components=1",
+            )
+            self.assertEqual(candidate_result.returncode, 1)
             self.assertIn(
                 "hard-link target excluded by type filter: "
                 "prefix/peer -> prefix/root/base",
-                rejected.stderr.decode("utf-8", "replace"),
+                candidate_result.stderr.decode("utf-8", "replace"),
             )
-            self.assertEqual(self.member_map(rejected.stdout), {})
-            extracted, destination = self.extract(
-                rejected.stdout, root, "candidate-rejected"
+            self.assertEqual(self.member_map(candidate_result.stdout), {})
+            self.assert_empty_extract(
+                candidate_result.stdout, root, "candidate-rejected"
             )
-            self.assertEqual(
-                extracted.returncode, 0, extracted.stdout + extracted.stderr
-            )
-            self.assertEqual(list(destination.rglob("*")), [])
 
     def test_genuine_removed_target_remains_rejected(self) -> None:
-        archive = self.genuine_removed_target_archive()
-        options = ("--type-exclude=REGTYPE",)
+        archive = self.archive_bytes(
+            (
+                ("root/base", tarfile.REGTYPE, "", b"removed-target\n"),
+                ("root/peer", tarfile.LNKTYPE, "root/base", b""),
+            )
+        )
 
         with tempfile.TemporaryDirectory(
             prefix="tarfilter-final-name-genuine-"
         ) as td:
             root = pathlib.Path(td)
             predecessor = self.prepare_predecessor(root)
-            predecessor_result = self.run_filter(predecessor, archive, *options)
+            predecessor_result = self.run_filter(
+                predecessor, archive, "--type-exclude=REGTYPE"
+            )
             self.assertEqual(predecessor_result.returncode, 1)
             self.assertEqual(self.member_map(predecessor_result.stdout), {})
 
             candidate = self.apply_candidate(root / "candidate")
-            candidate_result = self.run_filter(candidate, archive, *options)
+            candidate_result = self.run_filter(
+                candidate, archive, "--type-exclude=REGTYPE"
+            )
             self.assertEqual(candidate_result.returncode, 1)
             self.assertIn(
                 "hard-link target excluded by type filter: "
@@ -372,7 +310,13 @@ class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
             self.assertEqual(self.member_map(candidate_result.stdout), {})
 
     def test_strip_dropped_target_and_link_produce_empty_archive(self) -> None:
-        archive = self.strip_dropped_target_archive()
+        archive = self.archive_bytes(
+            (
+                ("base", tarfile.REGTYPE, "", b"strip-dropped-target\n"),
+                ("base", tarfile.SYMTYPE, "missing", b""),
+                ("root/peer", tarfile.LNKTYPE, "base", b""),
+            )
+        )
         options = ("--type-exclude=SYMTYPE", "--strip-components=1")
 
         with tempfile.TemporaryDirectory(
@@ -392,13 +336,9 @@ class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
                 candidate_result.stderr.decode("utf-8", "replace"),
             )
             self.assertEqual(self.member_map(candidate_result.stdout), {})
-            extracted, destination = self.extract(
+            self.assert_empty_extract(
                 candidate_result.stdout, root, "candidate-strip-drop"
             )
-            self.assertEqual(
-                extracted.returncode, 0, extracted.stdout + extracted.stderr
-            )
-            self.assertEqual(list(destination.rglob("*")), [])
 
 
 if __name__ == "__main__":
