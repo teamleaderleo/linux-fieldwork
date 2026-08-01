@@ -8,6 +8,7 @@ override_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/install
 sourcesfilter_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/sourcesfilter-deb822.patch"
 capability_patch="$repo_root/investigations/mmdebstrap-root-without-cap-sys-admin-hard-failure/0001-run-hook-free-capability-case-as-hard-failure.patch"
 signal_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/sigint-process-group-kill-sid.patch"
+unit09_patch="$repo_root/investigations/mmdebstrap-autopkgtest-1141078/dev-ptmx-bsdutils-source.patch"
 phase_order_tool="$repo_root/tools/reorder_mmdebstrap_hook_free_phase.py"
 run_id=${RUN_ID:-"local-$(date -u +%Y%m%dT%H%M%SZ)"}
 run_dir=${RUN_DIR:-"$repo_root/investigations/mmdebstrap-autopkgtest-1141078/runs/$run_id"}
@@ -80,6 +81,9 @@ fi
 if [[ ! -f $signal_patch ]]; then
   finish_early 2 "sid process-group signal compatibility patch is missing"
 fi
+if [[ ! -f $unit09_patch ]]; then
+  finish_early 2 "unit 09 dev-ptmx dependency patch is missing"
+fi
 if [[ ! -f $phase_order_tool ]]; then
   finish_early 2 "integration-only hook-free phase ordering tool is missing"
 fi
@@ -108,6 +112,9 @@ fi
 if ! apply_exact_patch signal "$signal_patch"; then
   finish_early 2 "sid process-group signal patch failed exact application"
 fi
+if ! apply_exact_patch unit09 "$unit09_patch"; then
+  finish_early 2 "unit 09 dev-ptmx dependency patch failed exact application"
+fi
 python3 "$phase_order_tool" "$source_tree/debian/tests/testsuite" \
   >"$run_dir/phase-order.stdout" 2>"$run_dir/phase-order.stderr"
 
@@ -119,13 +126,14 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
   printf -- '- Run ID: `%s`\n' "$run_id"
   printf -- '- Timeout: `%s`\n' "$timeout_duration"
   printf -- '- Imported source path: `%s`\n' "upstream/mmdebstrap"
-  printf -- '- Execution source: temporary copy with installed-command, Deb822 sourcesfilter, hook-free hard-failure scheduling, sid process-group signal compatibility, and integration-only phase-order transformations\n'
+  printf -- '- Execution source: temporary copy with installed-command, Deb822 sourcesfilter, hook-free hard-failure scheduling, sid process-group signal compatibility, unit-09 dev-ptmx dependency, and integration-only execution transformations\n'
   printf -- '- Patch application contract: `zero fuzz and zero offset`\n'
   printf -- '- Wrapper purpose: execute `/usr/bin/mmdebstrap` while bypassing source-preflight checks that current tooling applies to the older packaged script\n'
   printf -- '- Sourcesfilter purpose: process current Deb822 apt source entries through python-apt exploded entries instead of asserting\n'
   printf -- '- Scheduling purpose: retain the landing candidate that runs the mount-capability case in a dedicated hook-free phase with hard ordinary failures\n'
   printf -- '- Signal compatibility purpose: replace the rejected procps long form with the exact dash builtin spelling proven by current sid process-group topology evidence\n'
-  printf -- '- Integration-order purpose: run that exact hook-free block before the broad matrix, then continue the broad matrix unchanged so an unrelated earlier failure cannot hide Packet B execution\n'
+  printf -- '- Unit-09 purpose: include `bsdutils` in the generated `dev-ptmx` root so both inner `script(1)` calls have their provider\n'
+  printf -- '- Execution transform: `%s`\n' "${UNIT09_FOCUS:-hook-free-hard,broad,soft-transition}"
   if [[ -f $imported_source/.linux-fieldwork-source.json ]]; then
     printf '\n## Imported source\n\n```json\n'
     cat "$imported_source/.linux-fieldwork-source.json"
@@ -136,6 +144,7 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
     "$imported_source/debian/tests/control" \
     "$imported_source/debian/tests/testsuite" \
     "$imported_source/debian/tests/sourcesfilter" \
+    "$imported_source/tests/dev-ptmx" \
     "$imported_source/tests/sigint-during-customize-hook" \
     "$imported_source/coverage.py" \
     "$imported_source/coverage.txt" \
@@ -144,9 +153,11 @@ bash "$repo_root/scripts/capture-linux-context.sh" "$run_dir/context.md"
     "$sourcesfilter_patch" \
     "$capability_patch" \
     "$signal_patch" \
+    "$unit09_patch" \
     "$phase_order_tool" \
     "$source_tree/debian/tests/testsuite" \
     "$source_tree/debian/tests/sourcesfilter" \
+    "$source_tree/tests/dev-ptmx" \
     "$source_tree/tests/sigint-during-customize-hook" \
     "$source_tree/coverage.py" \
     "$source_tree/coverage.txt"
@@ -198,7 +209,8 @@ dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
   printf -- '- Source compatibility override: `sourcesfilter-deb822.patch`\n'
   printf -- '- Test scheduling override: `0001-run-hook-free-capability-case-as-hard-failure.patch`\n'
   printf -- '- Integration signal override: `sigint-process-group-kill-sid.patch`\n'
-  printf -- '- Integration-only order: `hook-free hard phase, broad matrix, soft transition phase`\n'
+  printf -- '- Unit-09 source correction: `dev-ptmx-bsdutils-source.patch`\n'
+  printf -- '- Integration execution: `%s`\n' "${UNIT09_FOCUS:-hook-free hard phase, broad matrix, soft transition phase}"
   if [[ -f $console_log ]]; then
     printf -- '- Console SHA-256: `%s`\n' "$(sha256sum "$console_log" | cut -d' ' -f1)"
   fi
