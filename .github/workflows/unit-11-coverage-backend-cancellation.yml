@@ -1,0 +1,41 @@
+name: Unit 11 coverage backend cancellation
+
+on:
+  push:
+    branches:
+      - upstream/unit-11-coverage-backend-cancellation
+    paths:
+      - "upstream/mmdebstrap/coverage.py"
+      - "upstream/mmdebstrap/run_null.sh"
+      - "upstream-packets/units/11-coverage-backend-cancellation/**"
+      - ".github/workflows/unit-11-coverage-backend-cancellation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  current-import-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out Linux Fieldwork
+        uses: actions/checkout@v4
+
+      - name: Run exact current-import matrix twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_script="upstream-packets/units/11-coverage-backend-cancellation/scripts/test_current_import.py"
+          python3 -m py_compile "$test_script"
+          for pass in first immediate-rerun; do
+            python3 "$test_script" -v 2>&1 | tee "unit-11-${pass}.log"
+          done
+
+      - name: Upload exact logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-11-current-import-gate
+          path: unit-11-*.log
+          if-no-files-found: error
