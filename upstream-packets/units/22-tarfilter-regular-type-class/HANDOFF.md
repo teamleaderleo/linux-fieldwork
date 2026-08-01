@@ -10,7 +10,7 @@ External contact authorized: `false`
 - Repository: `teamleaderleo/linux-fieldwork`
 - Branch: `upstream/unit-22-tarfilter-regular-type-class`
 - Base: `main@6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Exact predecessor before this final handoff refresh: `0f8af82c560f6a97ecf7ac7acdf41d0aa6a6f3c1`
+- Exact predecessor before this final handoff refresh: `22199ee9db26e1c4888e789bd7e68ed4c4f59456`
 - Current head: the commit updating this file; issue #397 checkpoint and draft PR #410 record the resulting SHA.
 - Internal draft PR: #410
 - Packet: `upstream-packets/units/22-tarfilter-regular-type-class/`
@@ -53,19 +53,11 @@ External contact authorized: `false`
 14. Verified GNU patch 2.8 is available locally; shellcheck/shfmt are absent, so no local formatting claim is made.
 15. Performed a bounded current Forgejo issue/pull-request overlap search; no visible equivalent work was found.
 16. Recorded direct Git DNS failures as environment transport limitations, not product results.
-17. Refreshed README, source map, deep dive, tests, decisions, upstream drafts, and this handoff with exact findings and remaining donuts.
+17. Refreshed README, source map, deep dive, tests, decisions, upstream issue/PR drafts, and this handoff with exact findings and remaining donuts.
 
 ## Latest distinguishing result
 
-Both Python 3.13.5 and GNU tar 1.35 classify type flags `b"0"` and `b"\0"` as regular files. Current mmdebstrap stores only `b"0"` for the documented regular selector. The native regression fails on the unchanged mapping because `nul-regular` survives, then passes twice when the selector stores both bytes. Historical exact-source CI already passed the retained candidate. The new exact-source hosted gate is queued and therefore supplies no new success claim yet.
-
-## Current hosted state
-
-- Draft PR: #410
-- Exact predecessor head: `0f8af82c560f6a97ecf7ac7acdf41d0aa6a6f3c1`
-- Latest observed run for that predecessor: `30694081756`
-- Workflow/job state: queued
-- Interpretation: queued is not evidence.
+Both Python 3.13.5 and GNU tar 1.35 classify type flags `b"0"` and `b"\0"` as regular files. Current mmdebstrap stores only `b"0"` for the documented regular selector. The native regression fails on the unchanged mapping because `nul-regular` survives, then passes twice when the selector stores both bytes. Historical exact-source CI already passed the retained candidate. The new exact-source hosted gate has been submitted to internal draft PR #410; its current exact-head run must be resolved after this handoff commit appears.
 
 ## First incomplete step
 
