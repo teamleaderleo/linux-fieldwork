@@ -5,7 +5,7 @@
 | Role | Path or carrier | Exact identity | Notes |
 | --- | --- | --- | --- |
 | imported tarfilter | `upstream/mmdebstrap/tarfilter` | blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` | Type exclusion occurs before strip and transform processing. |
-| unit-15 rewrite prerequisite | `patches/0000-unit15-transform-metadata-prerequisite.patch` | copied from unit 15 patch blob `38510533dc015182f3e87e9d2f3777eea5b8c93b` | Adds clean strip/link rewriting, five-field transforms, `_sed_substitute`, scope handling, and PAX cleanup. |
+| unit-15 rewrite prerequisite | `patches/0000-unit15-transform-metadata-prerequisite.patch` | copied from unit-15 patch blob `38510533dc015182f3e87e9d2f3777eea5b8c93b` | Adds clean strip/link rewriting, five-field transforms, `_sed_substitute`, scope handling, and PAX cleanup. |
 | current upstream repository | `https://salsa.debian.org/debian/mmdebstrap.git` | branch `master`; exact head pending | Current-master fetch and rebase remain. |
 
 ## Canonical carriers
@@ -74,6 +74,17 @@ A reference already broken without type exclusion stays outside unit 16. The dir
 | `tests/test_tarfilter_type_excluded_hardlink_patch_contract.py` | Exact patch composition and syntax. |
 | `tests/test_tarfilter_type_excluded_duplicate_target.py` | Finalized output, retained duplicate target, and post-skip retention timing. |
 | unit-15 tests | Transform occurrence, scope, hard-link target rewriting, and PAX regeneration compatibility. |
+
+## Complete branch fence
+
+Branch comparison against `main` at `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` contains exactly 14 added files:
+
+- 2 executable test modules;
+- 8 packet records and drafts;
+- 3 active ordered patches;
+- 1 rejected patch retained as evidence.
+
+The branch does not modify `upstream/mmdebstrap/tarfilter` directly.
 
 ## Superseded or historical carriers
 
