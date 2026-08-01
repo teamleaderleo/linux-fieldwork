@@ -1,0 +1,11 @@
+diff --git a/tests/sigint-during-customize-hook b/tests/sigint-during-customize-hook
+--- a/tests/sigint-during-customize-hook
++++ b/tests/sigint-during-customize-hook
+@@ -8,6 +8,6 @@ rm hookstarted
+ # negative PID values choose the whole process group
+ pgid=$((-1 * $(ps -p "$pid" -o pgid=)))
+-/bin/kill --signal INT -- "$pgid"
++/bin/dash -c 'kill -s INT -- "$1"' dash "$pgid"
+ ret=0
+ wait $pid || ret=$?
+ rm -r /tmp/debian-chroot
