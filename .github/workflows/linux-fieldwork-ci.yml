@@ -118,6 +118,7 @@ jobs:
     timeout-minutes: 180
     env:
       RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+      UNIT09_FOCUS: dev-ptmx
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
@@ -134,6 +135,7 @@ jobs:
             --workdir /work \
             --env RUN_ID="$RUN_ID" \
             --env AUTOPKGTEST_TIMEOUT=160m \
+            --env UNIT09_FOCUS="$UNIT09_FOCUS" \
             debian:sid-slim \
             bash -lc '
               set -euo pipefail
