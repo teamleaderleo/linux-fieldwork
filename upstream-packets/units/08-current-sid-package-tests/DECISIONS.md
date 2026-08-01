@@ -126,6 +126,32 @@
 
 **Authority effect:** External contact remains unauthorized.
 
+---
+
+## 2026-08-01 — make the complete series one executable repository gate
+
+**Decision:** Add `tests/test_upstream_packet_unit_08_current_sid_package_tests.py` as the canonical internal series-application gate.
+
+**Reason:** The packet previously carried a manual command only. A repository test can apply the series twice to fresh imported-source copies, reject fuzz/offset, compile and parse all transformed files, prove deterministic candidate bytes, and verify the imported source stays unchanged.
+
+**Evidence:** Gate commit `7782872ae2f731a27ed672df3a37b1d3b1581aa4`; syntax-only receipt `py_compile=PASS`, `ast_parse=PASS`, source SHA-256 `a16b060b02a7c9e1b43db600f0f5789e6e5fc3add7cf93dc95ca32ad314b3dd6`.
+
+**Alternatives considered:**
+
+- leave the manual command as the sole gate;
+- create another packet-specific workflow;
+- mutate the imported source directly on the packet branch.
+
+**Consequences:**
+
+- ordinary Linux Fieldwork CI can execute the complete series once a PR or workflow-dispatch path is available;
+- no new workflow or privileged execution surface is introduced;
+- the exact series remains unproved until the test runs against a full checkout.
+
+**Reopen trigger:** The test proves too expensive, duplicates an accepted generic packet gate, or exact execution reveals a missing source file or false receipt assumption.
+
+**Authority effect:** Internal test work only. A blocked draft-PR creation was treated as a connector event and was not retried; external-contact state remains unchanged.
+
 ## Final disposition
 
-`ACTIVE` on 2026-08-01. The upstream-facing series and full packet exist. Exact distilled-series application, focused execution, current-sid package execution, and live Salsa-master refresh remain open.
+`ACTIVE` on 2026-08-01. The upstream-facing series, full packet, and executable exact-series gate exist. Gate execution, focused execution, current-sid package execution, and live Salsa-master refresh remain open.
