@@ -4,21 +4,20 @@ State: `ACTIVE`
 Priority-zero issue: #397, unit 08  
 Worker or variant: `primary composition`  
 Linux Fieldwork branch: `upstream/unit-08-current-sid-package-tests`  
+Internal execution carrier: draft PR #405  
 External contact authorized: `false`
 
 ## TL;DR
 
 Four upstream-facing test-suite corrections have been extracted from the carrier history into an ordered patch series. The series accepts Deb822 sources, pins behavioral execution to `/usr/bin/mmdebstrap`, uses a current-sid process-group SIGINT spelling, and runs the no-`CAP_SYS_ADMIN` consumer with a phase-local `tar1.txt` producer while allowing broad-phase regeneration. Linux Fieldwork-only proxies, workflows, artifact collectors, probes, and guard harnesses are excluded.
 
-The current exact executable base is Debian mmdebstrap `debian/1.5.7-3` at `6fde999741f4fe1e7bf38079acf29432ef87a35e`. Historical real-sid run 999 cleared the phase-local producer/consumer repair and reached the independent `chrootless` directory-mtime result after 154 completed tests. An executable Linux Fieldwork gate now applies the exact ordered series twice with zero-fuzz/zero-offset requirements, syntax checks, deterministic candidate digests, and imported-source immutability checks. The gate is committed and syntax-valid; repository execution and the live Salsa-master overlap/rebase check remain pending.
+The executable base is Debian mmdebstrap `debian/1.5.7-3` at `6fde999741f4fe1e7bf38079acf29432ef87a35e`. Historical real-sid run 999 cleared the phase-local producer/consumer repair and reached the independent `chrootless` directory-mtime result after 154 completed tests.
+
+The exact ordered series gate has now executed successfully through draft Linux Fieldwork PR #405, workflow `30690576566` / 1145. It validated four patch files and seven hunks, applied the series twice with zero-fuzz requirements, checked transformed Python and shell syntax, verified deterministic receipts/digests and source immutability, and passed the complete 439-test Linux Fieldwork suite. The next technical boundary is a live fetch and overlap/rebase against current Salsa `master`, followed by focused upstream-native and current-sid package execution.
 
 ## Accomplished behavior
 
 The package suite processes current Deb822 source paragraphs, invokes the installed mmdebstrap binary through a stable absolute path, interrupts the complete customize-hook process group with syntax accepted by current sid, executes `root-without-cap-sys-admin` without mount-dependent APT hooks, creates its archive baseline immediately beforehand, and recreates the broad baseline under the broad hook configuration.
-
-## Why care
-
-Each prior failure stopped the package matrix before the next independent product result: a Deb822 assertion, command loss after a directory change, procps `kill` argument rejection, a mount-dependent hook after dropping `CAP_SYS_ADMIN`, a missing `tar1.txt`, and then a stale baseline generated under the wrong hook phase. The composed corrections let the package test classify actual mmdebstrap behavior.
 
 ## Scope
 
@@ -48,14 +47,14 @@ The four patches stay ordered in one package-test submission because they remove
 | --- | --- |
 | Upstream project | mmdebstrap |
 | Canonical repository | `https://salsa.debian.org/debian/mmdebstrap.git` |
-| Intended base branch | `master`; executable package base currently pinned to `debian/1.5.7-3` |
+| Intended base branch | `master`; executable package base pinned to `debian/1.5.7-3` pending live refresh |
 | Upstream base commit | `6fde999741f4fe1e7bf38079acf29432ef87a35e` |
 | Controlled fork | `NEEDS FORK` |
 | Candidate source branch | patch-series packet; upstream branch absent |
-| Candidate head | `PENDING EXECUTED SERIES GATE` |
+| Candidate technical state | `DISTILLED SERIES GATE PASSED; LIVE REBASE PENDING` |
 | Linux Fieldwork branch | `upstream/unit-08-current-sid-package-tests` |
-| Linux Fieldwork series-gate commit | `7782872ae2f731a27ed672df3a37b1d3b1581aa4` |
-| Linux Fieldwork head | see `HANDOFF.md` |
+| Series-gate source commit | `7782872ae2f731a27ed672df3a37b1d3b1581aa4` |
+| Exact gate run | PR #405; workflow `30690576566` / 1145; tested head `a361f91f1b9cc3167baad5fbd6c61bbee546a10e`; generated merge `4c5abe5e3777cfa57a5d1551e1975a8d769a8814` |
 | Imported/local source identity | `upstream/mmdebstrap/.linux-fieldwork-source.json`; imported 2026-07-30 |
 | Patch or series path | `upstream-packets/units/08-current-sid-package-tests/patches/series` |
 | Proposed destination | Debian/mmdebstrap Salsa project |
@@ -66,6 +65,7 @@ The four patches stay ordered in one package-test submission because they remove
 - Priority-zero unit: #397 unit 08
 - Canonical history: #119/PR #72, #153/PR #171, #320/PR #326, #350, #357, PRs #354 and #359
 - Clean current-main execution carrier: PR #361
+- Internal exact-series execution carrier: draft PR #405
 - Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
 - Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
 - Tests and receipts: [`TESTS.md`](TESTS.md)
@@ -82,14 +82,15 @@ The four patches stay ordered in one package-test submission because they remove
 - Current-sid signal selection found dash builtin `kill -s INT -- -PGID` and external compact `kill -INT -- -PGID` as status-zero whole-group spellings; the retained package patch uses the dash builtin.
 - Run 974 executed `create-directory` followed by `root-without-cap-sys-admin`; both passed, exposing phase leakage into broad consumers.
 - Run 999 executed the focused producer/consumer and the later broad producer successfully, completed 154 tests, and first failed independently at `chrootless` directory mtimes.
-- The complete-series test module was committed at `7782872ae2f731a27ed672df3a37b1d3b1581aa4`; its exact source passed Python byte-compilation and AST parsing with SHA-256 `a16b060b02a7c9e1b43db600f0f5789e6e5fc3add7cf93dc95ca32ad314b3dd6`.
+- PR #405 run `30690576566` validated four patches/seven hunks and passed `test_series_applies_exactly_and_reruns_cleanly`.
+- The same run retained 439 of 462 discovered tests after exact inherited-duplicate removal, ran all 439 in 166.008 seconds, and finished `OK`.
+- Compile and shell/help checks passed; hosted-runner cleanup completed.
 
 ### Yet to be demonstrated
 
-- execution of the complete-series test against the repository tree;
-- focused syntax and package-test execution on the exact distilled head;
-- live overlap/rebase against current Salsa `master`;
-- a current sid run from the exact upstream-facing series without the proxy or other evidence machinery.
+- live overlap/rebase against the current exact Salsa `master` commit;
+- focused upstream-native execution on that refreshed distilled head;
+- a current sid run from the exact upstream-facing series without proxy or evidence machinery.
 
 ### Compatibility boundary
 
@@ -109,12 +110,12 @@ The order follows the historical first-failure sequence and keeps each behavior 
 
 ## Current disposition
 
-`ACTIVE` — the exact series and its executable repository gate exist. The gate execution, focused upstream-native run, current-sid exact-series run, and live Salsa-master refresh remain incomplete.
+`ACTIVE` — exact imported-base application and rerun are green. Live Salsa-master refresh, focused upstream-native execution, and an exact current-sid package run remain incomplete.
 
-## Next human decision
+## Next technical action
 
-After the exact series gate and live rebase complete, choose whether the four sequential package-test corrections should be sent as one Salsa merge request or as a short ordered series of smaller merge requests.
+Fetch current Salsa `master`, record the exact commit, search active overlap, reapply or rebase the series with zero fuzz/offset, then rerun the distilled-series gate before current-sid package execution.
 
 ## Authority
 
-Internal repository reads, branch work, patch composition, testing, review, and draft preparation are authorized. No external issue, merge request, email, comment, review, or other public contact has been authorized or made for unit 08.
+Internal repository reads, branch work, patch composition, testing, review, draft preparation, draft Linux Fieldwork PR #405, and issue checkpoints are authorized. No external issue, merge request, email, comment, review, or other public contact has been authorized or made for unit 08.
