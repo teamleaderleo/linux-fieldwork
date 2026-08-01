@@ -8,7 +8,9 @@ External contact authorized: `false`
 
 ## TL;DR
 
-The complete product boundary consists of four ordered corrections: reject credential-bearing launches and scrub the dpkg environment; derive package temporaries below `<target>/tmp`; use apt's configured non-empty `DPkg::Path` for maintainer-script command lookup; and invoke the sanitizer through validated `/usr/bin/env`. Linux Fieldwork has exact passing evidence for each component and for the composed executable-authority pair. This packet retains an ordered upstream patch series against the imported Debian `1.5.7-3` source identity and leaves a current Salsa `master` rebase plus exact full-series transaction run as the first incomplete work.
+The complete product boundary consists of four ordered corrections: reject credential-bearing launches and scrub the dpkg environment; derive package temporaries below `<target>/tmp`; use apt's configured non-empty `DPkg::Path` for maintainer-script command lookup; and invoke the sanitizer through validated `/usr/bin/env`. Linux Fieldwork has exact passing evidence for each component and for the composed executable-authority pair.
+
+A controlled GitHub mirror now exists at `teamleaderleo/mmdebstrap`. Its `master` tip is `574048f2a720057b75e56622003932f344dc700a`, carrying mmdebstrap `1.5.7-3`, and its `mmdebstrap` source blob is `075582e1ca9cf50a1be497105ba77c82345c2bf3`. Candidate branch `linux-fieldwork/unit-06-chrootless-maintainer-boundary` was created from that exact tip. The mirror resolves the candidate-hosting blocker. It remains a mirror rather than a direct Salsa fork, so final delivery still needs a later destination decision and explicit authorization.
 
 ## Accomplished behavior
 
@@ -50,16 +52,20 @@ The four corrections overlap the same helper and its two call sites. Splitting e
 | Upstream project | mmdebstrap |
 | Canonical repository | `https://salsa.debian.org/debian/mmdebstrap` |
 | Intended base branch | `master` |
-| Upstream base commit | `UNRESOLVED CURRENT MASTER`; released/imported base `6fde999741f4fe1e7bf38079acf29432ef87a35e` (`debian/1.5.7-3`) |
-| Controlled fork | `NEEDS FORK` |
-| Candidate source branch | `NEEDS BRANCH` |
-| Candidate head | `UNBUILT CURRENT-UPSTREAM CANDIDATE` |
+| Canonical Salsa base commit | unresolved in this runtime |
+| Released/imported base | `6fde999741f4fe1e7bf38079acf29432ef87a35e` (`debian/1.5.7-3`) |
+| Controlled mirror | `https://github.com/teamleaderleo/mmdebstrap` |
+| Mirror base branch | `master` |
+| Mirror base commit | `574048f2a720057b75e56622003932f344dc700a` |
+| Mirror source blob | `075582e1ca9cf50a1be497105ba77c82345c2bf3` (`mmdebstrap`) |
+| Candidate source branch | `linux-fieldwork/unit-06-chrootless-maintainer-boundary` |
+| Candidate head | currently equal to mirror base pending patch application |
 | Linux Fieldwork branch | `upstream/unit-06-chrootless-maintainer-boundary` |
-| Linux Fieldwork head | updated by each packet commit; see `HANDOFF.md` |
-| Imported/local source identity | blob `41aa46f989a2660cebdb0138e0847cde25b269a3` at Linux Fieldwork `main` `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
+| Linux Fieldwork head | see `HANDOFF.md` |
+| Imported/local post-component source identity | blob `41aa46f989a2660cebdb0138e0847cde25b269a3` at Linux Fieldwork `main` `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
 | Patch or series path | `patches/series` |
 | Proposed destination | Debian/mmdebstrap canonical Salsa repository |
-| Delivery method | `GitLab/Salsa fork and merge request`; fork absent |
+| Delivery method | `NEEDS DESTINATION DECISION`; likely Salsa merge request or patch series |
 
 ## Canonical links
 
@@ -68,6 +74,8 @@ The four corrections overlap the same helper and its two call sites. Splitting e
 - Canonical Linux Fieldwork compositions: PR #57, PR #74, PR #368
 - Evidence predecessor: PR #22 (LF-02)
 - Superseded/intermediate carriers: PR #73, PR #109, PR #349
+- Controlled mirror: `teamleaderleo/mmdebstrap`
+- Candidate mirror branch: `linux-fieldwork/unit-06-chrootless-maintainer-boundary`
 - Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
 - Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
 - Tests and receipts: [`TESTS.md`](TESTS.md)
@@ -84,16 +92,17 @@ The four corrections overlap the same helper and its two call sites. Splitting e
 - PR #57 rejected tested unsafe launch variables, redacted fake values, kept apt proxy/auth state at apt, scrubbed apt-managed dpkg, preserved selected required state, and blocked the fake agent socket.
 - PR #74 kept package `mktemp` below target `tmp`, enforced mode `01777`, rejected symlink/non-directory targets, cleaned up, reran, and passed fakeroot.
 - PR #368 proved configured `DPkg::Path` and absolute `/usr/bin/env` for direct and apt-managed paths with losing mutations and equal installed package sets.
-- The imported source already contains the PR #57 and PR #74 product changes. The two PR #368 product patches apply to that exact imported source with zero fuzz according to the merged carrier.
+- The controlled mirror exposes an exact released-source base and a writable candidate branch.
+- The mirror base source is pre-hardening at the relevant boundary: `run_essential()` follows `run_prepare()` directly and has no `chrootless_dpkg_environment` helper at the inspected source range.
 
 ### Not yet demonstrated
 
-- exact current Salsa `master` identity and patch application;
-- one clean four-patch application from released/current upstream source;
-- current-upstream direct and apt-managed transactions with the complete detector, temporary-directory, inner-PATH, and outer-wrapper matrix in one run;
-- current-upstream formatting and full relevant native tests;
-- active-overlap search on current Salsa issues and merge requests;
-- controlled fork and candidate branch.
+- ordered four-patch application on mirror commit `574048f2a720057b75e56622003932f344dc700a`;
+- exact candidate head after application;
+- direct and apt-managed transactions with the complete detector, temporary-directory, inner-PATH, and outer-wrapper matrix on the mirror candidate;
+- mirror-candidate formatting and relevant native tests;
+- exact relation between the mirror base and current canonical Salsa `master`;
+- active-overlap search on current Salsa issues and merge requests.
 
 ### Compatibility boundary
 
@@ -110,11 +119,11 @@ These commits form one coherent invariant while keeping review history legible. 
 
 ## Current disposition
 
-`ACTIVE` — current-upstream identity, application, and complete transaction gates remain.
+`ACTIVE` — controlled candidate hosting exists; patch application and complete candidate gates remain.
 
 ## Next human decision
 
-No human decision is needed yet. Technical rebase and validation come first. A later decision will authorize or hold external submission after the packet reaches `READY FOR AUTHORIZATION`.
+No additional setup is required from the repository owner. Technical application and validation come next. A later decision will authorize or hold external submission after the packet reaches `READY FOR AUTHORIZATION`.
 
 ## Authority
 
