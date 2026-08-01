@@ -1,0 +1,87 @@
+Unit 05 controlled-fork lifecycle matrix
+Date: 2026-08-01
+Execution: local Python harness driving real /bin/sh reduced fixtures
+Controlled repository: teamleaderleo/mmdebstrap
+Base commit: 574048f2a720057b75e56622003932f344dc700a
+Patch 1 commit: 614fb26a4f0724618a5eecd3ce1bee12454ff7de
+Patch 2 commit: cb6ef6d6c2b1368b3603b2ec06635c3815f31e11
+Patch 3 commit: 13cf34fd87d44b4d37c6767fdbd153b2ef535a57
+Final commit: 457095c6f89655ab12b7055307f519e71bb0dbca
+Final run_qemu.sh blob: 3e8d4dc07f91d246a372749eb49ff9489c21c7b7
+Final SHA-256: 8d2b0fdef2c93fcd3d97f296dfe58d3cbe198e8a02ac85930aa8c3c89aedb90f
+
+Command:
+  python3 2026-08-01-controlled-fork-lifecycle-matrix.py
+
+Harness boundary:
+  Exact lifecycle function/trap blocks were copied from the five exact GitHub source states.
+  The fixtures execute under /bin/sh in disposable directories and use real PID-targeted INT/TERM delivery.
+  QEMU, debvm-run, mounts, networking, root operations, and package installation were not executed.
+
+Fixture corrections before authoritative run:
+  1. The first harness waited for a cleanup barrier before sending the signal that enters cleanup.
+     Owner: fixture synchronization. Product code remained unchanged.
+  2. The second harness expected ordinary baseline EXIT cleanup to re-enter.
+     Owner: fixture classifier. Re-entry belongs to the explicit-signal baseline case.
+     Product code remained unchanged.
+
+Summary: 58/58 passed; 0 failed
+
+PASS | baseline shell syntax | observed=0 | expected=0
+PASS | p1 shell syntax | observed=0 | expected=0
+PASS | p2 shell syntax | observed=0 | expected=0
+PASS | p3 shell syntax | observed=0 | expected=0
+PASS | final shell syntax | observed=0 | expected=0
+PASS | baseline: host 124 plus guest failure | observed=1 | expected=1
+PASS | baseline: cleanup sequence | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final: host 124 plus guest failure | observed=124 | expected=124
+PASS | final: cleanup sequence | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final matrix success | observed=0 | expected=0
+PASS | final matrix success cleanup | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final matrix guest | observed=1 | expected=1
+PASS | final matrix guest cleanup | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final matrix malformed | observed=1 | expected=1
+PASS | final matrix malformed cleanup | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final matrix host | observed=42 | expected=42
+PASS | final matrix host cleanup | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final matrix host-over-guest | observed=124 | expected=124
+PASS | final matrix host-over-guest cleanup | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final matrix missing-success | observed=1 | expected=1
+PASS | final matrix missing-success cleanup | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final matrix missing-host | observed=42 | expected=42
+PASS | final matrix missing-host cleanup | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final matrix cleanup | observed=74 | expected=74
+PASS | final matrix cleanup cleanup | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final matrix host-over-cleanup | observed=42 | expected=42
+PASS | final matrix host-over-cleanup cleanup | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final matrix guest-over-cleanup | observed=1 | expected=1
+PASS | final matrix guest-over-cleanup cleanup | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | baseline explicit SIGINT | observed=0 | expected=0
+PASS | baseline explicit SIGINT later marker | observed=false | expected=false
+PASS | baseline explicit SIGTERM | observed=0 | expected=0
+PASS | baseline explicit SIGTERM later marker | observed=false | expected=false
+PASS | final explicit SIGINT | observed=130 | expected=130
+PASS | final explicit SIGINT later marker | observed=false | expected=false
+PASS | final explicit SIGTERM | observed=143 | expected=143
+PASS | final explicit SIGTERM later marker | observed=false | expected=false
+PASS | p1 TERM then INT | observed=-2 | expected=-2
+PASS | p1 cleanup interrupted | observed=["rm"] | expected=["rm"]
+PASS | p1 leaves tmpdir | observed=true | expected=true
+PASS | p2 TERM then INT | observed=143 | expected=143
+PASS | p2 completes cleanup | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | p2 removes tmpdir | observed=false | expected=false
+PASS | p2 ordinary cleanup TERM guest=0 | observed=0 | expected=0
+PASS | p2 ordinary cleanup completes | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | p3 ordinary cleanup TERM guest=0 | observed=143 | expected=143
+PASS | p3 ordinary cleanup completes | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | p3 ordinary cleanup TERM guest=1 | observed=143 | expected=143
+PASS | p3 ordinary cleanup completes | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final ordinary cleanup TERM guest=1 | observed=1 | expected=1
+PASS | final ordinary cleanup completes | observed=["rm","rmdir"] | expected=["rm","rmdir"]
+PASS | final ordinary cleanup INT then TERM | observed=130 | expected=130
+PASS | final ordinary cleanup TERM then INT | observed=143 | expected=143
+PASS | final signal over cleanup failure | observed=143 | expected=143
+PASS | final first run guest beats later signal | observed=1 | expected=1
+PASS | final first run cleaned | observed=false | expected=false
+PASS | final immediate rerun | observed=0 | expected=0
+PASS | final rerun cleaned | observed=false | expected=false
