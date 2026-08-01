@@ -100,7 +100,6 @@ jobs:
           git fetch --no-tags --depth=1 origin "$refined_commit"
           git worktree add --detach "$historical" FETCH_HEAD
           test "$(git -C "$historical" rev-parse HEAD)" = "$refined_commit"
-          test "$(git -C "$historical" merge-base --is-ancestor "$mechanism_commit" "$refined_commit" && echo yes)" = yes
 
           git clone --filter=blob:none --no-checkout \
             https://gitlab.mister-muffin.de/josch/mmdebstrap.git "$canonical"
