@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -341,50 +341,70 @@ def main():
+@@ -369,50 +369,70 @@ def main():
                  return True
          return False
  
@@ -19,9 +19,11 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +            name = "/".join(comps[args.strip_components :])
 +            aliases.add(normalize_hardlink_name(name))
 +        if hasattr(args, "trans"):
-+            for regex, replacement, count, scopes in args.trans:
++            for regex, replacement, occurrence, global_after, scopes in args.trans:
 +                if scopes[scope]:
-+                    name = regex.sub(replacement, name, count=count)
++                    name = _sed_substitute(
++                        regex, replacement, name, occurrence, global_after
++                    )
 +                    aliases.add(normalize_hardlink_name(name))
 +        return name, aliases
 +
@@ -102,25 +104,43 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
              member.pax_headers = {
                  k: v
                  for k, v in member.pax_headers.items()
-@@ -399,31 +419,26 @@ def main():
+@@ -427,49 +447,26 @@ def main():
                      exit(1)
                  member.uid += args.idshift
                  member.gid += args.idshift
 -            if hasattr(args, "trans"):
 -                original_name = member.name
 -                original_linkname = member.linkname
--                for regex, replacement, count, scopes in args.trans:
+-                for (
+-                    regex,
+-                    replacement,
+-                    occurrence,
+-                    global_after,
+-                    scopes,
+-                ) in args.trans:
 -                    if scopes["r"]:
--                        member.name = regex.sub(
--                            replacement, member.name, count=count
+-                        member.name = _sed_substitute(
+-                            regex,
+-                            replacement,
+-                            member.name,
+-                            occurrence,
+-                            global_after,
 -                        )
 -                    if member.islnk() and scopes["h"]:
--                        member.linkname = regex.sub(
--                            replacement, member.linkname, count=count
+-                        member.linkname = _sed_substitute(
+-                            regex,
+-                            replacement,
+-                            member.linkname,
+-                            occurrence,
+-                            global_after,
 -                        )
 -                    elif member.issym() and scopes["s"]:
--                        member.linkname = regex.sub(
--                            replacement, member.linkname, count=count
+-                        member.linkname = _sed_substitute(
+-                            regex,
+-                            replacement,
+-                            member.linkname,
+-                            occurrence,
+-                            global_after,
 -                        )
 -                if member.name != original_name:
 -                    member.pax_headers.pop("path", None)
