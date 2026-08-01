@@ -2,151 +2,107 @@
 
 ## State
 
-`HOLD`
+`RETIRED`
 
-Single blocker: exact canonical Forgejo `main` bytes and history, including mailing-list-carried overlap, remain unavailable in this execution environment.
+Canonical mmdebstrap already contains the equivalent correction on `develop`. No external submission should be created.
 
-This unit owns one package-test dependency correction: `tests/dev-ptmx` executes `script(1)` twice inside a generated apt-variant root, so that root must explicitly include `bsdutils`, the package providing `/usr/bin/script`.
+## Canonical successor
 
-## Exact identities
+```text
+repository: josch/mmdebstrap on Muffin Forgejo
+main head: 77ec9be5417ee44c96343d2347145585da1b1f94
+develop head: 6e1e572bc49456daab7fd1274b1f3b8ec4a1c248
+owning commit: c75b58e3c88b1f49626b9ee073e9e9688d38922c
+author date: 2025-11-16T00:04:44+01:00
+subject: make_mirror.sh,tests/dev-ptmx: explicitly install bsdutils for script utility
+resulting tests/dev-ptmx blob: 258a7f9579b2a2b91b6758952851296b44197ae0
+also present on tag: 1.5.7+develop
+```
 
-- Linux Fieldwork issue: `#397`, unit `09`
-- Linux Fieldwork branch: `upstream/unit-09-dev-ptmx-bsdutils`
-- Linux Fieldwork base: `main` at `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Packet directory: `upstream-packets/units/09-dev-ptmx-bsdutils/`
-- Internal packet validation PR: draft `#402`
-- Superseded full-cache execution PR: closed `#403`
-- Optional direct current-sid execution PR: draft `#407`
-- Imported source: `upstream/mmdebstrap/tests/dev-ptmx`, blob `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`
-- Canonical repository: `josch/mmdebstrap` on Muffin Forgejo
-- Canonical branch: `main`
-- Advertised canonical head: `77ec9be5417ee44c96343d2347145585da1b1f94`
-- Canonical source path: `tests/dev-ptmx`
-- Controlled GitHub carrier: `teamleaderleo/mmdebstrap`
-- Carrier provenance: fork of `deepin-community/mmdebstrap`
-- Carrier base: `master` at `574048f2a720057b75e56622003932f344dc700a`
-- Carrier candidate branch: `linux-fieldwork/unit-09-dev-ptmx-bsdutils`
-- Carrier candidate head: `43082a6bc959e2d7cefae48f52e045cc90869287`
-- Carrier candidate blob: `fa93b4b845ff4927a72f258364bd920e8c7dc573`
-- Optional direct execution branch: `investigation/mmdebstrap-dev-ptmx-direct-sid`
-- Optional direct execution head: `ff573bdd4ce1c822fad47218bff052fcc87126a4`
-- External-contact state: unauthorized; internal work only
+Canonical hunk:
+
+```diff
+-	--include=gcc,libc6-dev,python3,passwd \
++	--include=gcc,libc6-dev,python3,passwd,bsdutils \
+```
+
+Canonical `main` still carries baseline blob `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`, while `develop` contains the fix. The downstream GitHub fork followed the older Deepin `1.5.7-3` import and therefore omitted later canonical development history.
+
+## Read-only canonical audit
+
+```text
+internal audit PR: 411
+workflow run: 30704384974
+job: 91380861751
+artifact: 8819850852
+artifact digest: sha256:0504ab41ec727ffb87c5f803a6dc0611534ce0df0c0eadc2587a998808de9c2b
+carrier head: 8c8b8a1753881b86f1d5628be659a98fbcc02c6f
+```
+
+The audit mirror-cloned canonical Forgejo and Debian Salsa repositories, inventoried all refs, inspected complete `tests/dev-ptmx` history, and captured public tracker, BTS, and mailing-list searches. Full path history found the existing canonical commit. The initial summary's exact pickaxe missed it because Linux Fieldwork placed `bsdutils` first while canonical appended it.
+
+Detailed receipt:
+
+```text
+artifacts/CANONICAL-FORGEJO-AUDIT.md
+```
 
 ## Historical owner
 
-Recovered Debian CI run `72574145` tested `mmdebstrap 1.5.7-3` on Debian testing amd64. The suite passed 158 generated cases, skipped 93, then its first and only failure was `(252/283) dev-ptmx --mode=root --variant=apt`.
-
-The generated root included:
-
-```text
-gcc,libc6-dev,python3,passwd
-```
-
-The test attempted:
-
-```text
-chroot "$1" script -c "echo foobar"
-```
-
-and failed with:
+Recovered Debian CI run `72574145` tested `mmdebstrap 1.5.7-3` on Debian testing amd64. Its first and only failure was `(252/283) dev-ptmx --mode=root --variant=apt` after the generated root omitted `bsdutils` and attempted inner-root `script(1)`:
 
 ```text
 chroot: failed to run command ‘script’: No such file or directory
 ```
 
-The failing archive carried `bsdutils 1:2.42.2-1`. `bsdutils` provides `/usr/bin/script`. The Essential-set transition exposed the undeclared test dependency.
+`bsdutils` provides `/usr/bin/script`; the Essential-set transition exposed the undeclared fixture dependency.
 
-## Candidate
+## Linux Fieldwork candidate and evidence
 
-```diff
--  --include=gcc,libc6-dev,python3,passwd \
-+  --include=bsdutils,gcc,libc6-dev,python3,passwd \
-```
-
-Retained upstream-rooted patch:
+Controlled downstream carrier:
 
 ```text
-patches/0001-tests-include-bsdutils-for-dev-ptmx.patch
+repository: teamleaderleo/mmdebstrap
+base: master at 574048f2a720057b75e56622003932f344dc700a
+base blob: ca1cde040f945fe871f904ef6a56e040b6a5c9ea
+candidate branch: linux-fieldwork/unit-09-dev-ptmx-bsdutils
+candidate commit: 43082a6bc959e2d7cefae48f52e045cc90869287
+candidate blob: fa93b4b845ff4927a72f258364bd920e8c7dc573
+compare: one commit, one file, one insertion, one deletion
 ```
 
-Durable evidence and regressions:
+Linux Fieldwork used equivalent package-set semantics with `bsdutils` first:
 
-- `investigations/mmdebstrap-dev-ptmx-bsdutils/0001-include-bsdutils.patch`
-- `investigations/mmdebstrap-dev-ptmx-bsdutils/debci-72574145-summary.json`
+```diff
+-	--include=gcc,libc6-dev,python3,passwd \
++	--include=bsdutils,gcc,libc6-dev,python3,passwd \
+```
+
+Retained evidence:
+
+- `patches/0001-tests-include-bsdutils-for-dev-ptmx.patch`
 - `tests/test_mmdebstrap_dev_ptmx_dependency.py`
 - `tests/test_upstream_packet_unit_09_dev_ptmx_bsdutils.py`
 - `artifacts/CURRENT-SID-DOUBLE-PASS.md`
+- `artifacts/CANONICAL-FORGEJO-AUDIT.md`
 
-## Completed validation
-
-### Static
-
-Exact packet head `a4303b4bf3c02fb4acfc16337e53b68b08626862` passed Linux Fieldwork run `30690010699`:
-
-- valid changed patch carrier;
-- Python compilation;
-- complete repository unit suite;
-- shell syntax and command-help checks.
-
-The regression requires exact baseline and candidate Git blob identities, zero fuzz and zero offset, one changed line, and unchanged customize-hook order.
-
-### Controlled fork
-
-The controlled fork base has the exact imported source blob `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`. Candidate commit `43082a6bc959e2d7cefae48f52e045cc90869287` is one commit ahead and changes one file with one insertion and one deletion. The candidate blob is `fa93b4b845ff4927a72f258364bd920e8c7dc573`.
-
-### Current sid: pass and rerun
-
-Two separate disposable Debian sid containers passed both generated variants with installed `mmdebstrap 1.5.7-3` and `bsdutils 1:2.42.2-2`.
-
-Run `30690241513`:
+Static packet validation passed run `30690010699`. Two separate current-sid containers then passed root and unshare variants with `mmdebstrap 1.5.7-3` and `bsdutils 1:2.42.2-2`:
 
 ```text
-root:    SUCCESS, 18 seconds
-unshare: SUCCESS, 18 seconds
-artifact: 8815599405
-sha256:bd97c229b886501d57d4618381d1a07e446f48f6c46e409e1915f7d8675e0b82
+run 30690241513; artifact 8815599405
+run 30690452822; artifact 8815724078
 ```
 
-Run `30690452822`, preferred exact application receipt:
+Both inner `script` hooks succeeded and every generated root was removed.
 
-```text
-root:    SUCCESS, 36 seconds
-unshare: SUCCESS, 42 seconds
-artifact: 8815724078
-sha256:897189064d42e06367ab652f590eb5827388dce8d883c042f079e49a7662273e
-```
+## Disposition
 
-Across both runs:
-
-- both inner `script -c` hooks printed `foobar`;
-- copied apt logs contained no missing-command signature;
-- `/tmp/test.c` and `/tmp/log` were removed;
-- mmdebstrap removed every generated root;
-- the selected testsuite result was `PASS`.
-
-The outer autopkgtest status `2` came from the unrelated skipped `hint-testsuite-triggers` entry.
-
-## Fork and mailing-list freshness
-
-The user's GitHub repository is a useful Debian `1.5.7-3` implementation carrier. Its history follows the Deepin downstream import. A survey of accessible GitHub repositories found no mirror containing canonical commit `77ec9be5417ee44c96343d2347145585da1b1f94`; newer GitHub timestamps represented local divergence while retaining the same baseline `dev-ptmx` blob.
-
-Public indexed searches found no equivalent correction in the canonical tracker, Debian BTS, or Debian mailing-list archives. Exact canonical bytes and history remain the decisive evidence.
-
-## Hold discriminator
-
-Fetch canonical Forgejo `main` at `77ec9be5417ee44c96343d2347145585da1b1f94`, or a fresher verified head, then inspect `tests/dev-ptmx` history and mailing-list overlap and apply the packet patch with zero fuzz and zero offset.
-
-- Equivalent correction present: retire the external submission.
-- Dependency absent and patch applies cleanly: prepare a canonical fork branch and move to `READY FOR AUTHORIZATION`.
-- Test intent changed: reopen ownership analysis.
-
-Draft PR `#407` is optional supporting confirmation with explicit residual mount/file/process checks. At this checkpoint its latest runs were queued:
-
-```text
-Linux Fieldwork CI:           30691203697
-Direct current-sid execution: 30691203699
-```
+- External mmdebstrap submission: retired as already implemented.
+- Controlled GitHub candidate: historical evidence only; do not propose it upstream.
+- Optional direct run PR `#407`: close as unnecessary after preserving any completed receipt.
+- Canonical audit PR `#411`: close as completed evidence carrier.
+- Future tracking: observe normal canonical promotion from `develop`; no contact is required.
 
 ## Authority
 
-No mmdebstrap or Debian upstream issue, pull request, comment, email, review, or other contact was created. External delivery requires explicit authorization.
+No mmdebstrap or Debian upstream issue, pull request, comment, email, review, mailing-list message, or other contact was created.
