@@ -12,6 +12,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "upstream/mmdebstrap/tarfilter"
+SOURCE_BYTES = SOURCE.read_bytes()
 TRANSFORM_PATCH = ROOT / (
     "investigations/tarfilter-transform-target-scopes/"
     "tarfilter-transform-target-scopes.patch"
@@ -57,7 +58,7 @@ class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
         tree = root / "candidate"
         destination = tree / "upstream/mmdebstrap/tarfilter"
         destination.parent.mkdir(parents=True)
-        shutil.copy2(SOURCE, destination)
+        destination.write_bytes(SOURCE_BYTES)
         self.apply_patch(tree, TRANSFORM_PATCH)
         self.apply_patch(tree, PREDECESSOR_PATCH)
         compiled = subprocess.run(
