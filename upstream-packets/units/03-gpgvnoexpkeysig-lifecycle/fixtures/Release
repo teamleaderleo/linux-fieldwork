@@ -1,0 +1,8 @@
+Origin: Linux Fieldwork Unit 03
+Label: Linux Fieldwork GnuPG Fixture
+Suite: expired-test
+Codename: expired-test
+Date: Sat, 01 Jan 2000 01:00:00 UTC
+Architectures: amd64
+Components: main
+Description: APT-style Release metadata for the gpgvnoexpkeysig real-verifier regression
