@@ -31,17 +31,19 @@ trap 'rm -rf "$work"; if [[ ${cleanup_out:-0} == 1 ]]; then echo "evidence retai
 
 make_root() {
   local root=$1
-  mkdir -p "$root"/{proc,sys}
-  cp -a --parents /proc/cpuinfo "$root"
-  mkdir -p "$root/proc/bus/pci"
-  [[ ! -r /proc/bus/pci/devices ]] || cp -a --parents /proc/bus/pci/devices "$root"
-  cp -a --parents /sys/devices/system/cpu/* "$root"
-  cp -a --parents /sys/devices/system/node/*/cpumap "$root"
-  [[ ! -r /sys/kernel/cpu_byteorder ]] || cp -a --parents /sys/kernel/cpu_byteorder "$root"
+
+  # Keep this fixture independent of the runner's live sysfs. Copying the
+  # whole CPU tree can encounter transient or unreadable power attributes in
+  # containers. lscpu needs only the bounded identities below to exercise the
+  # affected cpuset allocation and cleanup path.
+  mkdir -p \
+    "$root/proc" \
+    "$root/sys/devices/system/cpu" \
+    "$root/sys/devices/system/node/node0"
+  cp /proc/cpuinfo "$root/proc/cpuinfo"
 
   # Match the public report's bounded 16-CPU topology. kernel_max controls
-  # util-linux's cpuset allocation size and is required to distinguish this
-  # failure from a larger-host losing control.
+  # util-linux's cpuset allocation size and is a required discriminator.
   printf '15\n' >"$root/sys/devices/system/cpu/kernel_max"
   printf '0-15\n' >"$root/sys/devices/system/cpu/possible"
   printf '0-15\n' >"$root/sys/devices/system/cpu/present"
