@@ -4,11 +4,13 @@
 
 | Item | Repository path or URL | Exact revision | Notes |
 | --- | --- | --- | --- |
-| Primary implementation | `mmdebstrap` | released/imported `6fde999741f4fe1e7bf38079acf29432ef87a35e`; current Salsa `master` unresolved | `run_essential()`, `run_install()`, `main()` and new chrootless helpers |
-| Adjacent implementation | apt configuration handling in `mmdebstrap` | same | `DPkg::Path`, apt environment, `Dir::Bin::dpkg`, `DPkg::Options` |
-| Upstream tests | `tests/chrootless`, `tests/chrootless-fakeroot` | imported `debian/1.5.7-3` | root-versus-chrootless archive/package comparison precedent |
-| Build/package metadata | `debian/changelog`, `.perltidyrc` | imported `debian/1.5.7-3` | released identity and formatting authority |
-| Contribution instructions | canonical Salsa project and Debian BTS | current destination review pending | controlled fork absent |
+| Canonical implementation | `https://salsa.debian.org/debian/mmdebstrap`, `mmdebstrap` | current Salsa `master` unresolved in this runtime | authoritative external destination |
+| Released source identity | `mmdebstrap` | `6fde999741f4fe1e7bf38079acf29432ef87a35e`, tag `debian/1.5.7-3` | canonical released/imported identity from prior carriers |
+| Controlled mirror implementation | `https://github.com/teamleaderleo/mmdebstrap`, `mmdebstrap` | commit `574048f2a720057b75e56622003932f344dc700a`; blob `075582e1ca9cf50a1be497105ba77c82345c2bf3` | writable released-source base for candidate work |
+| Adjacent implementation | apt configuration handling in `mmdebstrap` | same source identities | `DPkg::Path`, apt environment, `Dir::Bin::dpkg`, `DPkg::Options` |
+| Upstream tests | `tests/chrootless`, `tests/chrootless-fakeroot` | mirror/released `1.5.7-3` | root-versus-chrootless archive/package comparison precedent |
+| Build/package metadata | `debian/changelog`, `.perltidyrc` | mirror/released `1.5.7-3` | released identity and formatting authority |
+| Contribution instructions | canonical Salsa project and Debian BTS | current destination review pending | controlled GitHub mirror exists; direct Salsa fork absent |
 
 ## Linux Fieldwork carriers
 
@@ -53,21 +55,22 @@
 ## Patch and branch links
 
 - Linux Fieldwork branch: `upstream/unit-06-chrootless-maintainer-boundary`
-- Controlled upstream fork: `NEEDS FORK`
-- Candidate upstream branch: `NEEDS BRANCH`
-- Compare or diff: `NEEDS CURRENT-UPSTREAM CANDIDATE`
+- Controlled source mirror: `https://github.com/teamleaderleo/mmdebstrap`
+- Mirror base: `master` at `574048f2a720057b75e56622003932f344dc700a`
+- Candidate mirror branch: `linux-fieldwork/unit-06-chrootless-maintainer-boundary`
+- Candidate head: currently equal to the mirror base pending application
+- Compare or diff: available after the first product commit
 - Retained patch or series: `patches/series`
-- Patch application command:
+- Canonical destination fork: absent
+- Final delivery: `NEEDS DESTINATION DECISION`
+
+The retained files are plain diffs. Apply them in order to a clean source copy:
 
 ```sh
-git checkout <exact-upstream-base>
-git am /path/to/upstream-packets/units/06-chrootless-maintainer-boundary/patches/000*.patch
-```
-
-The current retained files are plain diffs rather than mail-formatted commits, so the first rebase worker may use `git apply` followed by review commits until headers are added:
-
-```sh
-while read -r patch; do git apply --check "patches/$patch" && git apply "patches/$patch"; done < patches/series
+while read -r patch; do
+    git apply --check "patches/$patch"
+    git apply "patches/$patch"
+done < patches/series
 ```
 
 ## Operation ownership map
@@ -86,11 +89,13 @@ while read -r patch; do git apply --check "patches/$patch" && git apply "patches
 
 ## Overlap and current upstream state
 
-Search date: 2026-08-01. The canonical repository is Salsa. Debian Sources and the package index expose released `1.5.7-3`, matching imported commit `6fde999741f4fe1e7bf38079acf29432ef87a35e`. The exact current Salsa `master` commit and active issue/MR overlap remain unresolved because this execution environment could read the project page but could not retrieve the branch API or raw master content. No assumption that released source equals current master is made.
+Search date: 2026-08-01. The canonical repository remains Salsa. A controlled GitHub mirror now supplies a writable `1.5.7-3` base with exact commit and blob identity. Inspection of mirror lines 3890–3935 confirms the base is pre-hardening at this boundary: `run_prepare()` is followed directly by `run_essential()` and no chrootless environment helper exists there.
+
+The mirror history is a downstream mirror history, so commit `574048f2a720057b75e56622003932f344dc700a` must not be presented as the canonical Salsa commit. Exact current Salsa `master` relation and active issue/MR overlap remain unresolved.
 
 ## Files deliberately not changed
 
-- `upstream/mmdebstrap/mmdebstrap` remains untouched on this packet branch; upstream product work is retained as patches.
+- `upstream/mmdebstrap/mmdebstrap` remains untouched on the Linux Fieldwork packet branch; upstream product work is retained as patches and will live on the controlled mirror candidate branch.
 - Shared transaction harnesses and classifiers from PR #368 remain canonical in their landed locations instead of being copied into the packet.
 - Host setup-hook command lookup remains outside this unit because it has a different operation owner.
 - Non-chrootless modes remain outside the product patch except as regression controls.
