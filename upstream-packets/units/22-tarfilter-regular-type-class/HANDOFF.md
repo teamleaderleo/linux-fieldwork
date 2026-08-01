@@ -10,11 +10,11 @@ External contact authorized: `false`
 - Linux Fieldwork repository: `teamleaderleo/linux-fieldwork`
 - Branch: `upstream/unit-22-tarfilter-regular-type-class`
 - Branch base: `main@6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Exact branch head immediately before this HANDOFF commit: `5bf2b8034fccf748129a9ee99dc2218db1f28d1f`
-- Current branch head: the commit that creates this file; the issue #397 `UNIT CHECKPOINT` records its exact SHA after GitHub returns it.
+- Exact branch head immediately before this final HANDOFF refresh: `e871f0ed2c5bc6e0ffa23dd2613fe7e63ce08fdb`
+- Current branch head: the commit that updates this file; the issue #397 `UNIT CHECKPOINT` records its exact SHA after GitHub returns it.
 - Packet: `upstream-packets/units/22-tarfilter-regular-type-class/`
 
-A commit cannot embed its own SHA. The predecessor and branch are exact; use the checkpoint SHA or `git rev-parse upstream/unit-22-tarfilter-regular-type-class` for the creating commit.
+A commit cannot embed its own SHA. The predecessor and branch are exact; use the checkpoint SHA or `git rev-parse upstream/unit-22-tarfilter-regular-type-class` for the final handoff commit.
 
 ## Exact upstream and candidate identities
 
@@ -46,6 +46,8 @@ A commit cannot embed its own SHA. The predecessor and branch are exact; use the
 9. Documented rejected alternatives, adjacent-unit ownership, delivery path, authority boundary, and hold discriminator.
 10. Drafted upstream issue and merge-request text without sending either.
 11. Attempted a current upstream clone and recorded the exact failure.
+12. Compared packet head `49cb8a6aadd4494482486516513b00540bc09191` to the base: 10 commits ahead, 0 behind, exactly 10 added unit files, no unrelated changes.
+13. Queried status checks and pull-request-triggered workflow runs for that head; both were empty, so no packet-head CI result is claimed.
 
 ## Latest distinguishing result
 
