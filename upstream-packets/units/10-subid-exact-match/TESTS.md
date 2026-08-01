@@ -4,32 +4,34 @@
 
 | Item | Value |
 | --- | --- |
-| Upstream base | dgit master view `c8a789205ded12daccfb16deaa35ddd1fc8d688f`; direct Salsa checkout pending |
-| Candidate head | `NEEDS BRANCH` |
+| Direct upstream base | dgit master view `c8a789205ded12daccfb16deaa35ddd1fc8d688f`; live Salsa clone/API confirmation remains pending |
+| Exact imported source | Debian `mmdebstrap 1.5.7-3`, testsuite Git blob `9f4eda87430da38b08a23a50a51e53b22cf7414b` |
+| Exact candidate file blob | `6925c7f05c3a5f050a4d3f89142085ff687ce3b0` after packet application |
+| Candidate branch/head | `NEEDS BRANCH`; the ephemeral local verification commit is evidence only |
 | Linux Fieldwork branch | `upstream/unit-10-subid-exact-match` |
-| Imported source | Debian `mmdebstrap 1.5.7-3`, testsuite blob `9f4eda87430da38b08a23a50a51e53b22cf7414b` |
 | Historical canonical proof head | PR #291 `125d4e5097625b38850292525c7eb2f98818f5d9` |
 | Platform/distribution | Debian 13 |
 | Architecture | `x86_64` |
-| Kernel | `6.12.13` |
 | Shell/runtime | `/usr/bin/dash` `0.5.12-12`; Python `3.13.5` |
 | Privilege boundary | ordinary temporary files only; no user, namespace, mount, or package changes |
-| Important tool versions | GNU patch `2.8`; GNU grep `3.11`; GNU coreutils `cut` `9.7` |
+| Important tool versions | Git, GNU patch `2.8`, GNU grep `3.11`, GNU coreutils `cut` `9.7` |
 
 ## Baseline reproducer
 
-### Command
+### Fixture
 
-The packet-local smoke reconstructed the exact nine-line package-test block at its declared hunk location and executed the baseline predicate against a temporary file containing:
+For `AUTOPKGTEST_NORMAL_USER=debci`, the file contains only another account:
 
 ```text
 old-debci-helper:200000:65536
 ```
 
-with:
+### Predicate
 
-```text
-AUTOPKGTEST_NORMAL_USER=debci /bin/sh -eu -c '<baseline subuid or subgid block>'
+```sh
+if [ ! -e "$file" ] || ! grep "$AUTOPKGTEST_NORMAL_USER" "$file"; then
+    echo "$AUTOPKGTEST_NORMAL_USER:100000:65536" >> "$file"
+fi
 ```
 
 ### Expected distinguishing result
@@ -38,117 +40,146 @@ The unanchored whole-record grep returns success because `debci` appears inside 
 
 ### Observed result
 
-- status: `0`
-- stdout/stderr: empty
-- changed state: none
-- resulting bytes, for both subuid and subgid variants: `old-debci-helper:200000:65536\n`
-- classification: baseline false positive reproduced
+- status: `0`;
+- stdout/stderr: empty;
+- resulting bytes: `old-debci-helper:200000:65536\n`;
+- classification: baseline false positive reproduced for both subuid and subgid blocks.
 
-## Candidate reproducer
+## Exact imported-source application gate
+
+Durable receipt: [`artifacts/2026-08-01-exact-imported-source-gate.md`](artifacts/2026-08-01-exact-imported-source-gate.md).
+
+### Admission
+
+The connector-fetched full testsuite was reconstructed locally and admitted only when:
+
+```text
+git hash-object debian/tests/testsuite
+9f4eda87430da38b08a23a50a51e53b22cf7414b
+```
+
+This equals the recorded imported source blob. Additional identities:
+
+```text
+source SHA-256:    14bd64347e58cdc36e3b33aaff8663f9ea34dd0ea24049a7452c849923bd090f
+source lines:      219
+packet patch SHA:  fc9c0c4d0552a80565a49a05f068934b3230b81703c9e0ed9c59d3307f9d544d
+```
 
 ### Commands
 
-```text
-patch --batch --forward --fuzz=0 -p1 -i 0001.patch
-/bin/sh -n tree/debian/tests/testsuite
-python3 synthetic_matrix.py baseline tree/debian/tests/testsuite
+```sh
+git apply --check --whitespace=error-all 0001.patch
+git am --keep-cr 0001.patch
+/bin/sh -n debian/tests/testsuite
+git diff --check HEAD^ HEAD
+git diff --numstat HEAD^ HEAD -- debian/tests/testsuite
 ```
-
-The temporary patch body is byte-equivalent to `patches/0001-debian-tests-match-subid-account-field-exactly.patch` from the `diff --git` line onward.
-
-### Expected result
-
-- exact patch application with no fuzz message;
-- complete reconstructed shell parses;
-- exactly two source-line replacements and equal line counts;
-- the full bounded account matrix passes for both files;
-- immediate rerun preserves bytes.
 
 ### Observed result
 
 ```text
-PATCH_OUTPUT=patching file debian/tests/testsuite
-SHELL_SYNTAX=PASS
+Applying: debian/tests: match subid account fields exactly
+NEW_BLOB=6925c7f05c3a5f050a4d3f89142085ff687ce3b0
+DIFF_STAT= debian/tests/testsuite | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+DIFF_CHECK=
+GIT_DIFF_NUMSTAT=2  2  debian/tests/testsuite
 ```
 
-Exact replacements:
+Candidate file identities:
 
 ```text
-line 154: grep whole /etc/subuid record -> cut field 1 | grep -Fxq --
-line 157: grep whole /etc/subgid record -> cut field 1 | grep -Fxq --
+candidate SHA-256: d9792e1fa95d4565a49cbe6fcf305d210d0f855a7334049f2f6b366839dc734d
+candidate lines:   219
+ephemeral local verification commit: 7af87bd53b84c2c4310e0b58bbce37654748c266
 ```
 
-All candidate cases returned status 0 and expected bytes.
+The ephemeral commit is a disposable verification identity, not an upstream candidate head.
 
-## Matrix
+## Exact behavior matrix
 
-| Case | Baseline | Candidate | Exact command or test | Result identity |
-| --- | --- | --- | --- | --- |
-| Primary negative control: substring account | leaves missing `debci` entry | appends `debci:100000:65536` | packet-local synthetic matrix | PASS, discriminator observed |
-| Exact account present | whole grep succeeds | exact field succeeds | matrix for subuid and subgid | PASS, unchanged bytes |
-| Delimiter-free `debci` row | whole grep suppresses append | `cut -s` discards row and append occurs | retained PR #291 test and packet matrix | PASS |
-| Regex-significant user `debci.*` | regex can match `debci123` | fixed-string comparison appends literal user | retained proof and packet matrix | PASS |
-| Leading-hyphen user `-debci` | unsafe without option boundary | exact record remains unchanged with `--` | retained proof and packet matrix | PASS |
-| Empty file | append | append | packet matrix | PASS |
-| Absent file | append | append | packet matrix | PASS |
-| Subuid/subgid parity | same false-positive class | same exact-field behavior | packet matrix | PASS |
-| Immediate rerun | depends on baseline match | exact row prevents duplicate | packet matrix | PASS, byte-identical |
-| Complete shell syntax | historical imported testsuite | patched imported testsuite passed `/bin/sh -n` in PR #291; reconstructed upstream-path shell passed locally | `/bin/sh -n` | PASS within stated source boundary |
-| Source diff fence | unbounded zip could miss tail changes in early proof | equal line count plus `zip(..., strict=True)` | PR #291 retained test | PASS |
-| Patch fuzz | malformed ten-line declaration failed at PR #252 run 797 | repaired nine-line hunk applies with zero fuzz | PR #291 and packet smoke | PASS |
+The matrix read the baseline from Git and the applied candidate from the same disposable repository. It extracted the real package-test blocks and used temporary stand-in files.
+
+| Case | Baseline | Candidate | Result |
+| --- | --- | --- | --- |
+| Substring account | suppresses required append | appends exact account | discriminator observed |
+| Exact account present | found | found | unchanged bytes |
+| Delimiter-free `debci` row | suppresses append | `cut -s` discards malformed row and append occurs | pass |
+| Regex-significant `debci.*` | can match another account | fixed string remains literal | pass |
+| Leading-hyphen `-debci` | unsafe without option boundary | exact record survives through `--` | pass |
+| Empty file | append | append | pass |
+| Absent file | append | append | pass |
+| Subuid/subgid parity | same defect class | same exact-field behavior | pass |
+| Immediate rerun | depends on broad match | no duplicate | byte-identical |
+| Source diff fence | early ordinary `zip()` could miss tail drift | equal line count and exactly two replacements | pass |
+| Complete shell syntax | baseline parsed | candidate parsed | pass |
+| Git whitespace/apply gate | n/a | clean | pass |
+
+Receipt, executed twice:
+
+```text
+DIFFS=2
+CASES=18
+MATRIX=PASS
+DIFFS=2
+CASES=18
+MATRIX=PASS
+```
+
+## Historical Linux Fieldwork evidence
+
+| Gate or fixture | Exact command/run | Result | Interpretation |
+| --- | --- | --- | --- |
+| Canonical proof CI | Linux Fieldwork CI `30624718470` / 845 on PR #291 head `125d4e5097625b38850292525c7eb2f98818f5d9` | PASS; 249 tests, four dedicated tests once each | canonical durable proof |
+| First zero-fuzz detector | Linux Fieldwork CI `30598944690` / 797 on PR #252 | FAIL before behavior | malformed hunk count; patch-packaging owner |
+| Earlier leading-hyphen/full-shell proof | Linux Fieldwork CI `30581822309` on PR #218 head `cde9d361...` | PASS | superseded by PR #291 |
+| Earlier packet excerpt smoke | reconstructed hunk, 2026-08-01 | PASS | superseded by exact full-blob gate above |
 
 ## Upstream-native gates
 
 | Gate | Exact command | Result | Candidate head |
 | --- | --- | --- | --- |
-| Current-base apply check | `git apply --check <packet patch>` in direct Salsa checkout | NOT RUN | NEEDS BRANCH |
-| Focused package/user-namespace test | identify shortest relevant Debian autopkgtest or coverage invocation after checkout | NOT RUN | NEEDS BRANCH |
-| Complete Debian autopkgtest | `autopkgtest`/Salsa CI equivalent | NOT RUN | NEEDS BRANCH |
-| Formatting/lint | shellcheck/shfmt gates used by the package | NOT RUN | NEEDS BRANCH |
+| Live Salsa current-base identity | direct clone/API, `git rev-parse HEAD`, and `git hash-object debian/tests/testsuite` | NOT RUN; source-host DNS unavailable in execution container | NEEDS BRANCH |
+| Live Salsa apply check | `git apply --check <packet patch>` in direct checkout | NOT RUN | NEEDS BRANCH |
+| Focused package/user-namespace test | package setup prelude plus shortest consumer set | NOT RUN | NEEDS BRANCH |
+| Complete Debian autopkgtest | `autopkgtest` or Salsa CI equivalent | NOT RUN | NEEDS BRANCH |
+| Formatting/lint | package-declared shell/static gates | NOT RUN | NEEDS BRANCH |
 | Build/package test | Debian package build and package tests | NOT RUN | NEEDS BRANCH |
-
-## Linux Fieldwork retained gates
-
-| Gate or fixture | Exact command/run | Result | Artifact/digest |
-| --- | --- | --- | --- |
-| Canonical proof CI | Linux Fieldwork CI `30624718470` / 845 on PR #291 head `125d4e5097625b38850292525c7eb2f98818f5d9` | PASS; 249 tests, four dedicated unit tests once each | GitHub Actions run 845 |
-| First zero-fuzz detector | Linux Fieldwork CI `30598944690` / 797 on PR #252 | FAIL before behavior; malformed hunk count required fuzz | classified patch-packaging failure |
-| Earlier leading-hyphen/full-shell proof | Linux Fieldwork CI `30581822309` on PR #218 head `cde9d361...` | PASS | superseded by PR #291 |
-| Packet-local upstream-path smoke | temporary reconstructed source, 2026-08-01 | PASS | console receipt summarized above; temporary directory cleaned |
 
 ## Patch application and rebase
 
 - current published package: Debian `mmdebstrap 1.5.7-3`;
-- dgit master identity observed: `c8a789205ded12daccfb16deaa35ddd1fc8d688f`;
-- direct Salsa base identity: pending clone/API confirmation;
-- packet smoke command: `patch --batch --forward --fuzz=0 -p1 -i 0001.patch`;
-- smoke result: status 0, `patching file debian/tests/testsuite`, no fuzz text;
-- full current-checkout conflict resolution: pending;
-- complete upstream diff reviewed: patch itself yes; direct current-base diff pending;
-- active overlap searched: public package/source/runtime summaries and Debian bug list on 2026-08-01; repeat before authorization.
+- current dgit identity observed during refresh: `c8a789205ded12daccfb16deaa35ddd1fc8d688f`;
+- exact imported testsuite blob: `9f4eda87430da38b08a23a50a51e53b22cf7414b`;
+- exact imported-source `git apply --check --whitespace=error-all`: pass;
+- `git am --keep-cr`: pass;
+- complete exact imported-source diff: two insertions, two deletions, one file;
+- live Salsa rebase/conflict result: pending;
+- active overlap search: public package/source/runtime summaries and Debian bug list checked on 2026-08-01; repeat before authorization.
 
 ## Cleanup and rerun
 
-The packet-local smoke used one `mktemp -d` tree, temporary subuid/subgid stand-ins, `/bin/sh`, Python, `patch`, `cut`, and `grep`. A shell trap removed the tree. It created no accounts, namespaces, mounts, sockets, containers, packages, cache entries, or persistent host files. The immediate-rerun case passed for both subuid and subgid stand-ins.
+The exact-source gate used `/tmp/unit10-exact-source`, one disposable Git repository, and `TemporaryDirectory` paths for every account fixture. It created no accounts, subordinate-ID records, namespaces, mounts, sockets, containers, packages, cache entries, or background processes.
 
-Intentional retained state exists only in the Linux Fieldwork packet branch.
+The behavior matrix passed twice. Temporary matrix code was removed after execution. The disposable source repository remains outside Linux Fieldwork and carries no external authority; the durable receipt records every identity needed for reconstruction.
 
 ## Tests not run
 
-- direct Salsa `master` clone and exact SHA/blob receipt: network/DNS access to Salsa was unavailable from the execution container; public read-only pages were used for the refresh;
-- exact current-base `git apply --check`: requires that checkout;
-- Debian autopkgtest and user-namespace integration: requires package source, dependencies, mirror/cache preparation, and suitable test capabilities;
-- full repository Linux Fieldwork CI on this packet branch: no PR was opened and no hosted run was requested in this pass;
-- external Salsa CI: external contact and fork activity remain unauthorized.
+- direct Salsa `master` clone and exact live SHA/blob receipt: DNS access to Salsa remained unavailable from the execution container;
+- exact live-current-base application: requires that checkout;
+- Debian autopkgtest and user-namespace integration: requires package source, dependencies, mirror/cache preparation, and suitable capabilities;
+- full Linux Fieldwork hosted CI on this packet branch: no PR or workflow run was created;
+- Salsa CI, fork, or merge request: external contact and fork activity remain unauthorized.
 
 ## Failure classification
 
-- PR #252 run 797: patch-packaging owner; no product claim.
-- Direct container `git ls-remote` attempt for Salsa: environment/network owner (`Could not resolve host`); no source-state claim from that command.
-- Public Salsa branch page errors: source-host/UI retrieval limitation; dgit and Debian Sources provided current released/package views.
+- PR #252 run 797: patch-packaging failure; no product behavior executed.
+- Direct Salsa `git ls-remote`/clone attempts: environment/network failure, `Could not resolve host`; no live-source conclusion.
+- The exact imported-source gate passed; it establishes the recorded Debian 1.5.7-3 blob and candidate bytes, while ending before live Salsa drift and package integration.
 
 ## Final evidence statement
 
-The executed packet matrix establishes the exact predicate defect and the corrected behavior for synthetic subordinate-ID files on Debian 13 with dash, GNU patch, GNU grep, and GNU cut. Historical PR #291 evidence establishes zero-fuzz application and full shell syntax on Linux Fieldwork’s exact imported Debian 1.5.7-3 testsuite blob.
+The current record establishes the exact predicate defect and corrected behavior on the full recorded Debian `mmdebstrap 1.5.7-3` testsuite blob. Git admission, whitespace checking, mail-patch application, complete shell syntax, exact two-line diff fencing, and the 18-case matrix all pass; the matrix passed twice.
 
-The conclusion ends before direct current-Salsa application, package build, Debian autopkgtest execution, user-namespace integration, and public review.
+The conclusion ends before direct live Salsa application, package build, Debian autopkgtest execution, user-namespace integration, hosted public review, and submission.
