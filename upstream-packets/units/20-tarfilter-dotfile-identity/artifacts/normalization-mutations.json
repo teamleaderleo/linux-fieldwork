@@ -1,0 +1,193 @@
+{
+  "claim": "complete leading archive prefixes are removed while filename dots, parent components, and root markers retain identity",
+  "losing_mutations": {
+    "baseline_character_set_strip": [
+      ".config",
+      "../config"
+    ],
+    "candidate_before_root_repair": [
+      ".",
+      "./."
+    ],
+    "first_prefix_only": [
+      "././.config"
+    ],
+    "posixpath_normpath": [
+      "../config",
+      "foo/./.config"
+    ]
+  },
+  "rows": [
+    {
+      "baseline": "/config",
+      "candidate_before_root_repair": "/.config",
+      "expected": "/.config",
+      "first_prefix_only": "/.config",
+      "name": ".config",
+      "over_normalized": "/.config",
+      "selected": "/.config"
+    },
+    {
+      "baseline": "/config",
+      "candidate_before_root_repair": "/config",
+      "expected": "/config",
+      "first_prefix_only": "/config",
+      "name": "config",
+      "over_normalized": "/config",
+      "selected": "/config"
+    },
+    {
+      "baseline": "/name",
+      "candidate_before_root_repair": "/..name",
+      "expected": "/..name",
+      "first_prefix_only": "/..name",
+      "name": "..name",
+      "over_normalized": "/..name",
+      "selected": "/..name"
+    },
+    {
+      "baseline": "/name",
+      "candidate_before_root_repair": "/...name",
+      "expected": "/...name",
+      "first_prefix_only": "/...name",
+      "name": "...name",
+      "over_normalized": "/...name",
+      "selected": "/...name"
+    },
+    {
+      "baseline": "/config",
+      "candidate_before_root_repair": "/.config",
+      "expected": "/.config",
+      "first_prefix_only": "/.config",
+      "name": "./.config",
+      "over_normalized": "/.config",
+      "selected": "/.config"
+    },
+    {
+      "baseline": "/config",
+      "candidate_before_root_repair": "/.config",
+      "expected": "/.config",
+      "first_prefix_only": "/./.config",
+      "name": "././.config",
+      "over_normalized": "/.config",
+      "selected": "/.config"
+    },
+    {
+      "baseline": "/config",
+      "candidate_before_root_repair": "/.config",
+      "expected": "/.config",
+      "first_prefix_only": "/./.config",
+      "name": "/./.config",
+      "over_normalized": "//.config",
+      "selected": "/.config"
+    },
+    {
+      "baseline": "/config",
+      "candidate_before_root_repair": "/.config",
+      "expected": "/.config",
+      "first_prefix_only": "/./.config",
+      "name": "//./.config",
+      "over_normalized": "/.config",
+      "selected": "/.config"
+    },
+    {
+      "baseline": "/config",
+      "candidate_before_root_repair": "/.config",
+      "expected": "/.config",
+      "first_prefix_only": "/.config",
+      "name": ".//.config",
+      "over_normalized": "/.config",
+      "selected": "/.config"
+    },
+    {
+      "baseline": "/config",
+      "candidate_before_root_repair": "/.config",
+      "expected": "/.config",
+      "first_prefix_only": "/.//.config",
+      "name": "/.//.config",
+      "over_normalized": "//.config",
+      "selected": "/.config"
+    },
+    {
+      "baseline": "/",
+      "candidate_before_root_repair": "/.",
+      "expected": "/",
+      "first_prefix_only": "/.",
+      "name": ".",
+      "over_normalized": "/",
+      "selected": "/"
+    },
+    {
+      "baseline": "/",
+      "candidate_before_root_repair": "/",
+      "expected": "/",
+      "first_prefix_only": "/",
+      "name": "./",
+      "over_normalized": "/",
+      "selected": "/"
+    },
+    {
+      "baseline": "/",
+      "candidate_before_root_repair": "/.",
+      "expected": "/",
+      "first_prefix_only": "/.",
+      "name": "./.",
+      "over_normalized": "/",
+      "selected": "/"
+    },
+    {
+      "baseline": "/",
+      "candidate_before_root_repair": "/.",
+      "expected": "/",
+      "first_prefix_only": "/.",
+      "name": "/.",
+      "over_normalized": "//",
+      "selected": "/"
+    },
+    {
+      "baseline": "/",
+      "candidate_before_root_repair": "/",
+      "expected": "/",
+      "first_prefix_only": "/./",
+      "name": "/./",
+      "over_normalized": "//",
+      "selected": "/"
+    },
+    {
+      "baseline": "/",
+      "candidate_before_root_repair": "/.",
+      "expected": "/",
+      "first_prefix_only": "/./.",
+      "name": "//./.",
+      "over_normalized": "/",
+      "selected": "/"
+    },
+    {
+      "baseline": "/config",
+      "candidate_before_root_repair": "/../config",
+      "expected": "/../config",
+      "first_prefix_only": "/../config",
+      "name": "../config",
+      "over_normalized": "/config",
+      "selected": "/../config"
+    },
+    {
+      "baseline": "/config",
+      "candidate_before_root_repair": "/../config",
+      "expected": "/../config",
+      "first_prefix_only": "/../config",
+      "name": "./../config",
+      "over_normalized": "/config",
+      "selected": "/../config"
+    },
+    {
+      "baseline": "/foo/./.config",
+      "candidate_before_root_repair": "/foo/./.config",
+      "expected": "/foo/./.config",
+      "first_prefix_only": "/foo/./.config",
+      "name": "foo/./.config",
+      "over_normalized": "/foo/.config",
+      "selected": "/foo/./.config"
+    }
+  ]
+}
