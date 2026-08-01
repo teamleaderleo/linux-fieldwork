@@ -1,6 +1,6 @@
 # Unit 06 — mmdebstrap chrootless maintainer-script boundary hardening
 
-State: `ACTIVE`  
+State: `ACTIVE — four-patch candidate; host dpkg-config isolation split to HOLD`  
 Priority-zero issue: #397, unit 06  
 Worker or variant: `GPT-5.6 Thinking`  
 Linux Fieldwork branch: `upstream/unit-06-chrootless-maintainer-boundary`  
@@ -8,9 +8,11 @@ External contact authorized: `false`
 
 ## TL;DR
 
-The complete product boundary consists of four ordered corrections: reject credential-bearing launches and scrub the dpkg environment; derive package temporaries below `<target>/tmp`; use apt's configured non-empty `DPkg::Path` for maintainer-script command lookup; and invoke the sanitizer through validated `/usr/bin/env`. Linux Fieldwork has exact passing evidence for each component and for the composed executable-authority pair.
+The reviewable product correction remains four ordered changes: reject credential-bearing launches and scrub the dpkg environment; derive package temporaries below `<target>/tmp`; use apt's configured non-empty `DPkg::Path` for maintainer-script command lookup; and invoke the sanitizer through validated `/usr/bin/env`. Linux Fieldwork has exact passing evidence for each component and for the composed executable-authority pair.
 
-A controlled GitHub mirror now exists at `teamleaderleo/mmdebstrap`. Its `master` tip is `574048f2a720057b75e56622003932f344dc700a`, carrying mmdebstrap `1.5.7-3`, and its `mmdebstrap` source blob is `075582e1ca9cf50a1be497105ba77c82345c2bf3`. Candidate branch `linux-fieldwork/unit-06-chrootless-maintainer-boundary` was created from that exact tip. The mirror resolves the candidate-hosting blocker. It remains a mirror rather than a direct Salsa fork, so final delivery still needs a later destination decision and explicit authorization.
+A deeper probe confirmed a separate boundary: environment scrubbing suppresses user `~/.dpkg.cfg` by removing `HOME`, but it does not stop dpkg from reading `/etc/dpkg/dpkg.cfg.d/*` and `/etc/dpkg/dpkg.cfg`. System-configured `pre-invoke`, `post-invoke`, and `status-logger` commands still run under `env -i`; additive command-line replacements do not remove them. That problem is retained as a separate `HOLD`, not folded into the four-patch submission.
+
+A controlled GitHub mirror exists at `teamleaderleo/mmdebstrap`. Its `master` tip is `574048f2a720057b75e56622003932f344dc700a`, carrying mmdebstrap `1.5.7-3`, and its `mmdebstrap` source blob is `075582e1ca9cf50a1be497105ba77c82345c2bf3`. Candidate branch `linux-fieldwork/unit-06-chrootless-maintainer-boundary` was created from that exact tip. The mirror resolves candidate hosting. It remains a mirror rather than a direct Salsa fork, so final delivery still needs a later destination decision and explicit authorization.
 
 ## Accomplished behavior
 
@@ -18,11 +20,13 @@ Chrootless package execution rejects commonly credential-bearing caller environm
 
 ## Why care
 
-Caller credentials and session sockets reached chrootless maintainer scripts in LF-02. The first sanitizer candidate then sent ordinary package temporaries to host `/tmp`. A later review proved that caller-prefixed `PATH` could select both an unintended maintainer-script helper and a fake outer `env` before sanitization began. These are one operation boundary: the host-side launch of package maintainer scripts in chrootless mode.
+Caller credentials and session sockets reached chrootless maintainer scripts in LF-02. The first sanitizer candidate then sent ordinary package temporaries to host `/tmp`. A later review proved that caller-prefixed `PATH` could select both an unintended maintainer-script helper and a fake outer `env` before sanitization began.
+
+LF-02 also demonstrated a different host integration: Ubuntu's system dpkg configuration launched `/usr/lib/needrestart/dpkg-status` and created root-owned host file `/run/needrestart/unpacked` during a target transaction. The retained dpkg-config probe now proves that the four-patch scrub does not disable system configuration commands. These are related chrootless risks with different operation owners and different fixes.
 
 ## Scope
 
-### Included
+### Included in the four-patch candidate
 
 - launch-time detection of credential-like variables, credential-file pointers, session endpoints, and credential-bearing URLs;
 - explicit dpkg/maintainer-script environment construction for both direct and apt-managed chrootless paths;
@@ -32,10 +36,12 @@ Caller credentials and session sockets reached chrootless maintainer scripts in 
 - preservation of mmdebstrap-owned debconf/locale values, reproducibility state, QEMU state, and conditional fakeroot state;
 - documentation of the remaining host-execution boundary.
 
-### Excluded
+### Excluded from the four-patch candidate
 
 - sandboxing package scripts;
+- isolation of `/etc/dpkg/dpkg.cfg.d/*` and `/etc/dpkg/dpkg.cfg`;
 - host setup-hook command lookup;
+- APT shutdown/sleep inhibitor policy;
 - non-chrootless execution changes;
 - broad preservation of arbitrary caller locale or `DEBCONF_*` variables;
 - every possible secret-name representation;
@@ -43,7 +49,9 @@ Caller credentials and session sockets reached chrootless maintainer scripts in 
 
 ### Split boundary
 
-The four corrections overlap the same helper and its two call sites. Splitting environment scrubbing from target `TMPDIR`, inner command authority, or outer wrapper authority would create intermediate regressions already demonstrated by the carrier history. Review may still use four ordered commits, but the submission unit should preserve the complete invariant.
+The four existing corrections overlap the same helper and its two call sites. Splitting environment scrubbing from target `TMPDIR`, inner command authority, or outer wrapper authority would recreate intermediate regressions already demonstrated by the carrier history. Review may use four ordered commits, but that submission should preserve the complete launch invariant.
+
+Host dpkg configuration isolation is a separate correction. Dpkg parses system configuration before the package-script launch boundary, command hooks are additive, and no current documented option selects an empty configuration set. The held correction needs either a dpkg interface or a bounded fail-closed mmdebstrap preflight. See [`DPKG_CONFIG_DEEP_DIVE.md`](DPKG_CONFIG_DEEP_DIVE.md).
 
 ## Exact identities
 
@@ -78,6 +86,9 @@ The four corrections overlap the same helper and its two call sites. Splitting e
 - Candidate mirror branch: `linux-fieldwork/unit-06-chrootless-maintainer-boundary`
 - Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
 - Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
+- Host dpkg-config deep dive: [`DPKG_CONFIG_DEEP_DIVE.md`](DPKG_CONFIG_DEEP_DIVE.md)
+- Dpkg-config probe: [`scripts/run-dpkg-config-probe.sh`](scripts/run-dpkg-config-probe.sh)
+- Dpkg-config receipt: [`artifacts/dpkg-config-probe.txt`](artifacts/dpkg-config-probe.txt)
 - Tests and receipts: [`TESTS.md`](TESTS.md)
 - Decisions: [`DECISIONS.md`](DECISIONS.md)
 - Current handoff: [`HANDOFF.md`](HANDOFF.md)
@@ -92,6 +103,11 @@ The four corrections overlap the same helper and its two call sites. Splitting e
 - PR #57 rejected tested unsafe launch variables, redacted fake values, kept apt proxy/auth state at apt, scrubbed apt-managed dpkg, preserved selected required state, and blocked the fake agent socket.
 - PR #74 kept package `mktemp` below target `tmp`, enforced mode `01777`, rejected symlink/non-directory targets, cleaned up, reran, and passed fakeroot.
 - PR #368 proved configured `DPkg::Path` and absolute `/usr/bin/env` for direct and apt-managed paths with losing mutations and equal installed package sets.
+- LF-02 showed host needrestart execution and a root-owned host marker caused by system dpkg configuration.
+- The retained dpkg 1.22.22 probe proved that clearing `HOME` suppresses user configuration while system command hooks remain active under `env -i`.
+- The probe proved that later command-line hooks do not remove configured hooks and can produce dpkg status `141` after the original logger has run.
+- The probe proved that final `path-include *` and target-local `log` options can neutralize those two data-only classes, while command hooks remain.
+- Probe cleanup verified the temporary system configuration fragment was absent.
 - The controlled mirror exposes an exact released-source base and a writable candidate branch.
 - The mirror base source is pre-hardening at the relevant boundary: `run_essential()` follows `run_prepare()` directly and has no `chrootless_dpkg_environment` helper at the inspected source range.
 
@@ -100,13 +116,15 @@ The four corrections overlap the same helper and its two call sites. Splitting e
 - ordered four-patch application on mirror commit `574048f2a720057b75e56622003932f344dc700a`;
 - exact candidate head after application;
 - direct and apt-managed transactions with the complete detector, temporary-directory, inner-PATH, and outer-wrapper matrix on the mirror candidate;
+- direct and apt-managed mmdebstrap transactions with controlled system dpkg hooks on the final candidate;
 - mirror-candidate formatting and relevant native tests;
 - exact relation between the mirror base and current canonical Salsa `master`;
-- active-overlap search on current Salsa issues and merge requests.
+- active-overlap search on current Salsa issues and merge requests;
+- selected host dpkg-config correction policy.
 
 ### Compatibility boundary
 
-The supported dpkg environment is mmdebstrap-owned state: noninteractive debconf controls, forced C.UTF-8 locale values, target-local `TMPDIR`, reproducibility controls, QEMU state, and fakeroot state when active. Apt itself retains its environment. Chrootless maintainer scripts continue to execute as host processes with same-user host access.
+The supported dpkg environment is mmdebstrap-owned state: noninteractive debconf controls, forced C.UTF-8 locale values, target-local `TMPDIR`, reproducibility controls, QEMU state, and fakeroot state when active. Apt itself retains its environment. Chrootless maintainer scripts continue to execute as host processes with same-user host access. System dpkg configuration also remains active until the separate held correction is resolved.
 
 ## Candidate organization
 
@@ -115,15 +133,15 @@ The supported dpkg environment is mmdebstrap-owned state: noninteractive debconf
 3. `0003-use-configured-dpkg-path.patch`
 4. `0004-use-absolute-env-wrapper.patch`
 
-These commits form one coherent invariant while keeping review history legible. Each later patch closes a concrete defect in the preceding intermediate state.
+These commits form one coherent launch invariant while keeping review history legible. Each later patch closes a concrete defect in the preceding intermediate state. Host dpkg-config isolation is not a fifth patch in this series.
 
 ## Current disposition
 
-`ACTIVE` — controlled candidate hosting exists; patch application and complete candidate gates remain.
+`ACTIVE` — continue the four-patch mirror candidate. Keep host dpkg configuration isolation at `HOLD` until its owner and compatibility policy are selected.
 
 ## Next human decision
 
-No additional setup is required from the repository owner. Technical application and validation come next. A later decision will authorize or hold external submission after the packet reaches `READY FOR AUTHORIZATION`.
+No additional setup is required from the repository owner. Technical application and validation come next. A later decision will authorize or hold external submission after the four-patch packet reaches `READY FOR AUTHORIZATION`. The held dpkg-config correction should not delay private notification that the boundary exists, but it should not be represented as fixed.
 
 ## Authority
 
