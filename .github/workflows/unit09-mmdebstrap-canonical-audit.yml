@@ -1,0 +1,73 @@
+name: Unit 09 mmdebstrap canonical audit
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/unit09-mmdebstrap-canonical-audit.yml"
+      - "scripts/audit-mmdebstrap-unit09-canonical.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-audit:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'investigation/mmdebstrap-canonical-audit-unit09')) ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'investigation/mmdebstrap-canonical-audit-unit09'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      RUN_ID: canonical-gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Validate audit carrier syntax
+        shell: bash
+        run: bash -n scripts/audit-mmdebstrap-unit09-canonical.sh
+
+      - name: Fetch and audit canonical carriers read-only
+        shell: bash
+        run: |
+          set -uo pipefail
+          run_dir="investigations/mmdebstrap-dev-ptmx-bsdutils/canonical-audit/$RUN_ID"
+          mkdir -p "$run_dir"
+          set +e
+          bash scripts/audit-mmdebstrap-unit09-canonical.sh
+          status=$?
+          set -e
+          printf '%s\n' "$status" >"$run_dir/runner-exit-status"
+          exit 0
+
+      - name: Upload canonical audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit09-mmdebstrap-canonical-${{ env.RUN_ID }}
+          path: investigations/mmdebstrap-dev-ptmx-bsdutils/canonical-audit/${{ env.RUN_ID }}/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Classify canonical audit
+        if: always()
+        shell: bash
+        run: |
+          run_dir="investigations/mmdebstrap-dev-ptmx-bsdutils/canonical-audit/$RUN_ID"
+          status=$(cat "$run_dir/runner-exit-status")
+          if [[ -f $run_dir/SUMMARY.md ]]; then
+            cat "$run_dir/SUMMARY.md"
+          fi
+          case "$status" in
+            0)
+              echo "Canonical audit completed."
+              ;;
+            3)
+              echo "Canonical source drift requires manual ownership review."
+              exit 3
+              ;;
+            *)
+              echo "Canonical audit carrier failed with status $status."
+              exit "$status"
+              ;;
+          esac
