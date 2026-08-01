@@ -15,7 +15,7 @@ The baseline include set is:
 gcc,libc6-dev,python3,passwd
 ```
 
-`bsdutils` supplies `/usr/bin/script`. While `bsdutils` was Essential, the apt variant received it implicitly. In Debian testing with `bsdutils 1:2.42.2-1`, that implicit guarantee disappeared. The test fixture then failed before its intended PTY assertions could complete.
+`bsdutils` supplies `/usr/bin/script`. While `bsdutils` was Essential, the apt variant received it implicitly. In Debian testing with `bsdutils 1:2.42.2-1`, that guarantee disappeared. The fixture then failed before its intended PTY assertions could complete.
 
 ## Why the dependency belongs in the test
 
@@ -35,76 +35,114 @@ The test deliberately runs `script` inside the root. Explicitly naming the provi
 
 The user-controlled repository `teamleaderleo/mmdebstrap` is a GitHub fork of `deepin-community/mmdebstrap`, not a mirror of canonical Forgejo ancestry. Both repositories identify `master` head `574048f2a720057b75e56622003932f344dc700a` with subject `feat: update mmdebstrap to 1.5.7-3`.
 
-Its `tests/dev-ptmx` blob is `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`, byte-identical to the Linux Fieldwork import. This creates a strong implementation carrier for the Debian `1.5.7-3` source generation. The controlled candidate branch changes that file to blob `fa93b4b845ff4927a72f258364bd920e8c7dc573` at commit `43082a6bc959e2d7cefae48f52e045cc90869287`.
+Its `tests/dev-ptmx` blob is `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`, byte-identical to the Linux Fieldwork import. The controlled candidate branch changes that file to blob `fa93b4b845ff4927a72f258364bd920e8c7dc573` at commit `43082a6bc959e2d7cefae48f52e045cc90869287`.
 
-The carrier proves exact application to the source generation that produced the historical Debian failure and remains relevant because Debian sid still carries source package `1.5.7-3`. It does not prove current canonical ancestry or the presence of patches delivered through Forgejo, Salsa, Debian packaging, or mailing-list review.
+This carrier proves exact application to the source generation that produced the historical Debian failure. Debian sid still carries `mmdebstrap 1.5.7-3`, so it also provides a valid current-package execution base. Its history cannot prove inclusion of later Forgejo, Salsa, Debian-series, or mailing-list patches.
 
-## Mailing-list and canonical-main freshness risk
+## GitHub mirror survey
 
-The one-line dependency correction has a narrow overlap surface, yet final delivery still needs a canonical fetch. Later work may have:
+Accessible GitHub repositories do not contain advertised canonical commit `77ec9be5417ee44c96343d2347145585da1b1f94`.
 
-- changed the include declaration or hook sequence;
-- added `bsdutils` equivalently;
-- renamed or retired the case;
-- carried adjacent test fixes through a mailing list or Debian patch series without appearing in the Deepin GitHub history.
+The newest inspected fork, `RubisetCie/mmdebstrap`, carries two unrelated local commits after the same Deepin base and still has baseline `dev-ptmx` blob `ca1cde...`. A newer GitHub timestamp therefore cannot establish canonical freshness.
 
-The response to drift is deterministic:
+Public indexed searches found no equivalent `dev-ptmx`/`bsdutils` correction in the canonical tracker, Debian BTS, or Debian mailing-list archives. Search coverage remains incomplete; exact canonical history is decisive.
 
-- equivalent correction present: retire external submission and retain historical evidence;
-- surrounding edits with the dependency still absent: rebase the one-line change and rerun static and dynamic gates;
-- changed test intent or command provider: reopen ownership analysis before proposing code.
+## Packet-carrier failure and repair
 
-## Packet-carrier validation failure and repair
-
-The first internal PR `#402` run reached the repository's changed-patch validator and rejected the retained email-style patch before tests:
+The first internal PR `#402` run rejected the retained email-style patch before tests:
 
 ```text
 invalid hunk-body prefix '2'
 hunk count mismatch: declared old/new 8/8, observed 8/7
 ```
 
-The source candidate was unaffected. The retained patch declared eight hunk lines while carrying seven and included an email trailer that the validator then read as hunk content. The packet carrier was replaced with the exact pure unified diff from controlled-fork commit `43082a6bc959e2d7cefae48f52e045cc90869287`, using a `7/7` hunk and no trailer.
+The source candidate was unaffected. The packet carrier was replaced with the exact pure unified diff from controlled-fork commit `43082a6bc959e2d7cefae48f52e045cc90869287`, using a `7/7` hunk and no trailer.
 
-This red run classifies as a packet-format defect with zero package claim.
+Exact packet head `a4303b4bf3c02fb4acfc16337e53b68b08626862` then passed run `30690010699`: patch validation, compilation, the complete repository unit suite, shell syntax, and command-help checks.
+
+## Dynamic current-sid result
+
+Two separate disposable Debian sid runs executed installed `mmdebstrap 1.5.7-3` with `bsdutils 1:2.42.2-2` and the candidate source line.
+
+Run `30690241513`:
+
+```text
+root:    SUCCESS, 18 seconds
+unshare: SUCCESS, 18 seconds
+```
+
+Run `30690452822`, with the unit patch applied independently under the zero-fuzz/zero-offset contract:
+
+```text
+root:    SUCCESS, 36 seconds
+unshare: SUCCESS, 42 seconds
+```
+
+Across both runs:
+
+- both inner `script -c` hooks printed `foobar`;
+- copied apt logs contained no missing-command signature;
+- `/tmp/test.c` and `/tmp/log` were removed;
+- mmdebstrap removed every generated root;
+- the selected testsuite result was `PASS`.
+
+The outer autopkgtest status `2` came from the unrelated skipped `hint-testsuite-triggers` control entry. The named package-test result passed twice.
+
+The complete receipt is `artifacts/CURRENT-SID-DOUBLE-PASS.md`.
+
+## Execution-carrier lessons
+
+PR `#403` established two useful boundaries:
+
+1. a focus hunk applied before other testsuite transformations conflicts with the capability patch;
+2. bundling the independent `dev-ptmx` source correction into the installed-command wrapper patch violates fixture ownership.
+
+The cleaner composition applies the unit patch as its own exact carrier after unrelated compatibility patches. PR `#403` is closed because the full cache phase was excessive for one dependency case.
+
+Draft PR `#407` is an optional direct lane. It seeds only sid `InRelease`, uses the public Debian mirror, selects `coverage.py --exitfirst --mode=root --variant=apt dev-ptmx`, and records residual mounts, files, and processes. The double-pass evidence already completes the required dynamic gate.
 
 ## Approaches rejected
 
 ### Change util-linux packaging
 
-Rejected. The test owns an undeclared command dependency. Restoring Essential status would broaden the intervention far beyond this fixture and would leave the test coupled to implicit package-set composition.
+Rejected. The test owns an undeclared command dependency. Restoring Essential status would broaden the intervention and preserve the fixture's implicit package-set coupling.
 
 ### Replace `script` with another PTY helper
 
-Rejected. The case intentionally exercises PTY behavior through `script`; replacing it would alter the test's behavior and obscure the missing-provider defect.
+Rejected. The case intentionally exercises PTY behavior through `script`; replacement would alter the test's intent.
 
-### Install `bsdutils` in the autopkgtest control dependencies only
+### Install `bsdutils` in autopkgtest control dependencies only
 
-Rejected. Host-side availability already existed. The missing binary was inside the generated root, so the package belongs in the mmdebstrap `--include` set.
+Rejected. Host-side availability already existed. The missing binary was inside the generated root.
 
 ### Add a runtime dependency to mmdebstrap
 
 Rejected. mmdebstrap itself does not require `script` for ordinary operation. The dependency belongs solely to this test fixture.
 
-### Treat the Deepin GitHub history as canonical upstream
+### Treat Deepin GitHub history as canonical upstream
 
-Rejected. Its exact source bytes are useful for Debian `1.5.7-3` execution, while its ancestry and branch identity differ from canonical Forgejo `main`.
+Rejected. Its exact source bytes are useful for Debian `1.5.7-3` execution, while its ancestry differs from canonical Forgejo `main`.
 
-### Fold current-sid harness defects into this patch
+### Fold unrelated current-sid harness fixes into this candidate
 
-Rejected. PR `#72` found independent phase-order, wrapper, signal, and observability issues. Combining them would lose the one-line ownership boundary proven by the historical transcript.
+Rejected. Phase ordering, wrappers, signals, and observability have separate owners. The upstream candidate remains one dependency-line edit.
 
 ## Compatibility analysis
 
-The package name `bsdutils` is stable across the reviewed Debian releases and remains the direct provider recorded for `/usr/bin/script`. Adding it explicitly is harmless on releases where it remains Essential because apt deduplicates package selection. On releases where it is ordinary, the root gains the required binary.
+`bsdutils` remains the direct provider of `/usr/bin/script`. Adding it explicitly is harmless on releases where apt would already select it and necessary where it is ordinary. Current sid dynamic execution confirms the candidate with `bsdutils 1:2.42.2-2`.
 
-The candidate applies exactly to the imported and controlled downstream source blob. Exact application to canonical upstream head `77ec9be5417ee44c96343d2347145585da1b1f94`, or a fresher verified head, remains an execution gate because this environment can read the official repository page but cannot resolve its Git hostname for a raw checkout.
+## Hold discriminator
 
-## Open discriminators
+The technical correction, static validation, current-sid pass, cleanup, and immediate rerun are complete.
 
-1. Does the corrected packet regression pass on the final exact Linux Fieldwork head?
-2. Does the upstream-path patch apply to verified canonical `main` with zero fuzz and zero offset after overlap review?
-3. Does the named current-sid case pass after the candidate?
-4. Does an immediate rerun pass after cleanup?
-5. Has an equivalent canonical or mailing-list-carried change already landed?
+The single unresolved question is canonical source state:
 
-A green packet regression, positive canonical application, and named-case run/rerun would move the unit to `READY FOR AUTHORIZATION`. An equivalent canonical change would retire the submission while preserving the historical evidence and downstream execution receipt.
+1. fetch Forgejo `main` at `77ec9be5417ee44c96343d2347145585da1b1f94`, or a fresher verified head;
+2. inspect `tests/dev-ptmx` history and mailing-list-carried overlap;
+3. apply the packet patch with zero fuzz and zero offset.
+
+Outcomes:
+
+- equivalent correction present: retire the external submission;
+- dependency absent and patch applies cleanly: prepare the canonical fork branch and move to `READY FOR AUTHORIZATION`;
+- changed test intent or provider: reopen ownership analysis.
