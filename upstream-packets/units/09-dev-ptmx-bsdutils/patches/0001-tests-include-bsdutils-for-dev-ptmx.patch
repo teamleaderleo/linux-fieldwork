@@ -15,7 +15,7 @@ This changes only the generated-root dependency list.
 diff --git a/tests/dev-ptmx b/tests/dev-ptmx
 --- a/tests/dev-ptmx
 +++ b/tests/dev-ptmx
-@@ -119,7 +119,7 @@ END
+@@ -121,8 +121,8 @@ END
  # use script to create a fake tty
  # run all tests as root and as a normal user (the latter requires ptmxmode=666)
  script -qfec "$prefix {{ CMD }} --mode={{ MODE }} --variant=apt \
