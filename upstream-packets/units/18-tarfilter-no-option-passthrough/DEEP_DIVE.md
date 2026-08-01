@@ -55,6 +55,16 @@ The byte identity matrix covers:
 
 Compression bytes are part of the contract. Extractability alone would miss the defect.
 
+## Exact execution observation
+
+The shell could not clone the branch because network DNS was unavailable. The three branch files required by the focused regression were therefore reconstructed from GitHub content responses, and their Git blob hashes were recomputed before execution:
+
+- source: `ad776167a8473d5d15dbe22e850f4f6db35cf278`;
+- Linux Fieldwork patch: `44428ecf8d83a6edf2fca4f4da030129daacb13f`;
+- committed regression: `0b8a0e092a6dd2bf7481e077e7c7ec0f27b461bb`.
+
+The exact focused suite passed 3/3 twice. The upstream-shaped patch blob `9f856f389c7a991813dbe9d959edaf94c1155dec` also applied with `--fuzz=0`, and the resulting file compiled.
+
 ## Approaches rejected
 
 ### Check only `args.strip_components is None`
@@ -83,10 +93,25 @@ Those changes have separate mechanisms, compatibility questions, and unit owners
 
 ## Current upstream comparison
 
-On 2026-08-01, canonical upstream `main` was observed at `77ec9be5417ee44c96343d2347145585da1b1f94`. Its `tarfilter` page identified file commit `87b9b385b38795c58bc13ffb33b8724bed27f7a0` and displayed the same parser and unreachable guard as local blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`.
+On 2026-08-01, canonical upstream `main` remained at `77ec9be5417ee44c96343d2347145585da1b1f94`. Its `tarfilter` page identified file commit `87b9b385b38795c58bc13ffb33b8724bed27f7a0` and displayed the same parser and unreachable guard as local blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`.
 
-## Open discriminators
+The upstream issue index displayed six open issues; their titles cover initramfs/cpio, hook variables, package caching, eatmydata, CI integration, and old key failures. None concerns tarfilter no-option behavior. Targeted searches for `tarfilter`, `no option`, `no-option`, and `passthrough` across visible upstream issue and pull-request pages found no equivalent report or patch. The visible pull-request search returned only unrelated work such as merged PR #44.
 
-1. Execute the committed branch regression from a clean checkout or hosted job.
-2. Refresh the upstream issue and pull-request overlap search immediately before readiness.
-3. Establish a controlled fork and exact candidate source commit only after the technical gates pass and authorization permits that internal setup.
+## Complete-diff conclusion
+
+The branch comparison against `main` was reviewed before the final receipt updates. Product-relevant changes are limited to:
+
+1. regenerate the existing source hunk so it applies with zero fuzz;
+2. enforce zero-fuzz patch application in the regression;
+3. add direct active controls for path, PAX, type, and strip alongside the retained transform and ID-shift controls;
+4. retain the upstream-shaped patch and durable packet.
+
+No production/imported source is edited on the Linux Fieldwork branch. No workflow, dependency, unrelated test, archive fixture, or adjacent tarfilter semantic change enters the unit.
+
+## Remaining boundary
+
+Technical discriminators are closed. The remaining steps require an explicit human decision:
+
+1. authorize creation or use of a controlled public fork;
+2. create one fork-native candidate commit from patch blob `9f856f389c7a991813dbe9d959edaf94c1155dec`;
+3. submit the prepared pull request only under explicit upstream-contact authorization.
