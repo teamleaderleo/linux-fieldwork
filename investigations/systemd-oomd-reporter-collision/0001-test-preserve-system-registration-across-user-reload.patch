@@ -10,14 +10,14 @@ ManagedOOMMemoryPressure=kill registration and its configured limit remain
 visible after the user manager reloads and that the service itself did not
 restart.
 ---
- test/units/TEST-55-OOMD.sh | 60 ++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 60 insertions(+)
+ test/units/TEST-55-OOMD.sh | 57 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 57 insertions(+)
 
 diff --git a/test/units/TEST-55-OOMD.sh b/test/units/TEST-55-OOMD.sh
 index 43937c6ec7..0000000000 100755
 --- a/test/units/TEST-55-OOMD.sh
 +++ b/test/units/TEST-55-OOMD.sh
-@@ -537,6 +537,66 @@ testcase_prekill_hook() {
+@@ -537,6 +537,63 @@ testcase_prekill_hook() {
      done
  }
  
