@@ -1,0 +1,29 @@
+From: Linux Fieldwork unit 19 <internal-packet>
+Subject: [PATCH] tarfilter: regenerate shifted PAX ownership
+
+Large numeric uid and gid values are carried by PAX extended headers. After
+--idshift changes TarInfo.uid and TarInfo.gid, retained PAX uid/gid strings
+still override the shifted fields when Python writes the output archive.
+
+Drop only those stale numeric PAX keys after the validated shift. Python then
+regenerates them from the shifted fields when the values require PAX encoding.
+Other PAX metadata remains unchanged.
+
+This patch is retained for internal preparation. External submission remains
+unauthorized.
+---
+ tarfilter | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/tarfilter b/tarfilter
+--- a/tarfilter
++++ b/tarfilter
+@@ -327,6 +327,8 @@ def main():
+                     exit(1)
+                 member.uid += args.idshift
+                 member.gid += args.idshift
++                member.pax_headers.pop("uid", None)
++                member.pax_headers.pop("gid", None)
+             if hasattr(args, "trans"):
+                 for r, s in args.trans:
+                     member.name = r.sub(s, member.name)
