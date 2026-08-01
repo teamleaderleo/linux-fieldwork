@@ -1,0 +1,59 @@
+Unit 23 exact Debian source/build receipt
+Date: 2026-08-01
+Linux Fieldwork PR: #404
+Workflow run: 30690487287
+Job: 91344214299
+Head: fefa76c37d110f8fad8a575abc1eaa9e4ed76bb1
+Conclusion: red; first distinguishing owner was the fixture copier
+Artifact ID: 8815555088
+Artifact ZIP SHA-256: ec7e883d7d0716123342c9dfcc01db8e4a8af97461d635467feddcbd51a41399
+
+Exact source inputs
+-------------------
+util-linux_2.41-5.dsc
+  SHA-256 9e84dcc64170262f850aa5fd65902846a1ebf054d556ab5c4ec17fa16b00e628
+util-linux_2.41.orig.tar.xz
+  SHA-256 81ee93b3cfdfeb7d7c4090cedeba1d7bbce9141fd0b501b686b3fe475ddca4c6
+util-linux_2.41-5.debian.tar.xz
+  SHA-256 20ad832160d5ed8de4759ce00652f620ce642ab583c3c1c431b68a15cdba1d07
+
+Debian effective baseline
+-------------------------
+Version: 2.41-5
+lib/path.c SHA-256: f934339cf7aba38ae6197e5b5ad3b6a9e7e5fb483ed3f807d45971968d3c7cda
+Effective error path:
+
+1059: out:
+1060:     if (rc)
+1061:             cpuset_free(*set);
+1062:     free(buf);
+1063:     return rc;
+
+This proves the fully unpacked and quilt-applied trixie source retains the stale caller-visible pointer.
+
+Canonical patch application
+---------------------------
+Dry-run command used --batch --forward --fuzz=0 -p1.
+Dry-run output: checking file lib/path.c
+Real application output: patching file lib/path.c
+Candidate lib/path.c SHA-256: d0460b4fa3a32b7bdd3cf8b95fa5780bf830fa24bc9e64559408c3ddd1abbb8d
+Candidate error path contains cpuset_free(*set) followed by *set = NULL.
+
+Package build
+-------------
+dpkg-buildpackage -b -uc -us -j2 completed and emitted util-linux_2.41-5_amd64.deb.
+Candidate package SHA-256: 92f3aa6fa87a30b9d030263dbbb0446f7679c2ee0456760271ea530268f6b971
+Candidate /usr/bin/lscpu SHA-256: 883912245c15612a224b761d01b838ecd23470eccf467369ec5c4a560a7946e1
+Candidate version output: lscpu from util-linux 2.41
+
+First distinguishing failure
+----------------------------
+The matrix created identity.txt, then its broad copy of /sys/devices/system/cpu/* encountered unreadable live power attributes in the GitHub container:
+
+cp: error reading /sys/devices/system/cpu/cpu0/power/autosuspend_delay_ms: Input/output error
+cp: error reading /sys/devices/system/cpu/cpu1/power/autosuspend_delay_ms: Input/output error
+cp: error reading /sys/devices/system/cpu/cpu2/power/autosuspend_delay_ms: Input/output error
+cp: error reading /sys/devices/system/cpu/cpu3/power/autosuspend_delay_ms: Input/output error
+cp: error reading /sys/devices/system/cpu/power/autosuspend_delay_ms: Input/output error
+
+No baseline or candidate execution result is claimed from this run. The source, patch, and package-build stages succeeded. Commit 187ab0c3c72eb4f733e5c9eebaeb7b748f687fbb replaces the live-tree copy with a deterministic minimal sysroot.
