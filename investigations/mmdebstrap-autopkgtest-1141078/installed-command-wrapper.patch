@@ -5,8 +5,8 @@ diff --git a/debian/tests/testsuite b/debian/tests/testsuite
 -# create a fake mmdebstrap file in the current directory that coverage.sh can
 -# copy
 -cat << END > ./mmdebstrap
-+# create a formatted proxy in the current directory so that coverage.sh checks
-+# this source while every behavioral invocation reaches the installed package
++# create a formatted proxy in the current directory so every behavioral
++# invocation reaches the installed package
 +cat << 'END' > ./mmdebstrap
  #!/usr/bin/perl
  use strict;
@@ -33,12 +33,16 @@ diff --git a/debian/tests/testsuite b/debian/tests/testsuite
  
  # must not be used during testing -- installed version must be used instead
  cat << END > ./tarfilter
-@@ -173,7 +189,7 @@ fi
+@@ -173,10 +189,11 @@ fi
  # HAVE_QEMU=no because there is no kvm kernel module
  # HAVE_BINFMT=no because there is no binfmt_misc kernel module
  ret=0
 -timeout $TIMEOUT runuser -u "$AUTOPKGTEST_NORMAL_USER" -- env CMD="mmdebstrap --setup-hook=$SRC/debian/tests/sourcesfilter --hook-dir=$SRC/hooks/file-mirror-automount" DEFAULT_DIST=$DEFAULT_DIST RUN_MA_SAME_TESTS=$RUN_MA_SAME_TESTS HAVE_QEMU=no HAVE_BINFMT=no USE_HOST_APT_CONFIG=yes "$SRC/coverage.sh" --exitfirst || ret=$?
-+timeout $TIMEOUT runuser -u "$AUTOPKGTEST_NORMAL_USER" -- env CMD="$AUTOPKGTEST_TMP/mmdebstrap --setup-hook=$SRC/debian/tests/sourcesfilter --hook-dir=$SRC/hooks/file-mirror-automount" DEFAULT_DIST=$DEFAULT_DIST RUN_MA_SAME_TESTS=$RUN_MA_SAME_TESTS HAVE_QEMU=no HAVE_BINFMT=no USE_HOST_APT_CONFIG=yes "$SRC/coverage.sh" --exitfirst || ret=$?
++timeout $TIMEOUT runuser -u "$AUTOPKGTEST_NORMAL_USER" -- env CMD="$AUTOPKGTEST_TMP/mmdebstrap --setup-hook=$SRC/debian/tests/sourcesfilter --hook-dir=$SRC/hooks/file-mirror-automount" DEFAULT_DIST=$DEFAULT_DIST RUN_MA_SAME_TESTS=$RUN_MA_SAME_TESTS HAVE_QEMU=no HAVE_BINFMT=no USE_HOST_APT_CONFIG=yes "$SRC/coverage.py" --exitfirst dev-ptmx || ret=$?
  if [ "$ret" -eq 124 ]; then
  	echo "command timed out after $TIMEOUT seconds" >&2
  	exit 77
+ elif [ "$ret" -ne 0 ]; then
+ 	exit $ret
+ fi
++exit 0
