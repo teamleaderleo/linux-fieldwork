@@ -13,8 +13,8 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE_BLOB = "ad776167a8473d5d15dbe22e850f4f6db35cf278"
 TRANSFORM_PATCH = ROOT / (
-    "investigations/tarfilter-transform-target-scopes/"
-    "tarfilter-transform-target-scopes.patch"
+    "upstream-packets/units/16-tarfilter-type-hardlinks/patches/"
+    "0000-unit15-transform-metadata-prerequisite.patch"
 )
 PREDECESSOR_PATCH = ROOT / (
     "upstream-packets/units/16-tarfilter-type-hardlinks/patches/"
