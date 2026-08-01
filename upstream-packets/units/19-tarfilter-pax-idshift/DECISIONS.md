@@ -42,7 +42,7 @@
 
 **Consequences:**
 
-- proposed upstream diff should contain `tarfilter` and `tests/tarfilter-idshift` only;
+- proposed upstream diff contains `tarfilter` and `tests/tarfilter-idshift` only;
 - overlap must be checked again if unit 15 materializes first.
 
 **Reopen trigger:** current upstream review shows the same lines must change as part of a coherent accepted metadata refactor.
@@ -67,11 +67,38 @@
 **Consequences:**
 
 - `patches/0001-tarfilter-regenerate-shifted-pax-ownership.patch` is the retained source hunk;
-- final materialization must add the native test before readiness.
+- final materialization adds the native test before readiness.
 
 **Reopen trigger:** a current upstream checkout changes surrounding lines or offers a preferred source helper.
 
 **Authority effect:** None.
+
+---
+
+## 2026-08-01 — extend the existing native id-shift test
+
+**Decision:** Add the PAX-large regression to upstream `tests/tarfilter-idshift`, retain the draft as `patches/0002-tests-cover-pax-idshift.patch`, and publish source plus test as one eventual upstream commit.
+
+**Reason:** The existing native test already owns PAX xattr preservation, zero-shift byte identity, ordinary numeric shifting, extraction-based ownership checks, and inverse shifting. A large numeric member belongs beside those controls. A second test file would duplicate setup and weaken the visible ownership of the option contract.
+
+**Evidence:** Imported test blob `6956e76aca153147d3a8a6668196d913ebc8a49e`; `0002` SHA-256 `ce5442b10be51b900a86947f25046ff39392fd2e9e9a776e982eabe79a177edc`; detector baseline status `1` with `large ownership was not shifted`; detector candidate status `0`; complete receipts in `TESTS.md`.
+
+**Alternatives considered:**
+
+- add a separate Python test — rejected for the upstream candidate because the native shell test already owns this behavior and uses the project's tarfilter selection path;
+- replace the existing ordinary test — rejected because ordinary base-header behavior remains a valuable control;
+- assert byte identity after the large-ID round trip — deferred because PAX record layout may change while logical ownership, unrelated metadata, and payload stay correct. The existing ordinary archive continues to assert byte identity.
+
+**Consequences:**
+
+- retained packet preparation consists of ordered patches `0001` then `0002`;
+- intended upstream fence is exactly `tarfilter` and `tests/tarfilter-idshift`;
+- exact current-head application and full native execution remain required;
+- the regression has an executable losing path and cannot pass every implementation.
+
+**Reopen trigger:** current upstream changes the native test owner, a full exact-head run exposes portability trouble, or maintainers prefer a separate fixture/helper.
+
+**Authority effect:** Internal test preparation only. External-contact authority remains false.
 
 ---
 
@@ -100,4 +127,4 @@
 
 ## Final disposition
 
-`ACTIVE` on 2026-08-01. Source correction, prior exact-source evidence, current-source persistence, overlap refresh, packet patch, and fresh semantic probe are complete. Current-upstream branch materialization, native test integration, and exact-head gates remain.
+`ACTIVE` on 2026-08-01. Source correction, prior exact-source evidence, current-source persistence, overlap refresh, packet source patch, native test-owner selection, native test draft, and independent detector validation are complete. Current-upstream branch materialization, exact application, complete native test execution, and exact-head gates remain.
