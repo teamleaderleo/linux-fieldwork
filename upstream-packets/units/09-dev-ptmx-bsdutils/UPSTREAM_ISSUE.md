@@ -1,26 +1,23 @@
-# Upstream issue draft
+# Upstream issue disposition
 
-## Disposition
+## State
 
-A separate upstream issue adds little value because the source correction is one line, the owner is exact, and the pull-request draft contains the complete explanation and validation. Prefer a direct pull request after authorization and completion of the current-head gates.
+`RETIRED — DO NOT SUBMIT`
 
-If maintainers request an issue first, use this draft.
+A separate issue would duplicate an existing canonical correction.
 
-## Title
-
-tests/dev-ptmx relies on bsdutils being Essential
-
-## Body
-
-The `dev-ptmx` package test invokes `script(1)` twice inside the generated apt-variant root while its explicit include set contains only `gcc,libc6-dev,python3,passwd`.
-
-Debian's `bsdutils` package provides `/usr/bin/script`. After `bsdutils` stopped being Essential, the generated root no longer received that command implicitly and the test failed at:
+Canonical mmdebstrap commit:
 
 ```text
-chroot "$1" script -c "echo foobar"
-chroot: failed to run command ‘script’: No such file or directory
+c75b58e3c88b1f49626b9ee073e9e9688d38922c
+make_mirror.sh,tests/dev-ptmx: explicitly install bsdutils for script utility
 ```
 
-The direct correction is to add `bsdutils` to the existing include set. This changes the test dependency only and leaves runtime behavior and hook order untouched.
+The commit is present on canonical `develop` and tag `1.5.7+develop` and changes:
 
-A focused patch and regression evidence are ready. External submission remains pending authorization.
+```diff
+-	--include=gcc,libc6-dev,python3,passwd \
++	--include=gcc,libc6-dev,python3,passwd,bsdutils \
+```
+
+Historical Debian failure, static regression, downstream candidate, current-sid double pass, and canonical audit remain in this packet as validation evidence. No upstream issue was created.
