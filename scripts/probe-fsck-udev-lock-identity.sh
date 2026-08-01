@@ -19,7 +19,7 @@ finish_early() {
 if [[ $(id -u) -ne 0 ]]; then
   finish_early 77 "probe requires root in a disposable privileged container"
 fi
-for command in fsck flock losetup lslocks python3 stat truncate; do
+for command in fsck flock losetup lslocks mount mountpoint python3 stat truncate umount; do
   command -v "$command" >/dev/null 2>&1 || finish_early 77 "$command is unavailable"
 done
 [[ -e /dev/loop-control ]] || finish_early 77 "/dev/loop-control is unavailable"
@@ -31,10 +31,13 @@ checker_ready="$work_root/checker-ready"
 checker_release="$work_root/checker-release"
 exclusive_ready="$work_root/exclusive-ready"
 exclusive_release="$work_root/exclusive-release"
+rotational_override="$work_root/rotational-override"
 loopdev=
 fsck_pid=
 exclusive_pid=
 lockpath=
+rotational_path=
+rotational_override_mounted=0
 
 cleanup() {
   set +e
@@ -42,6 +45,9 @@ cleanup() {
   [[ -n ${exclusive_pid:-} ]] && kill "$exclusive_pid" 2>/dev/null
   [[ -n ${fsck_pid:-} ]] && wait "$fsck_pid" 2>/dev/null
   [[ -n ${exclusive_pid:-} ]] && wait "$exclusive_pid" 2>/dev/null
+  if [[ $rotational_override_mounted -eq 1 && -n ${rotational_path:-} ]]; then
+    umount "$rotational_path" 2>/dev/null
+  fi
   if [[ -n ${loopdev:-} ]]; then
     losetup -d "$loopdev" 2>/dev/null
   fi
@@ -56,15 +62,35 @@ truncate -s 32M "$image"
 loopdev=$(losetup --find --show "$image")
 loopname=${loopdev##*/}
 lockpath="/run/fsck/$loopname.lock"
+rotational_path=$(readlink -f "/sys/class/block/$loopname/queue/rotational")
+[[ -f $rotational_path ]] || finish_early 77 "rotational attribute is unavailable for $loopdev"
+rotational_original=$(cat "$rotational_path")
+printf '%s\n' "$rotational_original" >"$run_dir/rotational-original.txt"
+
+# fsck -l deliberately skips non-rotating devices. Override only this container's
+# mount-namespace view of the loop queue attribute so the current fsck lock path
+# executes without modifying the host kernel attribute.
+printf '1\n' >"$rotational_override"
+if ! mount --bind "$rotational_override" "$rotational_path" \
+    >"$run_dir/rotational-bind.stdout" 2>"$run_dir/rotational-bind.stderr"; then
+  finish_early 77 "unable to bind a private rotational=1 fixture over $rotational_path"
+fi
+rotational_override_mounted=1
+printf '%s\n' "$(cat "$rotational_path")" >"$run_dir/rotational-effective.txt"
+[[ $(cat "$rotational_path") == 1 ]] || finish_early 2 "rotational override did not become effective"
+findmnt -T "$rotational_path" >"$run_dir/rotational-mount.txt" || true
+
 rm -f -- "$lockpath"
 mkdir -p "$fake_path"
-
 cat >"$fake_path/fsck.ext4" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 : "${LOCK_PROBE_READY:?}"
 : "${LOCK_PROBE_RELEASE:?}"
 printf '%s\n' "$$" >"$LOCK_PROBE_READY"
+printf '%s\n' "$0" >"$LOCK_PROBE_READY.executable"
+printf '%q ' "$@" >"$LOCK_PROBE_READY.argv"
+printf '\n' >>"$LOCK_PROBE_READY.argv"
 while [[ ! -e $LOCK_PROBE_RELEASE ]]; do
   sleep 0.05
 done
@@ -77,18 +103,19 @@ chmod 0755 "$fake_path/fsck.ext4"
   printf -- '- Started: `%s`\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf -- '- Run ID: `%s`\n' "$run_id"
   printf -- '- Loop device: `%s`\n' "$loopdev"
-  printf -- '- Loop sysfs rotational: `%s`\n' "$(cat "/sys/class/block/$loopname/queue/rotational")"
+  printf -- '- Rotational attribute: `%s`\n' "$rotational_path"
+  printf -- '- Original rotational value: `%s`\n' "$rotational_original"
+  printf -- '- Effective private-fixture value: `%s`\n' "$(cat "$rotational_path")"
   printf '\n## Versions\n\n```text\n'
   uname -a
   fsck --version 2>&1 | head -1
   flock --version 2>&1 | head -1
   losetup --version 2>&1 | head -1
-  systemd --version 2>&1 | head -1 || true
   printf '```\n'
 } >"$run_dir/context.md"
 
 set +e
-FSCK_PATH="$fake_path" \
+PATH="$fake_path:/usr/sbin:/usr/bin:/sbin:/bin" \
 LOCK_PROBE_READY="$checker_ready" \
 LOCK_PROBE_RELEASE="$checker_release" \
   fsck -l -t ext4 "$loopdev" \
@@ -101,12 +128,14 @@ for _ in $(seq 1 200); do
   [[ -s $checker_ready && -e $lockpath ]] && break
   if ! kill -0 "$fsck_pid" 2>/dev/null; then
     wait "$fsck_pid" || true
-    finish_early 2 "fsck front-end exited before holding the checker and lock file"
+    finish_early 2 "fsck front-end exited before holding the fake checker and private lock"
   fi
   sleep 0.05
 done
 [[ -s $checker_ready ]] || finish_early 2 "fake checker did not start"
-[[ -e $lockpath ]] || finish_early 77 "fsck -l did not create $lockpath; rotational policy may have skipped locking"
+[[ -e $lockpath ]] || finish_early 2 "fsck -l did not create $lockpath despite rotational=1 fixture"
+cp "$checker_ready.executable" "$run_dir/fake-checker.executable"
+cp "$checker_ready.argv" "$run_dir/fake-checker.argv"
 
 checker_pid=$(cat "$checker_ready")
 printf '%s\n' "$checker_pid" >"$run_dir/fake-checker.pid"
