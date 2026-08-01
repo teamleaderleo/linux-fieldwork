@@ -1,11 +1,11 @@
 # HANDOFF — unit 05 `run_qemu.sh` result precedence
 
 Handoff date: 2026-08-01  
-State: `ACTIVE`  
+State: `HOLD`  
 External contact authorized: `false`  
 External contact made: `none`
 
-## Current branches
+## Exact branches and heads
 
 ### Linux Fieldwork packet
 
@@ -13,7 +13,7 @@ External contact made: `none`
 repository: teamleaderleo/linux-fieldwork
 branch: upstream/unit-05-run-qemu-result-precedence
 packet: upstream-packets/units/05-run-qemu-result-precedence/
-complete packet head before this HANDOFF update: 9e67661be8a12e79c4f6de079bcd48756911babf
+complete packet head immediately before this HANDOFF update: 523499647ec0003f5597cb5be056c94ec365453a
 ```
 
 ### Controlled mmdebstrap candidate
@@ -22,29 +22,20 @@ complete packet head before this HANDOFF update: 9e67661be8a12e79c4f6de079bcd487
 repository: teamleaderleo/mmdebstrap
 base branch: master
 base commit: 574048f2a720057b75e56622003932f344dc700a
+base run_qemu.sh blob: 426aeeb854173569b24e64d6eb85019f45bdf0b6
 candidate branch: linux-fieldwork/unit-05-run-qemu-result-precedence
-candidate head: 457095c6f89655ab12b7055307f519e71bb0dbca
-relation: four commits ahead, zero behind
+candidate head: 6efe6945f9f89cff57fe84086ede7bda747c3879
+candidate run_qemu.sh blob: 1fc816d6fe982351f6519fd1458329112eebdcfb
+candidate bytes: 3095
+candidate SHA-256: 434e7b6b9c32e30b506ea6af121608414c42b668c329e6395e75e19dc09ff276
+relation: five commits ahead, zero behind
 changed files: run_qemu.sh only
+compare: 64 additions, 10 deletions
 ```
 
 ## Current result
 
-The user-created GitHub mirror supplied the exact missing controlled candidate surface.
-
-Mirror `master` contains repository-root `run_qemu.sh` as Git blob `426aeeb854173569b24e64d6eb85019f45bdf0b6`. That is exactly the imported Linux Fieldwork source blob used by the canonical four-patch work.
-
-The candidate branch applies the four corrections as four source commits and ends at:
-
-```text
-head: 457095c6f89655ab12b7055307f519e71bb0dbca
-run_qemu.sh blob: 3e8d4dc07f91d246a372749eb49ff9489c21c7b7
-bytes: 2924
-SHA-256: 8d2b0fdef2c93fcd3d97f296dfe58d3cbe198e8a02ac85930aa8c3c89aedb90f
-/bin/sh -n: success
-```
-
-Selected result order:
+The canonical controlled candidate is now a five-commit series. Complete-diff review proved that the historical four-commit head still lost result ownership in two signal-handler setup windows. The fifth commit closes those windows while preserving the selected order:
 
 ```text
 captured host failure
@@ -54,93 +45,161 @@ captured host failure
 > success
 ```
 
+The unit is `HOLD`, rather than `READY FOR AUTHORIZATION`, because current canonical Salsa identity/overlap and upstream-native QEMU execution remain unrecorded.
+
 ## Candidate commits
 
 1. `614fb26a4f0724618a5eecd3ce1bee12454ff7de` — preserve primary result through cleanup.
 2. `cb6ef6d6c2b1368b3603b2ec06635c3815f31e11` — retain first handled signal through cleanup.
 3. `13cf34fd87d44b4d37c6767fdbd153b2ef535a57` — retain signals during ordinary EXIT cleanup.
 4. `457095c6f89655ab12b7055307f519e71bb0dbca` — preserve completed guest failure before cleanup signal.
+5. `6efe6945f9f89cff57fe84086ede7bda747c3879` — close explicit and ordinary handler-entry setup windows.
 
-GitHub compare reports four commits ahead, zero behind, with one modified file, 61 additions, and 10 deletions.
+## First distinguishing result in this pass
 
-## Completed work
-
-- Read issue #397, packet guidance, index, and every unit-05 carrier.
-- Created and maintained the Linux Fieldwork unit branch and required packet bundle.
-- Retained all four canonical patches byte-identically.
-- Proved ordered patch application and shell syntax on the exact imported source.
-- Located the user-controlled mirror `teamleaderleo/mmdebstrap`.
-- Verified mirror `master`, exact base commit, and exact source blob.
-- Created the controlled candidate branch.
-- Applied the four changes as four reviewable commits.
-- Verified the final GitHub blob equals the locally validated composed blob.
-- Recorded compare, blob, SHA-256, byte, and syntax receipts.
-- Kept external contact at zero.
-
-## User action
-
-No fetch command, clone command, branch setup, patch command, or test command is required from the user.
-
-The next user decision comes after the remaining technical gates:
+Four-commit explicit handler setup window:
 
 ```text
-authorize upstream submission
-hold for more testing
-retire because canonical upstream already has equivalent work
+first signal: TERM
+second signal before trap replacement: INT
+observed: 130
+required: 143
 ```
 
-## First incomplete step
-
-Search current canonical Salsa issues, branches, and merge requests for equivalent active work, and resolve the current canonical `master` commit/file identity before any submission.
-
-This requires canonical-host visibility. It does not require the user to operate Git locally.
-
-## Next safe technical actions
-
-1. Reconcile controlled mirror base `574048f2…` with current canonical Salsa `master` when access is available.
-2. Search for equivalent active upstream work.
-3. Run current upstream ordinary checks on candidate head `457095c6…`.
-4. Run a bounded QEMU/`debvm-run` smoke test only in an authorized disposable environment.
-5. Rebase and rerun when canonical `master` differs.
-6. Refresh `UPSTREAM_PR.md` with exact canonical identities.
-7. Move to `READY FOR AUTHORIZATION` only after the exact candidate head passes the remaining gates.
-
-## Historical evidence
+Four-commit ordinary EXIT setup window:
 
 ```text
-canonical PR: #319
-head: 2fe3f99364df29de217536dc35a4d03b10f49640
-merge: b196d6b45f496d8eb2d763922532ad257f24bba8
-CI: 30628645668 / job 889
-result: success
-repository tests: 276 passed
+completed guest result: 1
+TERM before cleanup recorder traps
+observed: 143
+required: 1
 ```
 
-The candidate bytes on the controlled mirror equal the bytes validated by that composition.
+Both controls completed cleanup. The failure owner was product result precedence during handler transition.
 
-## Known limits
+## Selected repair
 
-- Canonical Salsa `master` identity remains unresolved in this runtime.
-- Current Salsa equivalent-carrier search remains unresolved.
-- Upstream-native ordinary checks have yet to run on the controlled candidate branch.
-- Real QEMU/`debvm-run` execution requires a disposable authorized environment.
-- Patch 4 depends on guest status becoming complete and durable before host cleanup begins.
-- Later INT/TERM suppression assumes bounded cleanup.
+Patch 5:
+
+- adds `cleanup_phase=running`;
+- captures `$?` and marks ordinary cleanup in one assignment-only command: `rv=$? cleanup_phase=exit`;
+- disables overlapping INT/TERM handling in each trap action before entering a handler;
+- records an early signal that entered through the old action and returns to ordinary cleanup;
+- retains first-writer cleanup signal behavior after recorder traps are installed.
+
+Packet patch:
+
+```text
+patches/0005-close-signal-handler-setup-windows.patch
+Git blob: f7e906d915c34db6e7546e4a9b1e4024e19d98d1
+```
+
+## Completed gates
+
+### Controlled lifecycle matrix
+
+```text
+58 passed
+0 failed
+```
+
+Includes baseline and intermediate losing controls, final result matrix, competing signals, cleanup failure, once-only cleanup, temporary-directory removal, and immediate clean rerun.
+
+Receipt:
+
+```text
+artifacts/2026-08-01-controlled-fork-lifecycle-matrix.txt
+```
+
+### Setup-window repair controls
+
+```text
+repaired explicit TERM then INT: 143
+repaired completed guest 1 then early TERM: 1
+repaired early TERM then later INT: 143
+cleanup sequence: rm, rmdir
+successful repaired tmpdirs: removed
+/bin/sh -n: pass
+```
+
+Receipt:
+
+```text
+artifacts/2026-08-01-handler-setup-window-repair.txt
+```
+
+### Durable regression
+
+```text
+tests/test_run_qemu_handler_setup_windows.py
+Git blob: a58eb89029729a89208c72e30164bcfe3c0aa139
+```
+
+Equivalent reduced fixtures executed in this pass. The exact checked-in module still needs a complete-checkout or hosted-CI execution identity.
+
+## Fixture interruptions classified
+
+Two preliminary local harness runs were excluded:
+
+1. synchronization waited for cleanup before sending the signal that begins cleanup;
+2. the classifier expected ordinary baseline EXIT re-entry instead of explicit-signal re-entry.
+
+Owner: fixture/classifier. Product code remained unchanged. The corrected run is the 58/58 receipt.
+
+## Project-native test path
+
+mmdebstrap documents:
+
+```sh
+./make_mirror.sh
+CMD=./mmdebstrap ./coverage.sh
+```
+
+Individual cases use `coverage.py`; QEMU-classified cases execute `./run_qemu.sh`.
+
+## HOLD gates — first incomplete step
+
+1. Resolve current canonical Salsa `master` commit and live `run_qemu.sh` blob.
+2. Search current Salsa issues, branches, and merge requests for equivalent active work.
+3. Rebase or restack the five logical changes on that exact canonical head.
+4. Execute `tests/test_run_qemu_handler_setup_windows.py` from a complete checkout or hosted CI.
+5. Run current mmdebstrap QEMU-classified focused and ordinary tests on the exact candidate.
+6. Clean the checkout and rerun focused controls after any rebase.
+7. Refresh the final draft with exact canonical and run identities.
+
+These are repository/hosted-environment actions. The user has no fetch, clone, patch, branch, or local test command to perform.
+
+## Environment boundary
+
+This runtime could read and write GitHub through the connector but could not resolve the GitHub or Salsa hosts through the container network. It also lacked a prepared mmdebstrap mirror/cache and disposable QEMU image environment. Therefore:
+
+- exact controlled-fork source and reduced shell fixtures are demonstrated;
+- current canonical Salsa reconciliation remains unresolved;
+- upstream-native QEMU execution remains unresolved;
+- no claim is made that historical four-patch CI validates patch 5.
+
+## Cleanup state
+
+All reduced fixture processes completed or were reaped. Successful repaired cases removed their temporary directories. No mount, guest image, network service, credential, or external project state was created.
+
+## Durable records updated
+
+- `README.md` — five-commit identity and HOLD state;
+- `SOURCE_MAP.md` — patch 5, test ownership, and project-native path;
+- `DEEP_DIVE.md` — setup-window mechanism and rejected repairs;
+- `TESTS.md` — exact executed and queued gates;
+- `DECISIONS.md` — five-commit selection and HOLD decision;
+- `UPSTREAM_ISSUE.md` — refreshed internal issue draft;
+- `UPSTREAM_PR.md` — refreshed internal five-commit merge-request draft;
+- `upstream-packets/INDEX.md` — unit 05 marked HOLD;
+- both raw artifacts and the new regression module.
 
 ## Publication state
 
-`UPSTREAM_ISSUE.md` and `UPSTREAM_PR.md` remain internal drafts marked `DRAFT — DO NOT SEND`.
+`UPSTREAM_ISSUE.md` and `UPSTREAM_PR.md` remain `DRAFT — DO NOT SEND`.
 
-No upstream issue, merge request, comment, review, email, or mailing-list post has been authorized or created.
+No upstream issue, merge request, comment, review, email, or mailing-list post has been authorized or made.
 
-## Exit criteria
+## Resume with
 
-Move from `ACTIVE` to `READY FOR AUTHORIZATION` after recording:
-
-- current canonical base identity;
-- current source identity or clean rebase;
-- current equivalent-carrier search;
-- focused behavior gate;
-- upstream ordinary checks;
-- cleanup and immediate rerun;
-- final draft matching the exact delta.
+Refresh issue #397, this handoff, the exact controlled candidate head `6efe6945f9f89cff57fe84086ede7bda747c3879`, and current canonical Salsa. Perform the canonical identity/overlap gate first. Do not change product code before classifying any rebase or test failure owner.
