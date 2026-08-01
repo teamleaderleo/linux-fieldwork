@@ -1,5 +1,4 @@
-From: Linux Fieldwork unit 19 <internal-packet>
-Subject: [PATCH] tarfilter: regenerate shifted PAX ownership
+Subject: tarfilter: regenerate shifted PAX ownership
 
 Large numeric uid and gid values are carried by PAX extended headers. After
 --idshift changes TarInfo.uid and TarInfo.gid, retained PAX uid/gid strings
@@ -12,9 +11,6 @@ Other PAX metadata remains unchanged.
 This patch is retained for internal preparation. External submission remains
 unauthorized.
 ---
- tarfilter | 2 ++
- 1 file changed, 2 insertions(+)
-
 diff --git a/tarfilter b/tarfilter
 --- a/tarfilter
 +++ b/tarfilter
