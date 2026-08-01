@@ -52,6 +52,8 @@ Active overlap searched: yes inside Linux Fieldwork. Adjacent owners are units 0
 - Verified no earlier unit-22 packet or branch existed.
 - Re-read issue #76, its checkpoint, PR #77 metadata/review, all three changed carrier files, import metadata, and imported source.
 - Confirmed Linux Fieldwork `main` base `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`.
+- Verified packet head `49cb8a6aadd4494482486516513b00540bc09191` was 10 commits ahead, 0 behind, with exactly 10 added unit files and no unrelated changes.
+- Queried combined status and pull-request-triggered workflow runs for `49cb8a6aadd4494482486516513b00540bc09191`; both returned empty lists. No packet-head CI result is claimed.
 - Attempted current upstream clone with:
 
 ```sh
@@ -83,4 +85,4 @@ The temporary target was removed before the attempt and contains no retained che
 6. Clean the checkout and rerun the focused candidate test.
 7. Compare/apply after final tarfilter unit ordering is known.
 
-No current-upstream, native-suite, package-build, autopkgtest, lintian, or Salsa CI result is claimed by this packet.
+No current-upstream, native-suite, package-build, autopkgtest, lintian, Salsa CI, or packet-head CI result is claimed by this packet.
