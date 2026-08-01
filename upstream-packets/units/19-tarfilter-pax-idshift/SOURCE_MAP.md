@@ -40,15 +40,17 @@
 - Candidate upstream branch: `NEEDS BRANCH`
 - Compare or diff: `NEEDS BRANCH`
 - Retained patch: `patches/0001-tarfilter-regenerate-shifted-pax-ownership.patch`
+- Retained patch SHA-256: `b86da5f6a2f2f1757b5b3fc0e32ebeabeeadbdebebb4cdc1961d3d1ff5eb3303`
 - Intended patch application command:
 
 ```sh
 git checkout -b linux-fieldwork/unit-19-tarfilter-pax-idshift \
   77ec9be5417ee44c96343d2347145585da1b1f94
-git am /path/to/0001-tarfilter-regenerate-shifted-pax-ownership.patch
+git apply --check /path/to/0001-tarfilter-regenerate-shifted-pax-ownership.patch
+git apply /path/to/0001-tarfilter-regenerate-shifted-pax-ownership.patch
 ```
 
-The retained mail-style patch currently contains the source hunk. Add the upstream-native test edit in the materialized branch before final review.
+The retained directly applicable patch contains the source hunk. Add the upstream-native test edit in the materialized branch, then commit source and test together before final review.
 
 ## Operation ownership map
 
