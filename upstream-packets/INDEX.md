@@ -17,7 +17,7 @@ This index maps each contribution unit to its durable packet directory. Issue #3
 | 08 | 2 | mmdebstrap package tests: current-sid phase-correct execution | Compose product test corrections | `units/08-current-sid-package-tests/` |
 | 09 | 2 | mmdebstrap package tests: declare `bsdutils` for `dev-ptmx` | Small bounded candidate | `units/09-dev-ptmx-bsdutils/` |
 | 10 | 2 | mmdebstrap package tests: exact subordinate-ID account matching | Small bounded candidate | `units/10-subid-exact-match/` |
-| 11 | 2 | mmdebstrap coverage.py: cancellation owns selected backend group | Narrow candidate review-ready | `units/11-coverage-backend-cancellation/` |
+| 11 | 2 | mmdebstrap coverage.py: cancellation owns selected backend group | READY FOR AUTHORIZATION | `units/11-coverage-backend-cancellation/` |
 | 12 | 2 | mmdebstrap proxysolver: faithful ordinary and signal results | Compose small source unit | `units/12-proxysolver-result-propagation/` |
 | 13 | 2 | mmdebstrap make_mirror.sh: top-level signal and proxy ownership | Select final composed lifecycle | `units/13-make-mirror-top-level-lifecycle/` |
 | 14 | 2 | mmdebstrap make_mirror.sh: update_cache worker-owned cleanup | Extract final composed worker lifecycle | `units/14-make-mirror-update-cache/` |
