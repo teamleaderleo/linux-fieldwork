@@ -6,8 +6,16 @@
 | --- | --- | --- | --- |
 | Primary implementation | `tarfilter`, `main()` id-shift block | file commit `87b9b385b38795c58bc13ffb33b8724bed27f7a0`; repository head `77ec9be5417ee44c96343d2347145585da1b1f94` | Current public source still shifts `member.uid`/`member.gid` and retains stale numeric PAX keys. |
 | Upstream tests | `tests/tarfilter-idshift` | imported blob `6956e76aca153147d3a8a6668196d913ebc8a49e` | Existing test owns xattr retention, zero-shift identity, ordinary shifting, and inverse-shift identity. The retained `0002` patch adds the missing forced-large-ID PAX case. |
+| Test declaration | `coverage.txt`, `Test: tarfilter-idshift` | blob `87f4cccf5fc646c82600672113830419e20b95dd` | Declares `Needs-QEMU: true`. |
+| Test dispatcher | `coverage.py` | blob `9a522484aef05deae514a98e4b6adf5feb6c886d` | Accepts the named test, copies local `tarfilter`, checks generated `shared/test.sh` with ShellCheck and shfmt, and selects the QEMU runner. |
+| Suite wrapper | `coverage.sh` | blob `58e90568804db9f259b9ab99ce99ed74672fe2c5` | Checks `tarfilter` with Black, validates project shell files, requires the mirror/QEMU preparation, and delegates to `coverage.py`. |
+| Project instructions | `README.md` | blob `281e551bdf4af6e8336dca8a93cdf278a6be4cab` | Documents `./make_mirror.sh`, `CMD=./mmdebstrap ./coverage.sh`, named tests, and the canonical issue tracker. |
+| Debian package test | `debian/tests/testsuite` | blob `9f4eda87430da38b08a23a50a51e53b22cf7414b` | Exports `HAVE_QEMU=no`; the named `Needs-QEMU` test is skipped in that package-test phase. |
+| Package test dependencies | `debian/tests/control` | blob `58582587412629e180ba1712abd35b8d7f7bc7de` | Declares Black, ShellCheck, shfmt, Python, `libcap2-bin`, and the broad suite dependencies. |
 | Package source | Debian source `mmdebstrap` | `1.5.7-3` in sid/forky; `1.5.7-1+deb13u1` in trixie | Both visible source lines retain the same id-shift implementation. |
-| Contribution instructions | canonical repository issue/PR interface | observed 2026-08-01 | Proposed delivery is a controlled Forgejo/Gitea fork and PR after authorization. |
+| Contribution route | canonical repository issue/PR interface | observed 2026-08-01 | Proposed delivery is a controlled Forgejo/Gitea fork and PR after authorization. No separate imported `CONTRIBUTING` file was found. |
+
+Detailed project gate interpretation is retained in [`PROJECT_INSTRUCTIONS.md`](PROJECT_INSTRUCTIONS.md).
 
 ## Linux Fieldwork carriers
 
@@ -18,7 +26,7 @@
 | CI run `30538012863` | PR #78 exact head | exact-source focused and repository evidence | accepted receipt |
 | `investigations/tarfilter-pax-idshift/` | merged through PR #78 | prior narrative and Linux Fieldwork-path patch | historical evidence |
 | `tests/test_tarfilter_pax_idshift.py` | merged through PR #78 | exact imported-source baseline/candidate regression | retained negative control |
-| Unit 19 packet | branch `upstream/unit-19-tarfilter-pax-idshift` | upstream-root source patch, native test patch, semantic probe, drafts, decisions, handoff | current preparation owner |
+| Unit 19 packet | branch `upstream/unit-19-tarfilter-pax-idshift` | upstream-root source patch, native test patch, semantic probe, project gate map, drafts, decisions, handoff | current preparation owner |
 
 ## Candidate code
 
@@ -57,6 +65,24 @@ git apply /path/to/0002-tests-cover-pax-idshift.patch
 
 The two retained patches are preparation artifacts. The intended upstream candidate is one commit changing exactly `tarfilter` and `tests/tarfilter-idshift`, because the source invariant and its regression form one reviewable behavior change.
 
+## Project-native gate map
+
+```sh
+black --check ./tarfilter
+./make_mirror.sh
+CMD=./mmdebstrap ./coverage.sh tarfilter-idshift
+CMD=./mmdebstrap ./coverage.sh tarfilter-idshift
+```
+
+The named test must run with QEMU enabled. `coverage.py` checks the rendered test using:
+
+```sh
+shellcheck --exclude=SC2050,SC2194,SC2016 -f gcc shared/test.sh
+shfmt --posix --binary-next-line --case-indent --indent 2 --simplify -d shared/test.sh
+```
+
+A Debian package autopkgtest configured with `HAVE_QEMU=no` skips this named test and cannot serve as its focused receipt.
+
 ## Operation ownership map
 
 | Operation | Owner before candidate | Owner after candidate | Evidence |
@@ -68,6 +94,7 @@ The two retained patches are preparation artifacts. The intended upstream candid
 | retain unrelated PAX metadata | `tarfilter` filtered PAX dictionary | unchanged except numeric ownership keys | packet probe and native draft preserve `comment` keys |
 | emit member payload | `tarfile.addfile()` | unchanged | prior regression, packet round trip, and native draft assertions preserve payloads |
 | native regression ownership | ordinary id-shift test lacked a PAX-large discriminator | existing `tests/tarfilter-idshift` covers both ordinary and PAX-large numeric ownership | imported test review and retained `0002` patch |
+| focused execution | generic package-test success can skip this QEMU-required case | explicit named QEMU-backed runner owns the readiness receipt | `coverage.txt`, `coverage.py`, and Debian testsuite review |
 
 ## Overlap and current upstream state
 
