@@ -95,6 +95,28 @@
 
 **Authority effect:** External contact remains unauthorized; none occurred.
 
+---
+
+## 2026-08-01 — retain native test and coverage registration as separate drafts
+
+**Decision:** Store the complete upstream-shaped test as `native-tests/proxysolver-result-propagation` and its registration as `native-tests/coverage.txt.stanza`; defer a source-tree test patch until exact canonical `coverage.txt` context is materialized.
+
+**Reason:** Public harness inspection resolves the required file shape and registration contract, while the current environment still lacks canonical checkout bytes. A context-bearing `coverage.txt` hunk created now would guess at insertion context and could become stale or malformed.
+
+**Evidence:** `artifacts/2026-08-01-native-gate-selection.md`; native test SHA-256 `3505be52c6feec272c3fc177fb49e7c19bb326167f2013944f0494b685b20dd5`; candidate PASS twice and after restoration; imported baseline expected FAIL at `('exit-7', 0, 7)`; `/bin/sh -n` and candidate `py_compile` PASS.
+
+**Alternatives considered:**
+
+- emit an approximate `0002` patch now, rejected because exact `coverage.txt` context is unavailable;
+- keep only the packet-specific unittest, rejected because the upstream harness boundary is now understood and a project-shaped test adds review value;
+- run the full coverage suite, deferred because the canonical checkout and its mirror prerequisites remain unavailable.
+
+**Consequences:** The packet now contains copy-ready native test material and a precise focused command, while accurately separating local direct-gate evidence from unexecuted canonical `coverage.py` evidence.
+
+**Reopen trigger:** Exact canonical checkout becomes available; then place both drafts, generate the real integration patch, and run the selected coverage test.
+
+**Authority effect:** Internal branch files only. No fork or upstream message was created.
+
 ## Final disposition
 
-`ACTIVE` as of 2026-07-31. The first incomplete step is exact current-upstream source verification and patch execution.
+`ACTIVE` as of 2026-08-01. Native placement and a discriminating project-shaped test are now prepared and locally validated. The first incomplete step remains exact canonical source verification and patch execution, followed by exact-context test placement and the focused `coverage.py` gate.
