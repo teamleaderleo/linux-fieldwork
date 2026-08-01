@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Linux Fieldwork <internal-only@example.invalid>
+Date: Sat, 1 Aug 2026 00:00:00 +0000
+Subject: [PATCH] debian/tests: match subid account fields exactly
+
+The package-test setup currently searches complete /etc/subuid and
+/etc/subgid records as regular expressions. Another account containing the
+ordinary test username can satisfy that search and suppress the entry the
+test user needs.
+
+Read field 1 and compare it literally and exactly. Keep the existing append
+values and setup order unchanged.
+---
+ debian/tests/testsuite | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/debian/tests/testsuite b/debian/tests/testsuite
+--- a/debian/tests/testsuite
++++ b/debian/tests/testsuite
+@@ -152,9 +152,9 @@ END
+ 
+ # add entries to /etc/subuid and /etc/subgid if they don't exist yet
+-if [ ! -e /etc/subuid ] || ! grep "$AUTOPKGTEST_NORMAL_USER" /etc/subuid; then
++if [ ! -e /etc/subuid ] || ! cut -s -d: -f1 /etc/subuid | grep -Fxq -- "$AUTOPKGTEST_NORMAL_USER"; then
+ 	echo "$AUTOPKGTEST_NORMAL_USER:100000:65536" >> /etc/subuid
+ fi
+-if [ ! -e /etc/subgid ] || ! grep "$AUTOPKGTEST_NORMAL_USER" /etc/subgid; then
++if [ ! -e /etc/subgid ] || ! cut -s -d: -f1 /etc/subgid | grep -Fxq -- "$AUTOPKGTEST_NORMAL_USER"; then
+ 	echo "$AUTOPKGTEST_NORMAL_USER:100000:65536" >> /etc/subgid
+ fi
+ 
+-- 
+2.47.2
