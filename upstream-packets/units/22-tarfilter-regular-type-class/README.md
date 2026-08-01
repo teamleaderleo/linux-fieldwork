@@ -1,6 +1,6 @@
 # Unit 22 — mmdebstrap tarfilter regular-file type class
 
-State: `HOLD`  
+State: `ACTIVE`  
 Priority-zero issue: #397, unit 22  
 Worker or variant: `GPT-5.6 Thinking`  
 Linux Fieldwork branch: `upstream/unit-22-tarfilter-regular-type-class`  
@@ -8,7 +8,9 @@ External contact authorized: `false`
 
 ## TL;DR
 
-The retained candidate makes `--type-exclude=REGTYPE` and `--type-exclude=0` treat tar type flags `b"0"` and `b"\0"` as one regular-file class. The exact Linux Fieldwork candidate head `e65989feaac9a9cb89c49fe536c26fe9e9ee8cb7` passed focused CI run `30537313944`; its negative control proves the imported baseline leaks the NUL-type member. Submission remains on hold until the active tarfilter series establishes the final upstream patch order and an exact current Salsa checkout is available for rebase and native-test placement.
+The retained candidate makes `--type-exclude=REGTYPE` and `--type-exclude=0` treat tar type flags `b"0"` and `b"\0"` as one regular-file class. The exact Linux Fieldwork candidate head `e65989feaac9a9cb89c49fe536c26fe9e9ee8cb7` passed focused CI run `30537313944`; its negative control proves the baseline leaks the NUL-type member.
+
+Current upstream is now identified as `josch/mmdebstrap` `main@77ec9be5417ee44c96343d2347145585da1b1f94`. Its `tarfilter` still maps `REGTYPE`/`0` only to `tarfile.REGTYPE`, so the defect remains current. Review of units 01, 15, and 16 shows no direct source-owner conflict: unit 22 changes `TypeFilterAction`, while those units own transform parsing/metadata and hard-link dependency logic. Technical work remains, so this unit is `ACTIVE` until current-upstream native-test integration and execution are complete.
 
 ## Accomplished behavior
 
@@ -24,36 +26,40 @@ A caller selecting the regular-file class can otherwise receive a legacy NUL-fla
 
 - `TypeFilterAction` mapping for `REGTYPE` and `0`;
 - archive fixture with `REGTYPE`, `AREGTYPE`, and directory controls;
-- baseline leak, candidate exclusion, selector-alias, and over-filtering checks.
+- baseline leak, candidate exclusion, selector-alias, and over-filtering checks;
+- current-upstream source verification and native-test placement.
 
 ### Excluded
 
 - type-excluded hard-link dependency handling, owned by unit 16;
 - transforms and PAX/path metadata semantics, owned by unit 15;
-- other tarfilter fixes in units 01 and 18–21;
+- GNU basic/extended transform regex compatibility, owned by unit 01;
+- other tarfilter fixes in units 18–21;
 - vendor-specific or unknown type flags.
 
 ### Split boundary
 
-This unit changes only selector-to-type-class mapping. It does not alter member ordering, link resolution, path rewriting, metadata handling, or archive output.
+This unit changes only selector-to-type-class mapping. It does not alter member ordering, link resolution, path rewriting, metadata handling, or archive output. Adjacent tarfilter patches may be composed for a complete-gate run, but their completion order does not block this unit's independent implementation or review.
 
 ## Exact identities
 
 | Identity | Value |
 | --- | --- |
 | Upstream project | mmdebstrap |
-| Canonical repository | `https://salsa.debian.org/debian/mmdebstrap.git` |
-| Intended base branch | `master` |
-| Upstream base commit | Current exact `master` unresolved in this runtime; retained import resolves `debian/1.5.7-3` to `6fde999741f4fe1e7bf38079acf29432ef87a35e` |
+| Canonical repository | `https://gitlab.mister-muffin.de/josch/mmdebstrap` |
+| Intended base branch | `main` |
+| Upstream base commit | `77ec9be5417ee44c96343d2347145585da1b1f94` |
+| Current upstream `tarfilter` | still contains `items.append(tarfile.REGTYPE)` for `REGTYPE`/`0`; relevant source matches imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
+| Debian package mirror | `debian/1.5.7-3`, resolved commit `6fde999741f4fe1e7bf38079acf29432ef87a35e` |
 | Controlled fork | `NEEDS FORK` |
-| Candidate source branch | proposed `linux-fieldwork/unit-22-tarfilter-regular-type-class` after fork creation |
+| Candidate source branch | proposed `linux-fieldwork/unit-22-tarfilter-regular-type-class` after authorization and fork creation |
 | Candidate head | retained Linux Fieldwork source candidate `e65989feaac9a9cb89c49fe536c26fe9e9ee8cb7` |
 | Linux Fieldwork branch | `upstream/unit-22-tarfilter-regular-type-class` |
-| Linux Fieldwork head | see `HANDOFF.md` |
+| Linux Fieldwork head | see `HANDOFF.md` and issue #397 checkpoint |
 | Imported/local source identity | `upstream/mmdebstrap/tarfilter`, blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
 | Patch or series path | `patches/0001-tarfilter-treat-nul-as-regular.patch` |
-| Proposed destination | Debian mmdebstrap Salsa project |
-| Delivery method | `GitLab/Salsa fork and merge request`; fork still needed |
+| Proposed destination | canonical `josch/mmdebstrap` Forgejo project |
+| Delivery method | controlled fork branch and pull request; `NEEDS FORK` |
 
 ## Canonical links
 
@@ -74,17 +80,22 @@ This unit changes only selector-to-type-class mapping. It does not alter member 
 ### Demonstrated
 
 - Python classifies both `tarfile.REGTYPE` and `tarfile.AREGTYPE` members as regular files.
-- Imported baseline `debian/1.5.7-3` removes `REGTYPE` and retains `AREGTYPE` under `--type-exclude=REGTYPE`.
+- Imported baseline removes `REGTYPE` and retains `AREGTYPE` under `--type-exclude=REGTYPE`.
+- Current upstream `main@77ec9be5417ee44c96343d2347145585da1b1f94` still carries the same defective selector mapping.
 - The retained one-line candidate excludes both encodings for selector spellings `REGTYPE` and `0`.
 - `DIRTYPE` remains independent and prevents an over-filtering false positive.
 - Linux Fieldwork CI run `30537313944` succeeded on exact candidate head `e65989feaac9a9cb89c49fe536c26fe9e9ee8cb7`.
+- Unit 01 owns `TransformAction` regex grammar; unit 15 owns transform/link/PAX behavior; unit 16 owns hard-link dependency state. None requires unit 22 to wait for a final patch order.
+- Upstream-native individual tests run through `coverage.py`, with the project documenting `CMD=./mmdebstrap ./coverage.py --dist unstable <test-name>`.
 
 ### Pending demonstration
 
-- clean application to an exact current Salsa `master` commit;
-- placement in mmdebstrap's current native test suite;
-- focused native test and broader relevant gate on that exact candidate;
-- composition after active tarfilter units settle their final order.
+- materialized checkout at exact upstream commit `77ec9be5417ee44c96343d2347145585da1b1f94`;
+- clean patch application in that checkout;
+- placement of the regression in mmdebstrap's current native test suite;
+- focused native test and relevant broader gate on the exact candidate;
+- cleanup and immediate rerun;
+- complete candidate diff and overlap review on the materialized checkout.
 
 ### Compatibility boundary
 
@@ -98,12 +109,12 @@ One source patch and one focused archive-level regression belong in a single ups
 
 ## Current disposition
 
-`HOLD` — blocker: the final patch layer cannot be selected until active tarfilter units 01, 15, and 16 publish their final candidate order and an exact current Salsa checkout can be inspected. Discriminator: those packets identify their final heads/order and a current `master` commit is fetched for clean application plus native-test execution.
+`ACTIVE` — current upstream and source ownership are resolved. Native-test integration, exact-checkout execution, cleanup/rerun, and complete-diff review remain technical work.
 
 ## Next human decision
 
-No send decision is ready. After the hold discriminator clears, decide whether to authorize creation of the controlled Salsa fork and merge request.
+No decision is required yet. After the remaining technical gates pass, the unit will move to `READY FOR AUTHORIZATION` for your review and send/hold decision.
 
 ## Authority
 
-Internal repository reads, branch creation, packet drafting, retained patch/test work, and issue checkpoints are authorized. No upstream issue, merge request, email, comment, review, or other contact has been authorized or made.
+Internal repository reads, branch creation, packet drafting, retained patch/test work, rebasing, testing, and issue checkpoints are authorized. No upstream issue, pull request, email, comment, review, fork contact, or other public interaction has been authorized or made.
