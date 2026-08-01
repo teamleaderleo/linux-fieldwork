@@ -77,7 +77,7 @@ jobs:
             unit-11-*.log
           if-no-files-found: error
 
-  canonical-pr313-topology-gate:
+  canonical-refined-topology-gate:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -86,19 +86,21 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Materialize exact mechanism carrier and canonical source
+      - name: Materialize exact refined carrier and canonical source
         shell: bash
         run: |
           set -euo pipefail
+          refined_commit="8253ab2ef6fed22b34fc5f5d6d20cda75c25e2c7"
           mechanism_commit="e90fc438f530f7bd78ffd6fd1ba24c665bd96913"
           canonical_commit="77ec9be5417ee44c96343d2347145585da1b1f94"
           expected_coverage_blob="9a522484aef05deae514a98e4b6adf5feb6c886d"
-          historical="$RUNNER_TEMP/linux-fieldwork-pr313"
-          canonical="$RUNNER_TEMP/mmdebstrap-pr313"
+          historical="$RUNNER_TEMP/linux-fieldwork-pr339"
+          canonical="$RUNNER_TEMP/mmdebstrap-pr339"
 
-          git fetch --no-tags --depth=1 origin "$mechanism_commit"
+          git fetch --no-tags --depth=1 origin "$refined_commit"
           git worktree add --detach "$historical" FETCH_HEAD
-          test "$(git -C "$historical" rev-parse HEAD)" = "$mechanism_commit"
+          test "$(git -C "$historical" rev-parse HEAD)" = "$refined_commit"
+          test "$(git -C "$historical" merge-base --is-ancestor "$mechanism_commit" "$refined_commit" && echo yes)" = yes
 
           git clone --filter=blob:none --no-checkout \
             https://gitlab.mister-muffin.de/josch/mmdebstrap.git "$canonical"
@@ -115,24 +117,26 @@ jobs:
           test "$(git -C "$historical" hash-object tests/test_mmdebstrap_coverage_process_group.py)" \
             = 1649c10f8d6639bd26a42b9ab3587b64d84e072c
           test "$(git -C "$historical" hash-object tests/test_mmdebstrap_coverage_qemu_process_group.py)" \
-            = 96a2ed73da3efad6e61fde3a1bf93607f982afb8
+            = 0c2a050faf8e98320fc0c4fe4634d46bdf7f0dfa
           test "$(git -C "$historical" hash-object tests/test_mmdebstrap_coverage_sudo_process_group.py)" \
             = 8cc7cffb129595a5e4b967385616fbeede4814db
 
           {
+            echo "refined_commit=$refined_commit"
             echo "mechanism_commit=$mechanism_commit"
             echo "canonical_commit=$canonical_commit"
             echo "canonical_coverage_blob=$(git -C "$canonical" hash-object coverage.py)"
             echo "canonical_run_null_blob=$(git -C "$canonical" hash-object run_null.sh)"
             echo "canonical_run_qemu_blob=$(git -C "$canonical" hash-object run_qemu.sh)"
             echo "group_patch_blob=$(git -C "$historical" hash-object investigations/mmdebstrap-coverage-process-group/0001-own-backend-process-group.patch)"
-          } | tee unit-11-pr313-topology-source.txt
+            echo "refined_qemu_test_blob=$(git -C "$historical" hash-object tests/test_mmdebstrap_coverage_qemu_process_group.py)"
+          } | tee unit-11-refined-topology-source.txt
 
-      - name: Run exact null, QEMU-wrapper, and sudo matrix twice
+      - name: Run exact refined null, QEMU-wrapper, and sudo matrix twice
         shell: bash
         run: |
           set -euo pipefail
-          historical="$RUNNER_TEMP/linux-fieldwork-pr313"
+          historical="$RUNNER_TEMP/linux-fieldwork-pr339"
           modules=(
             tests.test_mmdebstrap_coverage_process_group
             tests.test_mmdebstrap_coverage_qemu_process_group
@@ -144,19 +148,19 @@ jobs:
             "$historical/tests/test_mmdebstrap_coverage_process_group.py" \
             "$historical/tests/test_mmdebstrap_coverage_qemu_process_group.py" \
             "$historical/tests/test_mmdebstrap_coverage_sudo_process_group.py"
-          for pass in topology-first topology-immediate-rerun; do
+          for pass in refined-first refined-immediate-rerun; do
             (
               cd "$historical"
               python3 -m unittest -v "${modules[@]}"
             ) 2>&1 | tee "unit-11-${pass}.log"
           done
 
-      - name: Upload exact topology logs
+      - name: Upload exact refined topology logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: unit-11-canonical-pr313-topology-gate
+          name: unit-11-canonical-refined-topology-gate
           path: |
-            unit-11-pr313-topology-source.txt
-            unit-11-topology-*.log
+            unit-11-refined-topology-source.txt
+            unit-11-refined-*.log
           if-no-files-found: error
