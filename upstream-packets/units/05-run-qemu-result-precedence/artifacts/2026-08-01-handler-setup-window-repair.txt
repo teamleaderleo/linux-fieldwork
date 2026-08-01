@@ -1,0 +1,97 @@
+Unit 05 handler setup-window review and repair receipt
+Date: 2026-08-01
+Execution boundary: exact controlled-fork source text, reduced real-/bin/sh fixtures, disposable directories, real PID-targeted INT/TERM delivery
+External contact: unauthorized; none made
+
+Reviewed candidate before repair
+-------------------------------
+repository: teamleaderleo/mmdebstrap
+branch: linux-fieldwork/unit-05-run-qemu-result-precedence
+head: 457095c6f89655ab12b7055307f519e71bb0dbca
+run_qemu.sh blob: 3e8d4dc07f91d246a372749eb49ff9489c21c7b7
+bytes: 2924
+SHA-256: 8d2b0fdef2c93fcd3d97f296dfe58d3cbe198e8a02ac85930aa8c3c89aedb90f
+
+Adjacent contexts selected by complete-diff review
+-------------------------------------------------
+1. Explicit signal-handler entry before cleanup_signal() replaces INT/TERM traps.
+   Discriminator: can a second signal replace the first signal during this setup window?
+2. Ordinary EXIT-handler entry before cleanup_exit() installs cleanup recorder traps.
+   Discriminator: can a signal in this setup window bypass completed guest precedence?
+3. Transition from the early EXIT setup window into ordinary cleanup.
+   Discriminator: does an early first signal remain authoritative after recorder traps are installed and a later signal arrives?
+
+Deterministic losing controls on head 457095c6
+--------------------------------------------
+Explicit handler setup window:
+  first signal: TERM
+  second signal before trap replacement: INT
+  observed status: 130
+  required status: 143
+  interpretation: the re-entered handler replaced the first signal.
+
+Ordinary EXIT handler setup window:
+  completed guest result: 1
+  signal before recorder traps: TERM
+  observed status: 143
+  required status: 1
+  interpretation: the old top-level TERM handler bypassed completed guest precedence.
+
+Cleanup completed in both widened controls. The distinguishing defect is result ownership, not cleanup leakage.
+
+Failure ownership
+-----------------
+Product: the handler bodies performed an assignment before replacing or redirecting the overlapping signal traps. Those separate shell commands exposed deterministic re-entry windows.
+
+Selected repair
+---------------
+commit: 6efe6945f9f89cff57fe84086ede7bda747c3879
+message: run_qemu: close signal-handler setup windows
+run_qemu.sh blob: 1fc816d6fe982351f6519fd1458329112eebdcfb
+bytes: 3095
+SHA-256: 434e7b6b9c32e30b506ea6af121608414c42b668c329e6395e75e19dc09ff276
+patch packet blob: f7e906d915c34db6e7546e4a9b1e4024e19d98d1
+
+Mechanism:
+- mark ordinary EXIT cleanup in the same assignment-only command that captures $?:
+    rv=$? cleanup_phase=exit
+- disable INT and TERM in each top-level signal trap action before entering cleanup_signal();
+- disable INT and TERM in each ordinary-cleanup recorder trap action before recording;
+- when a signal entered through the old top-level action after cleanup_phase became exit, record it and return so ordinary cleanup and host/guest ordering continue;
+- retain the first cleanup-time signal through record_cleanup_signal().
+
+Repair gates
+------------
+/bin/sh -n exact repaired run_qemu.sh: pass
+Existing controlled-fork lifecycle matrix: 58/58 pass
+
+Widened setup-window controls on repaired source:
+  explicit TERM then INT during delayed trap action: observed 143, expected 143, cleanup rm/rmdir, tmpdir removed
+  completed guest 1 then TERM during delayed EXIT setup: observed 1, expected 1, cleanup rm/rmdir, tmpdir removed
+  early TERM during delayed EXIT setup, then INT after recorder traps installed: observed 143, expected 143, cleanup rm/rmdir, tmpdir removed
+
+Durable regression
+------------------
+tests/test_run_qemu_handler_setup_windows.py
+Git blob: a58eb89029729a89208c72e30164bcfe3c0aa139
+
+The exact checked-in module has been reviewed from GitHub. Equivalent reduced fixtures were executed in this pass. Execution of that module from a complete Linux Fieldwork checkout or hosted CI remains queued because this runtime cannot fetch the repository through the GitHub network endpoint.
+
+Evidence boundary
+-----------------
+Demonstrated:
+- both setup windows can lose the declared precedence on the four-commit candidate;
+- the fifth commit closes the deterministic widened windows;
+- the existing 58-check lifecycle matrix remains green;
+- cleanup completes and immediate-rerun behavior remains green in the reduced fixtures.
+
+Unexecuted here:
+- current canonical Salsa master reconciliation and equivalent-carrier search;
+- the checked-in Python module from a complete checkout;
+- mmdebstrap coverage.py/coverage.sh QEMU-classified project tests;
+- real debvm-run/QEMU image execution;
+- current canonical upstream ordinary gates.
+
+Cleanup state
+-------------
+All disposable fixture processes completed or were reaped. Temporary directories used by successful repaired cases were removed. No mount, image, network service, credential, or external repository state was created.
