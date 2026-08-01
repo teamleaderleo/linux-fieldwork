@@ -86,7 +86,7 @@ jobs:
               test -x "$candidate"
               sha256sum "$deb" "$candidate" >"/work/$EVIDENCE_DIR/candidate-binary.txt"
 
-              /work/upstream-packets/units/23-util-linux-lscpu-cpuset/scripts/reproduce-trixie-lscpu-cpuset.sh \
+              bash /work/upstream-packets/units/23-util-linux-lscpu-cpuset/scripts/reproduce-trixie-lscpu-cpuset.sh \
                 --baseline /usr/bin/lscpu \
                 --candidate "$candidate" \
                 --output-dir "/work/$EVIDENCE_DIR/matrix"
