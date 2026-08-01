@@ -110,6 +110,50 @@
       "include": "*/tool",
       "member": "/opt",
       "retained": true
+    },
+    {
+      "case": "symlink parent exact descendant",
+      "include": "/linkroot/tool",
+      "member": "/linkroot",
+      "retained": true
     }
-  ]
+  ],
+  "symlink_case": {
+    "baseline": [
+      {
+        "gid": 28,
+        "linkname": "",
+        "mode": "0744",
+        "mtime": 1700000009,
+        "name": "linkroot/tool",
+        "pax": {},
+        "type": "file",
+        "uid": 18
+      }
+    ],
+    "candidate": [
+      {
+        "gid": 55,
+        "linkname": "usr/bin",
+        "mode": "0777",
+        "mtime": 1700000008,
+        "name": "linkroot",
+        "pax": {
+          "SCHILY.xattr.user.unit21": "symlink-parent"
+        },
+        "type": "symlink",
+        "uid": 44
+      },
+      {
+        "gid": 28,
+        "linkname": "",
+        "mode": "0744",
+        "mtime": 1700000009,
+        "name": "linkroot/tool",
+        "pax": {},
+        "type": "file",
+        "uid": 18
+      }
+    ]
+  }
 }
