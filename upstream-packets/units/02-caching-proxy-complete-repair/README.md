@@ -8,9 +8,11 @@ External contact authorized: `false`
 
 ## TL;DR
 
-The complete request, response, and atomic-cache repair already exists as the merged internal composition from PR #198. This unit converts that proof carrier into a current-upstream packet. The current canonical upstream head is `77ec9be5417ee44c96343d2347145585da1b1f94`; its repository view still attributes `caching_proxy.py` to the 2023-06-14 comment-only change and shows the same 4,439-byte release file carried by Debian 1.5.7. A byte-for-byte raw-file receipt against that head remains pending because the canonical Forgejo raw endpoint was unavailable through the present connector.
+The complete request, response, and atomic-cache repair already exists as the merged internal composition from PR #198. This unit is converting that proof carrier into a current-upstream candidate.
 
-The next safe step is to run the packet exporter in a full checkout, verify the imported blob against the exact upstream head, generate one reviewable source patch, and adapt the seven-case internal matrix into upstream-native tests. No upstream contact has been made.
+The former first gate is now complete. The internal staging repository `teamleaderleo/mmdebstrap` contains `linux-fieldwork/upstream-main-snapshot` at canonical commit `77ec9be5417ee44c96343d2347145585da1b1f94`, and its `caching_proxy.py` blob is exactly `e57a8516a0c76167894b05fc56be0e3165535488`, matching the Linux Fieldwork imported source byte for byte.
+
+A controller branch and a clean source branch now exist in the GitHub staging repository. An internal workflow was added to export the committed composer, compile under ordinary and optimized Python, run the retained seven-test matrix, and publish only `caching_proxy.py` to the clean source branch. During this session the clean source branch did not advance, so no new candidate or test pass is claimed. No upstream contact has been made.
 
 ## Accomplished behavior
 
@@ -22,18 +24,17 @@ The baseline can turn request text into paths outside the intended cache root, f
 
 ## Scope
 
-### Included
+Included:
 
-- current-upstream identity and overlap review for `caching_proxy.py`;
+- exact current-upstream source identity;
 - one complete source candidate preserving the proven composition ordering;
-- request-target, cache-path, request-header, origin-status, response-framing, declared-length, transfer-coding, publication, late-error, retry, concurrency, and cleanup coverage;
-- ordinary and optimized Python behavior;
+- request-target, cache-path, request-header, origin-status, response-framing, declared-length, transfer-coding, publication, late-error, retry, concurrency, optimized-Python, and cleanup coverage;
 - upstream issue and pull-request drafts;
-- retained exact internal evidence and a reproducible exporter.
+- reproducible exporter and internal staging branches.
 
-### Excluded
+Excluded:
 
-- same-UID parent-directory replacement races;
+- same-UID parent-directory replacement races, owned by issue #227;
 - miss coalescing;
 - crash-durable file and directory synchronization;
 - checksums or content authentication;
@@ -41,83 +42,57 @@ The baseline can turn request text into paths outside the intended cache root, f
 - broader URI syntax;
 - any public issue, pull request, comment, email, review, or patch submission.
 
-### Split boundary
-
-Issue #227 owns the same-UID parent-swap race. It stays separate because descriptor-relative confinement requires a different mechanism and compatibility review. Unit 02 preserves the pathname-level behavior proven by PR #198 without widening into that held investigation.
-
 ## Exact identities
 
 | Identity | Value |
 | --- | --- |
-| Upstream project | mmdebstrap |
 | Canonical repository | `https://gitlab.mister-muffin.de/josch/mmdebstrap` |
-| Intended base branch | `main` |
-| Upstream base commit | `77ec9be5417ee44c96343d2347145585da1b1f94` |
-| Controlled fork | `NEEDS FORK` |
-| Candidate source branch | `NEEDS FORK` |
-| Candidate head | `UNBUILT — exporter retained under scripts/` |
+| Canonical branch | `main` |
+| Canonical base commit | `77ec9be5417ee44c96343d2347145585da1b1f94` |
+| Canonical snapshot branch | `teamleaderleo/mmdebstrap:linux-fieldwork/upstream-main-snapshot` |
+| Verified source blob | `e57a8516a0c76167894b05fc56be0e3165535488` |
+| GitHub staging repository | `teamleaderleo/mmdebstrap` |
+| Staging default branch | `master` at `574048f2a720057b75e56622003932f344dc700a`; not used as canonical base |
+| Controller branch | `linux-fieldwork/unit-02-caching-proxy-complete-repair` |
+| Controller head | `60ea1c862787473ca362278bb2efb6f5e971b124` |
+| Clean candidate branch | `linux-fieldwork/unit-02-caching-proxy-complete-repair-source` |
+| Clean candidate head | `77ec9be5417ee44c96343d2347145585da1b1f94` — candidate not yet published |
 | Linux Fieldwork branch | `upstream/unit-02-caching-proxy-complete-repair` |
-| Linux Fieldwork head | see `HANDOFF.md` |
-| Imported/local source identity | `upstream/mmdebstrap/caching_proxy.py`, blob `e57a8516a0c76167894b05fc56be0e3165535488` |
-| Internal composed source | PR #198 head `5e69cd25e62d0e86364459d97c9df8568ff84187`; merge `8d9f7fa92f0cb2f553ca3578b78d7e04f4e4167f` |
-| Patch or series path | generated by `scripts/export_candidate.sh`; retained output target `patches/0001-caching-proxy-complete-repair.patch` |
-| Proposed destination | canonical mmdebstrap Forgejo repository |
-| Delivery method | `Forgejo fork and pull request` |
+| Internal composition | PR #198 head `5e69cd25e62d0e86364459d97c9df8568ff84187`; merge `8d9f7fa92f0cb2f553ca3578b78d7e04f4e4167f` |
+| Composer blob | `00e28cc925ced0c01d9c8e300e7c94515367ca19` |
+| Atomic input patch blob | `4fe75d312ebb097f1b9d5fa27f9f6e8da61235c1` |
+| Proposed canonical delivery | Forgejo pull request after explicit authorization |
 
-## Canonical links
+## Evidence
 
-- Priority-zero unit: #397 unit 02
-- Owning Linux Fieldwork issue: #188
-- Canonical Linux Fieldwork composition: PR #198
-- Focused carriers: PRs #118, #139, #147, #162, and #169; issues #127, #132, #145, and #168
-- Separate held race: issue #227
-- Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
-- Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
-- Tests and receipts: [`TESTS.md`](TESTS.md)
-- Decisions: [`DECISIONS.md`](DECISIONS.md)
-- Current handoff: [`HANDOFF.md`](HANDOFF.md)
-- Upstream issue draft: [`UPSTREAM_ISSUE.md`](UPSTREAM_ISSUE.md)
-- Upstream PR draft: [`UPSTREAM_PR.md`](UPSTREAM_PR.md)
+- The exact canonical snapshot commit is present in the GitHub staging repository.
+- `caching_proxy.py` on that branch has blob `e57a8516…`, exactly matching the imported baseline.
+- The complete internal candidate passed the seven-test matrix twice locally: `16.425s` and `15.297s`.
+- Exact-head Linux Fieldwork CI passed at PR #198 head, run `30580697438` / 612.
+- Peer staging review found useful controller/source separation and focused-test patterns in units 05, 07, 09, 10, 13, 14, 15, and 19.
+- Full peer-branch observations are retained in [`artifacts/github-staging-scan-2026-08-01.md`](artifacts/github-staging-scan-2026-08-01.md).
 
-## Current result
+## Pending demonstration
 
-### Demonstrated
-
-- The complete internal candidate passed the seven-test matrix twice locally.
-- Exact-head Linux Fieldwork CI passed at `5e69cd25e62d0e86364459d97c9df8568ff84187`, run `30580697438` / 612.
-- The composition deliberately reconciles chunked decoding with declared-length validation.
-- Rejected requests produce zero origin/cache activity in the internal matrix.
-- Failed fills leave neither final nor temporary cache entries; retry succeeds.
-- Post-commit failures retain one status line and close the connection.
-- Servers, clients, origin connections, sockets, threads, and temporary roots are reaped.
-
-### Pending demonstration
-
-- byte-for-byte equality between the imported source blob and canonical upstream head `77ec9be…`;
-- exporter execution on a full checkout at this packet branch;
-- a retained generated patch and candidate source digest;
-- upstream-native test placement and commands;
-- exact-candidate clean rerun after packaging;
-- controlled fork and candidate branch.
-
-### Compatibility boundary
-
-Successful fixed-length, exactly chunked, and EOF-delimited downloads stay supported. Decimal `Content-Length` spellings such as `00` and `05` remain accepted where their numeric value is valid. A `200` with a custom reason phrase remains accepted. Percent escapes stay rejected under the narrow Debian archive cache-key policy selected by the internal composition.
+- successful execution of the unit-02 staging workflow or an equivalent full-checkout exporter run;
+- clean candidate publication to the source branch;
+- generated candidate and patch digests;
+- clean patch application to exact canonical base;
+- upstream-native test placement;
+- ordinary/optimized focused rerun on the exact published candidate;
+- cleanup and immediate rerun;
+- final complete-diff and overlap review.
 
 ## Candidate organization
 
-One pull request is preferred because the mechanisms share `ProxyRequestHandler.do_GET()` and their ordering carries correctness. Splitting the source changes would recreate the green-pieces/red-stack failure demonstrated by issue #145.
+One source pull request remains preferred because the mechanisms share `ProxyRequestHandler.do_GET()` and their ordering carries correctness. Splitting the source changes would recreate the green-pieces/red-stack failure demonstrated by issue #145.
 
 1. `caching_proxy.py`: complete request-to-publication repair.
 2. Upstream-native regression coverage for request rejection, origin/header boundaries, framing, publication, retry, late failures, concurrency, optimized Python, and cleanup.
 
 ## Current disposition
 
-`ACTIVE` — current-upstream byte verification, patch generation, upstream-native test extraction, and exact-candidate rerun remain.
-
-## Next human decision
-
-No send decision is needed yet. After the candidate patch and upstream-native tests pass at an exact head, decide whether to create a controlled Forgejo fork and authorize a pull request.
+`ACTIVE` — exact source verification is complete. Candidate export/publication and exact-candidate tests are the first incomplete gate.
 
 ## Authority
 
