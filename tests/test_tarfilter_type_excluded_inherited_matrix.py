@@ -229,6 +229,149 @@ class TarfilterTypeExcludedInheritedMatrixTest(unittest.TestCase):
                 os.stat(destination / "root/peer").st_ino,
             )
 
+    def test_transformed_retained_target_overrides_excluded_duplicate(self) -> None:
+        archive = self.helper().archive_bytes(
+            (
+                (
+                    "prefix/base",
+                    tarfile.REGTYPE,
+                    "",
+                    b"transformed-retained-target\n",
+                ),
+                ("root/base", tarfile.SYMTYPE, "missing", b""),
+                ("root/peer", tarfile.LNKTYPE, "root/base", b""),
+            )
+        )
+        options = (
+            "--type-exclude=SYMTYPE",
+            "--transform=s,^prefix/,,",
+            "--transform=s,^root/,,",
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="tarfilter-unit16-transform-retained-"
+        ) as td:
+            root = pathlib.Path(td)
+            helper, candidate = self.prepare_candidate(root)
+            result = helper.run_filter(candidate, archive, *options)
+            self.assertEqual(
+                result.returncode,
+                0,
+                result.stderr.decode("utf-8", "replace"),
+            )
+            self.assertEqual(
+                helper.member_map(result.stdout),
+                {
+                    "base": (tarfile.REGTYPE, ""),
+                    "peer": (tarfile.LNKTYPE, "base"),
+                },
+            )
+            extracted, destination = helper.extract(
+                result.stdout, root, "transform-retained"
+            )
+            self.assertEqual(
+                extracted.returncode, 0, extracted.stdout + extracted.stderr
+            )
+            self.assertEqual(
+                os.stat(destination / "base").st_ino,
+                os.stat(destination / "peer").st_ino,
+            )
+
+    def test_transformed_removed_target_is_rejected(self) -> None:
+        archive = self.helper().archive_bytes(
+            (
+                (
+                    "root/base",
+                    tarfile.REGTYPE,
+                    "",
+                    b"transformed-removed-target\n",
+                ),
+                ("root/peer", tarfile.LNKTYPE, "root/base", b""),
+            )
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="tarfilter-unit16-transform-removed-"
+        ) as td:
+            root = pathlib.Path(td)
+            helper, candidate = self.prepare_candidate(root)
+            result = helper.run_filter(
+                candidate,
+                archive,
+                "--type-exclude=REGTYPE",
+                "--transform=s,^root/,,",
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(
+                "hard-link target excluded by type filter: "
+                "root/peer -> root/base",
+                result.stderr.decode("utf-8", "replace"),
+            )
+            self.assertEqual(helper.member_map(result.stdout), {})
+            helper.assert_empty_extract(
+                result.stdout, root, "transform-removed"
+            )
+
+    def test_h_scope_break_preexists_type_exclusion(self) -> None:
+        archive = self.helper().archive_bytes(
+            (
+                (
+                    "root/base",
+                    tarfile.REGTYPE,
+                    "",
+                    b"scope-disabled-target\n",
+                ),
+                ("root/peer", tarfile.LNKTYPE, "root/base", b""),
+            )
+        )
+        transform = "--transform=s,^root/,,H"
+        with tempfile.TemporaryDirectory(
+            prefix="tarfilter-unit16-transform-H-"
+        ) as td:
+            root = pathlib.Path(td)
+            helper, candidate = self.prepare_candidate(root)
+
+            direct = helper.run_filter(
+                candidate,
+                archive,
+                "--pax-exclude=never-matches",
+                transform,
+            )
+            self.assertEqual(
+                direct.returncode,
+                0,
+                direct.stderr.decode("utf-8", "replace"),
+            )
+            self.assertEqual(
+                helper.member_map(direct.stdout),
+                {
+                    "base": (tarfile.REGTYPE, ""),
+                    "peer": (tarfile.LNKTYPE, "root/base"),
+                },
+            )
+            direct_extract, _ = helper.extract(
+                direct.stdout, root, "scope-direct-broken"
+            )
+            self.assertNotEqual(direct_extract.returncode, 0)
+
+            filtered = helper.run_filter(
+                candidate,
+                archive,
+                "--type-exclude=REGTYPE",
+                transform,
+            )
+            self.assertEqual(
+                filtered.returncode,
+                0,
+                filtered.stderr.decode("utf-8", "replace"),
+            )
+            self.assertEqual(
+                helper.member_map(filtered.stdout),
+                {"peer": (tarfile.LNKTYPE, "root/base")},
+            )
+            filtered_extract, _ = helper.extract(
+                filtered.stdout, root, "scope-filtered-broken"
+            )
+            self.assertNotEqual(filtered_extract.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
