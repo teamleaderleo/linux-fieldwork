@@ -21,20 +21,49 @@ permissions:
   contents: read
 
 jobs:
-  current-import-gate:
+  canonical-upstream-gate:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out Linux Fieldwork
         uses: actions/checkout@v4
 
-      - name: Run exact current-import matrix twice
+      - name: Fetch exact canonical mmdebstrap source
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical="$RUNNER_TEMP/mmdebstrap"
+          expected_commit="77ec9be5417ee44c96343d2347145585da1b1f94"
+          expected_blob="9a522484aef05deae514a98e4b6adf5feb6c886d"
+          imported_blob="$(git hash-object upstream/mmdebstrap/coverage.py)"
+
+          git clone --filter=blob:none --no-checkout \
+            https://gitlab.mister-muffin.de/josch/mmdebstrap.git "$canonical"
+          git -C "$canonical" checkout --detach "$expected_commit"
+          test "$(git -C "$canonical" rev-parse HEAD)" = "$expected_commit"
+
+          canonical_blob="$(git -C "$canonical" hash-object coverage.py)"
+          test "$imported_blob" = "$expected_blob"
+          test "$canonical_blob" = "$expected_blob"
+          test "$canonical_blob" = "$imported_blob"
+
+          cp "$canonical/coverage.py" upstream/mmdebstrap/coverage.py
+          cp "$canonical/run_null.sh" upstream/mmdebstrap/run_null.sh
+
+          {
+            echo "canonical_commit=$expected_commit"
+            echo "canonical_coverage_blob=$canonical_blob"
+            echo "linux_fieldwork_import_blob=$imported_blob"
+            echo "coverage_last_commit=$(git -C "$canonical" log -1 --format=%H -- coverage.py)"
+          } | tee unit-11-canonical-source.txt
+
+      - name: Run exact canonical-source matrix twice
         shell: bash
         run: |
           set -euo pipefail
           test_script="upstream-packets/units/11-coverage-backend-cancellation/scripts/test_current_import.py"
           python3 -m py_compile "$test_script"
-          for pass in first immediate-rerun; do
+          for pass in canonical-first canonical-immediate-rerun; do
             python3 "$test_script" -v 2>&1 | tee "unit-11-${pass}.log"
           done
 
@@ -42,6 +71,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: unit-11-current-import-gate
-          path: unit-11-*.log
+          name: unit-11-canonical-upstream-gate
+          path: unit-11-*.txt
+                unit-11-*.log
           if-no-files-found: error
