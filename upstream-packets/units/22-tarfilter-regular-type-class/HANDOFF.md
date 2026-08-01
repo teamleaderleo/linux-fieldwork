@@ -10,7 +10,7 @@ External contact authorized: `false`
 - Repository: `teamleaderleo/linux-fieldwork`
 - Branch: `upstream/unit-22-tarfilter-regular-type-class`
 - Base: `main@6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Exact predecessor before this final handoff refresh: `22199ee9db26e1c4888e789bd7e68ed4c4f59456`
+- Exact predecessor before this final handoff refresh: `2c7207f01dd6ec2a4a9b664538cebc8e28a9479e`
 - Current head: the commit updating this file; issue #397 checkpoint and draft PR #410 record the resulting SHA.
 - Internal draft PR: #410
 - Packet: `upstream-packets/units/22-tarfilter-regular-type-class/`
@@ -57,7 +57,7 @@ External contact authorized: `false`
 
 ## Latest distinguishing result
 
-Both Python 3.13.5 and GNU tar 1.35 classify type flags `b"0"` and `b"\0"` as regular files. Current mmdebstrap stores only `b"0"` for the documented regular selector. The native regression fails on the unchanged mapping because `nul-regular` survives, then passes twice when the selector stores both bytes. Historical exact-source CI already passed the retained candidate. The new exact-source hosted gate has been submitted to internal draft PR #410; its current exact-head run must be resolved after this handoff commit appears.
+Both Python 3.13.5 and GNU tar 1.35 classify type flags `b"0"` and `b"\0"` as regular files. Current mmdebstrap stores only `b"0"` for the documented regular selector. The native regression fails on the unchanged mapping because `nul-regular` survives, then passes twice when the selector stores both bytes. Historical exact-source CI already passed the retained candidate. The new exact-source hosted gate has been submitted to internal draft PR #410; resolve its exact current-head run after this commit appears.
 
 ## First incomplete step
 
