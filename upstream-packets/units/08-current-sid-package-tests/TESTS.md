@@ -20,7 +20,7 @@
 | Stale broad fixture | focused pair passed; broad `unshare-as-root-user` compared host-hook archive with hook-free baseline and failed on three APT paths. | broad phase executed `create-directory` again. | PR #72 run `30636627420` / 974; artifact `8796132761`; digest `sha256:8e0ab36d6938c5eb676cd8f1550dec978743c3e12d4da4c6b862602c5f407227`. |
 | Phase-correct composition | previous run stopped at stale fixture. | focused producer/consumer and later broad producer passed; 154 tests completed; next failure `chrootless`. | PR #361 run `30640356619` / 999; exact generation `c2b7c43a4b6ce883f6dcdbef8d489bcf48323266`; artifact `8798679560`; digest `sha256:50d8ab7a20cb241ff9821b35329508ecdb0c58cbd3dec348c18d68d1dfe7a244`. |
 
-## Focused repository gates already executed on predecessor source
+## Focused predecessor gates
 
 ### Hook-free scheduling
 
@@ -38,7 +38,7 @@
 
 ## Exact distilled-series gate
 
-State: `AUTOMATED GATE COMMITTED; EXECUTION PENDING`.
+State: `EXECUTED; PASS`.
 
 Executable gate:
 
@@ -52,7 +52,46 @@ Executable gate:
 - two fresh applications must produce identical candidate SHA-256 digests and identical receipts;
 - imported source digests must remain unchanged.
 
-Local syntax-only review of the gate source completed on 2026-08-01:
+### Exact Linux Fieldwork execution receipt
+
+An internal draft execution carrier was opened as PR #405. This is a Linux Fieldwork repository action, not upstream contact.
+
+| Identity | Value |
+| --- | --- |
+| Draft PR | #405, `[WIP] Unit 08: current-sid package test corrections` |
+| Workflow | `Linux Fieldwork CI` |
+| Run | `30690576566` / 1145 |
+| Job | `lab-tools`, `91344449950` |
+| Base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
+| Candidate head tested | `a361f91f1b9cc3167baad5fbd6c61bbee546a10e` |
+| Generated merge tested | `4c5abe5e3777cfa57a5d1551e1975a8d769a8814` |
+| Runner | Ubuntu `24.04.4`, image `ubuntu-24.04` version `20260720.247.2` |
+| Result | `success` |
+
+Exact distinguishing log lines:
+
+```text
+validated 4 patch file(s) and 7 hunk(s)
+fieldwork discovery retained 439 of 462 tests; removed 23 exact inherited duplicate(s)
+test_series_applies_exactly_and_reruns_cleanly (test_upstream_packet_unit_08_current_sid_package_tests.Unit08CurrentSidPackageTestsSeriesTest.test_series_applies_exactly_and_reruns_cleanly) ... ok
+Ran 439 tests in 166.008s
+OK
+```
+
+The workflow also completed `Compile Python tools` and `Check shell syntax and command help` successfully.
+
+Interpretation:
+
+- the exact four-patch series applied twice to fresh copies of the imported source;
+- all patch commands returned zero with zero allowed fuzz and receipts containing no `fuzz` or `offset`;
+- every expected changed path appeared in its patch receipt;
+- transformed Python and shell files parsed;
+- both applications produced identical receipts and candidate digests;
+- all five imported-source files retained their original digests;
+- temporary directories were released by `TemporaryDirectory` before the test returned;
+- the complete Linux Fieldwork suite passed on the generated merge containing candidate head `a361f91f1b9cc3167baad5fbd6c61bbee546a10e`.
+
+Earlier syntax-only validation of the test source remains retained as a construction receipt:
 
 ```text
 py_compile=PASS
@@ -60,49 +99,41 @@ ast_parse=PASS
 sha256=a16b060b02a7c9e1b43db600f0f5789e6e5fc3add7cf93dc95ca32ad314b3dd6
 ```
 
-This receipt proves the test module parses. It does not prove the patch series applies because the session runtime lacked a materialized repository checkout.
-
-The branch push at `7782872ae2f731a27ed672df3a37b1d3b1581aa4` produced no workflow run because Linux Fieldwork CI is `pull_request`/`workflow_dispatch` only. A draft internal PR creation attempt was blocked by the connector safety classifier. The action was not retried speculatively.
-
-Manual equivalent from a full checkout:
-
-```sh
-python3 -m unittest -v \
-  tests.test_upstream_packet_unit_08_current_sid_package_tests
-```
-
 ## Upstream-native focused execution gate
 
-State: `PENDING`.
+State: `PENDING LIVE REBASE`.
 
-Minimum focused plan on the exact distilled head:
+Minimum focused plan on the refreshed exact upstream head:
 
-1. run the Deb822 sourcesfilter regression with current `python3-apt`;
-2. run `create-directory root-without-cap-sys-admin` through the package phase with no mount-dependent hooks;
-3. rerun broad `create-directory unshare-as-root-user` with host hooks;
-4. run `sigint-during-customize-hook` on current sid;
-5. execute the Debian package `testsuite` until the next independent result;
-6. retain exact package versions, checkout identity, command, status, first failure, and artifact digest.
+1. fetch current Salsa `master`, record its exact commit, and search for equivalent changes;
+2. reapply or rebase the ordered series with zero fuzz and zero offset;
+3. run the Deb822 sourcesfilter regression with current `python3-apt`;
+4. run `create-directory root-without-cap-sys-admin` through the package phase with no mount-dependent hooks;
+5. rerun broad `create-directory unshare-as-root-user` with host hooks;
+6. run `sigint-during-customize-hook` on current sid;
+7. execute the Debian package `testsuite` until the next independent result;
+8. retain exact package versions, checkout identity, command, status, first failure, and artifact digest.
 
 ## Complete-diff and overlap gates
 
-- complete diff reviewed against imported `debian/1.5.7-3`: source ownership reviewed; exact application pending;
+- complete diff reviewed against imported `debian/1.5.7-3`: source ownership and exact application complete;
 - active overlap searched in Linux Fieldwork carriers: complete;
-- live Salsa `master` overlap search: pending because the live tree could not be downloaded in this environment;
-- destination contribution-path check: Salsa project identified; fork/MR remains unauthorized.
+- live Salsa `master` exact-head overlap search: pending;
+- destination contribution path: Debian/mmdebstrap Salsa project identified; fork/MR remains unauthorized.
 
 ## Cleanup and rerun
 
-Historical run 999's privileged container exited and artifact upload completed. The current pass created Git branch files and one transient local syntax-check file under `/tmp`; `/tmp/test_unit08.py` and its `__pycache__` were removed after compilation and AST parsing.
-
-The exact distilled-series test still awaits a full repository checkout or CI execution, so its temporary-copy cleanup and immediate second-run result remain open.
+- Run `30690576566` completed successfully and the hosted runner performed post-job cleanup and orphan-process cleanup.
+- The exact series gate made two fresh temporary trees and released both before success.
+- The test verified the repository import was unchanged after each application.
+- Historical run 999's privileged container exited and artifact upload completed.
+- The transient local syntax-check file `/tmp/test_unit08.py` and its `__pycache__` were removed.
 
 ## Tests not run
 
-- execution of `tests/test_upstream_packet_unit_08_current_sid_package_tests.py` against the repository tree;
-- focused upstream-native tests on the distilled exact head;
-- current sid package execution without LF proxy/workflow machinery;
-- live Salsa-master rebase and overlap check;
-- literal upstream candidate branch CI.
+- live application/rebase against the current exact Salsa `master` head;
+- focused upstream-native tests on that refreshed distilled series;
+- current sid package execution from the exact upstream-facing series without Linux Fieldwork proxy/evidence machinery;
+- CI on a literal controlled Salsa fork branch.
 
-Adjacent green carriers do not substitute for these gates.
+Adjacent green carriers do not substitute for these remaining gates.
