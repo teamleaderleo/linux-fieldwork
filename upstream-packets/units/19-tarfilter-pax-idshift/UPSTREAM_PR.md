@@ -38,9 +38,19 @@ Completed internal evidence:
 
 - exact imported-source regression on the two-line candidate, including a losing baseline, ordinary control, regenerated-key assertions, payload preservation, and negative-shift round trip;
 - Linux Fieldwork CI run `30538012863` passed on exact candidate head `8d6443626e4338b180ec0533969bfe4d32b20d52`;
-- fresh Python 3.13.5 semantic regression passed twice with identical output and preserved unrelated PAX comments.
+- fresh Python 3.13.5 semantic regression passed twice with identical output and preserved unrelated PAX comments;
+- the draft native detector exits `1` with `large ownership was not shifted` on the current model and exits `0` on the candidate model.
 
-Before submission, replace this section with current-upstream receipts for the extended `tests/tarfilter-idshift` test and project-required ordinary gates on the exact candidate head.
+Current-upstream receipts required before submission:
+
+```sh
+black --check ./tarfilter
+./make_mirror.sh
+CMD=./mmdebstrap ./coverage.sh tarfilter-idshift
+CMD=./mmdebstrap ./coverage.sh tarfilter-idshift
+```
+
+The named test is declared `Needs-QEMU: true`. The project runner checks the generated test with ShellCheck and shfmt. Debian's package autopkgtest uses `HAVE_QEMU=no`, so its green result alone does not execute this named test.
 
 ### Compatibility
 
@@ -58,12 +68,16 @@ A separate upstream issue is unnecessary unless the project requests one.
 
 The key compatibility choice is removing the two stale numeric keys instead of assigning replacement strings. This preserves Python's existing representation choice: ordinary values remain in ordinary headers, while large values receive regenerated PAX records. Clearing the complete PAX dictionary would discard unrelated metadata and is intentionally avoided.
 
+The test requires the project's QEMU-backed path. A package autopkgtest configured with `HAVE_QEMU=no` skips `tarfilter-idshift` and cannot serve as the focused receipt.
+
 ## Submission checklist
 
 - [ ] Candidate rebased onto current intended upstream base `77ec9be5417ee44c96343d2347145585da1b1f94` or its reviewed successor.
 - [ ] Complete upstream diff reviewed.
 - [ ] Baseline regression fails and candidate passes in native test style.
-- [ ] Upstream-native focused tests pass.
+- [ ] `black --check ./tarfilter` passes.
+- [ ] Generated native test passes project ShellCheck and shfmt settings.
+- [ ] QEMU-backed `CMD=./mmdebstrap ./coverage.sh tarfilter-idshift` passes twice on the exact candidate head.
 - [ ] Project-required ordinary gates pass.
 - [x] Active indexed equivalent work checked on 2026-08-01.
 - [ ] Fork/branch delivery path exists.
