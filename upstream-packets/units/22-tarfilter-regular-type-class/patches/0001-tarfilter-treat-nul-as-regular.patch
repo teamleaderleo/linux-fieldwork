@@ -1,0 +1,27 @@
+From: Linux Fieldwork <internal@example.invalid>
+Subject: [PATCH] tarfilter: treat NUL and 0 as regular-file types
+
+Python's tarfile module accepts both REGTYPE (b"0") and AREGTYPE
+(b"\0") as ordinary regular files. Map the documented REGTYPE selector
+and its numeric alias 0 to both accepted encodings so a NUL-flagged
+regular payload cannot bypass regular-file exclusion.
+
+This retained patch is internal work. Author identity and submission
+metadata must be set by the authorized sender before any external use.
+---
+ tarfilter | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tarfilter b/tarfilter
+--- a/tarfilter
++++ b/tarfilter
+@@ -49,7 +49,7 @@ class TypeFilterAction(argparse.Action):
+         items = getattr(namespace, "typefilter", [])
+         match values:
+             case "REGTYPE" | "0":
+-                items.append(tarfile.REGTYPE)
++                items.extend((tarfile.REGTYPE, tarfile.AREGTYPE))
+             case "LNKTYPE" | "1":
+                 items.append(tarfile.LNKTYPE)
+-- 
+2.0.0
