@@ -1,80 +1,103 @@
 # Source map — unit 16
 
-## Imported source
+## Imported and prerequisite source
 
 | Role | Path or carrier | Exact identity | Notes |
 | --- | --- | --- | --- |
-| tarfilter implementation | `upstream/mmdebstrap/tarfilter` | blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` | Type exclusion precedes strip and transform processing. |
-| canonical transform/strip patch | `investigations/tarfilter-transform-target-scopes/tarfilter-transform-target-scopes.patch` | blob `1703984aa0c030e5131618a3541ee85bfd68ec65` | Rewrites member names and hard-link targets; clears stale PAX `path` and `linkpath`. |
+| imported tarfilter | `upstream/mmdebstrap/tarfilter` | blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` | Type exclusion occurs before strip and transform processing. |
+| unit-15 rewrite prerequisite | `patches/0000-unit15-transform-metadata-prerequisite.patch` | copied from unit 15 patch blob `38510533dc015182f3e87e9d2f3777eea5b8c93b` | Adds clean strip/link rewriting, five-field transforms, `_sed_substitute`, scope handling, and PAX cleanup. |
+| current upstream repository | `https://salsa.debian.org/debian/mmdebstrap.git` | branch `master`; exact head pending | Current-master fetch and rebase remain. |
 
 ## Canonical carriers
 
 | Carrier | Exact identity | Ownership |
 | --- | --- | --- |
 | Issue #243 | current issue record | Original type-excluded hard-link defect and bounded rejection policy. |
-| PR #244 | merge `29ac38765bbbe99ed62313da54e7e0022b8cb9c3`; executed code/test head `c853da482a04a5ad49b53478b49e540fd4208b27` | Executed baseline: dangling retained hard link after REGTYPE exclusion. |
-| PR #248 | head `f1b013832b5f3b073a9131de83ce89077771a7ea` | First rejection candidate and normalized leading-prefix matrix. |
-| PR #310 | head `32dfa36a6feb533bc1126a11ef33979e45b410ec` | Archive-finalization and retained-duplicate repairs. |
-| Issue #335 | current issue record | Final-name identity defect after strip rewriting. |
-| PR #68 | merge `e7388243f3436ceda16f9d5be70d5423cc379b9d` | Canonical member/link rewrite and PAX regeneration carrier. |
-| PR #399 | branch head tracked in `HANDOFF.md` | Current internal unit workspace and CI carrier. |
+| PR #244 | merge `29ac38765bbbe99ed62313da54e7e0022b8cb9c3`; executed head `c853da482a04a5ad49b53478b49e540fd4208b27` | Executed dangling-output baseline and neighboring LNKTYPE control. |
+| PR #248 | head `f1b013832b5f3b073a9131de83ce89077771a7ea` | First focused rejection, archive-root prefix normalization, independent filters, first-peer behavior. |
+| PR #310 | head `32dfa36a6feb533bc1126a11ef33979e45b410ec` | Archive finalization, retained duplicate target, and post-skip retention timing. |
+| Issue #335 | current issue record | Pre-rewrite versus final projected identity question. |
+| unit 15 | `upstream/unit-15-tarfilter-transform-metadata` | Clean rewrite prerequisite replacing the historical PR #68 patch carrier. |
+| PR #399 | current unit branch | Internal CI and packet carrier. |
 
-## Packet-owned files
+## Active ordered patch series
 
-| Path | Purpose |
+| Order | Path | Purpose |
+| ---: | --- | --- |
+| 0 | `patches/0000-unit15-transform-metadata-prerequisite.patch` | Establish the member, hard-link target, transform scope, occurrence, and PAX rewrite contract. |
+| 1 | `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch` | Add finalized type-dependency rejection and retained duplicate target state. |
+| 2 | `patches/0002-use-rewritten-identities-for-type-hardlinks.patch` | Project excluded members and retained hard-link targets into final identity space before dependency comparison. |
+
+## Rejected patch evidence
+
+| Path | Rejection reason |
 | --- | --- |
-| `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch` | Packet-local zero-fuzz composition of PR #310 behavior after the PR #68 transform/strip patch. |
-| `tests/test_tarfilter_type_excluded_final_name_identity.py` | Two strip-induced identity discriminators from issue #335. |
-| `README.md` | Current state, exact identities, scope, and disposition. |
-| `DEEP_DIVE.md` | Mechanism, approach history, and correction constraints. |
-| `TESTS.md` | Commands, expected results, CI receipts, cleanup, and unexecuted gates. |
-| `DECISIONS.md` | Canonical-carrier and work-order decisions. |
-| `HANDOFF.md` | Exact stopping point and first incomplete step. |
+| `patches/rejected/0002-alias-projection-overattributes-strip-breaks.patch` | Intermediate aliases turn a strip-only broken reference into a misleading type-filter diagnostic. Run `30690434953` proves the patch is mechanically green; the direct control rejects its policy. |
+
+## Packet-owned tests
+
+| Test | Claims |
+| --- | --- |
+| `tests/test_tarfilter_type_excluded_final_name_identity.py` | Exact blob loading, zero-fuzz series, compilation, valid final target acceptance, genuine removed-target rejection, strip-dropped link behavior, and pre-existing strip-break boundary. |
+| `tests/test_tarfilter_type_excluded_inherited_matrix.py` | Prefix equivalence, distinct dot prefix, independent filters and immediate rerun, first-peer stopping, retained duplicate targets, transformed collisions, transformed removed targets, and uppercase `H` boundary. |
 
 ## Source ownership map
 
 ### Type exclusion
 
-`type_filter_should_skip(member)` and the early `continue` in the archive loop own the original target-removal event.
+`type_filter_should_skip(member)` owns removal by `--type-exclude`. Unit 16 projects the skipped member's name through member-name strip and transform scope only when that projection survives.
 
 ### Name rewriting
 
-The PR #68 patch owns:
+Unit 15 owns:
 
 - component stripping for `member.name`;
 - component stripping for hard-link `member.linkname`;
-- transform scopes for member names, hard-link targets, and symlink targets;
+- transform occurrence semantics;
+- member (`r`), hard-link (`h`), and symlink (`s`) scopes;
 - stale PAX `path` and `linkpath` removal.
 
 ### Dependency state
 
-PR #248 introduces the excluded-name set and focused error. PR #310 adds finalized exit and retained duplicate state. Unit 16 owns moving this state and comparison into a coherent final emitted-name domain.
+Patch 0001 supplies finalized rejection and retained occurrence state. Patch 0002 replaces input-name comparison with normalized final projected identities. Original input names remain for stderr.
 
-## Test ownership
+### Attribution boundary
 
-| Test | Claim |
+A reference already broken without type exclusion stays outside unit 16. The direct strip and uppercase-`H` controls enforce this boundary.
+
+## Inherited tests and evidence
+
+| Carrier or test | Reused claim |
 | --- | --- |
-| `tests/test_tarfilter_type_excluded_hardlink_target.py` | Original baseline and neighboring LNKTYPE control, merged through PR #244. |
-| `tests/test_tarfilter_type_excluded_hardlink_candidate.py` | PR #248 genuine removed-target rejection, prefix equivalence, independent filters, and first-peer behavior. |
-| `tests/test_tarfilter_type_excluded_hardlink_patch_contract.py` | PR #248 exact composition and syntax contract. |
-| `tests/test_tarfilter_type_excluded_duplicate_target.py` | PR #310 finalized output, retained duplicate target, and strip-skipped non-retention. |
-| `tests/test_tarfilter_type_excluded_final_name_identity.py` | Unit 16 false rejection and false acceptance after strip rewrites. |
+| `tests/test_tarfilter_type_excluded_hardlink_target.py` | Original baseline and neighboring LNKTYPE control. |
+| `tests/test_tarfilter_type_excluded_hardlink_candidate.py` | Genuine removed target, leading prefixes, distinct `.../`, independent filters, and first-peer stopping. |
+| `tests/test_tarfilter_type_excluded_hardlink_patch_contract.py` | Exact patch composition and syntax. |
+| `tests/test_tarfilter_type_excluded_duplicate_target.py` | Finalized output, retained duplicate target, and post-skip retention timing. |
+| unit-15 tests | Transform occurrence, scope, hard-link target rewriting, and PAX regeneration compatibility. |
 
 ## Superseded or historical carriers
 
-- PR #281 preserves useful failed and stale-stack history; PR #310 replaces it as the duplicate/lifecycle carrier.
-- PR #48 supplies part of the rewrite/PAX history; PR #68 is the canonical integrated transform-scope carrier.
+- PR #281 remains useful stale-stack history; PR #310 is the selected lifecycle/duplicate predecessor.
+- PR #68 records the reviewed transform-scope history, while unit 15 supplies the exact clean prerequisite used here.
+- The alias-projection candidate is retained solely as rejected evidence.
 - Issue #240 and PR #241 define path-filter compatibility and remain outside this type-filter correction.
 
 ## Branch map
 
 | Role | Branch |
 | --- | --- |
-| Linux Fieldwork unit branch | `upstream/unit-16-tarfilter-type-hardlinks` |
-| Initial rejection carrier | `fix/tarfilter-type-excluded-hardlink-target` |
-| Duplicate/lifecycle repair carrier | `repair/tarfilter-retained-duplicate-target-v2` |
-| Controlled upstream fork branch | `NEEDS FORK` |
+| Linux Fieldwork unit | `upstream/unit-16-tarfilter-type-hardlinks` |
+| Initial rejection | `fix/tarfilter-type-excluded-hardlink-target` |
+| Duplicate/lifecycle repair | `repair/tarfilter-retained-duplicate-target-v2` |
+| Unit-15 prerequisite | `upstream/unit-15-tarfilter-transform-metadata` |
+| Controlled Salsa fork | `NEEDS FORK` |
 
 ## External destination
 
-`NEEDS DESTINATION DECISION`. No upstream contact is authorized or made.
+- project: `https://salsa.debian.org/debian/mmdebstrap`;
+- repository: `https://salsa.debian.org/debian/mmdebstrap.git`;
+- intended base: `master`;
+- delivery: GitLab/Salsa fork and merge request;
+- current-master exact commit: pending;
+- external authorization: absent;
+- external contact made: none.
