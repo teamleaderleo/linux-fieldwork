@@ -1,0 +1,4 @@
+0001-tests-sourcesfilter-accept-deb822.patch
+0002-tests-use-absolute-installed-mmdebstrap.patch
+0003-tests-use-current-sid-process-group-sigint.patch
+0004-tests-run-capability-case-in-phase-local-hook-free-pass.patch
