@@ -2,10 +2,13 @@
 
 ## Exact retained identities
 
+- Canonical upstream: `https://gitlab.mister-muffin.de/josch/mmdebstrap`
+- Exact current upstream base: `main@77ec9be5417ee44c96343d2347145585da1b1f94`
+- Current upstream `tarfilter`: still contains the defective `REGTYPE`/`0` mapping to `tarfile.REGTYPE` only
 - Imported baseline source: `upstream/mmdebstrap/tarfilter`
 - Imported source blob: `ad776167a8473d5d15dbe22e850f4f6db35cf278`
-- Imported package revision: `debian/1.5.7-3`
-- Imported resolved commit: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
+- Debian package revision: `debian/1.5.7-3`
+- Debian package resolved commit: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
 - Retained candidate head: `e65989feaac9a9cb89c49fe536c26fe9e9ee8cb7`
 - Candidate merge commit: `4b9e24b0b20c1398dcae825310c6b7d0d5c273d0`
 - Linux Fieldwork CI run: `30537313944`, success
@@ -33,6 +36,27 @@ The test applies the retained patch to an exact temporary copy of the imported s
 | Exact-head Linux Fieldwork CI | success | run `30537313944`, success |
 | Exact-head review | accepted | PR #77 review `4818250508` |
 
+## Current-upstream verification
+
+Current upstream project inspection established:
+
+- repository: `josch/mmdebstrap`;
+- branch/head: `main@77ec9be5417ee44c96343d2347145585da1b1f94`;
+- current `tarfilter` still uses:
+
+```python
+case "REGTYPE" | "0":
+    items.append(tarfile.REGTYPE)
+```
+
+- upstream README documents the complete suite through `coverage.sh` and individual named tests through:
+
+```sh
+CMD=./mmdebstrap ./coverage.py --dist unstable <test-name>
+```
+
+Unit 15 independently records the current upstream `tarfilter` as matching imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`.
+
 ## Patch review
 
 Retained source diff:
@@ -44,45 +68,43 @@ Retained source diff:
 
 Complete retained diff reviewed: yes, through PR #77 at `e65989feaac9a9cb89c49fe536c26fe9e9ee8cb7`.
 
-Active overlap searched: yes inside Linux Fieldwork. Adjacent owners are units 01, 15, and 16; final candidate heads remain pending.
+Active overlap searched: yes. Unit 01 changes `TransformAction` regex grammar; unit 15 changes transform/link/PAX semantics; unit 16 changes hard-link dependency state. No direct source-owner overlap blocks unit 22. A later composed complete-gate run remains required.
 
-## Work performed in this session
+## Work performed in this continuation
 
-- Refreshed #397 and all linked unit-22 carriers.
-- Verified no earlier unit-22 packet or branch existed.
-- Re-read issue #76, its checkpoint, PR #77 metadata/review, all three changed carrier files, import metadata, and imported source.
-- Confirmed Linux Fieldwork `main` base `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`.
-- Verified packet head `49cb8a6aadd4494482486516513b00540bc09191` was 10 commits ahead, 0 behind, with exactly 10 added unit files and no unrelated changes.
-- Queried combined status and pull-request-triggered workflow runs for `49cb8a6aadd4494482486516513b00540bc09191`; both returned empty lists. No packet-head CI result is claimed.
-- Attempted current upstream clone with:
+- Corrected unit state from `HOLD` to `ACTIVE`.
+- Identified the canonical current upstream host, branch, and exact head.
+- Confirmed the defect remains present on current upstream main.
+- Identified the native individual-test runner and command form.
+- Re-read units 01, 15, and 16 and removed the invented final-order dependency.
+- Attempted exact source materialization from both upstream and Linux Fieldwork Git endpoints.
 
-```sh
-git clone --quiet https://salsa.debian.org/debian/mmdebstrap.git /mnt/data/mmdebstrap-unit22
-```
-
-Result:
+Git transport attempts failed in this runtime with DNS resolution errors:
 
 ```text
 fatal: unable to access 'https://salsa.debian.org/debian/mmdebstrap.git/': Could not resolve host: salsa.debian.org
+fatal: unable to access 'https://github.com/teamleaderleo/linux-fieldwork.git/': Could not resolve host: github.com
 ```
 
-The temporary target was removed before the attempt and contains no retained checkout.
+Current upstream identity and code were obtained through the official project web source; no local checkout or fresh execution is claimed.
 
 ## Cleanup and rerun
 
 - The original focused test uses in-memory archives and `TemporaryDirectory`; its exact-head CI receipt reports success.
-- This session created no mounts, sockets, containers, background processes, or package installations.
-- `/mnt/data/mmdebstrap-unit22` contains no successful checkout.
-- A current-upstream rerun was unavailable because the runtime could not resolve Salsa for Git transport.
+- This continuation created no mounts, sockets, containers, package installations, background processes, or credentials.
+- Failed clone targets contain no successful checkout.
+- Fresh exact-checkout execution remains pending because Git transport DNS failed in this runtime.
 
 ## Tests pending
 
-1. Fetch exact current Salsa `master` and record commit/blob identities.
-2. Apply `patches/0001-tarfilter-treat-nul-as-regular.patch` with a clean-tree receipt.
-3. Place the regression in mmdebstrap's current native test suite.
-4. Run the focused native test on baseline and candidate.
-5. Run the relevant tarfilter test group or project gate on the exact candidate.
-6. Clean the checkout and rerun the focused candidate test.
-7. Compare/apply after final tarfilter unit ordering is known.
+1. Materialize `josch/mmdebstrap` exact commit `77ec9be5417ee44c96343d2347145585da1b1f94` in an environment with Git access.
+2. Verify the checkout `tarfilter` blob and clean worktree.
+3. Apply `patches/0001-tarfilter-treat-nul-as-regular.patch` with zero fuzz and zero offsets.
+4. Add the archive regression to the current native test owner and name it in `coverage.py`.
+5. Run the focused native test on baseline and candidate.
+6. Run the relevant tarfilter/project gate on the exact candidate.
+7. Clean the checkout and rerun the focused candidate test.
+8. Compose with current adjacent tarfilter candidates for one complete-gate compatibility run.
+9. Review the complete exact diff and active upstream overlap.
 
-No current-upstream, native-suite, package-build, autopkgtest, lintian, Salsa CI, or packet-head CI result is claimed by this packet.
+No current-checkout native-suite, package-build, complete `coverage.sh`, or upstream CI result is claimed by this packet.
