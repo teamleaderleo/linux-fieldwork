@@ -1,0 +1,57 @@
+Unit: 23 — util-linux lscpu cpuset error-path ownership
+Execution date: 2026-08-01
+Linux Fieldwork base: 6cc74d846c50b9bbb88247e8a128b67e8c174c1e
+Retained carrier merge: 4a2196a705c06f5604879f655d465a4ac6fcb198
+
+Environment:
+Linux 6.12.13 x86_64 GNU/Linux
+Python 3.13.5
+cc (Debian 14.2.0-19) 14.2.0
+GNU patch 2.8
+
+Command:
+cd /tmp/unit23-run && /usr/bin/python3 -m unittest -v tests/test_util_linux_lscpu_cpuset_double_free.py
+
+Output:
+test_baseline_and_candidate_ownership_matrix (tests.test_util_linux_lscpu_cpuset_double_free.UtilLinuxLscpuCpusetDoubleFreeTest.test_baseline_and_candidate_ownership_matrix) ... ok
+test_fixture_drift_is_rejected_before_patch_execution (tests.test_util_linux_lscpu_cpuset_double_free.UtilLinuxLscpuCpusetDoubleFreeTest.test_fixture_drift_is_rejected_before_patch_execution) ... ok
+test_model_preserves_the_relevant_ownership_boundary (tests.test_util_linux_lscpu_cpuset_double_free.UtilLinuxLscpuCpusetDoubleFreeTest.test_model_preserves_the_relevant_ownership_boundary) ... ok
+test_retained_patch_applies_to_the_exact_v241_fixture (tests.test_util_linux_lscpu_cpuset_double_free.UtilLinuxLscpuCpusetDoubleFreeTest.test_retained_patch_applies_to_the_exact_v241_fixture) ... ok
+test_retained_patch_clears_output_after_free (tests.test_util_linux_lscpu_cpuset_double_free.UtilLinuxLscpuCpusetDoubleFreeTest.test_retained_patch_clears_output_after_free) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.082s
+
+OK
+
+Direct ownership runner result:
+baseline: duplicate cleanup detected (status 42)
+candidate: output cleared, later cleanup is harmless (status 0)
+runner status: 0
+
+Patch dry-run:
+patch --batch --forward --fuzz=0 --dry-run -p1 -i 0001-clear-cpuset-output-after-error.patch
+status: 0
+output:
+checking file lib/path.c
+Hunk #1 succeeded at 13 (offset -1044 lines).
+
+Patch real application:
+patch --batch --forward --fuzz=0 -p1 -i 0001-clear-cpuset-output-after-error.patch
+status: 0
+output:
+patching file lib/path.c
+Hunk #1 succeeded at 13 (offset -1044 lines).
+
+Reviewed patched ordering:
+cpuset_free(*set);
+*set = NULL;
+
+Retained fixture SHA-256:
+ee86a1384bdad67633dfb8e106937f43b00c33836be6791ffcb7099da3273f96
+
+Retained patch SHA-256:
+3930c2402aeddb37149b2f50ef0b7b692674cfa3898a371f3fc174131672a523
+
+Cleanup:
+The runner and tests used fresh temporary directories. No mounts, sockets, locks, containers, package installs, or surviving processes were created. Package-level Debian source/build gates were not run.
