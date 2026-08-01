@@ -9,15 +9,24 @@ External contact authorized: `false`
 
 ## TL;DR
 
-Four upstream-facing test-suite corrections have been extracted from the carrier history into an ordered patch series. The series accepts Deb822 sources, pins behavioral execution to `/usr/bin/mmdebstrap`, uses a current-sid process-group SIGINT spelling, and runs the no-`CAP_SYS_ADMIN` consumer with a phase-local `tar1.txt` producer while allowing broad-phase regeneration. Linux Fieldwork-only proxies, workflows, artifact collectors, probes, and guard harnesses are excluded.
+Four upstream-facing package-test corrections are retained as an ordered series:
 
-The executable base is Debian mmdebstrap `debian/1.5.7-3` at `6fde999741f4fe1e7bf38079acf29432ef87a35e`. Historical real-sid run 999 cleared the phase-local producer/consumer repair and reached the independent `chrootless` directory-mtime result after 154 completed tests.
+1. accept Deb822 source entries by rooting raw output paths before `exploded_list()`;
+2. use `/usr/bin/mmdebstrap` for stable execution after directory changes;
+3. deliver process-group SIGINT with syntax accepted by current Debian sid;
+4. run `root-without-cap-sys-admin` in a hook-free hard phase with immediate `create-directory` production and later broad-phase regeneration.
 
-The exact ordered series gate has now executed successfully through draft Linux Fieldwork PR #405, workflow `30690576566` / 1145. It validated four patch files and seven hunks, applied the series twice with zero-fuzz requirements, checked transformed Python and shell syntax, verified deterministic receipts/digests and source immutability, and passed the complete 439-test Linux Fieldwork suite. The next technical boundary is a live fetch and overlap/rebase against current Salsa `master`, followed by focused upstream-native and current-sid package execution.
+Linux Fieldwork-only proxies, workflows, artifact collectors, generic signal probes, and guard harnesses are excluded from the upstream series.
+
+The executable base is Debian mmdebstrap `debian/1.5.7-3` at canonical Salsa commit `6fde999741f4fe1e7bf38079acf29432ef87a35e`. Historical real-sid run 999 cleared the phase-local producer/consumer repair and reached the independent `chrootless` directory-mtime result after 154 completed tests.
+
+The exact ordered-series gate passed through draft Linux Fieldwork PR #405, workflow `30690576566` / 1145. It validated four patch files and seven hunks, applied the series twice with zero fuzz allowed, checked transformed Python and shell syntax, verified deterministic receipts/digests and source immutability, and passed the complete 439-test Linux Fieldwork suite.
+
+A controlled GitHub repository now exists at `teamleaderleo/mmdebstrap`, but it is not yet an exact canonical delivery fork. Its `master` head is `574048f2a720057b75e56622003932f344dc700a`, canonical Salsa commit `6fde999741f4fe1e7bf38079acf29432ef87a35e` is absent from its history, and its commits reflect a separate downstream import/update lineage. Do not base the candidate on that `master` until it is synced or replaced with an exact current-Salsa branch.
 
 ## Accomplished behavior
 
-The package suite processes current Deb822 source paragraphs, invokes the installed mmdebstrap binary through a stable absolute path, interrupts the complete customize-hook process group with syntax accepted by current sid, executes `root-without-cap-sys-admin` without mount-dependent APT hooks, creates its archive baseline immediately beforehand, and recreates the broad baseline under the broad hook configuration.
+The package suite processes current Deb822 source paragraphs, invokes the installed mmdebstrap binary through a stable absolute path, interrupts the complete customize-hook process group with current-sid-compatible syntax, executes `root-without-cap-sys-admin` without mount-dependent APT hooks, creates its archive baseline immediately beforehand, and recreates the broad baseline under the broad hook configuration.
 
 ## Scope
 
@@ -39,7 +48,7 @@ The package suite processes current Deb822 source paragraphs, invokes the instal
 
 ### Split boundary
 
-The four patches stay ordered in one package-test submission because they remove sequential current-sid blockers from the same Debian autopkgtest entry point. The `chrootless` timestamp result begins after this series has cleared and remains a separate source-policy unit.
+The four patches stay ordered in one package-test submission because they remove sequential current-sid blockers from the same Debian autopkgtest entry point. The `chrootless` timestamp result begins after this series clears and remains a separate source-policy unit.
 
 ## Exact identities
 
@@ -47,10 +56,12 @@ The four patches stay ordered in one package-test submission because they remove
 | --- | --- |
 | Upstream project | mmdebstrap |
 | Canonical repository | `https://salsa.debian.org/debian/mmdebstrap.git` |
-| Intended base branch | `master`; executable package base pinned to `debian/1.5.7-3` pending live refresh |
-| Upstream base commit | `6fde999741f4fe1e7bf38079acf29432ef87a35e` |
-| Controlled fork | `NEEDS FORK` |
-| Candidate source branch | patch-series packet; upstream branch absent |
+| Intended base branch | `master`; exact live head still requires fetch |
+| Executed upstream base | tag `debian/1.5.7-3`; commit `6fde999741f4fe1e7bf38079acf29432ef87a35e` |
+| Controlled repository | `https://github.com/teamleaderleo/mmdebstrap` |
+| Controlled repository default branch | `master` at `574048f2a720057b75e56622003932f344dc700a` during the 2026-08-01 check |
+| Fork qualification | `CONTROLLED REPOSITORY EXISTS; EXACT CANONICAL SYNC PENDING` |
+| Candidate source branch | absent; create only from a verified exact Salsa commit |
 | Candidate technical state | `DISTILLED SERIES GATE PASSED; LIVE REBASE PENDING` |
 | Linux Fieldwork branch | `upstream/unit-08-current-sid-package-tests` |
 | Series-gate source commit | `7782872ae2f731a27ed672df3a37b1d3b1581aa4` |
@@ -58,7 +69,7 @@ The four patches stay ordered in one package-test submission because they remove
 | Imported/local source identity | `upstream/mmdebstrap/.linux-fieldwork-source.json`; imported 2026-07-30 |
 | Patch or series path | `upstream-packets/units/08-current-sid-package-tests/patches/series` |
 | Proposed destination | Debian/mmdebstrap Salsa project |
-| Delivery method | `GitLab/Salsa fork and merge request`, pending authorization |
+| Delivery method | `GitLab/Salsa fork and merge request`, pending authorization and exact fork setup |
 
 ## Canonical links
 
@@ -79,17 +90,20 @@ The four patches stay ordered in one package-test submission because they remove
 ### Demonstrated
 
 - Deb822 correction reached real sid package execution in the broad carrier.
-- Current-sid signal selection found dash builtin `kill -s INT -- -PGID` and external compact `kill -INT -- -PGID` as status-zero whole-group spellings; the retained package patch uses the dash builtin.
-- Run 974 executed `create-directory` followed by `root-without-cap-sys-admin`; both passed, exposing phase leakage into broad consumers.
-- Run 999 executed the focused producer/consumer and the later broad producer successfully, completed 154 tests, and first failed independently at `chrootless` directory mtimes.
+- Current-sid signal selection found status-zero whole-group spellings; the retained package patch uses the dash builtin.
+- Run 974 executed `create-directory` followed by `root-without-cap-sys-admin`; both passed and exposed phase leakage into broad consumers.
+- Run 999 executed the focused producer/consumer and later broad producer successfully, completed 154 tests, and first failed independently at `chrootless` directory mtimes.
 - PR #405 run `30690576566` validated four patches/seven hunks and passed `test_series_applies_exactly_and_reruns_cleanly`.
 - The same run retained 439 of 462 discovered tests after exact inherited-duplicate removal, ran all 439 in 166.008 seconds, and finished `OK`.
 - Compile and shell/help checks passed; hosted-runner cleanup completed.
+- The controlled GitHub repository identity and its non-canonical current history were checked explicitly.
 
 ### Yet to be demonstrated
 
-- live overlap/rebase against the current exact Salsa `master` commit;
-- focused upstream-native execution on that refreshed distilled head;
+- exact current Salsa `master` identity and overlap state;
+- an exact canonical branch in the controlled repository;
+- zero-fuzz/zero-offset application on that refreshed head;
+- focused upstream-native execution on the refreshed series;
 - a current sid run from the exact upstream-facing series without proxy or evidence machinery.
 
 ### Compatibility boundary
@@ -98,6 +112,7 @@ The four patches stay ordered in one package-test submission because they remove
 - The phase scheduler is bounded to one hook-free consumer with exact prerequisite `create-directory`.
 - Status 1 and 2 remain package-test failures; GNU timeout status 124 maps to autopkgtest skip status 77.
 - The broad command path assumes the Debian package installs mmdebstrap at `/usr/bin/mmdebstrap`.
+- The existing GitHub repository is controlled but must not be treated as canonical ancestry until synced and compared.
 
 ## Candidate organization
 
@@ -110,12 +125,12 @@ The order follows the historical first-failure sequence and keeps each behavior 
 
 ## Current disposition
 
-`ACTIVE` — exact imported-base application and rerun are green. Live Salsa-master refresh, focused upstream-native execution, and an exact current-sid package run remain incomplete.
+`ACTIVE` — exact imported-base application and rerun are green. The controlled repository exists, while exact canonical synchronization, live Salsa overlap review, focused upstream-native execution, and an exact current-sid package run remain incomplete.
 
 ## Next technical action
 
-Fetch current Salsa `master`, record the exact commit, search active overlap, reapply or rebase the series with zero fuzz/offset, then rerun the distilled-series gate before current-sid package execution.
+Fetch current Salsa `master` and record its exact commit. Compare that source to `teamleaderleo/mmdebstrap` rather than assuming fork ancestry. Create a candidate branch in the controlled repository only from the verified canonical commit, reapply the series with zero fuzz/offset, and rerun the distilled-series gate before current-sid package execution.
 
 ## Authority
 
-Internal repository reads, branch work, patch composition, testing, review, draft preparation, draft Linux Fieldwork PR #405, and issue checkpoints are authorized. No external issue, merge request, email, comment, review, or other public contact has been authorized or made for unit 08.
+Internal repository reads, branch work, patch composition, testing, review, draft preparation, draft Linux Fieldwork PR #405, controlled-fork inspection, and issue checkpoints are authorized. No external issue, merge request, email, comment, review, or other public contact has been authorized or made for unit 08.
