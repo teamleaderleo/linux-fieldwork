@@ -20,13 +20,19 @@ class TarfilterNoOptionPassthroughTest(unittest.TestCase):
             "tarfilter-no-option-passthrough.patch"
         )
 
-    def make_archive(self, path: pathlib.Path, mode: str) -> None:
+    def make_archive(
+        self,
+        path: pathlib.Path,
+        mode: str,
+        name: str = "original.txt",
+    ) -> None:
         payload = b"linux-fieldwork-no-option\n"
-        info = tarfile.TarInfo("original.txt")
+        info = tarfile.TarInfo(name)
         info.size = len(payload)
         info.uid = 123
         info.gid = 456
         info.mtime = 946684800
+        info.pax_headers = {"SCHILY.xattr.user.demo": "value"}
         with tarfile.open(path, mode, format=tarfile.PAX_FORMAT) as archive:
             archive.addfile(info, io.BytesIO(payload))
 
@@ -46,7 +52,15 @@ class TarfilterNoOptionPassthroughTest(unittest.TestCase):
         target.parent.mkdir(parents=True)
         shutil.copy2(self.source, target)
         applied = subprocess.run(
-            ["patch", "-p1", "-d", str(candidate), "-i", str(self.patch)],
+            [
+                "patch",
+                "--fuzz=0",
+                "-p1",
+                "-d",
+                str(candidate),
+                "-i",
+                str(self.patch),
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -128,32 +142,61 @@ class TarfilterNoOptionPassthroughTest(unittest.TestCase):
                     self.assertEqual(completed.returncode, 0)
                     self.assertEqual(completed.stdout, archives[0].read_bytes())
 
-    def test_candidate_does_not_bypass_transform_or_idshift(self) -> None:
+    def test_candidate_does_not_bypass_any_active_operation(self) -> None:
         with tempfile.TemporaryDirectory(prefix="tarfilter-no-option-options-") as td:
             root = pathlib.Path(td)
             candidate = self.prepare_candidate(root)
             archive = root / "input.tar"
-            self.make_archive(archive, "w")
+            self.make_archive(archive, "w", "dir/original.txt")
+            source_bytes = archive.read_bytes()
 
-            transformed = self.run_filter(
-                candidate, archive, "--transform=s,original,renamed,"
-            )
-            self.assertEqual(
-                transformed.returncode,
-                0,
-                transformed.stderr.decode("utf-8", "replace"),
-            )
-            with tarfile.open(fileobj=io.BytesIO(transformed.stdout), mode="r:*") as result:
-                self.assertEqual(result.getnames(), ["renamed.txt"])
+            cases = {
+                "path": ("--path-exclude=/dir/original.txt",),
+                "pax": ("--pax-exclude=SCHILY.xattr.user.*",),
+                "type": ("--type-exclude=REGTYPE",),
+                "strip": ("--strip-components=1",),
+                "transform": ("--transform=s,original,renamed,",),
+                "idshift": ("--idshift=1",),
+            }
+            outputs = {}
+            for operation, options in cases.items():
+                with self.subTest(operation=operation):
+                    completed = self.run_filter(candidate, archive, *options)
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stderr.decode("utf-8", "replace"),
+                    )
+                    self.assertNotEqual(completed.stdout, source_bytes)
+                    outputs[operation] = completed.stdout
 
-            shifted = self.run_filter(candidate, archive, "--idshift=1")
-            self.assertEqual(
-                shifted.returncode,
-                0,
-                shifted.stderr.decode("utf-8", "replace"),
-            )
-            with tarfile.open(fileobj=io.BytesIO(shifted.stdout), mode="r:*") as result:
-                member = result.getmember("original.txt")
+            for operation in ("path", "type"):
+                with self.subTest(operation=operation, result="empty"):
+                    with tarfile.open(
+                        fileobj=io.BytesIO(outputs[operation]), mode="r:*"
+                    ) as result:
+                        self.assertEqual(result.getnames(), [])
+
+            with tarfile.open(
+                fileobj=io.BytesIO(outputs["pax"]), mode="r:*"
+            ) as result:
+                member = result.getmember("dir/original.txt")
+                self.assertNotIn("SCHILY.xattr.user.demo", member.pax_headers)
+
+            with tarfile.open(
+                fileobj=io.BytesIO(outputs["strip"]), mode="r:*"
+            ) as result:
+                self.assertEqual(result.getnames(), ["original.txt"])
+
+            with tarfile.open(
+                fileobj=io.BytesIO(outputs["transform"]), mode="r:*"
+            ) as result:
+                self.assertEqual(result.getnames(), ["dir/renamed.txt"])
+
+            with tarfile.open(
+                fileobj=io.BytesIO(outputs["idshift"]), mode="r:*"
+            ) as result:
+                member = result.getmember("dir/original.txt")
                 self.assertEqual((member.uid, member.gid), (124, 457))
 
 
