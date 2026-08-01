@@ -8,9 +8,9 @@ External contact authorized: `false`
 
 ## TL;DR
 
-Debian mmdebstrap package-test setup still checks `/etc/subuid` and `/etc/subgid` with an unanchored regular-expression search across whole records. A different account containing the test username can suppress the required subordinate-ID entry. The retained Linux Fieldwork correction compares colon-delimited field 1 literally and exactly for both files.
+Debian mmdebstrap package-test setup still checks `/etc/subuid` and `/etc/subgid` with an unanchored regular-expression search across whole records. A different account containing the test username can suppress the required subordinate-ID entry. The selected correction compares colon-delimited field 1 literally and exactly for both files.
 
-This pass reconstructed the complete carrier lineage, refreshed the public source identities, rewrote the candidate with upstream repository paths, and ran a fresh synthetic behavior/idempotency smoke. Full application against a directly checked-out current Salsa base and the relevant package/user-namespace integration gate remain.
+The full recorded Debian `mmdebstrap 1.5.7-3` testsuite was admitted by its exact Git blob, the upstream-path mail patch passed Git whitespace/application checks, the complete shell parsed, and an 18-case behavior/idempotency matrix passed twice. Direct verification against the live Salsa `master` ref and package/user-namespace integration remain.
 
 ## Accomplished behavior
 
@@ -27,7 +27,7 @@ For user `debci`, a row such as `old-debci-helper:200000:65536` makes the curren
 - the two account-presence conditions in `debian/tests/testsuite`;
 - exact literal field-1 matching for `/etc/subuid` and `/etc/subgid`;
 - exact-present, substring, malformed, regex-significant, leading-hyphen, empty, absent, parity, and immediate-rerun controls;
-- zero-fuzz patch packaging and complete shell syntax.
+- Git whitespace checking, mail-patch application, zero-fuzz history, exact source/diff identity, and complete shell syntax.
 
 ### Excluded
 
@@ -38,7 +38,7 @@ For user `debci`, a row such as `old-debci-helper:200000:65536` makes the curren
 
 ### Split boundary
 
-Unit 10 owns only package-test account-record detection. Runtime numeric-ID support is already represented by upstream commit `6f0a2fcd7f0b21a69d6c2b7c90272a132ed58ff5`. The broader package-test harness remains under issue #53 and its focused successors.
+Unit 10 owns only package-test account-record detection. Runtime numeric-ID support is represented by upstream commit `6f0a2fcd7f0b21a69d6c2b7c90272a132ed58ff5`. The broader package-test harness remains under issue #53 and its focused successors.
 
 ## Exact identities
 
@@ -47,14 +47,15 @@ Unit 10 owns only package-test account-record detection. Runtime numeric-ID supp
 | Upstream project | Debian `mmdebstrap` packaging |
 | Canonical repository | `https://salsa.debian.org/debian/mmdebstrap.git` |
 | Intended base branch | `master` |
-| Upstream base commit | `c8a789205ded12daccfb16deaa35ddd1fc8d688f` from the current dgit master view; direct Salsa checkout still required |
+| Upstream base commit | dgit master view `c8a789205ded12daccfb16deaa35ddd1fc8d688f`; direct live Salsa verification remains pending |
 | Controlled fork | `NEEDS FORK` |
 | Candidate source branch | `NEEDS BRANCH` |
 | Candidate head | `NEEDS BRANCH` |
 | Linux Fieldwork branch | `upstream/unit-10-subid-exact-match` |
-| Linux Fieldwork head | updated in `HANDOFF.md` after the packet commit sequence |
-| Imported/local source identity | Debian `mmdebstrap 1.5.7-3`; `upstream/mmdebstrap/debian/tests/testsuite` blob `9f4eda87430da38b08a23a50a51e53b22cf7414b` |
+| Imported source blob | `debian/tests/testsuite` Git blob `9f4eda87430da38b08a23a50a51e53b22cf7414b` |
+| Candidate source blob | `debian/tests/testsuite` Git blob `6925c7f05c3a5f050a4d3f89142085ff687ce3b0` |
 | Patch or series path | `patches/0001-debian-tests-match-subid-account-field-exactly.patch` |
+| Patch SHA-256 | `fc9c0c4d0552a80565a49a05f068934b3230b81703c9e0ed9c59d3307f9d544d` |
 | Proposed destination | Debian Salsa `debian/mmdebstrap`, branch `master` |
 | Delivery method | one Salsa merge request after explicit authorization |
 
@@ -69,6 +70,7 @@ Unit 10 owns only package-test account-record detection. Runtime numeric-ID supp
 - Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
 - Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
 - Tests and receipts: [`TESTS.md`](TESTS.md)
+- Exact imported-source receipt: [`artifacts/2026-08-01-exact-imported-source-gate.md`](artifacts/2026-08-01-exact-imported-source-gate.md)
 - Decisions: [`DECISIONS.md`](DECISIONS.md)
 - Current handoff: [`HANDOFF.md`](HANDOFF.md)
 - Upstream issue draft: [`UPSTREAM_ISSUE.md`](UPSTREAM_ISSUE.md)
@@ -78,17 +80,21 @@ Unit 10 owns only package-test account-record detection. Runtime numeric-ID supp
 
 ### Demonstrated
 
-- the released/current imported Debian 1.5.7-3 package-test block retains the whole-record unanchored checks;
-- the correction changes exactly the two account-presence conditions;
-- historical exact-head proof passed the full retained four-case test module and repository CI at PR #291 head `125d4e5097625b38850292525c7eb2f98818f5d9`;
-- the refreshed upstream-path patch passed a local zero-fuzz synthetic application, `/bin/sh -n`, the full account-case matrix, subuid/subgid parity, and immediate rerun on 2026-08-01;
-- active upstream runtime numeric-ID work changes a different source owner and does not consume this package-test defect.
+- the recorded Debian 1.5.7-3 package-test block retains whole-record unanchored checks for subuid and subgid;
+- the reconstructed full source hashes to the recorded Git blob `9f4eda87430da38b08a23a50a51e53b22cf7414b`;
+- `git apply --check --whitespace=error-all` and `git am --keep-cr` pass for the packet patch;
+- the candidate file blob is `6925c7f05c3a5f050a4d3f89142085ff687ce3b0`;
+- the complete candidate shell passes `/bin/sh -n`;
+- the complete diff is one file, two insertions, and two deletions with unchanged line count;
+- the 18-case baseline/candidate matrix passes twice, including subuid/subgid parity and immediate rerun;
+- historical PR #291 exact-head proof and Linux Fieldwork CI passed at `125d4e5097625b38850292525c7eb2f98818f5d9`;
+- active runtime numeric-ID work changes a different source owner and does not consume this package-test defect.
 
 ### Not yet demonstrated
 
-- zero-fuzz application against a direct checkout of the current Salsa `master` head;
-- the exact current Salsa commit identity through a live clone/API receipt;
-- an upstream-native package/autopkgtest run containing the relevant user-namespace cases;
+- direct live Salsa `master` head and file-blob identity;
+- application against any live Salsa drift beyond the recorded Debian 1.5.7-3 file;
+- an upstream-native package/autopkgtest run containing the relevant user-namespace consumers;
 - a controlled fork and candidate branch.
 
 ### Compatibility boundary
@@ -105,11 +111,11 @@ The two lines share one invariant and one test matrix. Splitting subuid from sub
 
 ## Current disposition
 
-`ACTIVE` — current-base application and an upstream-native package/user-namespace gate remain.
+`ACTIVE` — live current-base identity/application and an upstream-native package/user-namespace gate remain.
 
 ## Next human decision
 
-No send decision is ready. The next technical step is a direct current-Salsa checkout, exact patch application, and focused package-test execution.
+No send decision is ready. The next technical step is a direct live Salsa checkout or API read, exact head/blob comparison, and focused package-test execution.
 
 ## Authority
 
