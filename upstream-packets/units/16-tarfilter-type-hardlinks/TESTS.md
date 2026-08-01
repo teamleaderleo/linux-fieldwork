@@ -6,25 +6,29 @@
 | --- | --- |
 | Linux Fieldwork base | `main` at `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
 | Imported tarfilter | blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
-| Transform/strip patch | blob `1703984aa0c030e5131618a3541ee85bfd68ec65` |
-| PR #310 predecessor | head `32dfa36a6feb533bc1126a11ef33979e45b410ec` |
-| Packet predecessor patch | `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch` |
-| Final-identity candidate patch | `patches/0002-use-rewritten-identities-for-type-hardlinks.patch` |
+| Unit-15 prerequisite | `patches/0000-unit15-transform-metadata-prerequisite.patch` |
+| PR #310 predecessor | `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch` |
+| Selected final-identity candidate | `patches/0002-use-rewritten-identities-for-type-hardlinks.patch` |
+| Rejected alias candidate | `patches/rejected/0002-alias-projection-overattributes-strip-breaks.patch` |
 | Focused test | `tests/test_tarfilter_type_excluded_final_name_identity.py` |
-| Candidate matrix head | `655cd649df333d93082f98136e15740e3630950a` |
+| Inherited and transform matrix | `tests/test_tarfilter_type_excluded_inherited_matrix.py` |
+| First selected-policy green head | `ec55994f0db12044f9c7ef9f843fe42aec7393e6` |
+| Expanded transform-matrix head | `371802ab8728f149ddbac5a959e83ca8d0edef2d` |
 | Internal PR | #399 |
 
-## Focused command
+## Exact composition commands
+
+Each test obtains the imported source directly from Git's object database:
 
 ```sh
-python3 -m unittest tests.test_tarfilter_type_excluded_final_name_identity -v
+git cat-file blob ad776167a8473d5d15dbe22e850f4f6db35cf278
 ```
 
-The test performs these setup gates:
+The disposable candidate tree then receives the ordered series:
 
 ```sh
 patch --batch --forward --fuzz=0 -p1 \
-  -i investigations/tarfilter-transform-target-scopes/tarfilter-transform-target-scopes.patch
+  -i upstream-packets/units/16-tarfilter-type-hardlinks/patches/0000-unit15-transform-metadata-prerequisite.patch
 patch --batch --forward --fuzz=0 -p1 \
   -i upstream-packets/units/16-tarfilter-type-hardlinks/patches/0001-compose-pr310-predecessor-on-transform-carrier.patch
 python3 -m py_compile upstream/mmdebstrap/tarfilter
@@ -33,89 +37,143 @@ patch --batch --forward --fuzz=0 -p1 \
 python3 -m py_compile upstream/mmdebstrap/tarfilter
 ```
 
-The imported source bytes are captured when the test module is imported. Each case writes those frozen bytes into its own `TemporaryDirectory`, so earlier tests cannot mutate the source selected for composition.
+Focused command:
 
-## Red-to-green matrix
+```sh
+python3 -m unittest tests.test_tarfilter_type_excluded_final_name_identity -v
+```
 
-| Case | Input and options | Required predecessor result | Required candidate result |
-| --- | --- | --- | --- |
-| false rejection | regular `prefix/base`; excluded symlink `root/base`; hard link `root/peer -> root/base`; `--type-exclude=SYMTYPE --strip-components=1` | status 1; finalized partial archive containing regular `base` | status 0; `base` plus `peer -> base`; GNU tar extraction succeeds and preserves one inode |
-| false acceptance | excluded regular `root/base`; hard link `prefix/peer -> prefix/root/base`; `--type-exclude=REGTYPE --strip-components=1` | status 0; broken `peer -> root/base` | status 1; original-name diagnostic; finalized valid empty archive |
-| genuine removed target | excluded regular `root/base`; hard link `root/peer -> root/base`; `--type-exclude=REGTYPE` | status 1; empty archive | status 1; same focused diagnostic and empty archive |
-| strip-dropped target and link | regular `base`; excluded symlink `base`; hard link `root/peer -> base`; `--type-exclude=SYMTYPE --strip-components=1` | status 1 under input-name checking | status 0; finalized valid empty archive because both the target identity and dependent link are dropped by strip semantics |
+Inherited and transform command:
+
+```sh
+python3 -m unittest tests.test_tarfilter_type_excluded_inherited_matrix -v
+```
+
+Complete repository gate:
+
+```sh
+python3 -m tools.run_fieldwork_unittests --verbosity 2
+```
+
+## Focused selected-policy matrix
+
+| Case | Predecessor | Selected candidate |
+| --- | --- | --- |
+| retained target and excluded duplicate converge to final `base` after strip | status 1; finalized partial archive containing regular `base` | status 0; emits `base` and `peer -> base`; GNU tar extracts one inode |
+| strip alone already creates `base` plus broken `peer -> root/base` | status 0 and broken output | unchanged status 0 and broken output; unit 16 does not assign this failure to type exclusion |
+| regular `root/base` is removed by type and retained `root/peer -> root/base` remains | status 1 and valid empty archive | status 1, original-name diagnostic, valid empty archive |
+| target and dependent link are both dropped by strip | predecessor rejects using input identity | status 0 and valid empty archive |
+
+## Inherited and transform matrix
+
+- GNU-equivalent leading `/`, `./`, and `../` target spellings reject when the target is removed by type.
+- `.../root/base` remains distinct and follows the pre-existing invalid-archive control.
+- `LNKTYPE` exclusion plus transform retains and extracts the regular target; the command is rerun immediately.
+- simultaneous `REGTYPE` and `LNKTYPE` exclusion succeeds with an empty archive.
+- multiple retained peers stop at the first removed dependency.
+- an earlier retained duplicate target remains available after a later excluded duplicate occurrence.
+- transform collisions that produce a retained final `base` override an excluded duplicate final `base`.
+- a genuinely removed target transformed to final `base` is rejected.
+- uppercase `H` leaves the hard-link target untransformed; the direct control is already broken, so type exclusion does not claim ownership.
 
 ## Exact CI history
 
 ### Run 1100 — malformed predecessor carrier
 
-- technical head: `ac21c095faae34fcd3cec3e4a7beae5a83979fe1`;
-- run: `30674423172`;
-- job: `91298597515`;
-- result: failure in `Validate changed patch carriers`;
-- exact evidence:
+- head `ac21c095faae34fcd3cec3e4a7beae5a83979fe1`;
+- run `30674423172`, job `91298597515`;
+- failure before compilation:
 
 ```text
-patches/0001-compose-pr310-predecessor-on-transform-carrier.patch:4:
 hunk count mismatch: declared old/new 12/31, observed 11/29
 ```
 
-Compilation and tests did not run. Commit `9ecda06a2ec7ba6dc7fade41d3ad13842220a741` corrected only the hunk header to `11/29`.
+Commit `9ecda06a2ec7ba6dc7fade41d3ad13842220a741` corrected only the hunk header.
 
-### Run 1118 — carrier valid, test source contaminated by suite order
+### Runs 1118, 1127, and 1131 — historical PR #68 carrier rejected
 
-- head: `9ecda06a2ec7ba6dc7fade41d3ad13842220a741`;
-- run: `30689716762`;
-- job: `91342161441`;
-- patch validation: passed, `1 patch file` and `3 hunks`;
-- Python compilation: passed;
-- full discovery: retained 440 tests;
-- result: 438 passed, the two unit-16 tests failed before source execution.
+- runs `30689716762`, `30690001217`, and `30690165287`;
+- exact imported source was ultimately loaded through `git cat-file blob`;
+- the historical transform patch still failed its parser hunk with `--fuzz=0` while later hunks applied with offsets.
 
-Exact setup failure in each test:
+The result selected unit 15's clean regenerated prerequisite instead of repairing a second transform carrier inside unit 16.
+
+### Run 1138 — clean-series candidate hunk count
+
+- head `942a3e4cae0f91461165cb6befefd3910717bcd2`;
+- run `30690359366`, job `91343855979`;
+- candidate hunk declared 70 new lines and contained 72;
+- commit `87af719648d5fc43e616030e61dc6182d9273d3e` corrected only that header.
+
+### Run 1140 — rejected alias candidate is mechanically green
+
+- head `87af719648d5fc43e616030e61dc6182d9273d3e`;
+- run `30690434953`, job `91344069265`;
+- patch validation: 3 files, 9 hunks;
+- 442 tests passed;
+- shell syntax and command-help gates passed.
+
+The direct strip control later rejected this policy: alias projection assigned a pre-existing strip-reference failure to type exclusion. The exact candidate is retained under `patches/rejected/`.
+
+### Run 1143 — selected final-only policy red transition
+
+- head `85c00c3d42be14b5774fb5c5222bb57484af7f0d`;
+- run `30690507583`, job `91344268061`;
+- patch validation and compilation passed;
+- 441 of 442 tests passed;
+- the sole failure was the superseded assertion expecting alias-based rejection:
 
 ```text
-patching file upstream/mmdebstrap/tarfilter
-Hunk #1 FAILED at 68.
-Hunk #2 succeeded at 275 (offset 2 lines).
-Hunk #3 succeeded at 299 (offset -2 lines).
-1 out of 3 hunks FAILED
+AssertionError: 0 != 1
 ```
 
-The focused test copied the live repository source at execution time. Earlier transform tests can modify that file in their own negative-control workflow, so the selected bytes depended on discovery order. Commit `f71f7b0462cca85a94417665214b5a91918c1f42` freezes `SOURCE_BYTES` at module import and writes those exact bytes into each disposable candidate tree.
+The other three focused unit-16 cases passed. This run proves the selected patch changed the disputed attribution boundary while retaining the genuine dependency checks.
 
-### Run 1127 — final-identity candidate matrix
+### Run 1144 — selected focused policy green
 
-- exact technical head: `655cd649df333d93082f98136e15740e3630950a`;
-- run: `30690001217`;
-- patch validation: passed;
-- Python compilation: passed;
-- full unit suite: in progress at this record update.
+- exact head `ec55994f0db12044f9c7ef9f843fe42aec7393e6`;
+- run `30690541675`, job `91344358024`;
+- patch validation: 4 files, 11 hunks;
+- compilation passed;
+- fieldwork discovery retained 442 of 465 tests and removed 23 exact inherited duplicates;
+- all 442 tests passed in 164.133 seconds;
+- all four focused unit-16 cases passed;
+- shell syntax and command-help gates passed.
 
-Record the final job ID, result, focused assertions, cleanup, and immediate rerun after completion.
+### Run 1147 — inherited matrix
+
+- head `300b51056ded64a56ec3998bc639a57e9ea81125`;
+- run `30690583438`;
+- patch validation and compilation passed;
+- unit tests were in progress at this record update.
+
+### Run 1150 — transform-scope expansion
+
+- head `371802ab8728f149ddbac5a959e83ca8d0edef2d`;
+- run `30690790494`;
+- queued at this record update.
 
 ## Baseline evidence inherited from carriers
 
 - PR #244 run `30590931312` passed at characterization head `c853da482a04a5ad49b53478b49e540fd4208b27`.
-- PR #244 current-head integrity run `30594719522` passed at `d58deabce19ee98d506970674b537cb091381c5b`.
-- PR #310 records current repair head `32dfa36a6feb533bc1126a11ef33979e45b410ec`; its result is predecessor evidence, not final-name candidate acceptance.
+- PR #244 integrity run `30594719522` passed at `d58deabce19ee98d506970674b537cb091381c5b`.
+- PR #310 head `32dfa36a6feb533bc1126a11ef33979e45b410ec` supplies predecessor lifecycle and duplicate-state behavior.
+- Unit 15 supplies the clean transform, hard-link-target, occurrence, scope, and PAX metadata prerequisite.
 
 ## Cleanup and rerun
 
-The focused test creates archives, patched source copies, extraction directories, rejects, and bytecode below Python temporary directories. It opens no network connections, modifies no packages, creates no devices, and retains no process or filesystem state after the test process exits.
+Every source copy, patch application, archive, extraction directory, bytecode file, and rerun target lives below `TemporaryDirectory`. The tests create no persistent process, socket, mount, package mutation, device node, or external contact.
 
-An immediate exact-command rerun remains required after the first successful exact-head execution.
+The independent `LNKTYPE` transform control runs twice immediately in one disposable tree. A second exact-head complete workflow remains the final rerun gate after run 1150 succeeds.
 
 ## Tests pending
 
-- completed receipt for run `30690001217`;
-- immediate focused rerun after cleanup;
-- transform-scope projection controls;
-- output-name collision and duplicate-occurrence controls;
-- inherited PR #248 candidate matrix;
-- inherited PR #310 lifecycle and duplicate matrix;
-- complete current Linux Fieldwork gate on the selected correction;
-- package pipeline, other extractor, platform, and privileged metadata gates.
+- final receipt for run `30690583438`;
+- final receipt for run `30690790494`;
+- second exact-head complete rerun after the expanded matrix succeeds;
+- complete diff review against unit 15's selected prerequisite;
+- package pipeline, other extractor, platform, and privileged metadata gates, when useful and authorized.
 
 ## Interpretation rule
 
-A green four-case matrix proves the selected final-identity correction for the declared fixtures. Candidate acceptance still requires inherited matrices, collision and transform-scope controls, cleanup, immediate rerun, complete-diff review, and a complete current gate on one exact head.
+A green expanded matrix demonstrates final projected identity for target-before-link streaming, including strip, transform, duplicate, prefix, scope, and lifecycle controls. Upstream readiness also requires an unchanged-head rerun, complete-diff review, current packet drafts, and an explicit human authorization decision.
