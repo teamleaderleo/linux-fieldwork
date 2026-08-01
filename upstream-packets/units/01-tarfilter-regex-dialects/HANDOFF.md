@@ -5,70 +5,95 @@
 State: `ACTIVE`  
 Linux Fieldwork branch: `upstream/unit-01-tarfilter-regex-dialects`  
 Branch base at claim: `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`  
-Commit immediately before this handoff: `d818bc02f074353ec942b58fe01b3ab512850d9e`  
-Exact branch head containing this handoff: recorded in the unit checkpoint comment on issue #397  
+Commit immediately before this handoff: `ef7a4d138c89bd55fd3911c2c8ddd800f5ccf359`  
+Exact branch head containing this handoff: recorded in the current `UNIT CHECKPOINT` comment on issue #397  
 External contact authorized: `false`  
 External contact made: `none`
 
 ## Exact technical identities
 
+### Canonical and package source
+
 - canonical project: `https://salsa.debian.org/debian/mmdebstrap`
 - intended base branch: `master`
 - exact current canonical base: `UNRESOLVED`
+- current Debian archive source: `mmdebstrap 1.5.7-3` in sid/forky
+- Salsa release tag: `debian/1.5.7-3`, abbreviated commit `6fde9997`
+- Debian Sources `tarfilter` size: `11,453` bytes
 - imported Linux Fieldwork source: `upstream/mmdebstrap/tarfilter`
 - imported source Git blob: `ad776167a8473d5d15dbe22e850f4f6db35cf278`
-- repaired internal carrier head: `55d20a4cc08c93b34961c679bdb73458fea4c408`
-- repaired internal merge: `919ea3ed03e045f9a35b087549d76f4c0c5a9a0f`
-- hosted exact-head receipt: run `30581672669`, job `625`, passed
+- package-version mirror commit: `574048f2a720057b75e56622003932f344dc700a`
+- package-version mirror `tarfilter` blob: `ad776167a8473d5d15dbe22e850f4f6db35cf278`
 - controlled upstream fork: `NEEDS FORK`
 - upstream candidate branch: `NEEDS BRANCH`
 
-Ordered patch blobs:
+### Product and proof carriers
+
+- canonical product head: PR #151 `4555c5c250c1afedb3947fd1a7b5a0323bd9d262`
+- product merge: `1a1952a78f79b2473f1f9513c1d5820f58987594`
+- repaired grammar head: PR #216 `55d20a4cc08c93b34961c679bdb73458fea4c408`
+- repaired grammar merge: `919ea3ed03e045f9a35b087549d76f4c0c5a9a0f`
+- repaired hosted receipt: `30581672669` / job `625`, passed
+- group-guard proof head: PR #220 `bb0a79dec47958c6b865d4b382a44baff17ab736`
+- group-guard proof merge: `ed49c01a85e9d363626db5d2973a33b67209e13b`
+- group-guard hosted receipt: `30582215292` / 634, passed
+- proof execution: direct inherited suite twice; current-main focused 15/15; full regex discovery 38/38
+
+### Ordered patch blobs
 
 1. target scopes: `1703984aa0c030e5131618a3541ee85bfd68ec65`
 2. numeric occurrences: `81828a468854e7ec9ef4cda9626b9c57314afba3`
 3. regex dialects: `2d7c457b83700d51b173efd0825128b6853a5f47`
 4. regex edge/parity: `9994ac2272f23872b7f6e00a20f7282cb9b8cce3`
 
-Focused test blobs:
+### Focused test blobs
 
 - core: `57409a8e727c237dcddbdf508be6e94dd57b326f`
 - edge/parity: `3b45d959122dc8f4a630cf144f176ecdabe7d3fb`
+- group-guard accepted neighbors: `5a7bbac729caf71be6033f71d792dfde0d5f653a`
 
-## Completed in this session
+## Completed across the unit branch
 
 - read issue #397, its durable-workspace comment, `upstream-packets/README.md`, and `upstream-packets/INDEX.md`;
-- confirmed no existing unit 01 workspace or branch;
-- posted `CLAIMED — unit 01` on issue #397;
-- created branch `upstream/unit-01-tarfilter-regex-dialects` from current `main`;
-- read owning issue #212 and the canonical core/repair carriers PR #151, PR #202, and PR #216;
-- read direct characterization/draft/prerequisite carriers PR #113, PR #211, PR #68, and PR #102;
+- claimed unit 01 and created `upstream/unit-01-tarfilter-regex-dialects`;
+- read owning issue #212 and the full linked carrier chain, including issues #36, #63, #98, and #108; PRs #48, #56, #68, #102, #113, #151, #202, #203, #211, #216, and #220; and the relevant PR review/checkpoint discussion;
+- identified PR #202 as a duplicate repair and PR #203 as a superseded proof carrier;
+- identified merged PR #220 as the canonical accepted-neighbor proof;
 - pinned exact source, patch, test, carrier-head, merge, and hosted-run identities;
-- reviewed the executable patch order and baseline/candidate expectations in both focused test modules;
-- verified a noncanonical mirror carries the same `tarfilter` Git blob as the retained import, solely corroborating the old base bytes;
-- attempted local checkout and recorded the DNS failure verbatim;
-- declined to repeat old-base tests because they would add no current-upstream evidence;
-- created the complete unit packet: `README.md`, `SOURCE_MAP.md`, `DEEP_DIVE.md`, `TESTS.md`, `UPSTREAM_ISSUE.md`, `UPSTREAM_PR.md`, `DECISIONS.md`, and this handoff.
+- reviewed the executable patch order and baseline/candidate expectations in all three focused test modules;
+- refreshed official Debian archive evidence for source version `1.5.7-3`, release tag `6fde9997`, and 11,453-byte `tarfilter`;
+- verified a package-version mirror carries the same `tarfilter` Git blob as the Linux Fieldwork import;
+- identified the upstream-native runner: `coverage.py` stages local `./tarfilter` as `shared/tarfilter`; README documents full execution through `coverage.sh` and individual execution through `coverage.py`;
+- refreshed Debian BTS and web-indexed Salsa overlap searches; no equivalent tarfilter regex-dialect carrier appeared;
+- attempted Git and Debian archive transfer into the local shell and recorded DNS failures verbatim;
+- kept package-source corroboration separate from the unresolved exact canonical Salsa gate;
+- updated `README.md`, `SOURCE_MAP.md`, `DEEP_DIVE.md`, `TESTS.md`, `DECISIONS.md`, `UPSTREAM_PR.md`, and this handoff.
 
 ## Latest distinguishing result
 
-The retained repaired head `55d20a4cc08c93b34961c679bdb73458fea4c408` has a green hosted receipt (`30581672669` / `625`) and prior 23-test GNU tar 1.35 differential reruns. This session established a complete, exact rebase manifest but produced no fresh current-source result because the canonical Salsa head was unavailable.
+The current Debian package generation remains `1.5.7-3`, and its published `tarfilter` size matches the package-version mirror carrying the exact Linux Fieldwork imported blob. The complete internal proof chain is green through PR #220, including the three accepted neighbors of the active Python-group guard.
 
-## Retrieval failure and interpretation
+This advances source freshness, test-entrypoint knowledge, proof completeness, and overlap evidence. The unit remains `ACTIVE` because exact current Salsa `master`, its `tarfilter` blob, and a fresh current-source candidate run remain unresolved.
 
-Attempted command:
+## Exact transfer failures
+
+Attempted commands:
 
 ```sh
 git clone https://github.com/teamleaderleo/linux-fieldwork.git
+curl -fL --retry 2 \
+  -o /mnt/data/mmdebstrap_1.5.7.orig.tar.gz \
+  https://deb.debian.org/debian/pool/main/m/mmdebstrap/mmdebstrap_1.5.7.orig.tar.gz
 ```
 
-Observed error:
+Observed errors:
 
 ```text
 fatal: unable to access 'https://github.com/teamleaderleo/linux-fieldwork.git/': Could not resolve host: github.com
+curl: (6) Could not resolve host: deb.debian.org
 ```
 
-The GitHub connector supported repository reads/writes, but the local execution runtime lacked DNS. Exact current Salsa `master` also remained unavailable through the active retrieval paths. A mirror or package snapshot cannot satisfy issue #397's canonical-base gate.
+Connector and web reads succeeded. The local shell environment could not transfer source bytes, so no patch command or fresh test process began.
 
 ## First incomplete step
 
@@ -79,27 +104,32 @@ git clone https://salsa.debian.org/debian/mmdebstrap.git mmdebstrap-unit-01
 cd mmdebstrap-unit-01
 git checkout master
 git pull --ff-only
-git rev-parse HEAD
-git hash-object tarfilter
+upstream_base=$(git rev-parse HEAD)
+upstream_tarfilter_blob=$(git hash-object tarfilter)
+printf 'base=%s\ntarfilter=%s\n' "$upstream_base" "$upstream_tarfilter_blob"
 ```
 
 Immediately record both outputs in `README.md`, `SOURCE_MAP.md`, `TESTS.md`, and this handoff before changing source.
 
 ## Next safe technical action
 
-1. Inspect current canonical `tarfilter`, tests, contribution instructions, issues, and merge requests.
+1. Inspect exact current canonical `tarfilter`, `coverage.txt`, `tests/`, contribution instructions, issues, and merge requests.
 2. Determine which PR #68 / PR #102 prerequisite behaviors already exist.
 3. Apply the four-patch state to a disposable current-source copy with `patch --fuzz=0`, or regenerate one coherent current-source diff when context changed.
-4. Record every conflict and the exact resulting diff/head.
-5. Run Python compilation, the focused GNU differential matrix against the exact rebased candidate, current upstream-native entry points, cleanup, and immediate rerun.
-6. Review the complete diff and current overlap.
-7. Update drafts and leave the unit `READY FOR AUTHORIZATION`, `HOLD`, or `SPLIT` with one precise reason.
+4. Preserve the PR #220 positive controls in the final regression.
+5. Record every conflict, exact candidate file hash, complete diff, and candidate head.
+6. Adapt the focused Linux Fieldwork harness to consume the exact current-source candidate.
+7. Run Python compilation and the complete GNU differential matrix.
+8. Keep the rebased candidate at upstream-tree `./tarfilter`; select the exact transform-related native test names from current `coverage.txt` and `tests/`; run them through `coverage.py`.
+9. Run the appropriate broader native suite, clean all generated state, and rerun the focused commands immediately.
+10. Review the complete diff and exact live Salsa overlap.
+11. Leave the unit `READY FOR AUTHORIZATION`, `HOLD`, or `SPLIT` with one precise reason.
 
 Do not create a Salsa fork, branch, issue, merge request, comment, review, email, or mailing-list post without explicit authorization.
 
 ## Commands to retain
 
-From the Linux Fieldwork checkout, after placing the exact current canonical `tarfilter` at `$candidate_root/upstream/mmdebstrap/tarfilter`:
+From the Linux Fieldwork checkout, after placing exact current canonical `tarfilter` at `$candidate_root/upstream/mmdebstrap/tarfilter`:
 
 ```sh
 patch --fuzz=0 -p1 -d "$candidate_root" -i investigations/tarfilter-transform-target-scopes/tarfilter-transform-target-scopes.patch
@@ -111,31 +141,43 @@ python3 -m py_compile "$candidate_root/upstream/mmdebstrap/tarfilter"
 
 Regenerate against current source when any patch requires fuzz, offsets, or manual context placement.
 
-Retained old-base focused command:
+Retained focused command after adapting the harness to the exact current candidate:
 
 ```sh
 LC_ALL=C python3 -m unittest discover -s tests -p 'test_tarfilter_transform_regex*.py' -v
 ```
 
-Adapt the harness so the fresh run consumes the exact current-source candidate. Avoid a hidden fallback to imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`.
+Native command pattern after selecting exact current test names:
+
+```sh
+CMD=./mmdebstrap ./coverage.py --dist unstable TEST-NAME
+```
+
+Published full-suite pattern:
+
+```sh
+./make_mirror.sh
+CMD=./mmdebstrap ./coverage.sh
+```
 
 ## Cleanup state
 
-No local checkout, temporary archive, patched source tree, process, socket, mount, container, or Python cache was created because execution stopped at source retrieval. Durable retained state is limited to the Linux Fieldwork branch, packet commits, and issue #397 internal comments.
+No successful local checkout, source archive, temporary candidate tree, archive fixture, test process, socket, mount, container, or Python cache was created in this continuation. Failed network commands left no retained source artifact. Durable retained state is limited to Linux Fieldwork branch commits and internal issue #397 comments.
 
 ## Gates still open
 
-- exact current canonical Salsa base;
+- exact current canonical Salsa base and `tarfilter` blob;
 - exact current-source candidate head;
 - clean no-fuzz/no-offset application or regenerated diff;
 - focused baseline failure and candidate pass on current source;
-- upstream-native focused and broader tests;
+- upstream-native focused tests;
+- appropriate broader native suite;
 - cleanup and immediate rerun;
 - complete current-source diff review;
-- current active-equivalent-work search;
+- exact live Salsa issue/MR overlap search;
 - controlled fork and compare URL;
 - explicit authorization before external contact.
 
 ## Human decision state
 
-No human send decision is requested yet. Technical work remains. After all gates pass, request a unit-specific decision on creating a controlled Salsa fork and sending the prepared merge request.
+No send decision is requested. Technical work remains. After all gates pass, request a unit-specific decision on creating a controlled Salsa fork and sending the prepared merge request.
