@@ -1,0 +1,21 @@
+Unit: 20 tarfilter dotfile identity
+Date: 2026-08-01
+Environment: Python 3.13.5; Linux 6.12.13 x86_64; GNU patch 2.8
+Patch SHA-256: 2a62ae1ff84c1c613a0db89d1172e7f987164a472df0ea5da0e3b5b9037388c8
+Candidate tarfilter SHA-256: fdd55d9a6737bf1b5992da0254b0d6804f2b7f7598a385ed2f5b50f5196991de
+Test SHA-256: e9d4fc52860b718a6997c16770b98482c610a7016f0cd369c8da042ed113cc3d
+
+Command:
+MMTARFILTER=/tmp/unit20-final-apply/tarfilter /tmp/unit20-final-apply/tests/tarfilter-path-dotfiles
+
+Exit status: 0
+Output: empty
+
+Assertions passed:
+- /.config excludes .config, ./.config, ././.config, and /./.config.
+- /config excludes only ordinary archive-syntax spellings of config.
+- ..name, ...name, and ../config retain their complete first-component identity.
+- exclude-all followed by include /.config restores only the dotfile identities.
+- exclude-all followed by include /..name restores only ..name.
+
+Raw stdout/stderr SHA-256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
