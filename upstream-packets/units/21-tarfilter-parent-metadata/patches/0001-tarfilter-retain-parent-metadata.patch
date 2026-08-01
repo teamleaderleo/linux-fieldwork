@@ -1,8 +1,7 @@
 diff --git a/coverage.txt b/coverage.txt
-index 092a7a2..348d177 100644
 --- a/coverage.txt
 +++ b/coverage.txt
-@@ -1,4 +1,6 @@
+@@ -78,4 +78,6 @@
  Test: tarfilter-idshift
  Needs-QEMU: true
  
@@ -10,10 +9,10 @@ index 092a7a2..348d177 100644
 +
  Test: progress-bars-on-fake-tty
 diff --git a/tarfilter b/tarfilter
-index 7d1e4f7..bc84056 100644
+index ad77616..a7bdcb7 100755
 --- a/tarfilter
 +++ b/tarfilter
-@@ -10,7 +10,7 @@ class PathFilterAction(argparse.Action):
+@@ -31,7 +31,7 @@ class PathFilterAction(argparse.Action):
      def __call__(self, parser, namespace, values, option_string=None):
          items = getattr(namespace, "pathfilter", [])
          regex = re.compile(fnmatch.translate(values))
@@ -22,7 +21,7 @@ index 7d1e4f7..bc84056 100644
          setattr(namespace, "pathfilter", items)
  
  
-@@ -28,18 +28,23 @@ def main():
+@@ -221,19 +221,24 @@ Lastly, shift user id and group id of each entry by the value given by the
          # normalize path and make it absolute by stripping off all leading
          # dots and slashes and then prepending a slash
          name = "/" + member.name.lstrip("./")
@@ -51,12 +50,13 @@ index 7d1e4f7..bc84056 100644
 +                ):
                      return False
          return skip
+ 
 diff --git a/tests/tarfilter-parent-metadata b/tests/tarfilter-parent-metadata
 new file mode 100755
-index 0000000..b2fbd4f
+index 0000000..9212cb8
 --- /dev/null
 +++ b/tests/tarfilter-parent-metadata
-@@ -0,0 +1,103 @@
+@@ -0,0 +1,122 @@
 +#!/bin/sh
 +set -eu
 +export LC_ALL=C.UTF-8
@@ -105,6 +105,14 @@ index 0000000..b2fbd4f
 +            "opt/tool", tarfile.REGTYPE, 0o755, 17, 27,
 +            1700000007, b"opt\n", None,
 +        ),
++        (
++            "linkroot", tarfile.SYMTYPE, 0o777, 18, 28,
++            1700000008, b"", "symlink-parent",
++        ),
++        (
++            "linkroot/tool", tarfile.REGTYPE, 0o744, 19, 29,
++            1700000009, b"linked\n", None,
++        ),
 +    ]
 +    for name, kind, mode, uid, gid, mtime, data, marker in entries:
 +        member = tarfile.TarInfo(name)
@@ -113,6 +121,8 @@ index 0000000..b2fbd4f
 +        member.uid = uid
 +        member.gid = gid
 +        member.mtime = mtime
++        if kind == tarfile.SYMTYPE:
++            member.linkname = "usr/bin"
 +        if marker:
 +            member.pax_headers = {"SCHILY.xattr.user.unit21": marker}
 +        if kind == tarfile.REGTYPE:
@@ -153,6 +163,14 @@ index 0000000..b2fbd4f
 +    assert metadata["usr/bin"].gid == 22
 +    assert metadata["usr/bin"].mtime == 1700000002
 +    assert metadata["usr/bin"].pax_headers["SCHILY.xattr.user.unit21"] == "bin-parent"
++if "linkroot" in metadata:
++    assert metadata["linkroot"].issym()
++    assert metadata["linkroot"].linkname == "usr/bin"
++    assert metadata["linkroot"].mode == 0o777
++    assert metadata["linkroot"].uid == 18
++    assert metadata["linkroot"].gid == 28
++    assert metadata["linkroot"].mtime == 1700000008
++    assert metadata["linkroot"].pax_headers["SCHILY.xattr.user.unit21"] == "symlink-parent"
 +PY
 +}
 +
@@ -160,3 +178,4 @@ index 0000000..b2fbd4f
 +check_case wildcard '/usr/*/tool' '["usr", "usr/bin", "usr/bin/tool"]'
 +check_case character_class '/usr/[bs]in/tool' '["usr", "usr/bin", "usr/bin/tool"]'
 +check_case component_boundary '/usr2/tool' '["usr2", "usr2/tool"]'
++check_case symlink_parent '/linkroot/tool' '["linkroot", "linkroot/tool"]'
