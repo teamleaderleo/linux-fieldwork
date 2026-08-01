@@ -2,145 +2,162 @@
 
 State: `READY FOR AUTHORIZATION`  
 Priority-zero issue: #397, unit 11  
-Worker or variant: `GPT-5.6 Thinking`  
 Linux Fieldwork branch: `upstream/unit-11-coverage-backend-cancellation`  
 Internal review surface: PR #401  
 External contact authorized: `false`
 
 ## TL;DR
 
-The selected candidate starts each chosen coverage backend in a dedicated session/process group. Parent-only SIGINT sends TERM to that group, waits for the wrapper, prints a focused diagnostic, and exits 130.
+The selected candidate starts each chosen coverage backend in a dedicated session/process group. Parent-only SIGINT sends TERM to that group, waits for the wrapper, prints `interrupted by SIGINT`, and exits 130.
 
-The retained upstream-root patch applied with zero fuzz to canonical mmdebstrap `main` at `77ec9be5417ee44c96343d2347145585da1b1f94`. Exact canonical null, QEMU-wrapper, and passwordless-sudo controls passed twice, including the PR #339 QEMU handler-entry refinement. The technical unit is complete for its responsive-topology claim. A human send/hold decision and controlled fork remain.
+The clean candidate now exists in the controlled repository and passed an exact target-repository gate. The one-file target branch is byte-identical to the zero-fuzz packet-patch result. The six-control packet matrix and refined fourteen-control null/QEMU-wrapper/passwordless-sudo matrix each passed twice at the controlled target execution surface.
 
-## Accomplished behavior
-
-Each selected backend runs as leader of a caller-owned session/process group. When `coverage.py` receives SIGINT directly, it sends SIGTERM to that group, reaps the wrapper, reports interruption, and returns status 130. Responsive in-group work stops before later work can run. Ordinary unsignaled execution keeps its existing success behavior.
-
-## Why care
-
-The imported driver terminates only the immediate wrapper and then falls through to success. A nested backend pipeline can survive a parent-only cancellation, continue work, and leave the caller with status 0. The status-only repair returns 130 while still allowing nested work to survive. The selected candidate owns both the cancellation result and the selected backend boundary.
-
-## Scope
-
-### Included
-
-- parent-only SIGINT delivered to `coverage.py`;
-- one dedicated session/process group per selected null, sudo, or QEMU backend;
-- SIGTERM delivery to that owned group;
-- wrapper reap and final status 130;
-- responsive null, QEMU-wrapper, and actual passwordless-sudo controls;
-- PR #339 handler-entry refinement for the QEMU losing controls;
-- ordinary unsignaled success, cleanup, and immediate rerun.
-
-### Excluded
-
-- TERM-to-KILL escalation;
-- cleanup timeout or survivor diagnostics;
-- repeated SIGINT policy during cleanup;
-- descendants that call `setsid()` or move to another group;
-- real QEMU/debvm, mount, network, package, and remote-supervisor execution;
-- public issue, pull request, merge request, email, or comment.
-
-### Split boundary
-
-Issue #341 and retained PR #347 own TERM-resistant descendants, repeated SIGINT, final-result publication, and escalation comparisons. Their synthetic matrix selected no product escalation policy. This unit retains PR #313's narrower responsive-topology result.
-
-## Exact identities
+## Exact source identity
 
 | Identity | Value |
 | --- | --- |
-| Upstream project | mmdebstrap |
 | Canonical repository | `https://gitlab.mister-muffin.de/josch/mmdebstrap` |
-| Intended base branch | `main` |
-| Exact upstream base executed | `77ec9be5417ee44c96343d2347145585da1b1f94` |
-| Last upstream commit touching `coverage.py` | `c82fc7e261c7a2fd85e499484108408fd42331d2` |
+| Canonical branch | `main` |
+| Exact canonical base | `77ec9be5417ee44c96343d2347145585da1b1f94` |
 | Canonical/imported `coverage.py` blob | `9a522484aef05deae514a98e4b6adf5feb6c886d` |
 | Canonical `run_null.sh` blob | `e0a8c106f9d3d636baea286d2ab33834748dffc9` |
 | Canonical `run_qemu.sh` blob | `426aeeb854173569b24e64d6eb85019f45bdf0b6` |
-| Controlled fork | `NEEDS FORK` |
-| Candidate source branch | `NEEDS FORK` |
-| Historical mechanism head | PR #313 `e90fc438f530f7bd78ffd6fd1ba24c665bd96913` |
-| Historical evidence head | PR #313 `dfc6d0503fb844f4c428ce16a567a9fdcd35280a` |
-| Refined QEMU test head | PR #339 `8253ab2ef6fed22b34fc5f5d6d20cda75c25e2c7` |
-| Refined QEMU test blob | `0c2a050faf8e98320fc0c4fe4634d46bdf7f0dfa` |
-| Retained upstream-root patch blob | `f1a2c75adfa009b6f1ac29e5a31bef526400444f` |
-| Historical prefixed patch blob | `4f2a749e50d42655ebb6519ca6550d2f666985bc` |
-| Linux Fieldwork branch | `upstream/unit-11-coverage-backend-cancellation` |
-| Internal review surface | PR #401 |
-| Proposed destination | canonical mmdebstrap Forgejo repository |
-| Delivery method | Forgejo fork and pull request after explicit authorization |
+| Controlled repository | `teamleaderleo/mmdebstrap` |
+| Canonical snapshot branch | `linux-fieldwork/upstream-main-snapshot` |
+| Clean source branch | `linux-fieldwork/unit-11-coverage-backend-cancellation` |
+| Clean source head | `431614b3af58ba4f70791aa1d42cf5b71c965dd2` |
+| Candidate `coverage.py` blob | `9e31f21cf37228257b5e0705d9ecb13b7a66e40f` |
+| Clean diff | one commit; `coverage.py` only; 8 additions, 3 deletions |
+| Retained patch blob | `f1a2c75adfa009b6f1ac29e5a31bef526400444f` |
+| Historical mechanism head | `e90fc438f530f7bd78ffd6fd1ba24c665bd96913` |
+| Historical evidence head | `dfc6d0503fb844f4c428ce16a567a9fdcd35280a` |
+| Refined QEMU head | `8253ab2ef6fed22b34fc5f5d6d20cda75c25e2c7` |
 
-## Canonical execution receipt
+The clean source branch contains no Linux Fieldwork notes, fixtures, receipts, or workflow files.
 
-Linux Fieldwork Actions run `30689911760` passed on branch head `83efaa3b3baee05c6b8f96138a3ee619942ce984`.
+## Accomplished behavior
 
-- `canonical-upstream-gate`: exact canonical checkout, blob equality, zero-fuzz packet-patch application, compilation, six null/source controls twice;
-- `canonical-refined-topology-gate`: canonical source and wrappers inserted into exact PR #339 carrier, 14 null/QEMU-wrapper/sudo controls twice;
-- no test skips occurred;
-- actual passwordless-sudo root-worker controls ran;
-- both immediate reruns passed;
-- GitHub runner cleanup reported orphan-process cleanup completion.
+```python
+proc = subprocess.Popen(argv, start_new_session=True)
+try:
+    proc.wait()
+except KeyboardInterrupt:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    proc.wait()
+    print("interrupted by SIGINT", file=sys.stderr)
+    raise SystemExit(130)
+```
+
+Responsive in-group work stops before later work can run. Ordinary unsignaled focused controls retain success.
+
+## Controlled target execution
+
+- internal controlled-fork PR: `teamleaderleo/mmdebstrap#2`
+- PR base: `linux-fieldwork/upstream-main-snapshot@77ec9be5417ee44c96343d2347145585da1b1f94`
+- runner branch/head: `linux-fieldwork/unit-11-coverage-backend-cancellation-runner@f0319d53f515174c3794237f34f76699182ac509`
+- generated merge: `bf1f0cfde0ec6e0691c0dfb7d4656aafe3deab48`
+- workflow run: `30706007117`
+- result: success
+
+### Candidate equivalence and null
+
+- job `91385135488`: success
+- exact source, patch, and candidate identities: verified
+- zero-fuzz application: success
+- materialized patch result byte-equal to clean target `coverage.py`
+- target compilation: success
+- packet matrix: 6/6 in 1.421 seconds
+- immediate rerun: 6/6 in 1.420 seconds
+- artifact `8820336271`
+- SHA-256 `97eba28273b50dfcf51c32a2fe4cf49aa50da5634a3aaba6b052ad3728ae1ce8`
+
+### Refined topology
+
+- job `91385135449`: success
+- exact PR #339 carrier and test blobs: verified
+- null/QEMU-wrapper/passwordless-sudo matrix: 14/14 in 4.246 seconds
+- immediate rerun: 14/14 in 4.367 seconds
+- skips: none
+- actual passwordless-sudo controls: executed
+- artifact `8820337503`
+- SHA-256 `8d72b079fa9e30ee92bdf28cf217e9df3e4ae7a5ffeb7374b76950313bf24614`
+
+Both jobs uploaded receipts and completed orphan-process cleanup.
+
+Durable receipt: [`artifacts/2026-08-01-controlled-target-run.md`](artifacts/2026-08-01-controlled-target-run.md).
+
+## Canonical packet execution
+
+Run `30689911760` passed on exact canonical source:
+
+- zero-fuzz application and compilation twice;
+- six-control packet matrix twice;
+- fourteen-control refined topology matrix twice;
+- no skips;
+- cleanup and immediate rerun success.
 
 Artifacts:
 
-- `8815289674`, `unit-11-canonical-upstream-gate`, SHA-256 `25e62dec929f27e628816568d6264f2bee45474c00b00c3c047f53209608ef1d`;
-- `8815290820`, `unit-11-canonical-refined-topology-gate`, SHA-256 `63634782bfd230129238ee71aa60ad83ae5b43dfcf3291123cfdbd0770bdf63e`.
+- `8815289674`, SHA-256 `25e62dec929f27e628816568d6264f2bee45474c00b00c3c047f53209608ef1d`;
+- `8815290820`, SHA-256 `63634782bfd230129238ee71aa60ad83ae5b43dfcf3291123cfdbd0770bdf63e`.
 
-## Canonical links
+Packet head `d232e4fdd67cf0592e129a60534e984dcbec6bfe` passed run `30690101504`. The current packet head is recorded by PR #401 and its latest exact-head run.
 
-- Priority-zero unit: #397 unit 11
-- Internal review surface: PR #401
-- Status-only predecessor: issue #141, PR #143, merged internal carrier PR #204
-- Owning group-delivery issue: #306
-- Canonical historical product carrier: PR #313
-- Evidence refinement: PR #339; superseded carriers PR #332 and PR #336
-- Stronger policy comparison: issue #341, PR #347, composed successor PR #353
-- Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
-- Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
-- Tests and receipts: [`TESTS.md`](TESTS.md)
-- Decisions: [`DECISIONS.md`](DECISIONS.md)
-- Current handoff: [`HANDOFF.md`](HANDOFF.md)
-- Upstream issue draft: [`UPSTREAM_ISSUE.md`](UPSTREAM_ISSUE.md)
-- Upstream PR draft: [`UPSTREAM_PR.md`](UPSTREAM_PR.md)
+## Target test-layout decision
 
-## Current result
+The canonical project uses `coverage.sh`, `coverage.py`, `coverage.txt`, and shell-template scenarios under `tests/`. `coverage.py` rejects non-dot `tests/` entries without matching `coverage.txt` records.
 
-### Demonstrated
+A guessed Python file under `tests/` would violate that inventory contract and be consumed through the wrong runner. No fake target-native test path is claimed. Before public submission, select one of:
 
-- imported baseline parent-only SIGINT returns 0 after deliberate survivor release;
-- status-only predecessor returns 130 after deliberate survivor release;
-- both losing variants leave later-capable nested work alive before release;
-- group candidate returns 130 and leaves no live responsive in-group process;
-- later-work markers remain absent for the group candidate;
-- ordinary foreground-group SIGINT remains clean;
-- unsignaled null, QEMU-wrapper, and sudo candidate runs succeed;
-- exact packet patch applies with zero fuzz to canonical source and compiles;
-- complete focused matrices survive an immediate rerun.
+1. integrate a deterministic scenario into the real `coverage.txt`/shell-template harness;
+2. add an explicitly accepted separate self-test surface;
+3. make a documented source-only submission decision while retaining the external reproducer.
 
-### Evidence limits
+## Scope and limits
 
-- real QEMU/debvm and package operations were outside the focused synthetic wrapper controls;
-- TERM-resistant, deferring, or group-escaping descendants remain outside the claim;
-- the full mirror-backed coverage matrix was not run because it requires prepared Debian mirror state and exceeds this source unit's discriminator;
-- upstream maintainer review has not occurred.
+Established:
 
-## Candidate organization
+- exact canonical base and clean target source head;
+- zero-fuzz patch equivalence and target compilation;
+- group-wide TERM delivery for tested responsive in-group work;
+- status 130 and no later work for selected controls;
+- unsignaled focused success;
+- cleanup and immediate rerun.
 
-One product patch is retained:
+Excluded:
 
-1. `patches/0001-coverage-own-selected-backend-group.patch` — add `signal`, start the backend in a new session, send TERM to its group on SIGINT, reap the wrapper, diagnose, and exit 130.
+- TERM-to-KILL escalation;
+- repeated SIGINT policy;
+- TERM-resistant, deferring, or group-escaping descendants;
+- real QEMU/debvm and prepared-mirror package operations;
+- direct `/dev/tty` and non-Linux execution;
+- public upstream contact.
 
-The focused regression evidence remains reproducible through `scripts/test_current_import.py` and the exact PR #339 carrier identities recorded in `TESTS.md`.
+Issue #341 and closed PRs #347/#353 retain the stronger cleanup-policy comparison. No stronger product policy is selected.
 
-## Current disposition
+## Remaining boundaries before public action
 
-`READY FOR AUTHORIZATION` — the exact current-base application, focused execution, cleanup, and immediate rerun are complete. External submission remains prohibited until a human authorizes send and a controlled fork is selected or created.
+- select target-native regression integration or explicitly approve a source-only submission shape;
+- run the project-declared mirror-backed/source ordinary gate at clean target head `431614b3...`;
+- decide whether the isolated target workflow/PR is retained or retired after evidence transfer;
+- obtain eligible independent complete clean-target-diff acceptance;
+- refresh overlap and contribution-policy checks;
+- grant explicit authorization for the exact public action.
 
-## Next human decision
+## Packet navigation
 
-Choose `SEND` or `HOLD`. A `SEND` decision must authorize controlled-fork creation/use and public Forgejo interaction.
+- [`SOURCE_MAP.md`](SOURCE_MAP.md)
+- [`DEEP_DIVE.md`](DEEP_DIVE.md)
+- [`TESTS.md`](TESTS.md)
+- [`DECISIONS.md`](DECISIONS.md)
+- [`HANDOFF.md`](HANDOFF.md)
+- [`UPSTREAM_ISSUE.md`](UPSTREAM_ISSUE.md)
+- [`UPSTREAM_PR.md`](UPSTREAM_PR.md)
+- [`artifacts/2026-08-01-controlled-target-run.md`](artifacts/2026-08-01-controlled-target-run.md)
 
 ## Authority
 
-Internal reads, branch creation, packet commits, tests, CI, and internal PR #401 are authorized. External contact remains unauthorized and none was made.
+Internal reads, branches, packet commits, tests, CI, and controlled-fork review are authorized. Canonical-upstream public interaction remains unauthorized and none occurred.
