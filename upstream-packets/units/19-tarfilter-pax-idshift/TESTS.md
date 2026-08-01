@@ -123,7 +123,8 @@ The repository README documents the broad suite as `./make_mirror.sh` followed b
 - current upstream base identity observed: `77ec9be5417ee44c96343d2347145585da1b1f94`;
 - current tarfilter file identity: unchanged from the source reviewed by issue #37 and PR #78;
 - retained upstream-root patch: `patches/0001-tarfilter-regenerate-shifted-pax-ownership.patch`;
-- intended command: `git am .../0001-tarfilter-regenerate-shifted-pax-ownership.patch`;
+- retained patch SHA-256: `b86da5f6a2f2f1757b5b3fc0e32ebeabeeadbdebebb4cdc1961d3d1ff5eb3303`;
+- intended commands: `git apply --check .../0001-tarfilter-regenerate-shifted-pax-ownership.patch` followed by `git apply .../0001-tarfilter-regenerate-shifted-pax-ownership.patch`;
 - fuzz/offset result on full current checkout: NOT RUN;
 - conflict resolution: none performed;
 - complete diff reviewed: source-only retained hunk reviewed; final source-plus-native-test diff pending;
