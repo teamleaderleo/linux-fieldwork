@@ -99,12 +99,17 @@ jobs:
             test "$(git -C "$work" rev-parse HEAD)" = \
               "77ec9be5417ee44c96343d2347145585da1b1f94"
 
-            patch --fuzz=0 -p1 -d "$work" -i "$patch_file" \
-              | tee "unit-20-$pass-patch-apply.log"
-            if grep -Eiq 'fuzz|offset' "unit-20-$pass-patch-apply.log"; then
-              echo "patch application reported fuzz or offset" >&2
+            patch --dry-run --fuzz=0 -p1 -d "$work" -i "$patch_file" \
+              | tee "unit-20-$pass-patch-dry-run.log"
+            if grep -Eiq 'fuzz|offset' "unit-20-$pass-patch-dry-run.log"; then
+              echo "patch dry-run reported fuzz or offset" >&2
               exit 1
             fi
+            git -C "$work" apply --check --verbose "$patch_file" \
+              2>&1 | tee "unit-20-$pass-git-apply-check.log"
+            git -C "$work" apply --verbose "$patch_file" \
+              2>&1 | tee "unit-20-$pass-git-apply.log"
+            test -x "$work/tests/tarfilter-path-dotfiles"
 
             git -C "$work" add -N tests/tarfilter-path-dotfiles
             printf '%s\n' coverage.txt tarfilter tests/tarfilter-path-dotfiles \
