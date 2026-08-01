@@ -1,0 +1,14 @@
+diff --git a/tarfilter b/tarfilter
+--- a/tarfilter
++++ b/tarfilter
+@@ -204,7 +204,9 @@
+         not hasattr(args, "pathfilter")
+         and not hasattr(args, "paxfilter")
+         and not hasattr(args, "typefilter")
+-        and not hasattr(args, "strip_components")
++        and args.strip_components in (None, 0)
++        and args.idshift in (None, 0)
++        and not hasattr(args, "trans")
+     ):
+         from shutil import copyfileobj
+ 
