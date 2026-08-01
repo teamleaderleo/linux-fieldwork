@@ -4,19 +4,24 @@
 
 | Surface | Exact identity | Role |
 | --- | --- | --- |
-| Canonical upstream | `josch/mmdebstrap` Forgejo, `main` | intended contribution destination |
-| Exact upstream base executed | `77ec9be5417ee44c96343d2347145585da1b1f94` | selected contribution base |
+| Canonical upstream | `https://gitlab.mister-muffin.de/josch/mmdebstrap`, `main` | intended contribution destination |
+| Exact canonical base | `77ec9be5417ee44c96343d2347145585da1b1f94` | contribution base |
 | Last commit touching `coverage.py` | `c82fc7e261c7a2fd85e499484108408fd42331d2` | source-history boundary |
-| Canonical/imported source | `coverage.py` blob `9a522484aef05deae514a98e4b6adf5feb6c886d` | exact baseline |
-| Canonical null wrapper | `run_null.sh` blob `e0a8c106f9d3d636baea286d2ab33834748dffc9` | null and sudo execution boundary |
-| Canonical QEMU wrapper | `run_qemu.sh` blob `426aeeb854173569b24e64d6eb85019f45bdf0b6` | synthetic QEMU-wrapper boundary |
-| Changed product file | `coverage.py` | backend launch and SIGINT handling |
-| Retained packet patch | `patches/0001-coverage-own-selected-backend-group.patch` blob `f1a2c75adfa009b6f1ac29e5a31bef526400444f` | upstream-root selected candidate |
-| Durable null verifier | `scripts/test_current_import.py` | zero-fuzz application and six-control matrix |
-| Actions carrier | `.github/workflows/unit-11-coverage-backend-cancellation.yml` | exact canonical and refined topology execution |
-| Internal review surface | PR #401 | packet and execution review |
+| Base source | `coverage.py` blob `9a522484aef05deae514a98e4b6adf5feb6c886d` | wrapper-only baseline |
+| Canonical null wrapper | `run_null.sh` blob `e0a8c106f9d3d636baea286d2ab33834748dffc9` | null and sudo boundary |
+| Canonical QEMU wrapper | `run_qemu.sh` blob `426aeeb854173569b24e64d6eb85019f45bdf0b6` | QEMU-wrapper boundary |
+| Retained packet patch | `patches/0001-coverage-own-selected-backend-group.patch` blob `f1a2c75adfa009b6f1ac29e5a31bef526400444f` | selected source hunk |
+| Controlled repository | `teamleaderleo/mmdebstrap` | clean source and internal review |
+| Exact snapshot branch | `linux-fieldwork/upstream-main-snapshot@77ec9be...` | controlled canonical base |
+| Clean source branch | `linux-fieldwork/unit-11-coverage-backend-cancellation@431614b3af58ba4f70791aa1d42cf5b71c965dd2` | public-shaped candidate |
+| Candidate source | `coverage.py` blob `9e31f21cf37228257b5e0705d9ecb13b7a66e40f` | exact final product source |
+| Clean changed-file fence | `coverage.py` only, 8 additions and 3 deletions | final source diff |
+| Clean review surface | `teamleaderleo/mmdebstrap#4` | eligible independent review |
+| Packet review surface | `teamleaderleo/linux-fieldwork#401` | durable evidence and drafts |
 
-## Exact baseline source
+## Exact baseline and candidate
+
+Baseline:
 
 ```python
 proc = subprocess.Popen(argv)
@@ -28,60 +33,89 @@ except KeyboardInterrupt:
     break
 ```
 
-Canonical upstream `77ec9be...` and Linux Fieldwork's import have the same `coverage.py` blob `9a522484...`.
+Candidate:
+
+```python
+proc = subprocess.Popen(argv, start_new_session=True)
+try:
+    proc.wait()
+except KeyboardInterrupt:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    proc.wait()
+    print("interrupted by SIGINT", file=sys.stderr)
+    raise SystemExit(130)
+```
+
+## Regression ownership
+
+| Regression | Blob | Role |
+| --- | --- | --- |
+| parent-only status fixture | `9bedaa7cd2368f8679de9948d9fecb3fe75c6bd2` | shared status and launch fixture |
+| null/process-group fixture | `1649c10f8d6639bd26a42b9ab3587b64d84e072c` | baseline/status/group controls |
+| refined QEMU fixture | `0c2a050faf8e98320fc0c4fe4634d46bdf7f0dfa` | handler-entry causal ordering |
+| sudo fixture | `8cc7cffb129595a5e4b967385616fbeede4814db` | actual passwordless-sudo topology |
+| packet verifier | `scripts/test_current_import.py` | zero-fuzz application and six-control matrix |
+
+These regressions remain in the packet/evidence carriers. The clean target contribution is source-only by explicit decision.
+
+## Current execution surfaces
+
+### Canonical packet execution
+
+- workflow: `.github/workflows/unit-11-coverage-backend-cancellation.yml`;
+- canonical run: `30689911760`;
+- result: zero-fuzz application, compilation, 6/6 twice, 14/14 twice, no skips;
+- artifacts: `8815289674`, `8815290820`.
+
+### Controlled focused target execution
+
+- closed PR: `teamleaderleo/mmdebstrap#2`;
+- run: `30706007117`;
+- result: exact target byte equivalence, compilation, 6/6 twice, 14/14 twice;
+- artifacts: `8820336271`, `8820337503`.
+
+### Controlled ordinary source execution
+
+- closed PR: `teamleaderleo/mmdebstrap#3`;
+- run: `30706633832`;
+- native path: `coverage.sh help man version`;
+- result: 3/3 twice;
+- artifact: `8820528312`.
+
+The exact base has a pre-existing Black failure on canonical `tarfilter` blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`; the successful ordinary gate isolates only that exact blob.
 
 ## Carrier lineage
 
-| Carrier | Identity | Disposition and useful evidence |
+| Carrier | Identity | Disposition |
 | --- | --- | --- |
-| Issue #141 | parent-only SIGINT false success | status 0 defect and status-130 requirement |
-| PR #143 | `96ddac76ab9dead7875937a6edfa37137bc52eb9` | historical status-only candidate; retired |
-| PR #204 | head `b5efc8faf35c1da725a3b995a344fadc078ad5d2`, merge `23522b7f7d39ee3a237820e46168720edafb4d0a` | merged internal status-only evidence |
-| Issue #306 | group ownership finding | wrapper-survival distinction and narrow selection |
-| PR #313 | mechanism `e90fc438f530f7bd78ffd6fd1ba24c665bd96913`; evidence head `dfc6d0503fb844f4c428ce16a567a9fdcd35280a` | selected group-delivery product carrier |
-| PR #332 | `e860c94f99854b77975b3176c5bf593759fc2714` | superseded patch-context repair |
-| PR #336 | `6ea1487d602a2cb3932cf31748e820bc261e0429` | superseded QEMU evidence repair |
-| PR #339 | `8253ab2ef6fed22b34fc5f5d6d20cda75c25e2c7` | selected QEMU handler-entry refinement |
-| Issue #341 | escalation research | selected no stronger product policy |
-| PR #347 | `615bd4f5256d9851f682e48e037169ceeb7bb98c` | retained synthetic resistant/repeated-SIGINT comparison |
-| PR #353 | `55bf9e9c8b511399647658139c006afc4ed1fc52` | final-publication and containment successor |
-| PR #401 | branch `upstream/unit-11-coverage-backend-cancellation` | current internal unit workspace and canonical execution surface |
-
-## Exact regression ownership
-
-| Regression | Blob | Executed use |
-| --- | --- | --- |
-| `tests/test_mmdebstrap_coverage_parent_sigint.py` | `9bedaa7cd2368f8679de9948d9fecb3fe75c6bd2` | shared status fixture |
-| `tests/test_mmdebstrap_coverage_process_group.py` | `1649c10f8d6639bd26a42b9ab3587b64d84e072c` | null/source/status controls |
-| PR #339 `tests/test_mmdebstrap_coverage_qemu_process_group.py` | `0c2a050faf8e98320fc0c4fe4634d46bdf7f0dfa` | refined QEMU-wrapper controls |
-| `tests/test_mmdebstrap_coverage_sudo_process_group.py` | `8cc7cffb129595a5e4b967385616fbeede4814db` | actual passwordless-sudo controls |
-
-## Current canonical execution
-
-Workflow run `30689911760` on exact branch head `83efaa3b3baee05c6b8f96138a3ee619942ce984`:
-
-| Job | Result | Artifact |
-| --- | --- | --- |
-| canonical source + packet patch | six controls twice, zero-fuzz application, compilation, success | `8815289674`, SHA-256 `25e62dec929f27e628816568d6264f2bee45474c00b00c3c047f53209608ef1d` |
-| PR #339 refined null/QEMU/sudo topology | fourteen controls twice, no skips, success | `8815290820`, SHA-256 `63634782bfd230129238ee71aa60ad83ae5b43dfcf3291123cfdbd0770bdf63e` |
-
-The topology job copied canonical `coverage.py`, `run_null.sh`, and `run_qemu.sh` into the exact PR #339 test carrier before execution.
+| issue #141 / PRs #143 and #204 | status-only history | retained comparator |
+| issue #306 / PR #313 | mechanism and historical execution | PR closed after evidence transfer |
+| PRs #332 and #336 | carrier repairs | closed superseded |
+| PR #339 | refined QEMU evidence | closed after evidence transfer |
+| issue #341 / PRs #347 and #353 | stronger cleanup policy | retained, no escalation selected |
+| PR #406 | current-main ancestry restack | closed superseded |
+| PR #401 | canonical durable packet | active |
+| controlled PR #2 | focused target runner | closed after evidence transfer |
+| controlled PR #3 | ordinary source runner | closed after evidence transfer |
+| controlled PR #4 | clean source diff | ready for independent review |
 
 ## Patch relationship
 
-The packet patch is the product hunk from PR #313's `0001-own-backend-process-group.patch`, rebased as an upstream-root patch against `coverage.py`.
-
 - packet patch blob: `f1a2c75adfa009b6f1ac29e5a31bef526400444f`;
-- Linux Fieldwork-prefixed historical patch blob: `4f2a749e50d42655ebb6519ca6550d2f666985bc`.
+- historical prefixed patch blob: `4f2a749e50d42655ebb6519ca6550d2f666985bc`;
+- clean candidate blob: `9e31f21cf37228257b5e0705d9ecb13b7a66e40f`.
 
-The older PR #204 patch is a strict semantic subset: it changes `break` to a diagnostic plus `SystemExit(130)` while retaining immediate-child-only termination.
+Run `30706007117` proved the upstream-root patch applies with zero fuzz and produces byte-identical clean target source.
 
 ## Destination map
 
-- canonical repository and issue tracker: `https://gitlab.mister-muffin.de/josch/mmdebstrap`;
+- canonical contribution repository: `https://gitlab.mister-muffin.de/josch/mmdebstrap`;
 - canonical branch: `main`;
 - Debian packaging VCS: `https://salsa.debian.org/debian/mmdebstrap.git`;
-- proposed delivery: controlled Forgejo fork and pull request;
-- controlled fork: `NEEDS FORK`;
-- explicit external authorization: absent;
-- external contact made: none.
+- controlled repository: `teamleaderleo/mmdebstrap`;
+- proposed delivery: Forgejo fork and pull request after explicit authorization;
+- current public authority: absent;
+- public upstream contact made: none.
