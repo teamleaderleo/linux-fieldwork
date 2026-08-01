@@ -10,13 +10,15 @@ External contact authorized: `false`
 
 Root and chrootless tar output diverged on 123 directory mtimes while member identity, type, mode, ownership, size, and regular-file content matched. The retained evidence selects real-directory-only normalization over full timestamp normalization and comparison-only masking. Descriptor-based mutation prevents pathname redirection, while the authority matrix proves that an opened inode can leave the temporary root before mutation.
 
-This unit remains `HOLD` on one discriminator: repeated disposable root and chrootless executions must show whether any live mmdebstrap-owned process can still access or rename the temporary root after `setup()` and immediately before GNU tar. This pass added and locally tested an evidence-only `/proc` probe for that execution.
+The unit remains `HOLD` on the archive-boundary ownership discriminator: repeated disposable root and chrootless executions must show whether any live mmdebstrap-owned process can still access or rename the temporary root after `setup()` and immediately before GNU tar. The packet contains a tested evidence-only `/proc` probe for that execution.
 
-## Accomplished behavior
+Complete review of PR #395 live head `74c996394819c3a717d55193d84336c2e06b3b7c` found a separate candidate defect: `utime($mtime, $mtime, path)` overwrites directory access time. Its dedicated run `30659899105` also stopped at whole-source sid formatting before the real product-helper metadata matrix. PR #395 therefore remains construction history, not a promotable product candidate.
 
-The proposed product result makes direct tar output from root and chrootless mode byte-identical under an explicit `SOURCE_DATE_EPOCH` by converging real directory mtimes while preserving older regular-file mtimes, links, xattrs, ACLs, file capabilities, sparse source allocation, foreign-device descendants, and cleanup behavior.
+## Desired accomplished behavior
 
-The operation-authority premise remains unsettled. No product implementation is selected for upstream submission yet.
+The proposed product result makes direct tar output from root and chrootless mode byte-identical under an explicit `SOURCE_DATE_EPOCH` by converging real directory mtimes while preserving directory access time, older regular-file mtimes, links, xattrs, ACLs, file capabilities, sparse source allocation, foreign-device descendants, and cleanup behavior.
+
+The operation-authority premise remains unsettled. No product implementation is selected for upstream submission.
 
 ## Why care
 
@@ -28,8 +30,8 @@ The current `tests/chrootless` contract compares four root/chrootless tar pairs 
 
 - direct `tar` output with explicit `SOURCE_DATE_EPOCH`;
 - root and chrootless mode convergence;
-- directory-only timestamp policy;
-- symlink, hard-link, device, xattr, ACL, capability, sparse-source, cleanup, and rerun controls already retained by the carrier chain;
+- directory-only timestamp policy with access-time preservation;
+- symlink, hard-link, device, xattr, ACL, capability, sparse-source, cleanup, and rerun controls retained by the carrier chain;
 - archive-boundary process ownership and quiescence evidence;
 - exact authority choice between operation-owned opened inodes and a no-tree-mutation archive implementation.
 
@@ -43,7 +45,7 @@ The current `tests/chrootless` contract compares four root/chrootless tar pairs 
 
 ### Split boundary
 
-The timestamp policy and authority decision belong together because the selected pre-tar mutation is acceptable only under an explicit operation-ownership premise. General descendant shutdown bugs, if observed, become a separate process-lifecycle unit with this packet retaining the discovery receipt.
+Timestamp policy and authority belong together because the selected pre-tar mutation is acceptable only under an explicit operation-ownership premise. General descendant shutdown bugs, if observed, become a separate process-lifecycle unit with this packet retaining the discovery receipt.
 
 ## Exact identities
 
@@ -54,14 +56,14 @@ The timestamp policy and authority decision belong together because the selected
 | Intended base branch | `NEEDS CURRENT UPSTREAM PIN` |
 | Upstream base commit | `NEEDS CURRENT UPSTREAM PIN`; retained imported source is mmdebstrap 1.5.7 |
 | Controlled fork | `NEEDS FORK` |
-| Candidate source branch | current Linux Fieldwork carrier `candidate/chrootless-directory-mtime-normalization-v3` |
-| Candidate head | live GitHub ref `74c996394819c3a717d55193d84336c2e06b3b7c`; PR body still names earlier generation `e700839034a3b1ce3f3ddbfed5cf6d43a4c6987c` |
+| Current pathname carrier | PR #395 branch `candidate/chrootless-directory-mtime-normalization-v3` |
+| Current pathname head | live ref `74c996394819c3a717d55193d84336c2e06b3b7c`; PR body names earlier generation `e700839034a3b1ce3f3ddbfed5cf6d43a4c6987c` |
 | Descriptor candidate | PR #389 `0319755b71ec594f2019cf40cd3cf9ee68ad7d60` |
 | Authority matrix | PR #394 `cffc0ce00f57050539a0e11f11e609d13e9ca604` |
 | Linux Fieldwork branch | `upstream/unit-17-directory-mtime-authority` |
 | Linux Fieldwork base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
 | Imported/local source identity | `upstream/mmdebstrap/mmdebstrap`, version 1.5.7, blob `41aa46f989a2660cebdb0138e0847cde25b269a3` on the unit base |
-| Patch or series path | current candidates remain in PR #389 and PR #395; this packet adds an evidence probe only |
+| Patch or series path | no selected packet product patch; current candidates remain in PR #389 and PR #395 |
 | Proposed destination | mmdebstrap GitLab project after policy selection and current-source refresh |
 | Delivery method | `GitLab fork and merge request`; controlled fork is absent |
 
@@ -78,13 +80,14 @@ The timestamp policy and authority decision belong together because the selected
 - descriptor candidate: PR #389
 - authority matrix: PR #394
 - current pathname product carrier: PR #395; PR #393 is superseded construction history
-- Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
-- Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
-- Tests and receipts: [`TESTS.md`](TESTS.md)
-- Decisions: [`DECISIONS.md`](DECISIONS.md)
-- Current handoff: [`HANDOFF.md`](HANDOFF.md)
-- Upstream issue draft: [`UPSTREAM_ISSUE.md`](UPSTREAM_ISSUE.md)
-- Upstream PR draft: [`UPSTREAM_PR.md`](UPSTREAM_PR.md)
+- complete live-head review: [`LIVE_HEAD_REVIEW.md`](LIVE_HEAD_REVIEW.md)
+- packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
+- deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
+- tests and receipts: [`TESTS.md`](TESTS.md)
+- decisions: [`DECISIONS.md`](DECISIONS.md)
+- current handoff: [`HANDOFF.md`](HANDOFF.md)
+- upstream issue draft: [`UPSTREAM_ISSUE.md`](UPSTREAM_ISSUE.md)
+- upstream PR draft: [`UPSTREAM_PR.md`](UPSTREAM_PR.md)
 
 ## Current result
 
@@ -94,18 +97,23 @@ The timestamp policy and authority decision belong together because the selected
 - the real package delta contained 123 paths, all directories, with timestamp-only differences;
 - current clamp behavior preserves the divergence;
 - full normalization converges archives and destroys an intentionally older regular-file mtime;
-- real-directory-only normalization converges the focused archives while preserving the package-file mtime;
+- real-directory-only normalization converges focused archives while preserving the package-file mtime;
 - symlink, hard-link, foreign-device, user-xattr, sparse-source, real ACL, file-capability, cleanup, and immediate-rerun boundaries have retained controls;
 - descriptor mutation prevents old-path replacement from redirecting the timestamp write;
 - current-membership checking rejects an inode already outside the root and retains a final check-to-mutation race;
 - source order is `setup($options)`, hook-channel close, then pathname-based GNU tar;
-- the packet process probe detects live descendants with root references, separates zombies, reports group/session/cgroup signals, excludes itself, and writes atomic JSON.
+- the packet process probe detects live descendants with root references, separates zombies, reports group/session/cgroup signals, excludes itself, and writes atomic JSON;
+- complete PR #395 live-head review covered all nine changed paths;
+- PR #395 overwrites directory atime and lacks an atime reversing control;
+- dedicated run `30659899105` failed at sid whole-source formatting, skipped the real product matrix, and retained no receipt artifact;
+- Linux Fieldwork CI `30659899178` / 1099 succeeded on the same head.
 
 ### Not yet demonstrated
 
 - repeated real root and chrootless boundary snapshots;
 - absence or presence of live owned actors at both archive phases;
 - a selected authority policy based on those snapshots;
+- a product candidate preserving directory atime under the selected authority model;
 - exact current upstream base and overlap refresh;
 - focused real sid `chrootless` candidate execution on a selected implementation;
 - clean rerun of that real package case;
@@ -113,7 +121,7 @@ The timestamp policy and authority decision belong together because the selected
 
 ### Compatibility boundary
 
-The current candidate surface is Linux, root/chrootless, direct tar, explicit `SOURCE_DATE_EPOCH`, and non-dry-run operation. Other modes and formats retain current behavior. The process probe is evidence-only and requires Linux `/proc` visibility sufficient to inspect the worker and relevant processes.
+The intended candidate surface is Linux, root/chrootless, direct tar, explicit `SOURCE_DATE_EPOCH`, and non-dry-run operation. Other modes and formats retain current behavior. The process probe is evidence-only and requires Linux `/proc` visibility sufficient to inspect the worker and relevant processes.
 
 ## Candidate organization
 
@@ -121,18 +129,21 @@ No upstream series is selected. The internal review order is:
 
 1. process-quiescence evidence at the two exact archive phases;
 2. authority decision recorded in `DECISIONS.md`;
-3. one selected product implementation, likely either bounded pre-tar directory normalization under an explicit quiescent-tree premise or a separately proven archive-header implementation;
-4. focused real sid root/chrootless regression and immediate rerun;
-5. current upstream refresh and submission draft completion.
+3. an access-time reversing control and a candidate that changes directory mtime only;
+4. one selected product implementation under the chosen authority model;
+5. focused real sid root/chrootless regression and immediate rerun;
+6. current upstream refresh and submission draft completion.
 
 ## Current disposition
 
-`HOLD` — blocker: operation authority after a discovered directory leaves the temporary root. Discriminator: repeated root/chrootless process snapshots immediately after `setup()` and immediately before tar, with exact live/zombie ancestry, group/session/cgroup identity, and temporary-root references.
+`HOLD` — primary blocker: operation authority after a discovered directory leaves the temporary root. Discriminator: repeated root/chrootless process snapshots immediately after setup and immediately before tar, with exact live/zombie ancestry, group/session/cgroup identity, and temporary-root references.
+
+PR #395 has additional local blockers: directory-atime overwrite, path check-to-mutation identity, and a dedicated run that never reached the real product matrix.
 
 ## Next human decision
 
-No send decision is ready. After the runtime receipts exist, the repository owner chooses whether the observed process boundary supports operation-owned opened inodes through archive completion or requires the no-tree-mutation route.
+No send decision is ready. After runtime receipts exist, the repository owner chooses whether the observed process boundary supports operation-owned opened inodes through archive completion or requires the no-tree-mutation route.
 
 ## Authority
 
-Internal repository reads, branch commits, packet work, synthetic tests, and disposable process evidence are authorized. External contact remains unauthorized. No upstream issue, merge request, email, review, package upload, or release action occurred.
+Internal repository reads, branch commits, packet work, synthetic tests, disposable process evidence, and Linux Fieldwork issue checkpoints are authorized. External contact remains unauthorized. No upstream issue, merge request, email, review, package upload, or release action occurred.
