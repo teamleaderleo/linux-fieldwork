@@ -1,19 +1,14 @@
-# Upstream issue draft — type exclusion can break hard-link dependencies after name rewriting
+# Upstream issue draft — type-excluded hard-link checks use pre-rewrite identity
 
 Status: `WITHHELD — internal draft; external contact unauthorized`
 
 ## Summary
 
-`tarfilter` applies `--type-exclude` before `--strip-components` and transforms. A retained hard link can therefore be validated against pre-rewrite target text while the emitted archive resolves the link using rewritten names.
+`tarfilter` applies `--type-exclude` before component stripping and transforms. A composed hard-link dependency check that records skipped input names can reject a valid retained link even though another retained member supplies the final rewritten target.
 
-This creates both failure directions:
+## Reproducer
 
-1. a valid final target is rejected because an excluded input occurrence used the same pre-strip spelling;
-2. a missing final target is accepted because its pre-strip spelling differed from the excluded input name.
-
-## Reproducer 1 — valid target rejected
-
-Input member order:
+Input order:
 
 ```text
 regular   prefix/base
@@ -24,57 +19,66 @@ hardlink  root/peer -> root/base
 Command:
 
 ```sh
-tarfilter --type-exclude=SYMTYPE --strip-components=1
+mmtarfilter --type-exclude=SYMTYPE --strip-components=1
 ```
 
-Expected emitted archive:
+The valid filtered result is:
 
 ```text
 regular   base
 hardlink  peer -> base
 ```
 
-The final target `base` exists. Current composed dependency checking rejects `root/peer -> root/base` before component stripping and returns status 1.
+GNU tar extracts that archive and preserves one inode. Input-name dependency state instead remembers excluded `root/base` and rejects `root/peer -> root/base` before stripping.
 
-## Reproducer 2 — missing target accepted
+## Existing type-filter failure
 
-Input member order:
+A simpler target-before-link archive containing regular `root/base` and hard link `root/peer -> root/base` demonstrates the original defect: excluding `REGTYPE` retains the payload-free hard link, returns status 0, and emits an archive GNU tar cannot extract.
 
-```text
-regular   root/base
-hardlink  prefix/peer -> prefix/root/base
-```
-
-Command:
-
-```sh
-tarfilter --type-exclude=REGTYPE --strip-components=1
-```
-
-Current composed behavior returns status 0 and emits:
-
-```text
-hardlink  peer -> root/base
-```
-
-The emitted target `root/base` is absent. GNU tar extraction fails.
+A focused rejection policy fixes that result, but its dependency identity must follow the names actually emitted.
 
 ## Expected behavior
 
-Hard-link dependency decisions should use the same final-name operation used for emitted member names and emitted hard-link targets. A retained hard link with an emitted target should pass. A retained hard link whose final target was removed by the type filter should fail with a focused diagnostic before the broken member is written.
+- project a type-excluded member through member-name component stripping and transform scope;
+- project a retained hard-link target through hard-link component stripping and transform scope;
+- accept the link when a retained occurrence supplies the final target identity;
+- reject before output when the active type filter removed the final target identity and no retained occurrence supplies it;
+- close the tar stream before returning status 1;
+- retain original input strings in the diagnostic.
 
-Failure output should remain a finalized tar stream.
+## Attribution boundary
 
-## Compatibility boundary
+Some strip or transform options already create broken references without type exclusion. For example, stripping `root/base` and `prefix/peer -> prefix/root/base` produces `base` plus `peer -> root/base`. This report does not assign that existing rewrite behavior to `--type-exclude`.
 
-This report concerns target-before-link archives, `--type-exclude`, component stripping, and the existing transform target scopes. Link-before-target buffering, arbitrary hard-link graphs, path-filter policy, output rollback, and broad transform-language compatibility are separate.
+## Scope
 
-## Evidence available internally
+Included:
 
-- executed original dangling-target baseline;
-- finalized rejection and duplicate-target predecessor;
-- two-case strip-rewrite characterization;
-- GNU tar extraction and inode controls;
-- exact zero-fuzz patch composition.
+- target-before-link archives;
+- type-excluded targets;
+- component stripping and member/hard-link transform scopes;
+- duplicate target occurrences;
+- finalized partial or empty output on rejection.
 
-Exact candidate and full-gate evidence will be added before any authorized submission.
+Excluded:
+
+- link-before-target buffering;
+- arbitrary hard-link graphs;
+- path-filter dependency policy;
+- intrinsic strip or transform reference failures;
+- output rollback, other extractors, platforms, and privileged metadata.
+
+## Evidence prepared
+
+Internal exact-head gates cover:
+
+- original dangling-target baseline;
+- valid final-target acceptance and one-inode extraction;
+- genuine removed-target rejection and finalized empty output;
+- retained duplicate targets;
+- leading-prefix equivalence and distinct dot prefixes;
+- independent filters and immediate rerun;
+- transform collisions and uppercase hard-link scope boundaries;
+- zero-fuzz ordered patch composition and Python compilation.
+
+The exact current upstream base and public references will be added only after technical rebase and explicit authorization.
