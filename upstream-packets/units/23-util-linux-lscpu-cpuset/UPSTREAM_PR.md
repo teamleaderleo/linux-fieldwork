@@ -1,76 +1,41 @@
-# Debian Salsa merge-request draft — backport util-linux cpuset ownership fix
+# Withheld Debian packaging merge-request draft
 
-**DRAFT — DO NOT OPEN. External contact is unauthorized. Exact package verification remains incomplete.**
+Status: `DO NOT SEND — NEEDS FORK, candidate gates, source delta, and explicit authorization`
 
-## Proposed title
+## Suggested title
 
-`Backport upstream lscpu cpuset double-free fix to trixie`
+`util-linux: clear failed cpuset output in trixie`
 
-## Proposed summary
+## Draft summary
 
-This change carries upstream util-linux commit `4581ede384f22983d6155768635ce43cb5304cb0` in the trixie package line.
+This backports canonical util-linux commit `4581ede384f22983d6155768635ce43cb5304cb0` to the trixie package.
 
-On CPU-list or mask parse failure, `lib/path.c:ul_path_cpuparse()` frees the allocated cpuset. util-linux 2.41 leaves the freed address in the caller-visible output. Later ordinary `lscpu` cleanup can reach the stale pointer again.
+`ul_path_cpuparse()` freed a cpuset after malformed input while retaining its address in the caller's output slot. Later ordinary `lscpu` cleanup could free the stale address again. The patch clears the output immediately after the first free and preserves the existing error result and successful path.
 
-The upstream correction clears the output immediately after the first free:
+## Demonstrated before submission
 
-```c
-if (rc) {
-        cpuset_free(*set);
-        *set = NULL;
-}
-```
+- Debian trixie `2.41-5` actual binary reproduces in text and JSON modes;
+- exact Debian source retains the affected error path;
+- canonical patch applies with `--fuzz=0`;
+- patched binary package builds;
+- upstream owns and has validated the correction.
 
-The parse result and successful path remain unchanged. The original upstream reporter confirmed the correction, and current util-linux stable branches contain it.
+## Required before submission
 
-## Proposed commits
+- candidate actual-binary matrix passes;
+- valid output comparison passes;
+- relevant native tests pass;
+- package patch lives under Debian's selected upstream-stable path;
+- `debian/patches/series` and changelog contain only the intended delta;
+- source package and debdiff are retained;
+- version and target suite follow release-team direction;
+- external authorization is explicit.
 
-1. `lib/path: avoid double free() for cpusets`
-   - import canonical upstream patch with original authorship;
-   - add it to the Debian patch series.
-2. `debian/changelog: document trixie backport`
-   - package version and target suite to be selected by the Debian maintainer path.
+## Proposed packaging delta
 
-## Verification to insert before opening
+1. add the canonical patch with original authorship;
+2. append one quilt-series entry;
+3. add one stable-update changelog stanza;
+4. retain source and binary test receipts.
 
-```text
-Exact Debian base:
-Effective lib/path.c hash:
-Patch dry-run:
-Patch application:
-Baseline reproducer:
-Candidate reproducer:
-Valid text output comparison:
-Valid JSON output comparison:
-Native focused tests:
-Package build:
-Autopkgtest:
-Cleanup and immediate rerun:
-```
-
-Fresh Linux Fieldwork retained evidence already passes:
-
-```text
-5 focused tests passed
-baseline model: duplicate cleanup detected (status 42)
-candidate model: output cleared, later cleanup harmless (status 0)
-exact fixture identity: pass
-zero-fuzz patch application: pass
-fixture drift control: pass
-```
-
-## Compatibility
-
-- successful CPU-list and mask parsing is unchanged;
-- malformed input remains an error;
-- the first error-path free remains in the same owner;
-- caller-visible ownership now reflects the completed free;
-- later NULL-safe cleanup remains ordinary behavior.
-
-## Boundaries
-
-This merge request would carry the canonical source fix only. It would not alter parser policy, final `lscpu` cleanup, cgroup mount selection, Incus behavior, or unrelated topology handling.
-
-## Open gate
-
-Open only after exact package-level execution is complete, the destination branch/version is selected, and explicit external-contact authorization is recorded.
+No upstream util-linux change is proposed.

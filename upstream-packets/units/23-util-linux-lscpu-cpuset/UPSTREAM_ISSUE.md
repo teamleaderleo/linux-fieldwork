@@ -1,76 +1,50 @@
-# Debian BTS draft — util-linux trixie cpuset double-free backport
+# Withheld Debian BTS draft
 
-**DRAFT — DO NOT SEND. External contact is unauthorized. Package-level verification remains incomplete.**
+Status: `DO NOT SEND — candidate and package-native gates pending; external contact unauthorized`
 
-## Proposed subject
+## Suggested subject
 
-`util-linux: backport upstream cpuset double-free fix to trixie`
+`util-linux: lscpu double-free on malformed cpuset input in trixie 2.41-5`
 
-## Proposed body
+## Draft
 
-Package: util-linux  
-Version: 2.41-5  
-Severity: important
+Debian trixie `util-linux 2.41-5` retains an upstream-fixed ownership defect in `lib/path.c:ul_path_cpuparse()`.
 
-Debian trixie ships util-linux 2.41-5. Upstream util-linux 2.41 contains an error-path ownership defect in `lib/path.c:ul_path_cpuparse()`:
+On parse failure, the function frees the allocated cpuset while leaving the caller-visible output pointer unchanged. Later ordinary `lscpu` cleanup can free the stale address again.
 
-```c
-out:
-        if (rc)
-                cpuset_free(*set);
-        free(buf);
-        return rc;
+A deterministic 16-CPU sysroot reproduces against the trixie amd64 package:
+
+```text
+valid text: 0
+valid JSON: 0
+malformed text (`online` = `5,12-%`): 134
+malformed JSON: 134
+stderr: free(): double free detected in tcache 2
 ```
 
-When CPU-list or mask parsing fails after allocation, the helper frees the cpuset but leaves the caller-visible pointer non-NULL. Later ordinary `lscpu` cleanup can read or free the stale pointer again.
+The full matrix repeats from clean state. A larger allocation-size case can evade the duplicate free and is retained as a losing control.
 
-Upstream fixed this in commit:
+Upstream fixed the defect in commit:
 
-`4581ede384f22983d6155768635ce43cb5304cb0` (`lib/path: avoid double free() for cpusets`)
-
-The correction is:
-
-```diff
--if (rc)
-+if (rc) {
-        cpuset_free(*set);
-+       *set = NULL;
-+}
+```text
+4581ede384f22983d6155768635ce43cb5304cb0
+lib/path: avoid double free() for cpusets
 ```
 
-The original reporter confirmed the patch in util-linux issue #3641. A later report, util-linux issue #4401, reproduced the same ownership failure with malformed CPU-list input and records stable-branch backports. Upstream releases 2.41.2 and later include the correction.
+The correction adds `*set = NULL` immediately after the error-path free. The original reporter confirmed it, and maintained upstream branches contain it.
 
-The published Debian 2.41-5 quilt series has no `lib/path.c` cpuset patch or reference to the canonical commit. Please consider carrying the upstream patch in a trixie stable update.
+Exact Debian `2.41-5` source was unpacked with its quilt series. Effective `lib/path.c` still contains the affected free-without-NULL path. The canonical patch applies with zero fuzz and a patched amd64 binary package builds successfully.
 
-Proposed patch: `patches/0001-clear-cpuset-output-after-error.patch` in the Linux Fieldwork unit packet, retaining upstream authorship.
+Before sending, fill in:
 
-### Verification to insert before sending
-
-- exact unpacked Debian `2.41-5` effective `lib/path.c` hash and stale source excerpt;
-- zero-fuzz patch dry-run and application output;
-- baseline package/reproducer result;
-- rebuilt package/reproducer result;
-- valid `lscpu` output/status compatibility comparison;
-- util-linux native focused test result;
-- clean rebuild/rerun and artifact identities.
-
-### References
-
-- upstream issue #3641: `https://github.com/util-linux/util-linux/issues/3641`
-- upstream fix: `https://github.com/util-linux/util-linux/commit/4581ede384f22983d6155768635ce43cb5304cb0`
-- later report #4401: `https://github.com/util-linux/util-linux/issues/4401`
-- Debian trixie package: `https://packages.debian.org/trixie/util-linux`
-- Debian 2.41-5 patch series: `https://sources.debian.org/patches/util-linux/2.41-5/`
-
-Regards,
-
-`<authorized sender>`
+- candidate actual-binary text/JSON matrix;
+- valid baseline/candidate output comparison;
+- util-linux native test result;
+- source package version and debdiff;
+- proposed-updates request reference;
+- severity and stable-update rationale;
+- cleanup and immediate rerun receipt.
 
 ## Send gate
 
-Send only after:
-
-1. package-level verification in `TESTS.md` is complete;
-2. exact Debian destination and reporting conventions are rechecked;
-3. repository owner grants explicit external-contact authorization;
-4. sender identity and final artifact links are supplied.
+Send only after explicit authorization and completion of every blank above.

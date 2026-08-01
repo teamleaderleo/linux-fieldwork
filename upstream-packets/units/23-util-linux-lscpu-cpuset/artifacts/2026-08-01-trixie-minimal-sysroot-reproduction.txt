@@ -1,0 +1,72 @@
+Unit 23 deterministic trixie package reproduction
+Date: 2026-08-01
+External contact: none
+
+Environment
+-----------
+Debian GNU/Linux 13, amd64
+Kernel 6.12.13
+Package util-linux 2.41-5 amd64
+Binary /usr/bin/lscpu
+Binary SHA-256 e3c6e0c09d617cb9e77a3655f79a7a83d2dd865e49eabeccfbaa0335c9ff722e
+ELF build ID 4b19bc20bdb3e57033c4f7ed08f5830ade29c1bf
+Core files disabled; unprivileged temporary sysroots
+
+Fixture
+-------
+/proc/cpuinfo copied from the execution environment.
+Created files:
+
+sys/devices/system/cpu/kernel_max = 15
+sys/devices/system/cpu/possible = 0-15
+sys/devices/system/cpu/present = 0-15
+sys/devices/system/cpu/online = 0-15 for valid cases
+sys/devices/system/node/node0/cpumap = 0000ffff
+
+Failing mutation:
+
+sys/devices/system/cpu/online = 5,12-%
+
+Observed matrix
+---------------
+valid text: rc 0
+  stdout SHA-256 35adecec4503be6121100b32b103cd1239dc36bafb0a9dddb33632f552fe300d
+  stderr empty
+valid JSON: rc 0
+  stdout SHA-256 bcbc4706b6ba14380893f44f562156290c95d2f05b04bc77982330f1f374501e
+  JSON parser passed
+  stderr empty
+malformed text: rc 134
+  stdout empty
+  stderr: free(): double free detected in tcache 2
+  stderr SHA-256 07b68cc9fbb3f4c23a151524e4cb2429dd42b71a91cb6b7552a01230f203bc9d
+malformed JSON: rc 134
+  stdout empty
+  same stderr and digest
+
+Complete results-file SHA-256:
+f842fa0f827a5ce72b96dd2d219177776ac6382e038dae122baf832ca132de00
+
+Two complete runs used fresh temporary directories and produced byte-identical results files.
+
+Debug run
+---------
+Malformed text with LSCPU_DEBUG=all exited 134.
+Stderr bytes: 24142
+Stderr SHA-256: 87f0166196ac9755ab24f05c3258765aa46085b105e855a8463ef498a3876d6d
+The final trace reaches ordinary CPU objects 0 through 15 and type cleanup before the allocator diagnostic.
+
+Losing allocation-size control
+------------------------------
+The malformed logical input does not abort for every allocation size. A bounded exploratory kernel_max sweep produced both rc 0 and rc 134 non-monotonically. Examples:
+
+15, 16, 31, 32, 63, 64, 127, 128: abort
+191, 239, 255: exit 0
+511 and 4095: abort
+1023: double free or corruption diagnostic
+
+This demonstrates heap-reuse sensitivity. The regression contract fixes kernel_max 15 and does not infer a monotonic CPU threshold.
+
+Cleanup
+-------
+All fixture roots lived below /tmp and were removed. No mount, package change, host sysfs write, socket, lock, core file, or surviving process remained.

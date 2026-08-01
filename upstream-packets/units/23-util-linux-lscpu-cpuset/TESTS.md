@@ -4,136 +4,115 @@
 
 | Item | Value |
 | --- | --- |
-| Upstream affected base | util-linux tag `v2.41`; `lib/path.c` blob `42a33ffc53752ba5e00aed2396ca9a4fc876c1ef` |
-| Canonical fix | `4581ede384f22983d6155768635ce43cb5304cb0` |
-| Current upstream heads | master `fd82c4043fab942b889f478800118c66edfbc39f`; stable/v2.40 `160b7e47d4e6ba0fd15e66b4041bbdc67d2c457f`; stable/v2.41 `2dacaf3eea391e3bbf48e7d3ecce02cafe045b6d`; stable/v2.42 `84796d917bcbad37aecfdadf36d71fee5b356efd` |
-| Candidate head | none; retained canonical patch under package verification |
-| Linux Fieldwork base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Platform/distribution | Linux execution sandbox; Debian userspace |
-| Architecture | x86_64 |
-| Kernel | Linux 6.12.13 |
-| Shell/runtime | `/bin/bash`; Python 3.13.5 |
-| Privilege boundary | unprivileged; no mounts, containers, or package install |
-| Important tool versions | cc 14.2.0; GNU patch 2.8 |
-| Execution date | 2026-08-01 |
+| Debian baseline | `util-linux 2.41-5 amd64` |
+| Installed binary | `/usr/bin/lscpu`, SHA-256 `e3c6e0c09d617cb9e77a3655f79a7a83d2dd865e49eabeccfbaa0335c9ff722e` |
+| Source base | exact Debian `2.41-5` checksums in `README.md` |
+| Candidate source | canonical patch `4581ede...`, effective path SHA-256 `d0460b4f...` |
+| Candidate package | SHA-256 `92f3aa6f...` |
+| Candidate binary | SHA-256 `88391224...` |
+| Local platform | Debian GNU/Linux 13, amd64, kernel 6.12.13 |
+| Privilege | unprivileged fixture execution; package build in disposable trixie container |
+| Linux Fieldwork source/build head | `fefa76c37d110f8fad8a575abc1eaa9e4ed76bb1` |
+| Current packet head before this update | `8ba7537bda1f7fd15a659dfb918bbc8df110419d` |
 
-## Baseline reproducer
+## Retained model and patch matrix
 
-### Command
+Command:
 
 ```text
-cc -std=c11 -Wall -Wextra -Werror \
-  investigations/util-linux-lscpu-cpuset-double-free/ownership_model.c \
-  -o /tmp/baseline
-/tmp/baseline
+/usr/bin/python3 -m unittest -v tests/test_util_linux_lscpu_cpuset_double_free.py
 ```
 
-The retained runner performed this compile in a temporary directory without `CLEAR_OUTPUT_AFTER_ERROR`.
-
-### Expected distinguishing result
-
-The parser model frees the published output and retains the address. Later cleanup detects duplicate logical cleanup and exits 42.
-
-### Observed result
-
-- status: 42 inside the runner; overall matrix status 0 after expected-result validation;
-- stderr: `duplicate cleanup detected`;
-- changed state: temporary compiler output only;
-- surviving processes/files/resources: none from the runner temporary directory;
-- receipt: `artifacts/2026-08-01-focused-regression.txt`.
-
-## Candidate reproducer
-
-### Command
+Result:
 
 ```text
-cc -DCLEAR_OUTPUT_AFTER_ERROR -std=c11 -Wall -Wextra -Werror \
-  investigations/util-linux-lscpu-cpuset-double-free/ownership_model.c \
-  -o /tmp/candidate
-/tmp/candidate
+Ran 5 tests in 0.082s
+OK
+baseline: duplicate cleanup detected (status 42)
+candidate: output cleared, later cleanup is harmless (status 0)
+patch dry-run/application: status 0 with --fuzz=0
+fixture drift control: pass
 ```
 
-The retained runner performed this compile in a temporary directory.
+Receipt: `artifacts/2026-08-01-focused-regression.txt`.
 
-### Expected result
+## Installed trixie package matrix
 
-The parser model frees the output, clears it, and later cleanup exits 0.
+Reusable command:
 
-### Observed result
+```text
+bash scripts/reproduce-trixie-lscpu-cpuset.sh \
+  --baseline /usr/bin/lscpu \
+  --output-dir OUTPUT
+```
 
-- status: 0;
-- stdout: `cleanup is idempotent after parse failure`;
-- changed state: temporary compiler output only;
-- surviving processes/files/resources: none from the runner temporary directory;
-- receipt: `artifacts/2026-08-01-focused-regression.txt`.
+Minimal fixture result:
 
-## Matrix
+| Case | Status | Output identity |
+| --- | ---: | --- |
+| valid text | 0 | stdout SHA-256 `35adecec4503be6121100b32b103cd1239dc36bafb0a9dddb33632f552fe300d` |
+| valid JSON | 0 | stdout SHA-256 `bcbc4706b6ba14380893f44f562156290c95d2f05b04bc77982330f1f374501e`; JSON parser passed |
+| malformed text | 134 | stderr `free(): double free detected in tcache 2`; SHA-256 `07b68cc9fbb3f4c23a151524e4cb2429dd42b71a91cb6b7552a01230f203bc9d` |
+| malformed JSON | 134 | same allocator diagnostic and digest |
 
-| Case | Baseline | Candidate | Exact command or test | Result identity |
-| --- | --- | --- | --- | --- |
-| Ownership failure | retains freed output; later duplicate cleanup | clears output; later cleanup harmless | `test_baseline_and_candidate_ownership_matrix` | PASS |
-| Exact fixture | v2.41 error path matches retained bytes | canonical patch adds free-then-NULL | `test_retained_patch_applies_to_the_exact_v241_fixture` | PASS |
-| Losing mutation | one leading newline changes fixture identity | assertion fails before patch execution | `test_fixture_drift_is_rejected_before_patch_execution` | PASS |
-| Patch content/order | stale output in baseline | `cpuset_free(*set)` precedes `*set = NULL` | `test_retained_patch_clears_output_after_free` | PASS |
-| Model ownership order | first cleanup occurs in parser; later cleanup reaches published pointer | output clear interrupts duplicate path | `test_model_preserves_the_relevant_ownership_boundary` | PASS |
-| Patch dry-run | exact fixture | applies with `--fuzz=0`; hunk offset -1044 due minimal fixture | `patch --batch --forward --fuzz=0 --dry-run -p1 -i ...` | PASS |
-| Patch real application | exact fixture | applies with `--fuzz=0`; reviewed final source | `patch --batch --forward --fuzz=0 -p1 -i ...` | PASS |
-| Immediate clean rerun | fresh temporary directories | same 5/5 pass | `/usr/bin/python3 -m unittest -v tests/test_util_linux_lscpu_cpuset_double_free.py` | PASS |
+The four-case results file SHA-256 is `f842fa0f827a5ce72b96dd2d219177776ac6382e038dae122baf832ca132de00`. Two fresh runs were byte-identical.
 
-## Upstream-native gates
+A debug malformed run exited 134; stderr was 24,142 bytes, SHA-256 `87f0166196ac9755ab24f05c3258765aa46085b105e855a8463ef498a3876d6d`. The final trace reached ordinary CPU/type cleanup before the allocator detected the duplicate free.
 
-| Gate | Exact command | Result | Candidate head |
+Receipt: `artifacts/2026-08-01-trixie-minimal-sysroot-reproduction.txt`.
+
+## Losing control
+
+The same malformed logical input with a larger allocation identity can exit 0. An exploratory `kernel_max` sweep produced aborting and clean values non-monotonically. The regression fixes `kernel_max=15` and uses larger values only as detector-losing controls.
+
+## Exact source, patch, and package build
+
+Workflow run `30690487287`, job `91344214299`, artifact `8815555088`:
+
+- exact source checksums verified;
+- effective Debian source retained the stale output;
+- zero-fuzz patch dry-run passed;
+- zero-fuzz real application passed;
+- candidate source order verified;
+- `dpkg-buildpackage -b -uc -us -j2` completed;
+- candidate `.deb` and `lscpu` hashes recorded.
+
+First red owner: fixture copier. Broad `cp -a /sys/devices/system/cpu/*` encountered unreadable container power attributes before any binary case ran. Commit `187ab0c3c72eb4f733e5c9eebaeb7b748f687fbb` replaced it with the deterministic minimal sysroot.
+
+Receipt: `artifacts/2026-08-01-ci-run-30690487287.txt`.
+
+## Current candidate execution runs
+
+| Run | Head | State at handoff | Purpose |
 | --- | --- | --- | --- |
-| util-linux focused native tests | package/source-specific command pending | NOT RUN | none |
-| Relevant lscpu integration tests | pending exact Debian source tree | NOT RUN | none |
-| Formatting/lint | canonical upstream patch already merged; package metadata absent | NOT RUN | none |
-| Debian package build/test | `dpkg-buildpackage` or Salsa-equivalent pending source unpack | NOT RUN | none |
-| Issue #4401 attachment execution | exact `test.tar.gz` pending retrieval | NOT RUN | none |
-| ASan/Valgrind package execution | pending rebuilt package | NOT RUN | none |
+| `30690810870` | `187ab0c3c72eb4f733e5c9eebaeb7b748f687fbb` | queued | first deterministic-fixture package matrix |
+| `30690831292` | `8ba7537bda1f7fd15a659dfb918bbc8df110419d` | queued | exact packet-head package matrix |
 
-## Linux Fieldwork retained gates
+Required candidate result:
 
-| Gate or fixture | Exact command/run | Result | Artifact/digest |
-| --- | --- | --- | --- |
-| Full focused unittest | `/usr/bin/python3 -m unittest -v tests/test_util_linux_lscpu_cpuset_double_free.py` | 5 tests passed in 0.082s | `artifacts/2026-08-01-focused-regression.txt` |
-| Ownership runner | `python3 investigations/util-linux-lscpu-cpuset-double-free/run_model.py` | baseline 42; candidate 0; runner 0 | same receipt |
-| Exact retained fixture | byte equality in unittest | PASS | SHA-256 `ee86a1384bdad67633dfb8e106937f43b00c33836be6791ffcb7099da3273f96` |
-| Canonical patch | content/order and zero-fuzz application | PASS | SHA-256 `3930c2402aeddb37149b2f50ef0b7b692674cfa3898a371f3fc174131672a523` |
-| Current branch source inspection | GitHub exact refs and blobs | master plus stable/v2.40/v2.41/v2.42 contain free-then-NULL | recorded in `SOURCE_MAP.md` |
-| Debian suite/package inspection | official package and source patch pages | trixie `2.41-5`; no `cpuset`, `lib/path.c`, or `4581ede` patch-series match | recorded in `SOURCE_MAP.md` |
+- valid text and JSON status 0;
+- malformed text and JSON status 0;
+- JSON remains parseable;
+- valid output compatibility recorded;
+- no fixture, process, package, or temporary-state residue.
 
-## Patch application and rebase
+## Cleanup
 
-- base identity: retained exact minimal v2.41 fixture; full Debian effective source pending;
-- patch application command: `patch --batch --forward --fuzz=0 -p1 -i investigations/util-linux-lscpu-cpuset-double-free/0001-clear-cpuset-output-after-error.patch`;
-- fuzz/offset result: zero fuzz; hunk offset -1044 lines on the intentionally minimal fixture;
-- conflict resolution: none;
-- complete diff reviewed: yes for retained fixture; one file, three insertions, one deletion;
-- active overlap searched: current upstream master/stable source and Debian trixie published quilt series;
-- package-level application: NOT RUN.
+Local fixture trees lived under `/tmp`, core files were disabled, and every tree was removed. No host sysfs write, mount, package change, socket, lock, or surviving process remained. The matrix passed the immediate clean rerun.
 
-## Cleanup and rerun
+The Actions build used a disposable Debian trixie container. The failed run uploaded its receipts after the container exited.
 
-The model runner and patch tests used temporary directories. No mounts, sockets, locks, containers, package installs, or long-lived processes were created. Temporary source and binaries were removed by their context managers or test teardown. The full five-test command passed in one clean run; all individual patch operations used fresh copied fixtures.
+## Tests still required
 
-## Tests not run
-
-- exact Debian `2.41-5` source unpack and final effective-source hash;
-- Debian quilt application and canonical patch insertion;
-- baseline package build and issue #4401 fixture execution;
-- patched package build and fixture rerun;
-- ordinary valid `lscpu` text/JSON output comparison;
-- util-linux native lscpu test suite against the package tree;
-- ASan or Valgrind against actual util-linux binaries;
-- architecture-specific package builds beyond the retained architecture-independent model;
-- Debian stable-update policy and autopkgtest gates.
-
-These unexecuted gates are the reason for `HOLD`.
-
-## Failure classification
-
-No retained regression gate failed. The earlier baseline status 42 is the expected product-owner distinction. The minimal-fixture hunk offset is expected because the fixture retains exact hunk bytes without upstream line padding; zero fuzz remains mandatory.
+- candidate actual-binary matrix;
+- exact valid baseline/candidate output comparison;
+- util-linux native `lscpu` tests on the patched package tree;
+- source-package build and debdiff for a stable-update version;
+- architecture matrix;
+- actual issue #4401 archive;
+- ASan/Valgrind actual-package execution;
+- Debian stable-update review.
 
 ## Final evidence statement
 
-The executed matrix establishes that the canonical free-then-NULL patch fixes the modeled caller-visible ownership defect, applies exactly to the retained v2.41 error path with zero fuzz, and has a functioning losing control. Source inspection establishes that current util-linux branches already carry the fix. Public Debian source/package evidence identifies trixie `2.41-5` as the remaining plausible maintained package lane. Package-level applicability, reproduction, build, and compatibility remain open.
+The installed trixie package defect and effective source owner are reproduced. The canonical patch applies cleanly and builds a binary package. Candidate execution remains the first incomplete gate.

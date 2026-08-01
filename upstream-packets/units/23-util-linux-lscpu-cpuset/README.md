@@ -4,44 +4,48 @@ State: `HOLD`
 Priority-zero issue: #397, unit 23  
 Worker or variant: `GPT-5.6 Thinking`  
 Linux Fieldwork branch: `upstream/unit-23-util-linux-lscpu-cpuset`  
+Internal review carrier: PR #404  
 External contact authorized: `false`
 
 ## TL;DR
 
-The canonical carriers concern a caller-visible cpuset pointer left dangling after `lib/path.c:ul_path_cpuparse()` frees it on parse failure. They do not implement the issue/index wording about deriving ownership from an owning cgroup mount.
+The linked carriers concern a caller-visible cpuset pointer left dangling after `lib/path.c:ul_path_cpuparse()` frees it on parse failure. They do not contain a cgroup-mount ownership implementation.
 
-Upstream commit `4581ede384f22983d6155768635ce43cb5304cb0` clears `*set` after the free. Current util-linux `master`, `stable/v2.40`, `stable/v2.41`, and `stable/v2.42` all contain that correction. Debian testing and unstable carry newer fixed upstream releases, while Debian trixie stable still ships `2.41-5`. The trixie source package uses upstream `2.41`, whose `lib/path.c` lacks the NULL assignment, and its published quilt series contains no cpuset, `lib/path.c`, or `4581ede` patch. The remaining plausible destination is therefore a Debian trixie package backport.
+The exact Debian trixie package is affected. Debian 13 `util-linux 2.41-5` aborts with `free(): double free detected in tcache 2` when a deterministic 16-CPU sysroot supplies malformed `cpu/online` content `5,12-%`. Valid text and JSON controls exit 0. The complete malformed matrix reproduced twice from clean state.
 
-Fresh Linux Fieldwork retained tests passed 5/5 on 2026-08-01. This unit is held on exact Debian `2.41-5` package-level reproduction, patch application, build/test, and clean rerun before any authorization decision.
+Canonical util-linux commit `4581ede384f22983d6155768635ce43cb5304cb0` clears `*set` after the error-path free. Exact Debian `2.41-5` source retains the stale output, the patch applies with zero fuzz, and a patched binary package builds successfully. Candidate binary execution remains queued in internal Actions runs `30690810870` and `30690831292`.
 
 ## Accomplished behavior
 
-The proposed downstream correction preserves the existing parse error and frees the failed allocation, then clears the caller-visible output pointer. Ordinary later `lscpu` cleanup sees `NULL` and cannot free the same cpuset again.
+The proposed trixie correction preserves the parse failure, frees the failed allocation, and clears the caller-visible output pointer. Later `lscpu` cleanup sees `NULL` and cannot free the same allocation again.
 
 ## Why care
 
-Malformed or transient CPU-list input can drive affected `lscpu` builds through a stale-pointer read and later duplicate free. The visible abort occurs in final `lscpu` cleanup, while the first ownership failure occurs in shared `lib/path.c`.
+Malformed or transient CPU-list input can make an essential package utility abort during ordinary cleanup. The visible allocator failure occurs late; shared `lib/path.c` creates the stale ownership earlier.
 
 ## Scope
 
 ### Included
 
-- reconcile unit 23 with PR #387, issue #234, PR #239, util-linux issues #3641/#4401, and commits `4581ede...`/`3cd5f1d...`;
-- verify current util-linux branch source;
-- identify the remaining maintained downstream package destination;
-- retain the canonical patch and a fresh deterministic regression receipt;
-- prepare a bounded Debian trixie verification and submission path.
+- canonical util-linux cause and fix mapping;
+- exact Debian trixie package reproduction;
+- exact Debian `2.41-5` source unpack and effective-source verification;
+- zero-fuzz application of the canonical patch;
+- patched binary-package build;
+- deterministic actual-binary text and JSON matrix;
+- Debian stable-update destination and send-gate drafting.
 
 ### Excluded
 
 - a competing util-linux implementation;
-- cgroup-mount selection logic, which has no support in the linked canonical carriers;
-- external Debian, util-linux, Incus, Ubuntu, or other contact;
-- claims that Debian trixie binaries were reproduced or rebuilt in this pass.
+- cgroup-mount selection logic;
+- public Debian, util-linux, Incus, Ubuntu, or other contact;
+- claims for candidate execution before the queued run completes;
+- architecture-wide or sanitizer coverage.
 
 ### Split boundary
 
-The source fix and upstream stable-branch adoption are complete. This unit now owns only Debian trixie package-level verification/backport. Other downstreams still shipping affected 2.40/2.41 sources require separate package identities and evidence.
+Upstream source ownership and stable-branch adoption are complete. This unit owns only the Debian trixie package backport decision. Other distributions require separate package identities and receipts.
 
 ## Exact identities
 
@@ -49,80 +53,75 @@ The source fix and upstream stable-branch adoption are complete. This unit now o
 | --- | --- |
 | Upstream project | util-linux |
 | Canonical repository | `util-linux/util-linux` |
-| Intended base branch | Debian trixie source package `util-linux 2.41-5` |
-| Upstream base commit | upstream tag `v2.41`; `lib/path.c` blob `42a33ffc53752ba5e00aed2396ca9a4fc876c1ef` |
-| Current upstream heads | `master` `fd82c4043fab942b889f478800118c66edfbc39f`; `stable/v2.40` `160b7e47d4e6ba0fd15e66b4041bbdc67d2c457f`; `stable/v2.41` `2dacaf3eea391e3bbf48e7d3ecce02cafe045b6d`; `stable/v2.42` `84796d917bcbad37aecfdadf36d71fee5b356efd` |
+| Affected upstream base | tag `v2.41`; `lib/path.c` blob `42a33ffc53752ba5e00aed2396ca9a4fc876c1ef` |
 | Canonical fix | `4581ede384f22983d6155768635ce43cb5304cb0` |
-| Stable backport identity | `3cd5f1dd69495864f3046cdbcefa104786fe5a27` |
-| Controlled fork | upstream fork `teamleaderleo/util-linux`; Debian packaging fork `NEEDS FORK` |
-| Candidate source branch | `NEEDS BRANCH` after exact package verification |
-| Candidate head | `NONE` |
+| Stable cherry-pick | `3cd5f1dd69495864f3046cdbcefa104786fe5a27` |
+| Debian package base | `util-linux 2.41-5` |
+| Debian `.dsc` SHA-256 | `9e84dcc64170262f850aa5fd65902846a1ebf054d556ab5c4ec17fa16b00e628` |
+| Debian upstream tar SHA-256 | `81ee93b3cfdfeb7d7c4090cedeba1d7bbce9141fd0b501b686b3fe475ddca4c6` |
+| Debian delta tar SHA-256 | `20ad832160d5ed8de4759ce00652f620ce642ab583c3c1c431b68a15cdba1d07` |
+| Effective Debian `lib/path.c` SHA-256 | `f934339cf7aba38ae6197e5b5ad3b6a9e7e5fb483ed3f807d45971968d3c7cda` |
+| Candidate `lib/path.c` SHA-256 | `d0460b4fa3a32b7bdd3cf8b95fa5780bf830fa24bc9e64559408c3ddd1abbb8d` |
+| Built candidate package SHA-256 | `92f3aa6fa87a30b9d030263dbbb0446f7679c2ee0456760271ea530268f6b971` |
+| Built candidate `lscpu` SHA-256 | `883912245c15612a224b761d01b838ecd23470eccf467369ec5c4a560a7946e1` |
+| Installed baseline `lscpu` SHA-256 | `e3c6e0c09d617cb9e77a3655f79a7a83d2dd865e49eabeccfbaa0335c9ff722e` |
 | Linux Fieldwork branch | `upstream/unit-23-util-linux-lscpu-cpuset` |
-| Linux Fieldwork base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Imported/local source identity | retained canonical patch from Linux Fieldwork merge `4a2196a705c06f5604879f655d465a4ac6fcb198` |
-| Patch or series path | `patches/0001-clear-cpuset-output-after-error.patch` |
-| Proposed destination | Debian trixie stable util-linux package backport |
-| Delivery method | `Debian BTS patch or follow-up` or Debian Salsa merge request after explicit decision |
+| Branch base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
+| Internal PR | #404 |
+| Retained patch | `patches/0001-clear-cpuset-output-after-error.patch` |
+| Candidate delivery | Debian trixie stable update, after explicit authorization |
 
 ## Canonical links
 
 - Priority-zero unit: #397 unit 23
 - Owning Linux Fieldwork issue: #234
-- Canonical Linux Fieldwork PR: #387, merged as `4a2196a705c06f5604879f655d465a4ac6fcb198`
-- Superseded predecessor carrier: draft PR #239
+- Canonical Linux Fieldwork evidence PR: #387, merge `4a2196a705c06f5604879f655d465a4ac6fcb198`
+- Historical draft: PR #239
+- Internal unit carrier: PR #404
 - Upstream reports: util-linux #3641 and #4401
-- Upstream correction: util-linux `4581ede384f22983d6155768635ce43cb5304cb0`
-- Stable cherry-pick: util-linux `3cd5f1dd69495864f3046cdbcefa104786fe5a27`
-- Debian trixie package: `https://packages.debian.org/trixie/util-linux`
-- Debian trixie patch series: `https://sources.debian.org/patches/util-linux/2.41-5/`
-- Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
+- Source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
 - Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
-- Tests and receipts: [`TESTS.md`](TESTS.md)
+- Tests: [`TESTS.md`](TESTS.md)
 - Decisions: [`DECISIONS.md`](DECISIONS.md)
-- Current handoff: [`HANDOFF.md`](HANDOFF.md)
-- Upstream issue draft: [`UPSTREAM_ISSUE.md`](UPSTREAM_ISSUE.md)
-- Upstream PR draft: [`UPSTREAM_PR.md`](UPSTREAM_PR.md)
+- Handoff: [`HANDOFF.md`](HANDOFF.md)
 
 ## Current result
 
 ### Demonstrated
 
-- upstream `v2.41` frees `*set` on error and leaves the caller-visible pointer unchanged;
-- canonical commit `4581ede...` adds `*set = NULL` immediately after that free;
-- the original reporter confirmed the correction;
-- current upstream `master` and stable/v2.40, v2.41, and v2.42 source contain free-then-NULL;
-- Debian trixie stable remains at `2.41-5`;
-- the published Debian `2.41-5` quilt series contains no cpuset, `lib/path.c`, or canonical-commit reference;
-- the retained Linux Fieldwork matrix passes 5/5, including a losing fixture-drift control and zero-fuzz patch application.
+- affected upstream and effective Debian source free the failed cpuset without clearing the caller's slot;
+- the installed trixie binary aborts on the bounded malformed fixture in text and JSON modes;
+- valid text and JSON controls exit 0;
+- the complete baseline matrix repeats from clean state;
+- allocator reuse is a required dimension: a larger `kernel_max` losing control exits 0;
+- the canonical patch applies to effective Debian source with `--fuzz=0`;
+- a patched Debian binary package builds successfully;
+- upstream master and stable/v2.40, v2.41, and v2.42 carry free-then-NULL;
+- no util-linux upload appears in the current trixie proposed-updates queue.
 
-### Not yet demonstrated
+### Pending
 
-- execution of issue #4401's attached archive;
-- exact Debian `2.41-5` source unpack, quilt application, build, package test, or binary reproduction;
-- patched Debian package build and clean rerun;
-- compatibility against ordinary valid `lscpu` output on the rebuilt package;
-- Debian stable-update acceptance policy for this correction.
-
-### Compatibility boundary
-
-The correction changes only caller-visible ownership after an existing error. It preserves successful parsing, the parse failure status, ordinary output, and later NULL-safe cleanup. Package integration and architecture coverage remain unexecuted.
+- actual execution of the built candidate binary from a retained package-build run;
+- exact valid-output comparison between baseline and candidate;
+- util-linux native `lscpu` test suite on the package tree;
+- a proper `2.41-5+deb13u1` source delta and debdiff;
+- architecture coverage and the exact public attachment archive.
 
 ## Candidate organization
 
-One downstream patch is sufficient:
-
-1. `patches/0001-clear-cpuset-output-after-error.patch` — canonical util-linux authorship and one-file free-then-NULL correction.
-
-Package metadata or changelog edits belong in the Debian packaging carrier after the destination and version are selected.
+1. canonical upstream patch in `debian/patches/upstream-stable/`;
+2. one `debian/patches/series` entry;
+3. one trixie changelog stanza using the stable-update version selected by Debian policy;
+4. source debdiff and focused execution receipts.
 
 ## Current disposition
 
-`HOLD` — exact Debian trixie `util-linux 2.41-5` package-level reproduction, canonical patch application, build/test, and clean rerun have not run. The discriminator is a complete receipt showing the affected package fails or contains the stale-pointer source, the patch applies cleanly, the rebuilt package passes the focused reproducer and ordinary controls, and cleanup/rerun succeeds.
+`HOLD` — exact source and package build are complete, while candidate actual-binary execution is queued. The clearing discriminator is a retained run in which the built candidate preserves valid text/JSON behavior and exits cleanly for malformed text/JSON, followed by native package tests and a minimal source debdiff.
 
 ## Next human decision
 
-After package-level verification, choose whether to authorize a Debian BTS follow-up, a Salsa merge request, or continued hold. No send decision is requested yet.
+None yet. After the candidate and package-native gates pass, choose whether to authorize a Debian BTS report and stable-update request, a maintainer-directed packaging contribution, or continued hold.
 
 ## Authority
 
-Internal repository reads, branch creation, packet edits, retained-patch tests, package-source inspection, local builds, and issue checkpoints are authorized. No external contact has been authorized or made.
+Internal source retrieval, builds, tests, packet updates, branches, commits, PR #404, and issue checkpoints are authorized. No external contact has been authorized or made.

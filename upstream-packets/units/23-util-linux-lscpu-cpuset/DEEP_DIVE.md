@@ -1,175 +1,118 @@
 # Deep dive
 
-## Question and observed failure
+## Bounded question
 
-The bounded question is: after upstream and stable-branch adoption, does a maintained downstream still ship the affected util-linux source, and what exact contribution remains?
+Does Debian trixie `util-linux 2.41-5` still expose the upstream cpuset output-ownership defect, and does the canonical free-then-NULL correction form a suitable stable-package backport?
 
-Affected util-linux `v2.41` publishes an allocated cpuset through `cpu_set_t **set`. On parse failure, `ul_path_cpuparse()` frees `*set` and returns an error while leaving the freed address in the caller's slot. Later ordinary `lscpu` cleanup follows that stale address. The allocator reports the final duplicate free, while shared `lib/path.c` creates the ownership defect.
+## Mechanism
 
-The issue/index wording about an “owning cgroup mount” conflicts with every canonical linked carrier. No linked source, test, issue, or patch selects a cgroup mount. This packet follows the exact carrier mechanism: cpuset output ownership after parser failure.
+`ul_path_cpuparse()` publishes an allocated cpuset through a caller-owned pointer. On malformed input, affected source frees the allocation and returns an error while leaving the pointer value in the caller's slot.
 
-## Source mechanism
+`lscpu` reads several masks through this helper. The `online` read stores directly into `cxt->online`; NUMA reads store into `cxt->nodemaps[]`. Final cleanup frees `cxt->present`, `cxt->online`, and later every nodemap. Heap reuse decides which later free exposes the stale address, so the public reports can surface in cache or NUMA cleanup even though shared `lib/path.c` creates the defect.
 
-Affected `v2.41` ends `ul_path_cpuparse()` with:
-
-```c
-out:
-        if (rc)
-                cpuset_free(*set);
-        free(buf);
-        return rc;
-```
-
-The sequence is:
-
-1. `cpuset_alloc()` stores an allocation in `*set`;
-2. malformed CPU-list or mask input sets a failure result;
-3. the error path frees the allocation;
-4. the caller-visible pointer remains non-NULL;
-5. lscpu-owned structures retain the stale address;
-6. later cleanup reads or frees that address again.
-
-Canonical commit `4581ede384f22983d6155768635ce43cb5304cb0` changes the ownership state to match the completed free:
+Canonical commit `4581ede...` changes the error path to:
 
 ```c
-out:
-        if (rc) {
-                cpuset_free(*set);
-                *set = NULL;
-        }
-        free(buf);
-        return rc;
+if (rc) {
+        cpuset_free(*set);
+        *set = NULL;
+}
 ```
 
-The successful path, malformed-input policy, and failure status remain unchanged.
+The parser status and success path remain unchanged.
 
-## Reproduction narrative
+## Actual trixie reproduction
 
-Upstream issue #3641 contains a ppc64el Valgrind trace: cpuset allocation, first free inside the parse path, invalid later reads, and a final invalid free. The reporter confirmed the patch fixed the package build failure.
-
-Issue #4401 retains a synthetic sysfs tree with malformed online CPU content `5,12-%`. The reporter observed duplicate-free aborts on util-linux 2.40.4 and 2.41, while 2.42 did not abort.
-
-Linux Fieldwork retains a deterministic C model to avoid deliberate undefined behavior. The baseline records the first logical free, retains the output address, and returns status 42 when later cleanup reaches it. The candidate clears the output and returns status 0 after harmless later cleanup.
-
-Fresh 2026-08-01 execution:
+A deterministic sysroot sets:
 
 ```text
-baseline: duplicate cleanup detected (status 42)
-candidate: output cleared, later cleanup is harmless (status 0)
+kernel_max = 15
+possible = 0-15
+present = 0-15
+online = 0-15              # valid control
+node0/cpumap = 0000ffff
 ```
 
-The full five-test unit passed. Exact commands and receipts are in `TESTS.md`.
+The failing mutation replaces only `online` with `5,12-%`.
+
+Installed Debian trixie `lscpu 2.41-5`:
+
+- valid text: 0;
+- valid JSON: 0 and parseable JSON;
+- malformed text: 134 with `free(): double free detected in tcache 2`;
+- malformed JSON: 134 with the same allocator diagnostic.
+
+The matrix repeated from clean temporary directories with byte-identical receipts.
+
+## Allocator-size discriminator
+
+The same malformed logical input can exit 0 when `kernel_max` changes because allocation size changes heap reuse. A bounded sweep produced both aborting and clean cases; behavior was non-monotonic. This is a losing control, not evidence of a safe larger topology.
+
+The regression contract therefore fixes the exact 16-CPU allocation identity and retains a larger losing control. It avoids claiming a simple CPU-count threshold.
 
 ## Approach history
 
-### Approach A — patch final `lscpu` cleanup
+### Source archaeology only
 
-- Mechanism: skip or alter the final `free()` where the allocator aborts.
-- Evidence: upstream traces show the same allocation was freed earlier in `ul_path_cpuparse()`.
-- Result: rejected.
-- Compatibility cost: could hide stale-pointer reads, leak a valid allocation, or leave other callers exposed.
+This correctly found the upstream owner and canonical fix, but package adoption remained unknown. Superseded by exact package work.
 
-### Approach B — change parser acceptance
+### Broad live-sysfs fixture
 
-- Mechanism: accept malformed CPU-list content such as `5,12-%`.
-- Evidence: existing behavior treats malformed content as an error; the memory-safety fault is independent of parser policy.
-- Result: rejected.
-- Compatibility cost: expands input policy and can silently reinterpret broken topology data.
+Copying the host CPU tree reproduced the installed trixie failure locally. In GitHub's container it encountered unreadable power attributes and failed before executing the matrix. Rejected as host-dependent.
 
-### Approach C — clear the caller-visible output after the error-path free
+### Deterministic minimal sysroot
 
-- Mechanism: preserve the first free, then assign `NULL` to `*set`.
-- Evidence: canonical upstream commit, reporter confirmation, stable cherry-pick, current branch source, deterministic model, exact patch test.
-- Result: accepted and already upstream.
-- Compatibility cost: limited to correcting ownership state after an existing failure.
+Copies only `/proc/cpuinfo` and creates the bounded CPU/NUMA identities required by `lscpu`. Accepted. It reproduces the exact allocator diagnostic and avoids transient host sysfs files.
 
-### Approach D — send a new util-linux contribution
+### Final-cleanup suppression
 
-- Mechanism: duplicate or re-express the canonical correction upstream.
-- Evidence: master and stable/v2.40, v2.41, and v2.42 already contain free-then-NULL.
-- Result: retired.
-- Compatibility cost: duplicate review and divergence risk with no product benefit.
+Rejected. Skipping a late free would preserve a stale pointer and leave other readers exposed.
 
-### Approach E — downstream Debian trixie backport
+### Parser-policy expansion
 
-- Mechanism: carry canonical patch `4581ede...` in Debian stable's util-linux package.
-- Evidence: trixie remains at `2.41-5`; upstream `v2.41` lacks the NULL assignment; Debian's published `2.41-5` quilt series has no cpuset, `lib/path.c`, or canonical-commit match.
-- Result: selected remaining lane, held pending exact package-level execution.
-- Compatibility cost: one upstream-authored source patch plus Debian packaging metadata.
+Rejected. Accepting malformed CPU-list syntax would change policy and hide the ownership defect.
 
-## Selected correction
+## Exact Debian source result
 
-Retain the canonical upstream patch unchanged, including authorship and commit identity. Apply it to the exact Debian trixie `util-linux 2.41-5` source package. Add only the package metadata required by the selected Debian delivery path.
+Actions run `30690487287` retrieved exact `2.41-5` source, applied Debian's patch series, and recorded the effective `lib/path.c`. The resulting error path still frees without clearing the output.
 
-## Why the changes belong together
-
-The source patch and a focused package regression share one invariant: a helper that frees caller-visible output on failure must clear that output before returning. Debian metadata belongs in the same downstream carrier because it declares and ships the exact backport. Any broader lscpu parser, cgroup, Incus, or topology changes belong elsewhere.
+The canonical patch applied with `--fuzz=0`; the patched package completed `dpkg-buildpackage -b -uc -us -j2`. The run stopped only when the first fixture version copied unreadable live sysfs attributes. Source, patch, and package-build stages succeeded.
 
 ## Compatibility analysis
 
-- **Status and stderr:** parse failure remains a failure; no success is manufactured.
-- **Ordinary output:** successful parsing and ordinary `lscpu` output are untouched.
-- **Cleanup:** the first free remains owned by `ul_path_cpuparse()`; later cleanup receives NULL.
-- **Memory ownership:** stale caller-visible ownership is removed.
-- **Platforms:** the source correction is architecture-independent C, while reporter evidence covers ppc64el and a container fixture. Package build/test coverage still needs execution on available Debian architecture(s).
-- **Versions:** upstream release 2.41 is affected; 2.41.2+ contains the correction. Stable/v2.40, v2.41, and v2.42 branches contain it, while no further 2.40.x release is expected according to the maintainer.
+The correction affects only ownership after an existing parse failure:
 
-## Negative controls and losing mutations
+- successful parsing and output remain on the same path;
+- failure status remains nonzero;
+- no input syntax becomes accepted;
+- the failed allocation remains freed;
+- later cleanup becomes NULL-safe;
+- no file, descriptor, mount, process, or package-interface contract changes.
 
-- The baseline model retains the output and must return 42 with “duplicate cleanup detected.”
-- A one-line fixture drift causes the exact-fixture assertion to fail before patch execution.
-- Patch application uses `--fuzz=0`; fuzzy application is rejected.
-- The test verifies `cpuset_free(*set)` precedes `*set = NULL`.
+Actual valid text and JSON candidate comparison remains a required gate.
 
-These controls show the detector can lose and that success requires the reviewed ownership order on the exact retained fixture.
+## Debian destination
 
-## Current upstream and historical review
+Trixie stable remains on `2.41-5`; testing and unstable moved to fixed upstream releases. The current proposed-updates queue contains no util-linux upload. A stable update would require a minimal package delta, a suitable Debian bug, a source debdiff, focused test receipts, release-team approval, and explicit authorization from the Linux Fieldwork owner.
 
-- util-linux issue #3641: maintainer identifies `ul_path_cpuparse()`; reporter confirms fix.
-- util-linux commit `4581ede...`: canonical one-file correction.
-- util-linux commit `3cd5f1d...`: observed stable cherry-pick.
-- util-linux issue #4401: later malformed-input reproducer and stable-branch release discussion.
-- Linux Fieldwork issue #234: completed source archaeology and adoption map.
-- Linux Fieldwork PR #239: superseded draft carrier.
-- Linux Fieldwork PR #387: merged exact patch, model, fixture, and regression carrier.
+## Remaining discriminators
 
-Current source checks on 2026-08-01 confirm free-then-NULL in upstream master and stable/v2.40, v2.41, and v2.42.
-
-Debian's current suite map distinguishes two states:
-
-- trixie stable: `2.41-5`, affected upstream source line with no matching published quilt patch;
-- forky/sid: newer 2.42.2 package line, fixed through upstream release adoption.
-
-The trixie conclusion combines three public facts and remains an inference until the exact source package is unpacked and tested.
-
-## Remaining questions
-
-1. **Does the exact Debian `2.41-5` effective source still contain the stale error path?**  
-   Discriminator: unpack `util-linux_2.41.orig.tar.xz` plus `util-linux_2.41-5.debian.tar.xz`, apply Debian quilt series, and record the final `lib/path.c` bytes/hash.
-
-2. **Does the canonical patch apply to that effective source with zero fuzz?**  
-   Discriminator: dry-run and real application with `--fuzz=0`, retaining output and final diff.
-
-3. **Can the package-level failure be reproduced and cleared?**  
-   Discriminator: run issue #4401's exact archive or a validated equivalent against baseline and rebuilt package, preferably with ASan or Valgrind where feasible.
-
-4. **Does ordinary behavior remain compatible?**  
-   Discriminator: compare representative valid `lscpu` text/JSON outputs and exit status before/after the backport.
-
-5. **Which Debian delivery path is appropriate?**  
-   Discriminator: after technical completion, owner chooses BTS patch/follow-up, Salsa merge request, or hold; external authorization remains mandatory.
+1. Execute the built candidate binary against valid and malformed text/JSON fixtures.
+2. Compare valid baseline and candidate output exactly or explain deterministic environmental fields.
+3. Run relevant util-linux native `lscpu` tests on the patched package tree.
+4. Build a proper `2.41-5+deb13u1` source package and retain the source debdiff.
+5. Decide whether the bug's impact and evidence justify Debian stable-update handling.
+6. Recover issue #4401's exact archive when a supported binary-download path exists.
 
 ## Evidence boundary
 
-Demonstrated: exact source correction, upstream confirmation, active stable-branch inclusion, current Debian suite versions, absence of relevant strings in the published trixie quilt series, deterministic baseline/candidate distinction, exact fixture identity, zero-fuzz patching, and losing drift control.
-
-Unexecuted: Debian source unpack, quilt result, package build, actual attachment, sanitizer run, package binary comparison, stable-update policy review, and any public submission.
+Established on Debian trixie amd64 and a deterministic synthetic sysroot. The public attachment, other architectures, ASan/Valgrind on the actual package, and Debian acceptance remain outside the claim.
 
 ## Reopen triggers
 
-- Debian trixie publishes a package containing upstream 2.41.2+ or the canonical patch;
-- exact package unpack shows an equivalent hidden correction;
-- the canonical patch conflicts with Debian's effective source;
-- package-level tests reveal a second owner or compatibility regression;
-- issue #397 corrects unit 23 to a genuinely separate cgroup-mount defect with distinct carriers;
-- explicit external-contact authorization is granted or withdrawn.
+- Debian publishes an equivalent trixie correction;
+- the queued candidate retains any abort or changes valid output;
+- native tests identify an adjacent required change;
+- the canonical patch stops applying to the effective package source;
+- issue #397 supplies carriers for a separate cgroup-mount unit;
+- external-contact authority changes.

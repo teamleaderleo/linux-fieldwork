@@ -4,134 +4,115 @@
 
 State: `HOLD`  
 Unit: issue #397, unit 23  
-Linux Fieldwork branch: `upstream/unit-23-util-linux-lscpu-cpuset`  
-Exact durable evidence head before this HANDOFF commit: `c75e4aac6d00daf3998515ff2eead50c9b05920d`  
+Branch: `upstream/unit-23-util-linux-lscpu-cpuset`  
+Internal PR: #404  
+Exact branch head before this packet-update commit: `8ba7537bda1f7fd15a659dfb918bbc8df110419d`  
 Branch base: `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`  
-External-contact state: unauthorized; none made
+External contact: unauthorized; none made
 
-The exact final branch tip that adds this HANDOFF is recorded in the unit checkpoint on issue #397. The technical tree through `c75e4aac...` contains every packet file, retained patch, receipt, and index change except this HANDOFF file.
+The final commit containing this handoff is recorded in the issue #397 unit checkpoint.
 
 ## Executive result
 
-The canonical carriers are about cpuset output ownership after `ul_path_cpuparse()` frees an allocation on parse failure. The issue/index phrase about deriving ownership from an owning cgroup mount has no matching mechanism in those carriers.
+Debian trixie `util-linux 2.41-5` is proven affected. A deterministic 16-CPU sysroot makes the installed `lscpu` abort in both text and JSON modes with `free(): double free detected in tcache 2`; valid controls exit 0, and the matrix repeats from clean state.
 
-Upstream owns the source correction in commit `4581ede384f22983d6155768635ce43cb5304cb0`, with stable cherry-pick identity `3cd5f1dd69495864f3046cdbcefa104786fe5a27`. Current util-linux `master`, `stable/v2.40`, `stable/v2.41`, and `stable/v2.42` all contain free-then-NULL.
+Exact Debian source is also proven affected after its quilt series. Canonical util-linux commit `4581ede...` applies with zero fuzz and a patched binary package builds. The first Actions package run stopped only because its original fixture copied unreadable live sysfs power files. The script now creates a minimal deterministic sysroot.
 
-Debian testing and unstable carry newer fixed upstream releases. Debian trixie stable still ships `util-linux 2.41-5`. That package uses upstream 2.41, whose `lib/path.c` lacks the NULL assignment, and the published Debian patch series contains no `cpuset`, `lib/path.c`, or `4581ede` match. Debian trixie is the remaining plausible maintained destination, pending exact package-level execution.
+## Completed in this continuation
 
-## Completed work
-
-- read issue #397, `upstream-packets/README.md`, `upstream-packets/INDEX.md`, and the canonical workflow comments;
-- read Linux Fieldwork PR #387, issue #234 and all comments, draft PR #239, the retained investigation README, patch, fixture, model, runner, and test;
-- read util-linux issues #3641 and #4401 and all comments;
-- read canonical commits `4581ede...` and `3cd5f1d...`;
-- checked exact current upstream heads and `lib/path.c` on master and stable/v2.40, v2.41, and v2.42;
-- checked upstream tag `v2.41` and retained its affected `lib/path.c` blob identity;
-- checked current Debian trixie/testing/unstable package versions and Debian `2.41-5` published patch series;
-- claimed unit 23 on issue #397;
-- created branch `upstream/unit-23-util-linux-lscpu-cpuset` from exact main `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`;
-- created the complete required packet bundle;
-- retained the canonical upstream patch with authorship;
-- ran the full focused Linux Fieldwork regression: 5/5 pass in 0.082s;
-- recorded baseline status 42, candidate status 0, zero-fuzz patch dry-run/application, final ordering, fixture and patch digests, cleanup, and unexecuted gates;
-- drafted withheld Debian BTS and Salsa submissions with explicit send gates;
-- changed the packet index state to `HOLD: Debian trixie package verification`;
+- reproduced the defect against the exact installed trixie package;
+- reduced the fixture to deterministic CPU/NUMA files;
+- ran valid text and JSON controls;
+- ran malformed text and JSON cases twice from clean state;
+- retained a losing allocation-size control and a broader size sweep;
+- added `scripts/reproduce-trixie-lscpu-cpuset.sh`;
+- added `.github/workflows/unit-23-util-linux-lscpu.yml`;
+- opened internal draft PR #404;
+- unpacked exact Debian `2.41-5` source in Actions;
+- recorded all source archive checksums;
+- proved effective Debian `lib/path.c` retains the stale output;
+- applied the canonical patch with `--fuzz=0`;
+- completed a patched binary-package build;
+- classified the first CI red as fixture copying rather than source, patch, or build failure;
+- replaced the broad live-sysfs copy with a deterministic fixture;
+- reviewed Debian stable-update requirements and current proposed-updates overlap;
+- refreshed the complete packet and withheld drafts;
 - made no external contact.
 
-## Exact identities
+## Exact evidence
 
 | Item | Identity |
 | --- | --- |
-| Linux Fieldwork evidence head | `c75e4aac6d00daf3998515ff2eead50c9b05920d` |
-| Canonical LF carrier merge | `4a2196a705c06f5604879f655d465a4ac6fcb198` |
-| Canonical upstream fix | `4581ede384f22983d6155768635ce43cb5304cb0` |
-| Stable backport | `3cd5f1dd69495864f3046cdbcefa104786fe5a27` |
-| Upstream affected tag/blob | `v2.41`; `42a33ffc53752ba5e00aed2396ca9a4fc876c1ef` |
-| Current upstream master | `fd82c4043fab942b889f478800118c66edfbc39f` |
-| Current stable/v2.40 | `160b7e47d4e6ba0fd15e66b4041bbdc67d2c457f` |
-| Current stable/v2.41 | `2dacaf3eea391e3bbf48e7d3ecce02cafe045b6d` |
-| Current stable/v2.42 | `84796d917bcbad37aecfdadf36d71fee5b356efd` |
-| Debian target | trixie stable `util-linux 2.41-5` |
-| Retained patch | `patches/0001-clear-cpuset-output-after-error.patch` |
-| Patch SHA-256 | `3930c2402aeddb37149b2f50ef0b7b692674cfa3898a371f3fc174131672a523` |
-| Retained fixture SHA-256 | `ee86a1384bdad67633dfb8e106937f43b00c33836be6791ffcb7099da3273f96` |
-| Fresh receipt | `artifacts/2026-08-01-focused-regression.txt` |
+| Installed baseline | `util-linux 2.41-5 amd64` |
+| Baseline binary SHA-256 | `e3c6e0c09d617cb9e77a3655f79a7a83d2dd865e49eabeccfbaa0335c9ff722e` |
+| Minimal matrix receipt | `artifacts/2026-08-01-trixie-minimal-sysroot-reproduction.txt` |
+| Baseline result-file SHA-256 | `f842fa0f827a5ce72b96dd2d219177776ac6382e038dae122baf832ca132de00` |
+| Source/build run | `30690487287`, job `91344214299` |
+| Source/build artifact | `8815555088`; ZIP SHA-256 `ec7e883d7d0716123342c9dfcc01db8e4a8af97461d635467feddcbd51a41399` |
+| Effective baseline path SHA-256 | `f934339cf7aba38ae6197e5b5ad3b6a9e7e5fb483ed3f807d45971968d3c7cda` |
+| Candidate path SHA-256 | `d0460b4fa3a32b7bdd3cf8b95fa5780bf830fa24bc9e64559408c3ddd1abbb8d` |
+| Candidate package SHA-256 | `92f3aa6fa87a30b9d030263dbbb0446f7679c2ee0456760271ea530268f6b971` |
+| Candidate binary SHA-256 | `883912245c15612a224b761d01b838ecd23470eccf467369ec5c4a560a7946e1` |
+| Retained upstream patch | `patches/0001-clear-cpuset-output-after-error.patch` |
 
 ## Latest distinguishing result
 
 ```text
-/usr/bin/python3 -m unittest -v tests/test_util_linux_lscpu_cpuset_double_free.py
+baseline valid text: 0
+baseline valid JSON: 0
+baseline malformed text: 134
+baseline malformed JSON: 134
+stderr: free(): double free detected in tcache 2
+clean rerun: byte-identical receipt
 
-Ran 5 tests in 0.082s
-OK
-
-baseline: duplicate cleanup detected (status 42)
-candidate: output cleared, later cleanup is harmless (status 0)
-patch dry-run: status 0, --fuzz=0
-patch application: status 0, --fuzz=0
-fixture drift control: pass
+exact Debian source: stale output retained
+canonical patch dry-run: pass, --fuzz=0
+canonical patch application: pass, --fuzz=0
+patched dpkg-buildpackage: pass
+candidate execution: queued
 ```
 
 ## First incomplete step
 
-Obtain the exact Debian trixie source package inputs:
+Read the first completed deterministic-fixture package run:
 
-```text
-util-linux_2.41.orig.tar.xz
-util-linux_2.41-5.debian.tar.xz
-util-linux_2.41-5.dsc
-```
+- `30690810870` at head `187ab0c3c72eb4f733e5c9eebaeb7b748f687fbb`;
+- `30690831292` at head `8ba7537bda1f7fd15a659dfb918bbc8df110419d`.
 
-Verify their published checksums, unpack them, apply the Debian quilt series, and record the final effective `lib/path.c` excerpt and SHA-256. This clears or disproves the inferred package gap before any build or submission work.
+Fetch its job log and artifact. Require the built candidate to exit 0 for valid and malformed text/JSON cases and retain exact valid-output compatibility evidence.
 
-## Next safe technical action
+## Next safe technical actions
 
-1. unpack exact Debian `2.41-5` source and retain checksums;
-2. inspect the effective `ul_path_cpuparse()` error path after Debian patches;
-3. dry-run and apply `patches/0001-clear-cpuset-output-after-error.patch` with `--fuzz=0`;
-4. build baseline and candidate packages where feasible;
-5. execute issue #4401's attachment or a validated equivalent, plus ordinary valid text/JSON controls;
-6. run relevant util-linux native tests and package gates;
-7. clean all build/test state and immediately rerun;
-8. update `TESTS.md`, `README.md`, `DECISIONS.md`, and this handoff with exact receipts;
-9. only then request a human decision on Debian BTS versus Salsa versus hold.
+1. classify the first completed queued run;
+2. if green, retain artifact IDs, digests, binary outputs, cleanup, and rerun;
+3. run the relevant native util-linux `lscpu` tests on the patched package tree;
+4. add the canonical patch to a disposable Debian quilt series;
+5. create an internal stable-update changelog version following current Debian guidance;
+6. build source and binary packages;
+7. retain a source debdiff against `2.41-5`;
+8. rerun focused actual-binary and native tests cleanly;
+9. update packet state to `READY FOR AUTHORIZATION` only when the technical send gate is complete;
+10. seek an explicit human send/hold decision before any Debian interaction.
 
-## Stop conditions
+## Stop and reassess when
 
-Stop and record a new decision when any of these occurs:
-
-- Debian effective source already contains an equivalent correction;
-- trixie publishes a fixed package before the backport is prepared;
-- the canonical patch conflicts or requires adjacent source changes;
-- package-level tests identify a different first owner;
-- ordinary output or status compatibility changes;
-- issue #397 supplies exact carriers for a separate cgroup-mount unit;
-- external-contact authorization changes.
+- Debian publishes an equivalent trixie correction;
+- candidate execution still aborts or changes valid output;
+- native tests identify an adjacent required patch;
+- the exact public attachment contradicts the synthetic fixture;
+- external-contact authority changes.
 
 ## Unexecuted gates
 
-- exact Debian source unpack and quilt result;
-- baseline/candidate Debian package builds;
-- issue #4401 attachment execution;
-- ASan/Valgrind actual-binary run;
-- valid text and JSON output comparison;
-- util-linux native lscpu tests on the package tree;
-- Debian autopkgtest/stable-update policy review;
+- built candidate actual-binary result;
+- valid baseline/candidate byte comparison;
+- native `lscpu` test suite;
+- source package and debdiff;
 - architecture matrix;
-- public report or merge request.
-
-## Workspace guide
-
-- canonical state and identities: `README.md`
-- source/carrier/ownership map: `SOURCE_MAP.md`
-- mechanism and approach history: `DEEP_DIVE.md`
-- exact test matrix and gaps: `TESTS.md`
-- scope and hold decisions: `DECISIONS.md`
-- retained patch: `patches/0001-clear-cpuset-output-after-error.patch`
-- fresh test receipt: `artifacts/2026-08-01-focused-regression.txt`
-- withheld Debian BTS draft: `UPSTREAM_ISSUE.md`
-- withheld Salsa MR draft: `UPSTREAM_PR.md`
+- public attachment execution;
+- ASan/Valgrind actual-package run;
+- Debian review or submission.
 
 ## Authority reminder
 
-Internal source retrieval, builds, tests, packet updates, branches, commits, and issue checkpoints are authorized. No external issue, comment, email, pull request, merge request, review, or package upload is authorized. No upstream or downstream contact occurred during this pass.
+Internal work is authorized. No external issue, comment, email, pull request, merge request, review, or package upload is authorized. None occurred.
