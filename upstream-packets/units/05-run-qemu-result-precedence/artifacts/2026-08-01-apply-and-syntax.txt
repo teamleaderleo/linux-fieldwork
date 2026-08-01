@@ -1,0 +1,83 @@
+Unit 05 extraction receipt
+Date: 2026-08-01
+Worker: GPT-5.6 Thinking upstream extraction pass
+External contact authorized: false
+
+BASE
+path=upstream/mmdebstrap/run_qemu.sh
+git_blob=426aeeb854173569b24e64d6eb85019f45bdf0b6
+bytes=2029
+sha256=da89b51df80786f4e379b2ba5b033aab6c4e1d7acc8ba17cf57e67159a32e300
+
+PATCH BLOBS
+0001-preserve-primary-result.patch=387b0e1d9ae0adb067a2efdc5177bf8e6814668d
+0002-retain-first-signal-through-cleanup.patch=8f4713ab827eaf643a97ba0f9d0e9b190ab7cd49
+0003-retain-signal-during-exit-cleanup.patch=227b2600851828d20861d191c1bdb54c0008ca10
+0004-preserve-completed-guest-before-cleanup-signal.patch=3769c89a002511c09350a6a9735910eb53947d66
+
+DISPOSABLE COMMANDS AND RESULTS
+$ git init -q
+rc=0
+
+$ git apply --check patches/0001-preserve-primary-result.patch
+rc=0
+$ git apply patches/0001-preserve-primary-result.patch
+rc=0
+
+$ git apply --check patches/0002-retain-first-signal-through-cleanup.patch
+rc=0
+$ git apply patches/0002-retain-first-signal-through-cleanup.patch
+rc=0
+
+$ git apply --check patches/0003-retain-signal-during-exit-cleanup.patch
+rc=0
+$ git apply patches/0003-retain-signal-during-exit-cleanup.patch
+rc=0
+
+$ git apply --check patches/0004-preserve-completed-guest-before-cleanup-signal.patch
+rc=0
+$ git apply patches/0004-preserve-completed-guest-before-cleanup-signal.patch
+rc=0
+
+$ /bin/sh -n upstream/mmdebstrap/run_qemu.sh
+rc=0
+
+$ wc -c upstream/mmdebstrap/run_qemu.sh
+2924 upstream/mmdebstrap/run_qemu.sh
+
+$ sha256sum upstream/mmdebstrap/run_qemu.sh
+8d2b0fdef2c93fcd3d97f296dfe58d3cbe198e8a02ac85930aa8c3c89aedb90f  upstream/mmdebstrap/run_qemu.sh
+
+PACKET COPY VERIFICATION
+packet patch 1 git_blob=387b0e1d9ae0adb067a2efdc5177bf8e6814668d
+packet patch 2 git_blob=8f4713ab827eaf643a97ba0f9d0e9b190ab7cd49
+packet patch 3 git_blob=227b2600851828d20861d191c1bdb54c0008ca10
+packet patch 4 git_blob=3769c89a002511c09350a6a9735910eb53947d66
+result=all packet copies byte-identical to canonical retained patches
+
+HISTORICAL CANONICAL GATE
+linux_fieldwork_pr=319
+exact_head=2fe3f99364df29de217536dc35a4d03b10f49640
+merge_commit=b196d6b45f496d8eb2d763922532ad257f24bba8
+ci_run=30628645668
+ci_job=889
+ci_result=success
+repository_tests=276 passed
+
+PUBLIC UPSTREAM OBSERVATIONS
+canonical_repository=https://salsa.debian.org/debian/mmdebstrap.git
+intended_branch=master
+published_source_version=1.5.7-3
+published_tag=debian/1.5.7-3
+published_tag_abbreviated_commit=6fde9997
+published_run_qemu_size=2029 bytes
+observation_date=2026-08-01
+
+LIMITATIONS
+- current full Salsa master SHA unresolved
+- live Salsa run_qemu.sh bytes unresolved
+- equal published byte count does not prove content identity
+- live upstream application and upstream-native tests unexecuted
+- direct GitLab clone/raw/API access failed because the host could not be resolved in this runtime
+- no real QEMU, debvm-run, guest image, network, root, or mount execution
+- no upstream contact made
