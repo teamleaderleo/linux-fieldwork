@@ -170,6 +170,10 @@ A module-level alias to the focused `TestCase` caused four focused tests to run 
 - queued at the last status check;
 - expected clean discovery count: 449 selected tests.
 
+## Complete branch review
+
+Comparison against `main` at `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` found exactly 14 added files: 2 tests, 8 packet records, 3 active patches, and 1 rejected patch. The branch leaves `upstream/mmdebstrap/tarfilter` unchanged.
+
 ## Baseline evidence inherited from carriers
 
 - PR #244 run `30590931312` passed at characterization head `c853da482a04a5ad49b53478b49e540fd4208b27`.
