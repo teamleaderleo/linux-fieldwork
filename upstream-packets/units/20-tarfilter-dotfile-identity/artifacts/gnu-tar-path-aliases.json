@@ -1,0 +1,245 @@
+{
+  "internal_dot_segment_successor": [
+    "foo/./.config",
+    "foo/.config"
+  ],
+  "leading_aliases": [
+    ".config",
+    "./.config",
+    "././.config",
+    "/./.config",
+    "//./.config",
+    ".//.config",
+    "/.//.config"
+  ],
+  "rejected_parent_components": [
+    "..",
+    "../config",
+    "./../config"
+  ],
+  "root_aliases": [
+    ".",
+    "./",
+    "./.",
+    "/.",
+    "/./",
+    "//./."
+  ],
+  "rows": [
+    {
+      "name": ".config",
+      "paths": [
+        {
+          "kind": "file",
+          "mode": "0o640",
+          "path": ".config"
+        }
+      ],
+      "status": 0,
+      "stderr": [],
+      "target_mode": "0o755"
+    },
+    {
+      "name": "./.config",
+      "paths": [
+        {
+          "kind": "file",
+          "mode": "0o640",
+          "path": ".config"
+        }
+      ],
+      "status": 0,
+      "stderr": [],
+      "target_mode": "0o755"
+    },
+    {
+      "name": "././.config",
+      "paths": [
+        {
+          "kind": "file",
+          "mode": "0o640",
+          "path": ".config"
+        }
+      ],
+      "status": 0,
+      "stderr": [],
+      "target_mode": "0o755"
+    },
+    {
+      "name": "/./.config",
+      "paths": [
+        {
+          "kind": "file",
+          "mode": "0o640",
+          "path": ".config"
+        }
+      ],
+      "status": 0,
+      "stderr": [
+        "tar: Removing leading `/' from member names"
+      ],
+      "target_mode": "0o755"
+    },
+    {
+      "name": "//./.config",
+      "paths": [
+        {
+          "kind": "file",
+          "mode": "0o640",
+          "path": ".config"
+        }
+      ],
+      "status": 0,
+      "stderr": [
+        "tar: Removing leading `//' from member names"
+      ],
+      "target_mode": "0o755"
+    },
+    {
+      "name": ".//.config",
+      "paths": [
+        {
+          "kind": "file",
+          "mode": "0o640",
+          "path": ".config"
+        }
+      ],
+      "status": 0,
+      "stderr": [],
+      "target_mode": "0o755"
+    },
+    {
+      "name": "/.//.config",
+      "paths": [
+        {
+          "kind": "file",
+          "mode": "0o640",
+          "path": ".config"
+        }
+      ],
+      "status": 0,
+      "stderr": [
+        "tar: Removing leading `/' from member names"
+      ],
+      "target_mode": "0o755"
+    },
+    {
+      "name": ".",
+      "paths": [],
+      "status": 0,
+      "stderr": [],
+      "target_mode": "0o751"
+    },
+    {
+      "name": "./",
+      "paths": [],
+      "status": 0,
+      "stderr": [],
+      "target_mode": "0o751"
+    },
+    {
+      "name": "./.",
+      "paths": [],
+      "status": 0,
+      "stderr": [],
+      "target_mode": "0o751"
+    },
+    {
+      "name": "/.",
+      "paths": [],
+      "status": 0,
+      "stderr": [
+        "tar: Removing leading `/' from member names"
+      ],
+      "target_mode": "0o751"
+    },
+    {
+      "name": "/./",
+      "paths": [],
+      "status": 0,
+      "stderr": [
+        "tar: Removing leading `/' from member names"
+      ],
+      "target_mode": "0o751"
+    },
+    {
+      "name": "//./.",
+      "paths": [],
+      "status": 0,
+      "stderr": [
+        "tar: Removing leading `//' from member names"
+      ],
+      "target_mode": "0o751"
+    },
+    {
+      "name": "foo/./.config",
+      "paths": [
+        {
+          "kind": "directory",
+          "mode": "0o755",
+          "path": "foo"
+        },
+        {
+          "kind": "file",
+          "mode": "0o640",
+          "path": "foo/.config"
+        }
+      ],
+      "status": 0,
+      "stderr": [],
+      "target_mode": "0o755"
+    },
+    {
+      "name": "foo/.config",
+      "paths": [
+        {
+          "kind": "directory",
+          "mode": "0o755",
+          "path": "foo"
+        },
+        {
+          "kind": "file",
+          "mode": "0o640",
+          "path": "foo/.config"
+        }
+      ],
+      "status": 0,
+      "stderr": [],
+      "target_mode": "0o755"
+    },
+    {
+      "name": "..",
+      "paths": [],
+      "status": 2,
+      "stderr": [
+        "tar: Removing leading `..' from member names",
+        "tar: ..: Member name contains '..'",
+        "tar: Exiting with failure status due to previous errors"
+      ],
+      "target_mode": "0o755"
+    },
+    {
+      "name": "../config",
+      "paths": [],
+      "status": 2,
+      "stderr": [
+        "tar: Removing leading `../' from member names",
+        "tar: ../config: Member name contains '..'",
+        "tar: Exiting with failure status due to previous errors"
+      ],
+      "target_mode": "0o755"
+    },
+    {
+      "name": "./../config",
+      "paths": [],
+      "status": 2,
+      "stderr": [
+        "tar: Removing leading `./../' from member names",
+        "tar: ./../config: Member name contains '..'",
+        "tar: Exiting with failure status due to previous errors"
+      ],
+      "target_mode": "0o755"
+    }
+  ],
+  "tar": "tar (GNU tar) 1.35"
+}
