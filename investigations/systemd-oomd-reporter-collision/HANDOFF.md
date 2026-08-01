@@ -40,6 +40,11 @@ git diff --check
 
 The source verifier is upgraded to schema 2 and pinned to current main plus the exact integration-test blob.
 
+Replacement Linux Fieldwork runs on the repaired branch:
+
+- source/patch verification: `30693896488` — queued at this handoff update;
+- repository CI: `30693896504` — queued.
+
 ## Current VM discriminator
 
 The controlled fork workflow uses systemd's own pinned mkosi action and integration-test commands on an Arch Linux QEMU VM. It injects one testcase into `TEST-55-OOMD.sh` and runs only:
@@ -65,18 +70,69 @@ The classifier emits one of:
 
 The test process may exit nonzero when the bug is reproduced. The workflow treats a classified reproduction as a successful experiment and preserves the full journal and receipt.
 
-## Current runs
+## Current controlled-fork runs
 
-Controlled fork exact head `cd8d4b0873da68866585a610865248d0ed98ef56`:
+Exact probe head `cd8d4b0873da68866585a610865248d0ed98ef56`:
 
-- focused VM: run `30693755971` — queued at handoff time;
+- focused VM: run `30693755971` — queued;
 - build test: run `30693755963` — queued;
 - upstream mkosi matrix: run `30693755969` — queued;
 - unit tests: run `30693755973` — queued;
 - lint: run `30693755993` — queued;
 - differential shellcheck: run `30693756012` — queued.
 
-Linux Fieldwork source/patch verification has been retriggered on the repaired branch and current-main pin; record its exact run once GitHub associates the newest head.
+## Source-aware product design
+
+`DESIGN.md` now specifies the product contract against exact current main.
+
+### Representation
+
+Keep the existing effective path-to-`OomdCGroupContext` maps used by polling and action code. Add a source layer beside them:
+
+```text
+reporter authority = (SYSTEM_MANAGER | USER_MANAGER, uid)
+contribution key   = (reporter authority, property, cgroup path)
+```
+
+Varlink connections are liveness/generation objects. An authority can have multiple live links during reconnect overlap. A stale old-link disconnect therefore cannot delete policy reasserted through a newer link.
+
+### Update and lifecycle rules
+
+- `auto` removes only the sending authority's contribution;
+- an explicit update replaces only that authority's complete tuple;
+- recompute only the affected `(property, path)` effective policy;
+- on the last user-manager link disconnect, withdraw that authority's contributions;
+- on PID 1 subscription loss, withdraw system-manager contributions and reveal any surviving user contribution;
+- reconnect initial snapshots repopulate contributions normally.
+
+### Effective policy
+
+```text
+SYSTEM_MANAGER > USER_MANAGER
+```
+
+Select the winning complete contribution tuple. Never combine a limit from one reporter with a duration or rules list from another reporter. Field-wise “strictest” merging can synthesize a more aggressive policy than either source requested.
+
+### Required matrix
+
+- reported PID 1 `kill` plus user-manager `auto` collision;
+- conflicting explicit limits;
+- system and user withdrawal;
+- last-link disconnect;
+- reconnect generation overlap;
+- PID 1 disconnect/reconnect;
+- OOMRules timer transitions;
+- cgroup disappearance;
+- diagnostic source visibility;
+- identical no-op updates preserving pressure timing state.
+
+### Proposed review series
+
+1. model ManagedOOM reporter authorities;
+2. derive effective policy from source contributions;
+3. withdraw contributions on disconnect;
+4. expose policy sources in dump output;
+5. cover overlapping reporters across reload.
 
 ## First incomplete step
 
@@ -88,33 +144,16 @@ If the outcome is `reproduced`:
 2. extract the exact sender/update sequence around the reload;
 3. add temporary controlled-fork instrumentation that records reporter identity, path, property, mode, and limit at the oomd receive boundary;
 4. rerun only the focused testcase;
-5. use the resulting trace to select and test the effective-policy model.
+5. implement the source-aware model behind unit-tested recomputation helpers;
+6. run the complete controlled matrix before shaping a submission series.
 
 If the outcome is `not-reproduced`, compare current main with the public reproducer's versions and identify the commit or environmental condition that changed the behavior.
 
 If the outcome is a control or infrastructure failure, repair the experiment before any product design claim.
 
-## Ambitious product boundary
+## Internal checkpoint
 
-The preferred architecture remains source-aware subscriptions keyed by at least:
-
-```text
-(property, cgroup path, reporter identity)
-```
-
-An `auto` update should remove only the sending reporter's contribution. One effective cgroup policy is then derived from all live contributions.
-
-Before selecting a product patch, the controlled test matrix must cover:
-
-- PID 1 `kill` plus user-manager `auto` for the same path;
-- two explicit reporters with equal limits;
-- conflicting pressure limits;
-- reporter disconnect and reconnect;
-- explicit policy withdrawal by one reporter;
-- cgroup disappearance;
-- dump/diagnostic visibility of overlapping sources.
-
-The effective-policy rule—PID 1 precedence, strictest limit, explicit conflict rejection, or another documented policy—must be chosen deliberately and encoded in tests.
+Linux Fieldwork issue `#140` comment `5150858304` records the current-main fork, run identities, corrected prior failure, and source-aware design. This is internal coordination only.
 
 ## Scope guard
 
