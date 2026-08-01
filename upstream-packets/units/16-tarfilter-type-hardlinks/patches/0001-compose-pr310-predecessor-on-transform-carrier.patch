@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -346,11 +346,29 @@ def main():
+@@ -374,11 +374,29 @@ def main():
      with tarfile.open(fileobj=sys.stdin.buffer, mode="r|*") as in_tar, tarfile.open(
          fileobj=sys.stdout.buffer, mode="w|", format=tarfile.PAX_FORMAT
      ) as out_tar:
@@ -31,7 +31,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
              if args.strip_components:
                  comps = member.name.split("/")
                  # just as with GNU tar, archive members with less or equal
-@@ -405,6 +424,8 @@ def main():
+@@ -451,6 +470,8 @@ def main():
                      and member.linkname != original_linkname
                  ):
                      member.pax_headers.pop("linkpath", None)
@@ -40,7 +40,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
              if member.isfile():
                  with in_tar.extractfile(member) as file:
                      out_tar.addfile(member, file)
-@@ -412,6 +433,9 @@ def main():
+@@ -458,6 +479,9 @@ def main():
              else:
                  out_tar.addfile(member)
  
