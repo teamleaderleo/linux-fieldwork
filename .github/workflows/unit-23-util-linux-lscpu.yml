@@ -1,0 +1,102 @@
+name: Unit 23 util-linux lscpu cpuset
+
+on:
+  pull_request:
+    paths:
+      - "upstream-packets/units/23-util-linux-lscpu-cpuset/**"
+      - ".github/workflows/unit-23-util-linux-lscpu.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trixie-package-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      EVIDENCE_DIR: upstream-packets/units/23-util-linux-lscpu-cpuset/artifacts/gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Build exact trixie source and run baseline/candidate matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          docker run --rm \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            --env EVIDENCE_DIR="$EVIDENCE_DIR" \
+            debian:trixie-slim \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+
+              sed -i "s/^Types: deb$/Types: deb deb-src/" /etc/apt/sources.list.d/debian.sources
+              grep -q "^Types: deb deb-src$" /etc/apt/sources.list.d/debian.sources
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential ca-certificates devscripts dpkg-dev fakeroot patch python3
+              apt-get build-dep -y util-linux
+
+              build=/tmp/unit23-build
+              mkdir -p "$build"
+              cd "$build"
+              apt-get source util-linux=2.41-5
+              src=$(find "$build" -mindepth 1 -maxdepth 1 -type d -name "util-linux-*" -print -quit)
+              test -n "$src"
+              test "$(dpkg-parsechangelog -l"$src/debian/changelog" -S Version)" = "2.41-5"
+
+              {
+                echo "source_version=$(dpkg-parsechangelog -l"$src/debian/changelog" -S Version)"
+                echo "source_directory=$src"
+                sha256sum "$build"/util-linux_2.41-5.dsc \
+                  "$build"/util-linux_2.41.orig.tar.xz \
+                  "$build"/util-linux_2.41-5.debian.tar.xz
+                echo "effective_baseline_path_sha256=$(sha256sum "$src/lib/path.c" | cut -d" " -f1)"
+                echo "baseline_error_path:"
+                grep -n -A8 -B2 "^out:$" "$src/lib/path.c"
+              } >"/work/$EVIDENCE_DIR/source-identity.txt"
+
+              patch_file=/work/upstream-packets/units/23-util-linux-lscpu-cpuset/patches/0001-clear-cpuset-output-after-error.patch
+              patch --batch --forward --fuzz=0 --dry-run -p1 -d "$src" -i "$patch_file" \
+                | tee "/work/$EVIDENCE_DIR/patch-dry-run.txt"
+              patch --batch --forward --fuzz=0 -p1 -d "$src" -i "$patch_file" \
+                | tee "/work/$EVIDENCE_DIR/patch-apply.txt"
+              {
+                echo "candidate_path_sha256=$(sha256sum "$src/lib/path.c" | cut -d" " -f1)"
+                echo "candidate_error_path:"
+                grep -n -A10 -B2 "^out:$" "$src/lib/path.c"
+              } >"/work/$EVIDENCE_DIR/candidate-source.txt"
+
+              cd "$src"
+              export DEB_BUILD_OPTIONS=nocheck
+              dpkg-buildpackage -b -uc -us -j2 \
+                >"/work/$EVIDENCE_DIR/dpkg-buildpackage.stdout" \
+                2>"/work/$EVIDENCE_DIR/dpkg-buildpackage.stderr"
+
+              arch=$(dpkg --print-architecture)
+              deb=$(find "$build" -maxdepth 1 -type f -name "util-linux_2.41-5_${arch}.deb" -print -quit)
+              test -n "$deb"
+              mkdir -p /tmp/unit23-candidate
+              dpkg-deb -x "$deb" /tmp/unit23-candidate
+              candidate=/tmp/unit23-candidate/usr/bin/lscpu
+              test -x "$candidate"
+              sha256sum "$deb" "$candidate" >"/work/$EVIDENCE_DIR/candidate-binary.txt"
+
+              /work/upstream-packets/units/23-util-linux-lscpu-cpuset/scripts/reproduce-trixie-lscpu-cpuset.sh \
+                --baseline /usr/bin/lscpu \
+                --candidate "$candidate" \
+                --output-dir "/work/$EVIDENCE_DIR/matrix"
+            '
+
+      - name: Upload exact source, build, and execution receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-23-util-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}/
+          if-no-files-found: error
+          retention-days: 30
