@@ -2,26 +2,25 @@
 
 State: `ACTIVE`  
 Priority-zero issue: #397, unit 16  
-Worker or variant: `ChatGPT final-name identity characterization`  
+Worker or variant: `ChatGPT final projected identity`  
 Linux Fieldwork branch: `upstream/unit-16-tarfilter-type-hardlinks`  
 External contact authorized: `false`
 
 ## TL;DR
 
-The executed baseline proves that member-local type exclusion can retain a hard link after removing its target. PR #248 adds focused rejection; PR #310 repairs archive finalization and duplicate-name state. The remaining defect is identity timing: dependency state and checks use pre-strip input names while the emitted archive uses rewritten member and hard-link target names.
+The executed baseline shows that `--type-exclude=REGTYPE` can remove a data-bearing target, retain its payload-free hard link, return status 0, and emit an archive GNU tar cannot extract. The selected candidate preserves PR #310's finalized rejection and duplicate-target repair, then moves dependency state into the final name domain produced by component stripping and applicable transform scopes.
 
-This unit now retains a packet-local composition of the PR #310 predecessor on the canonical transform/strip carrier and an executable two-case discriminator from issue #335. The discriminator covers one valid final target that the predecessor rejects and one missing final target that the predecessor accepts.
+The candidate accepts a hard link when a retained occurrence supplies its final target identity, rejects a genuine final target removed by the active type filter, and leaves pre-existing strip or transform reference failures with unit 15. Exact selected-policy CI run `30690541675` passed 442 tests. Inherited run `30690583438` passed 450 tests before duplicate-discovery cleanup; the clean expanded rerun is run `30691015678`.
 
 ## Accomplished behavior
 
-The eventual candidate will decide hard-link availability in the same final-name domain used by emitted member names and emitted hard-link targets. It will preserve finalized output on rejection and preserve valid duplicate targets already emitted.
+Type-excluded members are projected through the same member-name strip and transform rules used by output. Retained hard-link targets are projected through hard-link strip and transform scope. Dependency checks compare those final identities while diagnostics retain the original input member and target names.
+
+A known removed dependency stops before the broken hard-link member is written. The streaming tar context closes before status 1, leaving a finalized partial or empty archive. Earlier retained duplicate targets remain available after a later excluded occurrence with the same final identity.
 
 ## Why care
 
-A pre-rewrite dependency check has two product outcomes:
-
-- status 1 for an archive whose rewritten hard link has a valid emitted target;
-- status 0 for an emitted hard link whose rewritten target is absent, followed by GNU tar extraction failure.
+Input-name dependency state can reject a valid rewritten hard link. Alias-based state can also blame type exclusion for a broken reference already created by stripping or transform scope. Final projected identity assigns the failure to the operation that removed the actual emitted target.
 
 ## Scope
 
@@ -29,45 +28,47 @@ A pre-rewrite dependency check has two product outcomes:
 
 - target-before-link hard-link dependencies;
 - type-excluded target occurrences;
-- archive finalization before status 1;
-- retained duplicate-name targets;
-- `--strip-components` rewriting of member names and hard-link targets;
-- final-name availability checks and GNU tar extraction controls.
+- finalized output before status 1;
+- retained duplicate targets and output-name collisions;
+- component stripping of member names and hard-link targets;
+- transform member and hard-link target scopes;
+- GNU-equivalent leading archive-root prefixes;
+- original-name diagnostics and exact zero-fuzz patch composition.
 
 ### Excluded
 
-- link-before-target buffering;
-- arbitrary hard-link graphs;
+- link-before-target buffering and arbitrary dependency graphs;
 - path-filter dependency policy;
-- output rollback;
-- package-pipeline impact;
-- other extractors and platforms;
-- privileged metadata;
-- broad transform language compatibility owned by adjacent tarfilter units.
+- rollback of members already emitted;
+- intrinsic strip or transform reference failures present without type exclusion;
+- general transform language and PAX metadata policy owned by unit 15;
+- package-pipeline impact, other extractors, platforms, and privileged metadata.
 
 ### Split boundary
 
-Unit 15 owns general transform, target, and PAX metadata semantics. Unit 16 consumes that canonical carrier only where final rewritten names decide type-filter hard-link availability.
+Unit 15 owns the general rewrite operation, transform language, occurrence selection, target scopes, and PAX regeneration. Unit 16 consumes unit 15's clean prerequisite and adds only type-filter hard-link availability in final projected identity space.
 
 ## Exact identities
 
 | Identity | Value |
 | --- | --- |
-| Upstream project | mmdebstrap `tarfilter` |
-| Canonical repository | `NEEDS DESTINATION DECISION` |
-| Intended base branch | `NEEDS DESTINATION DECISION` |
-| Upstream base commit | imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
+| Upstream project | mmdebstrap `tarfilter` / `mmtarfilter` |
+| Canonical repository | `https://salsa.debian.org/debian/mmdebstrap.git` |
+| Intended base branch | `master` |
+| Current upstream base commit | `NEEDS CURRENT-MASTER FETCH AND REBASE` |
+| Imported source identity | `upstream/mmdebstrap/tarfilter`, blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
 | Controlled fork | `NEEDS FORK` |
-| Candidate source branch | packet-local composition pending selected correction |
-| Candidate head | current Linux Fieldwork branch head; exact value in `HANDOFF.md` |
 | Linux Fieldwork branch | `upstream/unit-16-tarfilter-type-hardlinks` |
 | Linux Fieldwork base | `main` at `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Imported/local source identity | `upstream/mmdebstrap/tarfilter`, blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
-| Canonical transform patch | blob `1703984aa0c030e5131618a3541ee85bfd68ec65` |
-| Predecessor composition | PR #310 head `32dfa36a6feb533bc1126a11ef33979e45b410ec` |
-| Packet predecessor patch | `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch` |
-| Proposed destination | `NEEDS DESTINATION DECISION` |
-| Delivery method | `NEEDS DESTINATION DECISION`; no external contact authorized |
+| Unit-15 prerequisite | `patches/0000-unit15-transform-metadata-prerequisite.patch` |
+| Lifecycle and duplicate predecessor | `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch` |
+| Selected correction | `patches/0002-use-rewritten-identities-for-type-hardlinks.patch` |
+| Rejected policy evidence | `patches/rejected/0002-alias-projection-overattributes-strip-breaks.patch` |
+| First selected-policy green head | `ec55994f0db12044f9c7ef9f843fe42aec7393e6` |
+| Expanded matrix head | `371802ab8728f149ddbac5a959e83ca8d0edef2d` |
+| Duplicate-cleanup head | `7fe46662141fa39a3b18ae1baba29b2b39f6c330` |
+| Proposed destination | Debian mmdebstrap Salsa project |
+| Delivery method | GitLab/Salsa fork and merge request; `NEEDS FORK`; external authorization required |
 
 ## Canonical links
 
@@ -77,53 +78,54 @@ Unit 15 owns general transform, target, and PAX metadata semantics. Unit 16 cons
 - Executed baseline: PR #244, merge `29ac38765bbbe99ed62313da54e7e0022b8cb9c3`
 - Initial rejection candidate: PR #248, head `f1b013832b5f3b073a9131de83ce89077771a7ea`
 - Lifecycle and duplicate repair: PR #310, head `32dfa36a6feb533bc1126a11ef33979e45b410ec`
-- Canonical transform/strip carrier: PR #68, merge `e7388243f3436ceda16f9d5be70d5423cc379b9d`
+- Unit-15 prerequisite packet: `../15-tarfilter-transform-metadata/`
 - Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
 - Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
 - Tests and receipts: [`TESTS.md`](TESTS.md)
 - Decisions: [`DECISIONS.md`](DECISIONS.md)
 - Current handoff: [`HANDOFF.md`](HANDOFF.md)
 - Upstream issue draft: [`UPSTREAM_ISSUE.md`](UPSTREAM_ISSUE.md)
-- Upstream PR draft: [`UPSTREAM_PR.md`](UPSTREAM_PR.md)
+- Upstream merge-request draft: [`UPSTREAM_PR.md`](UPSTREAM_PR.md)
 
 ## Current result
 
 ### Demonstrated
 
 - PR #244 executed the original dangling-hard-link baseline.
-- PR #310 defined finalized rejection and duplicate-target state repairs.
-- Source review establishes that PR #310 checks hard-link identity before strip and transform rewriting.
-- The packet contains an executable two-case test for both strip-induced failure directions.
+- PR #310 established finalized rejection and duplicate-target state.
+- The selected final-only policy passed run `30690541675`: 442 tests, patch validation, compilation, shell syntax, and command-help gates.
+- The inherited matrix passed run `30690583438`: 450 tests, including prefix equivalence, independent filters and immediate rerun, first-peer stopping, and retained duplicate targets.
+- The rejected alias candidate passed a full gate in run `30690434953`; the direct strip control proves its policy attribution is wrong.
 
-### Pending exact execution
+### In progress
 
-- exact-head Linux Fieldwork CI for PR #399;
-- selected final-name state representation;
-- candidate patch and rerun of inherited PR #248 and PR #310 matrices;
-- complete current-main gate on the selected candidate.
+- clean expanded matrix after duplicate-discovery repair: run `30691015678`;
+- exact current Salsa `master` fetch and zero-fuzz rebase;
+- controlled-fork creation and final submission identity;
+- complete final diff review and unchanged-head rerun.
 
 ### Compatibility boundary
 
-The selected correction must preserve target-before-link streaming, finalized partial or empty archives on rejection, retained duplicate targets, transform scope behavior from PR #68, and existing path-filter semantics.
+The candidate preserves target-before-link streaming, path-filter behavior, finalized failure output, original diagnostics, unit-15 transform/PAX semantics, retained duplicate targets, independent type filters, and the existing boundary for archives already invalid without type exclusion.
 
 ## Candidate organization
 
-Current packet order:
+Ordered patch series:
 
-1. canonical transform/strip carrier from PR #68;
-2. `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch`;
-3. `tests/test_tarfilter_type_excluded_final_name_identity.py` characterization;
-4. pending final-name identity correction;
-5. inherited and complete-gate reruns.
+1. `0000-unit15-transform-metadata-prerequisite.patch` — member/link rewrite, transform occurrence and scope semantics, and PAX regeneration;
+2. `0001-compose-pr310-predecessor-on-transform-carrier.patch` — finalized type-dependency rejection and retained duplicate state;
+3. `0002-use-rewritten-identities-for-type-hardlinks.patch` — final projected identity for type-excluded targets and retained hard-link targets.
+
+The series remains ordered because patch 0002 calls unit 15's `_sed_substitute` and replaces the input-identity state introduced by patch 0001.
 
 ## Current disposition
 
-`ACTIVE` — executable characterization and final-name correction selection remain.
+`ACTIVE` — the selected candidate is internally green on focused and inherited gates. Clean expanded rerun, current upstream rebase, controlled fork, and final complete review remain.
 
 ## Next human decision
 
-No human decision is required yet. Technical work should continue through exact execution and a bounded correction.
+No send decision is requested yet. After current-master rebase and clean expanded rerun, the repository owner must decide whether to authorize creating or using a controlled Salsa fork and opening a merge request.
 
 ## Authority
 
-Internal repository reads, branches, commits, tests, draft PRs, packet drafting, and issue checkpoints are authorized. External issue, pull request, merge request, mailing-list post, email, review, release, or package upload remains unauthorized. No external contact was made.
+Internal repository reads, branches, commits, tests, public-source inspection, packet drafting, and issue checkpoints are authorized. External issue, merge request, mailing-list post, email, review, release, or package upload remains unauthorized. No external contact was made.
