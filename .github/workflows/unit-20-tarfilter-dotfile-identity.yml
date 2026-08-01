@@ -1,0 +1,176 @@
+name: Unit 20 tarfilter dotfile identity
+
+on:
+  push:
+    branches:
+      - upstream/unit-20-tarfilter-dotfile-identity
+    paths:
+      - "upstream/mmdebstrap/tarfilter"
+      - "upstream/mmdebstrap/coverage.txt"
+      - "upstream/mmdebstrap/coverage.py"
+      - "upstream/mmdebstrap/run_null.sh"
+      - "upstream-packets/units/20-tarfilter-dotfile-identity/**"
+      - ".github/workflows/unit-20-tarfilter-dotfile-identity.yml"
+  pull_request:
+    paths:
+      - "upstream/mmdebstrap/tarfilter"
+      - "upstream/mmdebstrap/coverage.txt"
+      - "upstream/mmdebstrap/coverage.py"
+      - "upstream/mmdebstrap/run_null.sh"
+      - "upstream-packets/units/20-tarfilter-dotfile-identity/**"
+      - ".github/workflows/unit-20-tarfilter-dotfile-identity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-upstream-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out Linux Fieldwork
+        uses: actions/checkout@v4
+
+      - name: Install focused test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes python3-debian shellcheck shfmt
+
+      - name: Fetch exact canonical mmdebstrap source
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical="$RUNNER_TEMP/mmdebstrap-base"
+          expected_commit="77ec9be5417ee44c96343d2347145585da1b1f94"
+          expected_tarfilter_blob="ad776167a8473d5d15dbe22e850f4f6db35cf278"
+          expected_coverage_blob="87f4cccf5fc646c82600672113830419e20b95dd"
+          expected_coverage_py_blob="9a522484aef05deae514a98e4b6adf5feb6c886d"
+          expected_run_null_blob="e0a8c106f9d3d636baea286d2ab33834748dffc9"
+
+          git clone --filter=blob:none --no-checkout \
+            https://gitlab.mister-muffin.de/josch/mmdebstrap.git "$canonical"
+          git -C "$canonical" checkout --detach "$expected_commit"
+          test "$(git -C "$canonical" rev-parse HEAD)" = "$expected_commit"
+
+          test "$(git -C "$canonical" hash-object tarfilter)" = "$expected_tarfilter_blob"
+          test "$(git -C "$canonical" hash-object coverage.txt)" = "$expected_coverage_blob"
+          test "$(git -C "$canonical" hash-object coverage.py)" = "$expected_coverage_py_blob"
+          test "$(git -C "$canonical" hash-object run_null.sh)" = "$expected_run_null_blob"
+          test "$(git hash-object upstream/mmdebstrap/tarfilter)" = "$expected_tarfilter_blob"
+          test "$(git hash-object upstream/mmdebstrap/coverage.txt)" = "$expected_coverage_blob"
+
+          {
+            echo "canonical_commit=$expected_commit"
+            echo "canonical_tarfilter_blob=$expected_tarfilter_blob"
+            echo "canonical_coverage_blob=$expected_coverage_blob"
+            echo "canonical_coverage_py_blob=$expected_coverage_py_blob"
+            echo "canonical_run_null_blob=$expected_run_null_blob"
+            echo "tarfilter_last_commit=$(git -C "$canonical" log -1 --format=%H -- tarfilter)"
+            echo "coverage_last_commit=$(git -C "$canonical" log -1 --format=%H -- coverage.txt)"
+          } | tee unit-20-canonical-source.txt
+
+      - name: Prove baseline and candidate on two fresh generations
+        shell: bash
+        run: |
+          set -euo pipefail
+          packet="$GITHUB_WORKSPACE/upstream-packets/units/20-tarfilter-dotfile-identity"
+          canonical="$RUNNER_TEMP/mmdebstrap-base"
+          patch_file="$packet/patches/0001-tarfilter-preserve-dotfile-identity.patch"
+          packet_test="$packet/tests/tarfilter-path-dotfiles"
+
+          set +e
+          MMTARFILTER="$canonical/tarfilter" "$packet_test" \
+            >unit-20-baseline.stdout 2>unit-20-baseline.stderr
+          baseline_status=$?
+          set -e
+          test "$baseline_status" -ne 0
+          printf 'status=%s\n' "$baseline_status" | tee unit-20-baseline-status.txt
+
+          for pass in first immediate-rerun; do
+            work="$RUNNER_TEMP/mmdebstrap-$pass"
+            git clone --local --no-hardlinks "$canonical" "$work"
+            test "$(git -C "$work" rev-parse HEAD)" = \
+              "77ec9be5417ee44c96343d2347145585da1b1f94"
+
+            patch --fuzz=0 -p1 -d "$work" -i "$patch_file" \
+              | tee "unit-20-$pass-patch-apply.log"
+            if grep -Eiq 'fuzz|offset' "unit-20-$pass-patch-apply.log"; then
+              echo "patch application reported fuzz or offset" >&2
+              exit 1
+            fi
+
+            git -C "$work" add -N tests/tarfilter-path-dotfiles
+            printf '%s\n' coverage.txt tarfilter tests/tarfilter-path-dotfiles \
+              >"unit-20-$pass-expected-files.txt"
+            git -C "$work" diff --name-only | sort \
+              >"unit-20-$pass-actual-files.txt"
+            diff -u "unit-20-$pass-expected-files.txt" \
+              "unit-20-$pass-actual-files.txt"
+            git -C "$work" diff --check
+            git -C "$work" diff --binary \
+              >"unit-20-$pass-candidate.diff"
+
+            python3 -m py_compile "$work/tarfilter"
+            sh -n "$work/tests/tarfilter-path-dotfiles"
+            shellcheck --exclude=SC2050,SC2194,SC2016 \
+              "$work/tests/tarfilter-path-dotfiles"
+            shfmt --posix --binary-next-line --case-indent \
+              --indent 2 --simplify -d "$work/tests/tarfilter-path-dotfiles"
+
+            MMTARFILTER="$work/tarfilter" "$work/tests/tarfilter-path-dotfiles" \
+              >"unit-20-$pass-direct.stdout" \
+              2>"unit-20-$pass-direct.stderr"
+
+            mkdir -p "$work/shared/cache/debian/dists/unstable"
+            : >"$work/shared/cache/debian/dists/unstable/InRelease"
+            (
+              cd "$work"
+              HAVE_QEMU=no SOURCE_DATE_EPOCH=0 CMD=./mmdebstrap \
+                ./coverage.py --exitfirst tarfilter-path-dotfiles
+            ) >"unit-20-$pass-coverage.stdout" \
+              2>"unit-20-$pass-coverage.stderr"
+
+            git -C "$work" status --short \
+              >"unit-20-$pass-status-after.txt"
+            rm -rf "$work/shared" "$work/__pycache__"
+            find "$work" -type d -name __pycache__ -prune -exec rm -rf {} +
+            git -C "$work" status --short \
+              >"unit-20-$pass-status-cleaned.txt"
+            diff -u "unit-20-$pass-expected-files.txt" \
+              <(sed -E 's/^...//' "unit-20-$pass-status-cleaned.txt" | sort)
+          done
+
+      - name: Run cross-context and mutation discriminators
+        shell: bash
+        run: |
+          set -euo pipefail
+          packet="upstream-packets/units/20-tarfilter-dotfile-identity"
+          python3 "$packet/scripts/test_normalization_mutations.py" \
+            >unit-20-normalization-mutations.json
+          python3 "$packet/scripts/probe_tar_path_aliases.py" \
+            >unit-20-gnu-tar-path-aliases.json
+          sudo python3 "$packet/scripts/probe_dpkg_path_filters.py" \
+            >unit-20-dpkg-path-filter-differential.json
+
+      - name: Record exact hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum \
+            upstream-packets/units/20-tarfilter-dotfile-identity/patches/0001-tarfilter-preserve-dotfile-identity.patch \
+            upstream-packets/units/20-tarfilter-dotfile-identity/tests/tarfilter-path-dotfiles \
+            upstream-packets/units/20-tarfilter-dotfile-identity/scripts/*.py \
+            unit-20-* \
+            | tee unit-20-sha256.txt
+
+      - name: Upload exact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-20-canonical-upstream-gate
+          path: |
+            unit-20-*
+          if-no-files-found: error
