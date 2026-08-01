@@ -81,6 +81,40 @@ Script SHA-256 after final path-discovery edit: `4c9aa8b0bd5563efaebf670640ace89
 | Source composition | n/a | one wait, one negative branch, one nonzero branch | `test_composed_source_contains_one_result_decision` | PASS |
 | Immediate rerun | n/a | full matrix | same command | PASS |
 
+## Native gate draft and direct validation
+
+Current public harness inspection established that `coverage.py` copies source-tree `proxysolver` into `shared/proxysolver`, reads registrations from `coverage.txt`, checks that `coverage.txt` and `tests/` names agree, and accepts a selected test name. The packet now carries:
+
+- `native-tests/proxysolver-result-propagation`;
+- `native-tests/coverage.txt.stanza`;
+- `artifacts/2026-08-01-native-gate-selection.md`.
+
+The native test SHA-256 is `3505be52c6feec272c3fc177fb49e7c19bb326167f2013944f0494b685b20dd5`. It consumes `shared/proxysolver`, creates a disposable fake solver, and runs the same result/output/cleanup discriminators through a shell-test shape compatible with the upstream harness.
+
+### Direct-gate results
+
+| Run | Source | Result |
+| --- | --- | --- |
+| Candidate first run | candidate blob `13aef7109250a21bc7a23af6eaa7b235aef9c92c` | PASS, status 0 |
+| Candidate immediate rerun | same | PASS, status 0 |
+| Baseline negative control | imported blob `5cd51fab89104d30b8b12bff18a49d38d9be0003` | expected FAIL, status 1 |
+| Candidate restored | candidate | PASS, status 0 |
+| `/bin/sh -n` | native test | PASS |
+| `python3 -m py_compile` | candidate source | PASS |
+
+The exact baseline discriminator was:
+
+```text
+Traceback (most recent call last):
+  File "<stdin>", line 126, in <module>
+  File "<stdin>", line 118, in run_case
+AssertionError: ('exit-7', 0, 7)
+```
+
+`shellcheck` and `shfmt` were absent, so those optional checks remain unexecuted. No product behavior ran in those missing-tool checks.
+
+The test and registration remain separate packet drafts until exact canonical `coverage.txt` context is available. This prevents an invented or stale integration hunk.
+
 ## Prior carrier receipts
 
 | Carrier | Command/run | Result |
@@ -97,8 +131,9 @@ Script SHA-256 after final path-discovery edit: `4c9aa8b0bd5563efaebf670640ace89
 | --- | --- | --- | --- |
 | Exact upstream patch application | `patch --batch --forward -p1 -i ...` in commit `77ec9be...` checkout | NOT RUN: checkout unavailable in execution environment | NEEDS BRANCH |
 | Packet focused regression in upstream checkout | packet script command | NOT RUN in exact upstream checkout | NEEDS BRANCH |
-| Relevant upstream coverage test | project-specific placement/command unresolved | NOT RUN | NEEDS BRANCH |
-| Formatting/lint | `python3 -m py_compile proxysolver` | local composed source PASS; upstream checkout gate pending | local patch only |
+| Direct native test against composed imported source | `cp proxysolver shared/proxysolver && sh .../native-tests/proxysolver-result-propagation` | PASS twice, baseline negative control discriminates, restored candidate PASS | local candidate only |
+| Focused upstream coverage registration | `CMD=./mmdebstrap ./coverage.py proxysolver-result-propagation` after exact test/stanza placement | placement selected; full harness NOT RUN | NEEDS BRANCH |
+| Formatting/lint | `/bin/sh -n ...`; `python3 -m py_compile proxysolver` | PASS; `shellcheck`/`shfmt` unavailable | local candidate only |
 | Build/package test | Debian package or full `coverage.sh` gate | NOT RUN | NEEDS BRANCH |
 
 ## Patch application and composition
@@ -106,6 +141,7 @@ Script SHA-256 after final path-discovery edit: `4c9aa8b0bd5563efaebf670640ace89
 - imported base identity: blob `5cd51fab89104d30b8b12bff18a49d38d9be0003`;
 - historical status patch blob: `0c29e916fa33f41bb5bea0b4ee863d7a0eee5519`;
 - historical signal patch blob: `b4c9975f39c37a7857f644855ee81befaa760795`;
+- composed candidate source blob: `13aef7109250a21bc7a23af6eaa7b235aef9c92c`;
 - composed patch SHA-256: `74819e72482afe00abc3d4c7678a4f91cdbef61f3e2519296755a3a9fa049c48`;
 - both historical patches applied sequentially without fuzz or offset in the disposable composition tree;
 - composed patch applied with `patch --batch --forward -p1` in the simulated upstream-root layout;
@@ -118,21 +154,27 @@ The first packet-script run failed before test execution because the disposable 
 
 Historical PR #166 also recorded an initial malformed retained follow-up patch at head `f57b43b32d78ad5dcd58039c816907fe7abe27de`. Classification: patch packaging; corrected heads later passed.
 
+The 2026-08-01 baseline native-gate run returned status 1 at `('exit-7', 0, 7)`. Classification: **expected negative control**, confirming that the native-shaped test distinguishes the imported defect.
+
+The 2026-08-01 canonical clone retry failed with `Could not resolve host: gitlab.mister-muffin.de`. Classification: **execution environment DNS failure before repository access**.
+
 ## Cleanup and rerun
 
-Every dynamic run used `TemporaryDirectory`. Fake solver processes were checked by PID and disappeared within the bounded assertion. Temporary dump, PID, solver, wrapper, and bytecode files were removed when the test process exited. No sockets, mounts, containers, package state, or imported source changed. The full matrix passed immediately a second time and passed again from a simulated final repository path.
+Every packet matrix run used `TemporaryDirectory`. The native test creates its own `mktemp -d` root and removes it through a shell trap. Fake solver processes were checked by PID and disappeared within the bounded assertion. Temporary dump, PID, solver, wrapper, and bytecode files were removed when each test process exited. No sockets, mounts, containers, package state, or imported source changed. The full packet matrix passed immediately a second time and passed again from a simulated final repository path. The native-shaped candidate gate passed twice, then passed again after the baseline negative control.
 
 ## Tests not run
 
 - current upstream checkout hash comparison;
 - exact upstream patch application;
+- focused `coverage.py` run from exact canonical source;
 - real `/usr/lib/apt/solvers/apt` execution;
 - mmdebstrap full `coverage.sh` suite;
 - Debian package build or autopkgtest;
 - fatal-signal matrix beyond SIGTERM and SIGINT;
 - wrapper-receives-signal-while-child-runs lifecycle case;
-- broken stdout sink during explicit flush.
+- broken stdout sink during explicit flush;
+- `shellcheck` and `shfmt` for the native shell test.
 
 ## Final evidence statement
 
-The executed matrix establishes that the composed source logic fixes the imported wrapper's false success and the ordinary-only repair's signal wrapping while preserving output, dump, stderr, success, and child cleanup for exit 0, exit 7, SIGTERM, SIGINT, and inherited blocked SIGTERM. The conclusion ends at the exact imported blob and local Linux/Python environment; current-upstream and native-suite gates remain open.
+The executed packet and native-shaped matrices establish that the composed source logic fixes the imported wrapper's false success and the ordinary-only repair's signal wrapping while preserving output, dump, stderr, success, and child cleanup for exit 0, exit 7, SIGTERM, SIGINT, and inherited blocked SIGTERM. The native test independently distinguishes the imported defect and passes repeatedly against the exact composed candidate blob. The conclusion still ends at the exact imported source plus local Linux/Python execution; canonical checkout application and the real focused `coverage.py` gate remain open.
