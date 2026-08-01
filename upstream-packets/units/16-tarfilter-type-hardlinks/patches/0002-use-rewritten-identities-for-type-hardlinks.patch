@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -369,50 +369,70 @@ def main():
+@@ -369,50 +369,72 @@ def main():
                  return True
          return False
  
@@ -104,7 +104,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
              member.pax_headers = {
                  k: v
                  for k, v in member.pax_headers.items()
-@@ -427,49 +447,26 @@ def main():
+@@ -427,49 +449,26 @@ def main():
                      exit(1)
                  member.uid += args.idshift
                  member.gid += args.idshift
