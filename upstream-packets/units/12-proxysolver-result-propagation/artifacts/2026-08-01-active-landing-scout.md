@@ -2,7 +2,7 @@
 
 ## Scope
 
-Find projects with stronger current activity and broader maintainer coverage that could absorb the useful parts of unit 12. This is a placement assessment only. No issue, pull request, discussion, email, fork mutation, or other external contact was made.
+Find projects with stronger current activity and broader maintainer coverage that could absorb the useful parts of unit 12. This is a placement assessment only. No issue, pull request, discussion, email, branch creation, fork mutation, or other external contact was made.
 
 The exact unit-12 source patch remains specific to `mmdebstrap/proxysolver`. Other projects can realistically absorb one of three separable assets:
 
@@ -10,16 +10,27 @@ The exact unit-12 source patch remains specific to `mmdebstrap/proxysolver`. Oth
 2. the focused exit/signal regression matrix;
 3. an integration assertion that an `mmdebstrap` failure cannot become consumer success.
 
-## Existing controlled fork
+## Existing controlled fork and exact source verification
 
 The connected GitHub installation contains the public fork:
 
-- `teamleaderleo/mmdebstrap`
+- repository: `teamleaderleo/mmdebstrap`
 - default branch: `master`
+- saved source branch: `linux-fieldwork/upstream-main-snapshot`
 - existing Linux Fieldwork branches for several other units
 - no unit-12 candidate branch observed during this scout
 
-This closes `NEEDS FORK`. It does not itself authorize a new branch, pull request, or upstream contact.
+Read-only verification produced:
+
+| Ref | Path | Git blob |
+| --- | --- | --- |
+| `master` | `proxysolver` | `5cd51fab89104d30b8b12bff18a49d38d9be0003` |
+| `linux-fieldwork/upstream-main-snapshot` | `proxysolver` | `5cd51fab89104d30b8b12bff18a49d38d9be0003` |
+| `master` | `coverage.txt` | `be105dd37f44c54b51a6f02ff4358f18c2ce618c` |
+
+The exact `proxysolver` bytes therefore match the imported unit-12 source and close the prior source-identity blocker. Comparing `master` and `linux-fieldwork/upstream-main-snapshot` through GitHub returned “No common ancestor”; this is branch-topology/import history, while the target file blob is identical.
+
+The fork discovery closes `NEEDS FORK`. It does not itself authorize a new branch, pull request, or upstream contact.
 
 ## Ranked landing zones
 
@@ -158,13 +169,13 @@ This creates independent pressure at the protocol, implementation, and consumer 
 
 Without contacting anyone:
 
-1. create a unit-12 branch in `teamleaderleo/mmdebstrap` from the controlled upstream snapshot;
-2. apply the composed source patch and native test there;
-3. inspect Debusine's `MmDebstrap` task tests and debos's `MmdebstrapAction` tests;
-4. draft one consumer regression for each project in the Linux Fieldwork workspace;
-5. compare whether either consumer already preserves and exposes exact signal identity or only requires a nonzero task result.
+1. inspect exact `coverage.py`, `coverage.txt`, and `tests/` content from `teamleaderleo/mmdebstrap` and generate the native integration patch against those bytes;
+2. inspect Debusine's `MmDebstrap` task tests and debos's `MmdebstrapAction` tests;
+3. draft one consumer regression for each project in the Linux Fieldwork workspace;
+4. compare whether either consumer already preserves and exposes exact signal identity or only requires a nonzero task result;
+5. after explicit authorization, create a unit-12 branch in `teamleaderleo/mmdebstrap` and apply the source plus native-test patches.
 
-Branch creation and external submissions require explicit authorization beyond this scout.
+External submissions and messages remain separately authorization-gated.
 
 ## External-contact state
 
