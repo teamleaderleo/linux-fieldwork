@@ -2,51 +2,15 @@
 
 ## Original mechanism
 
-The imported script installed one function for three distinct events:
+The imported script used one function for `INT`, `TERM`, and `EXIT`:
 
 ```sh
 trap cleanup INT TERM EXIT
 ```
 
-That function captured `$?`, removed temporary state, read `shared/exitstatus.txt`, converted any guest failure to 1, and exited. The mechanism mixed five independently owned outcomes:
+That mixed five owners: host/QEMU/timeout status, guest/protocol status, explicit signal, signal during ordinary cleanup, and cleanup failure. Guest inspection could overwrite a host failure, signal identity was guest-dependent, and exiting from the signal handler could re-enter cleanup through the still-installed EXIT trap.
 
-1. host/QEMU/timeout result;
-2. guest or protocol result;
-3. explicit INT or TERM;
-4. INT or TERM received during ordinary cleanup;
-5. cleanup failure.
-
-The shared handler also retained its EXIT trap while handling INT or TERM, permitting cleanup re-entry when the handler called `exit`.
-
-## Proven predecessor failures
-
-### Host failure overwritten by guest result
-
-A captured timeout 124 or host failure 42 could become generic guest failure 1. The final code then pointed investigation toward the guest despite an earlier host-owned failure.
-
-### Explicit signal identity lost
-
-The shared handler derived its result from `$?` and the guest file. Parent-only INT or TERM could therefore return 0 or 1 instead of 130 or 143.
-
-### EXIT cleanup re-entry
-
-Calling `exit` from the signal-invoked cleanup could trigger the still-installed EXIT trap. The canonical negative control recorded cleanup as `rm, rmdir, rm`.
-
-### Later signal replaced the first
-
-Patch 1 initially restored default INT and TERM behavior before cleanup. TERM could start cleanup, then INT could terminate the shell by signal 2 after only the first cleanup action. The temporary directory remained.
-
-### First signal during ordinary cleanup disappeared
-
-Patch 2 ignored INT and TERM at ordinary EXIT cleanup entry before any signal result had been selected. Successful work followed by TERM during cleanup could complete cleanup and return 0.
-
-### Later cleanup signal replaced completed guest failure
-
-Patch 3 initially promoted the cleanup-time signal ahead of the guest result. A guest failure already written and completed before host cleanup plus later TERM returned 143. Event order required 1.
-
-## Selected ownership and event order
-
-The final order is:
+## Selected result order
 
 ```text
 captured host failure
@@ -56,118 +20,209 @@ captured host failure
 > success
 ```
 
-The ordering follows when each result becomes authoritative:
+This follows the point at which each result becomes authoritative: the host status is captured before cleanup; the guest result is complete before `debvm-run` returns; cleanup-time signals arrive later; cleanup failures occur while finalization runs.
 
-1. the host command status is captured before ordinary EXIT cleanup;
-2. the guest worker writes its result, unmounts the shared location, and powers off before `debvm-run` returns;
-3. a signal recorded by the ordinary EXIT handler arrives during host cleanup;
-4. cleanup status becomes final as cleanup actions run.
+## Patches 1–4 and their losing controls
 
-A cleanup-time signal still reports cancellation after successful work. It cannot replace a host or guest failure that had already completed.
+### Patch 1 — preserve primary result
 
-## Patch mechanics
+Introduces `finish()`, `cleanup_exit()`, and `cleanup_signal()`. It preserves host over guest over cleanup, retains the first cleanup failure, attempts later cleanup actions, and clears EXIT before finalization.
 
-### Patch 1 — preserve the primary result
+Losing control before patch 1: host timeout 124 plus guest failure returned 1.
 
-Patch 1 introduces `finish()`, `cleanup_exit()`, and `cleanup_signal()`.
+Remaining loss after patch 1: TERM entered cleanup, then INT arrived after default signal behavior was restored; the shell died by SIGINT after only the first cleanup action.
 
-`finish()` receives the already-captured host or explicit signal status, reads the guest result safely, retains the first cleanup failure, attempts all cleanup actions, and selects host before guest before cleanup.
+### Patch 2 — retain first explicit signal
 
-The two handlers separate ordinary EXIT from explicit INT and TERM. EXIT is cleared before `finish()` so cleanup runs once.
+Changes later INT/TERM behavior during bounded cleanup from default to ignored. TERM then INT retains 143 and cleanup completes.
 
-### Patch 2 — retain the first handled signal
+Remaining loss after patch 2: ordinary EXIT cleanup began without a selected signal and ignored a TERM received during cleanup, returning false success 0.
 
-Patch 2 changes handler trap transitions from restoring default INT/TERM behavior to ignoring those signals during bounded cleanup:
+### Patch 3 — retain signal during ordinary cleanup
 
-```sh
-trap '' INT TERM
-trap - EXIT
-```
+Adds `cleanup_signal_status` and a first-writer recorder. Ordinary EXIT cleanup installs recorder traps; finalization ignores later handled signals before result selection.
 
-The order closes the window where a later signal could terminate cleanup before EXIT was cleared.
-
-### Patch 3 — retain the first signal during ordinary cleanup
-
-Ordinary EXIT cleanup has no signal status yet. Patch 3 adds one initialized slot and a first-writer recorder:
-
-```sh
-cleanup_signal_status=0
-
-record_cleanup_signal() {
-  if [ "$cleanup_signal_status" -eq 0 ]; then
-    cleanup_signal_status=$1
-  fi
-}
-```
-
-`cleanup_exit()` installs recording traps for INT and TERM. `finish()` switches them to ignored after cleanup and before final result selection. Explicit signal cleanup keeps ignoring later signals because its status has already been supplied directly.
+Remaining loss after patch 3: the recorded cleanup-time signal was selected before a guest failure that had already completed, so guest 1 plus later TERM returned 143.
 
 ### Patch 4 — preserve completed guest failure
 
-Patch 4 changes only final result selection. It moves the recorded cleanup-time signal below the completed guest result:
+Moves the recorded cleanup-time signal below the guest result. The four-commit order became host, guest, cleanup-time signal, cleanup failure, success.
 
-```text
-host, guest, cleanup-time signal, cleanup
+## Complete-diff review of the four-commit candidate
+
+The established focused tests exercised handler behavior after trap transitions were complete. The repository instructions require adjacent setup/cleanup review and a discriminator that can make the mechanism lose. Two handler-entry contexts could change the decision.
+
+### Explicit signal-handler entry window
+
+Four-commit code:
+
+```sh
+cleanup_signal() {
+  rv=$1
+  trap '' INT TERM
+  trap - EXIT
+  finish "$rv"
+}
 ```
 
-Signal capture, first-writer behavior, cleanup actions, and trap transitions stay unchanged.
+The assignment `rv=$1` is a separate shell command before INT and TERM become ignored. A widened deterministic fixture held execution after that assignment, sent TERM first, then INT, and released the handler. The re-entered handler replaced the first result:
 
-## Rejected alternatives
+```text
+observed: 130
+required: 143
+```
 
-### Last failure wins
+Cleanup completed, so the distinguishing failure was first-signal ownership.
 
-The original behavior allowed whichever outcome cleanup inspected last to replace earlier results. This loses ownership and event order.
+### Ordinary EXIT-handler entry window
 
-### Signal always wins
+Four-commit code:
 
-This reports cancellation correctly after success, yet it replaces a completed guest failure with a later cleanup event. PR #304 retained the `signal > guest` policy as the losing comparison.
+```sh
+cleanup_exit() {
+  rv=$?
+  trap 'record_cleanup_signal 130' INT
+  trap 'record_cleanup_signal 143' TERM
+  trap - EXIT
+  finish "$rv"
+}
+```
 
-### Ignore all signals during cleanup
+The assignment `rv=$?` is a separate command before recorder traps are installed. A widened deterministic fixture completed guest failure 1, held execution after `rv=$?`, sent TERM, and released the handler. The old top-level TERM action entered explicit-signal cleanup and bypassed completed guest precedence:
 
-This stabilizes explicit signal handling, yet ordinary EXIT cleanup can begin without any selected signal result. Ignoring the first signal there produces false success.
+```text
+observed: 143
+required: 1
+```
 
-### Restore default signal handling during cleanup
+Again cleanup completed; the loss was result ownership.
 
-A second signal can terminate the shell, replace the first signal identity, and interrupt cleanup. Bounded cleanup uses ignored later signals after the first result is retained.
+## Patch 5 — close handler setup windows
 
-### One squashed patch
+Selected commit:
 
-The four-patch series preserves a useful review trail. Each patch has a specific negative control and each intermediate policy explains why the next patch exists.
+```text
+6efe6945f9f89cff57fe84086ede7bda747c3879
+run_qemu: close signal-handler setup windows
+```
 
-## Fixture ownership lesson
+### Ordinary cleanup phase becomes visible with status capture
 
-PR #290 exposed two test-harness defects:
+```sh
+cleanup_phase=running
 
-- generated candidate shells omitted `cleanup_signal_status=0` and `record_cleanup_signal()`;
-- substring extraction could confuse `cleanup_signal()` with `record_cleanup_signal()`.
+cleanup_exit() {
+  rv=$? cleanup_phase=exit
+  ...
+}
+```
 
-The canonical #282 head adopted exact line-boundary function extraction and conditional recorder composition. #290 remains historical fixture evidence and contributes no product patch to the final series.
+POSIX shell assignment-only command processing captures the incoming `$?` and marks the ordinary-cleanup phase in one command. There is no intervening command where the old signal action can enter without seeing `cleanup_phase=exit`.
 
-## Extraction performed on 2026-08-01
+### Signal trap actions disable overlap before handler entry
 
-The exact imported source and four canonical patch blobs were reconstructed in a disposable local Git repository. The worker ran `git apply --check`, then `git apply`, for every patch in order. All eight operations returned zero. The final script passed `/bin/sh -n`.
+```sh
+trap 'trap "" INT TERM; cleanup_signal 130' INT
+trap 'trap "" INT TERM; cleanup_signal 143' TERM
+```
 
-Exact receipt:
+The first command executed by the trap action disables both handled signals. `cleanup_signal()` no longer performs a vulnerable status assignment before trap replacement; it receives the literal selected status directly in `finish "$1"`.
 
-- imported source Git blob: `426aeeb854173569b24e64d6eb85019f45bdf0b6`;
-- imported source SHA-256: `da89b51df80786f4e379b2ba5b033aab6c4e1d7acc8ba17cf57e67159a32e300`;
-- imported source size: 2,029 bytes;
-- composed source SHA-256: `8d2b0fdef2c93fcd3d97f296dfe58d3cbe198e8a02ac85930aa8c3c89aedb90f`;
-- composed source size: 2,924 bytes;
-- shell syntax result: success.
+Ordinary-cleanup recorder actions use the same transition:
 
-## Current upstream compatibility analysis
+```sh
+trap 'trap "" INT TERM; record_cleanup_signal 130' INT
+trap 'trap "" INT TERM; record_cleanup_signal 143' TERM
+```
 
-The canonical contribution destination is the mmdebstrap Salsa repository on `master`. Debian Sources currently publishes version `1.5.7-3`, and its directory listing shows `run_qemu.sh` at 2,029 bytes. The tag page identifies `debian/1.5.7-3` with abbreviated commit `6fde9997`.
+### Early signal through the old action rejoins ordinary cleanup
 
-Equal file size suggests the imported base may still match the published package. A byte comparison and full live commit identity remain required. GitLab raw/API retrieval and direct cloning were unavailable from this execution environment, so this packet deliberately stops before claiming a clean application to current Salsa `master`.
+A signal can be selected for delivery immediately after `cleanup_phase=exit` becomes visible but before the recorder traps are installed. In that case the old action invokes `cleanup_signal()`, which now detects the phase:
 
-## Reopen triggers
+```sh
+if [ "$cleanup_phase" = exit ]; then
+  record_cleanup_signal "$1"
+  return
+fi
+```
 
-Revisit the selected policy when any of these become true:
+The handler records the first cleanup-time signal and returns to `cleanup_exit()`. Ordinary cleanup continues, recorder traps are installed, and host/guest precedence remains intact.
 
-- the guest result remains provisional when host cleanup begins;
-- guest publication can fail after `debvm-run` returns;
-- cleanup becomes long-running or unbounded and requires escalation;
-- upstream adopts process-group signal delivery or a different child ownership model;
-- current upstream already contains an equivalent or stronger correction.
+### First-writer behavior survives trap reinstallation
+
+`record_cleanup_signal()` still changes the slot only when it is zero. A deterministic fixture delivered early TERM through the old action, allowed ordinary recorder traps to install, then delivered INT during cleanup. The repaired result remained 143 and cleanup completed.
+
+## Rejected repair shapes
+
+### Set the phase only inside `cleanup_exit()` after capturing `$?`
+
+This leaves the original between-command window intact.
+
+### Put another ordinary assignment at the top of `cleanup_signal()`
+
+A re-entering signal can overwrite shared shell variables before traps change. The repair must disable overlap in the trap action, before handler-body commands.
+
+### Let nested signal handlers return naturally
+
+Nested handlers can clobber global shell variables and resume an older frame with changed state. The selected explicit-signal trap action prevents nested handled-signal entry.
+
+### Ignore all signals for the whole ordinary cleanup
+
+That loses the first cleanup-time signal and can report success after cancellation.
+
+### Make signal always win
+
+That still replaces a completed host or guest failure with a later event.
+
+### Squash all changes immediately
+
+Each predecessor patch has a distinct losing control, and patch 5 exists because complete-diff review found a new transition class. The ordered series remains useful for review. A canonical-upstream rebase may reshape commits when required, but the five logical boundaries and controls must remain visible.
+
+## Current evidence
+
+Controlled mirror base:
+
+```text
+commit: 574048f2a720057b75e56622003932f344dc700a
+run_qemu.sh blob: 426aeeb854173569b24e64d6eb85019f45bdf0b6
+bytes: 2029
+SHA-256: da89b51df80786f4e379b2ba5b033aab6c4e1d7acc8ba17cf57e67159a32e300
+```
+
+Five-commit candidate:
+
+```text
+head: 6efe6945f9f89cff57fe84086ede7bda747c3879
+run_qemu.sh blob: 1fc816d6fe982351f6519fd1458329112eebdcfb
+bytes: 3095
+SHA-256: 434e7b6b9c32e30b506ea6af121608414c42b668c329e6395e75e19dc09ff276
+/bin/sh -n: success
+```
+
+Executed reduced evidence:
+
+- established lifecycle matrix: 58/58 pass;
+- four-commit explicit setup window: TERM then INT returned 130, losing expected 143;
+- repaired explicit setup window: returned 143, cleanup completed;
+- four-commit EXIT setup window: guest 1 then TERM returned 143, losing expected 1;
+- repaired EXIT setup window: returned 1, cleanup completed;
+- repaired early TERM then later INT: returned 143, cleanup completed;
+- immediate clean rerun: pass.
+
+## Project-native boundary
+
+mmdebstrap documents `make_mirror.sh` plus `coverage.sh`; individual cases use `coverage.py`. QEMU-classified cases execute `./run_qemu.sh`. This runtime did not have canonical Salsa access, prepared mirror images, or a disposable QEMU environment, so those authoritative integration gates remain unexecuted.
+
+The new checked-in regression module is `tests/test_run_qemu_handler_setup_windows.py`. Equivalent fixtures executed during this pass; the exact module still needs a complete-checkout or hosted-CI run.
+
+## Evidence limits and reopen triggers
+
+Reopen or redesign when:
+
+- canonical upstream changes handler structure or guest-result publication;
+- the guest result is provisional when host cleanup starts;
+- cleanup becomes unbounded and requires escalation;
+- process-group delivery changes signal ownership;
+- HUP or QUIT enter scope;
+- current upstream already contains an equivalent or stronger mechanism;
+- a real QEMU run exposes a different caller/child ownership contract.
