@@ -65,6 +65,7 @@ Unit 15 owns the general rewrite operation, transform language, occurrence selec
 | Selected correction | `patches/0002-use-rewritten-identities-for-type-hardlinks.patch` |
 | Rejected policy evidence | `patches/rejected/0002-alias-projection-overattributes-strip-breaks.patch` |
 | First selected-policy green head | `ec55994f0db12044f9c7ef9f843fe42aec7393e6` |
+| Inherited matrix green head | `300b51056ded64a56ec3998bc639a57e9ea81125` |
 | Expanded matrix head | `371802ab8728f149ddbac5a959e83ca8d0edef2d` |
 | Duplicate-cleanup head | `7fe46662141fa39a3b18ae1baba29b2b39f6c330` |
 | Proposed destination | Debian mmdebstrap Salsa project |
@@ -96,13 +97,14 @@ Unit 15 owns the general rewrite operation, transform language, occurrence selec
 - The selected final-only policy passed run `30690541675`: 442 tests, patch validation, compilation, shell syntax, and command-help gates.
 - The inherited matrix passed run `30690583438`: 450 tests, including prefix equivalence, independent filters and immediate rerun, first-peer stopping, and retained duplicate targets.
 - The rejected alias candidate passed a full gate in run `30690434953`; the direct strip control proves its policy attribution is wrong.
+- Complete branch review found a 14-file packet/test fence and no imported-source modification.
 
 ### In progress
 
 - clean expanded matrix after duplicate-discovery repair: run `30691015678`;
 - exact current Salsa `master` fetch and zero-fuzz rebase;
 - controlled-fork creation and final submission identity;
-- complete final diff review and unchanged-head rerun.
+- unchanged-head rerun and current-upstream complete review.
 
 ### Compatibility boundary
 
@@ -120,7 +122,7 @@ The series remains ordered because patch 0002 calls unit 15's `_sed_substitute` 
 
 ## Current disposition
 
-`ACTIVE` — the selected candidate is internally green on focused and inherited gates. Clean expanded rerun, current upstream rebase, controlled fork, and final complete review remain.
+`ACTIVE` — the selected candidate is internally green on focused and inherited gates. Clean expanded rerun, current upstream rebase, controlled fork, and final current-upstream review remain.
 
 ## Next human decision
 
