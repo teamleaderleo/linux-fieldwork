@@ -209,7 +209,9 @@ class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
                 (destination / "peer").stat().st_ino,
             )
 
-    def test_strip_break_preexists_type_exclusion_and_alias_candidate_rejects(self) -> None:
+    def test_strip_break_preexists_type_exclusion_and_stays_outside_type_policy(
+        self,
+    ) -> None:
         archive = self.archive_bytes(
             (
                 ("root/base", tarfile.REGTYPE, "", b"excluded-target\n"),
@@ -223,7 +225,7 @@ class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory(
-            prefix="tarfilter-final-name-false-accept-"
+            prefix="tarfilter-final-name-preexisting-strip-break-"
         ) as td:
             root = pathlib.Path(td)
             predecessor = self.prepare_predecessor(root)
@@ -267,16 +269,19 @@ class TarfilterTypeExcludedFinalNameIdentityTest(unittest.TestCase):
                 "--type-exclude=REGTYPE",
                 "--strip-components=1",
             )
-            self.assertEqual(candidate_result.returncode, 1)
-            self.assertIn(
-                "hard-link target excluded by type filter: "
-                "prefix/peer -> prefix/root/base",
+            self.assertEqual(
+                candidate_result.returncode,
+                0,
                 candidate_result.stderr.decode("utf-8", "replace"),
             )
-            self.assertEqual(self.member_map(candidate_result.stdout), {})
-            self.assert_empty_extract(
-                candidate_result.stdout, root, "candidate-rejected"
+            self.assertEqual(
+                self.member_map(candidate_result.stdout),
+                {"peer": (tarfile.LNKTYPE, "root/base")},
             )
+            candidate_extract, _ = self.extract(
+                candidate_result.stdout, root, "candidate-preexisting-broken"
+            )
+            self.assertNotEqual(candidate_extract.returncode, 0)
 
     def test_genuine_removed_target_remains_rejected(self) -> None:
         archive = self.archive_bytes(
