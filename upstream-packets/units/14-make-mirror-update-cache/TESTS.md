@@ -4,15 +4,17 @@
 
 | Item | Value |
 | --- | --- |
-| Upstream base | `josch/mmdebstrap` `main` `77ec9be5417ee44c96343d2347145585da1b1f94` |
-| Upstream source blob | `make_mirror.sh` `6c4be092edcf23b56b63a3befe238c099c45f590` |
-| Candidate head | `NEEDS BRANCH` |
+| Canonical upstream base | `josch/mmdebstrap` `main` `77ec9be5417ee44c96343d2347145585da1b1f94` |
+| Canonical/base source blob | `make_mirror.sh` `6c4be092edcf23b56b63a3befe238c099c45f590` |
+| Controlled staging base | `teamleaderleo/mmdebstrap` `master` `574048f2a720057b75e56622003932f344dc700a` |
+| Candidate head | `c94132e344f97cee95901623552df6bcde5039bb` |
+| Candidate source blob | `make_mirror.sh` `7d92a29a05ade7f5da397a1a9d03e601092f9465` |
 | Linux Fieldwork branch | `upstream/unit-14-make-mirror-update-cache` |
-| Platform/distribution | retained hosted Linux Fieldwork CI; this pass used the assistant container for patch-carrier arithmetic only |
-| Architecture | hosted runner architecture recorded by the CI service; current local check architecture was not used as product evidence |
-| Shell/runtime | retained matrices: real `/bin/sh`; local patch command: GNU `patch` |
+| Platform/distribution | retained Linux Fieldwork hosted CI plus GitHub-hosted branch builder on `ubuntu-latest` |
+| Architecture | GitHub-hosted runner default architecture; retained component runs use their recorded hosted runner identities |
+| Shell/runtime | real `/bin/sh`; GNU `patch`; GitHub Actions checkout and Git |
 | Privilege boundary | unprivileged disposable files/processes; no root, mount, APT, network mirror, or QEMU operation |
-| Important tool versions | exact hosted run IDs below; local combined-patch SHA-256 below |
+| Important tool versions | exact hosted run IDs and commit/blob identities below |
 
 ## Baseline reproducer
 
@@ -37,7 +39,7 @@ The ownership baseline returns status 0 after worker-only TERM, executes later w
 
 ## Candidate reproducer
 
-### Command
+### Retained dynamic matrix
 
 ```text
 python3 -m unittest -v \
@@ -48,17 +50,26 @@ python3 -m unittest -v \
   tests/test_make_mirror_update_cache_cleanup_signals_rerun.py
 ```
 
+### Controlled source construction
+
+```text
+sh linux-fieldwork/apply-unit-14.sh --check
+sh linux-fieldwork/apply-unit-14.sh --apply
+```
+
+The GitHub branch builder preserved the patch, switched to controlled `master`, verified the exact base blob and patch SHA-256, applied with `patch --fuzz=0 -p1`, ran `/bin/sh -n`, ran `git diff --check`, enforced source ownership assertions, committed only `make_mirror.sh`, and pushed the source branch only after every preceding command succeeded.
+
 ### Expected result
 
 INT/QUIT/TERM return 130/131/143; worker APT cleanup completes once; later work is absent; the parent owns proxy stop/wait; first cleanup-time signal survives later handled signals; ordinary or explicit-signal failure outranks cleanup-time signal; cleanup-time signal outranks cleanup failure; success plus cleanup failure returns 74; immediate reruns return 0.
 
 ### Observed result
 
-- status: all retained candidate cases passed under the exact-head hosted runs;
-- stdout/stderr: focused modules reported successful unittest cases and repository discovery;
-- changed state: APT state removed, one complete cleanup, no later marker;
-- surviving processes/files/resources: no retained worker state or proxy leak in the focused models;
-- artifact or receipt: CI `30624335126` / 842 for PR #286 and CI `30630467076` / 916 for PR #324.
+- component dynamic status: all retained candidate cases passed under exact-head hosted runs;
+- controlled source construction: source branch created at `c94132e344f97cee95901623552df6bcde5039bb`, proving all guarded builder commands before `git push` succeeded;
+- candidate diff: one commit ahead, zero behind controlled `master`; exactly `make_mirror.sh`, 46 additions, 6 deletions;
+- candidate source blob: `7d92a29a05ade7f5da397a1a9d03e601092f9465`;
+- exact-candidate dynamic lifecycle rerun: pending.
 
 ## Matrix
 
@@ -76,17 +87,22 @@ INT/QUIT/TERM return 130/131/143; worker APT cleanup completes once; later work 
 | Explicit TERM, cleanup 74, later INT | later signal can replace first | 143 | `test_make_mirror_update_cache_cleanup_signals_rerun.py` | PR #324 CI 916 |
 | Unsignaled success plus cleanup 74 after patch 2 | regression risk | 74 | rerun module | PR #324 CI 916 |
 | Immediate rerun after cleanup-time signal | retained state can poison rerun | 0 | rerun module | PR #324 CI 916 |
-| Two-patch full-source application | baseline plus two retained patches | zero fuzz; shell syntax passes | focused modules/repository CI | PR #324 CI 916 |
+| Collapsed patch exact-base application | baseline blob `6c4be092...` | zero fuzz, source-only commit | controlled branch builder | candidate `c94132e...` |
+| Shell syntax | baseline syntax valid | candidate syntax valid | `/bin/sh -n make_mirror.sh` | builder prerequisite to push |
+| Ownership source assertion | worker references `PROXYPID` | no `PROXYPID` in `update_cache()` | guarded `sed`/`grep` check | builder prerequisite to push |
+| Complete candidate diff | n/a | one file, 46 additions, 6 deletions | compare controlled `master...source` | reviewed `c94132e...` |
 
 ## Upstream-native gates
 
 | Gate | Exact command | Result | Candidate head |
 | --- | --- | --- | --- |
-| Full-tree patch check | `git apply --check --verbose upstream-packets/units/14-make-mirror-update-cache/patches/0001-update-cache-worker-lifecycle.patch` from upstream checkout | NOT RUN — controlled checkout unavailable in this environment | NEEDS BRANCH |
-| Shell syntax | `/bin/sh -n make_mirror.sh` after combined patch | NOT RUN on the new single carrier; passed for exact two-patch composition in PR #324 | NEEDS BRANCH |
-| Focused native test | select and run the smallest upstream entry point after branch creation | NOT RUN | NEEDS BRANCH |
-| Complete mirror generation | `./make_mirror.sh` | NOT RUN — network/mirror integration and time cost; decide after focused gates | NEEDS BRANCH |
-| Relevant suite | `CMD=./mmdebstrap ./coverage.sh` or selected `coverage.py` case | NOT RUN | NEEDS BRANCH |
+| Full-tree patch check | guarded `patch --dry-run --fuzz=0 -p1` followed by application | PASS | `c94132e344f97cee95901623552df6bcde5039bb` |
+| Shell syntax | `/bin/sh -n make_mirror.sh` | PASS before source branch push | `c94132e344f97cee95901623552df6bcde5039bb` |
+| Diff hygiene | `git diff --check -- make_mirror.sh` | PASS before source branch push | `c94132e344f97cee95901623552df6bcde5039bb` |
+| Complete one-file review | compare controlled `master` to source candidate and inspect commit diff | PASS; expected one-file lifecycle change only | `c94132e344f97cee95901623552df6bcde5039bb` |
+| Focused native test | select the smallest upstream entry point that exercises this shell lifecycle | NOT RUN | `c94132e...` |
+| Complete mirror generation | `./make_mirror.sh` | NOT RUN — network/mirror integration and time cost | `c94132e...` |
+| Relevant suite | `CMD=./mmdebstrap ./coverage.sh` or selected `coverage.py` case | NOT RUN | `c94132e...` |
 
 ## Linux Fieldwork retained gates
 
@@ -96,39 +112,38 @@ INT/QUIT/TERM return 130/131/143; worker APT cleanup completes once; later work 
 | PR #324 exact-head repository CI | run `30630467076` / 916 | PASS; repository discovery plus all five lifecycle modules | head `0906573b434710032f44807bfb5d6bb017a510f6` |
 | PR #324 executable predecessor head | run `30630113839` / 911 | PASS; 303 tests | head `d33871b6c05947384d1c235c653a40b57772d82d` |
 | Combined packet patch digest | `sha256sum 0001-update-cache-worker-lifecycle.patch` | PASS | `980720d262d0f5d4a568be54851e144652ae6d882a8ad0e8aa228c8ffed2ae42` |
-| Combined hunk arithmetic | synthetic exact-position source plus `patch --fuzz=0 --no-backup-if-mismatch -p1` | PASS; both hunks applied at declared lines | local receipt: first new symbol line 156, terminal call line 298 |
-| Current source identity | official upstream main and Debian dgit/current import comparison | MATCH | blob `6c4be092edcf23b56b63a3befe238c099c45f590` |
+| Current/base source identity | canonical upstream, Linux Fieldwork import, and controlled base | MATCH | blob `6c4be092edcf23b56b63a3befe238c099c45f590` |
+| Controlled source candidate identity | source branch commit and file readback | MATCH | head `c94132e...`; blob `7d92a29a...` |
 
 ## Patch application and rebase
 
-- base identity: upstream `main` `77ec9be5417ee44c96343d2347145585da1b1f94`, `make_mirror.sh` blob `6c4be092edcf23b56b63a3befe238c099c45f590`;
-- provenance application: retained patches 0001 and 0002 applied with zero fuzz to the full imported source in PR #324 CI;
-- combined patch application: hunk grammar/count/positions verified locally on an exact-position synthetic carrier; full-tree command remains pending;
-- fuzz/offset result: provenance composition zero fuzz; combined full-tree offset result pending;
-- conflict resolution: none expected because current upstream source blob is identical;
-- complete diff reviewed: component diffs reviewed in PRs #286 and #324; new collapsed one-file diff requires final branch review;
+- canonical base identity: upstream `main` `77ec9be5417ee44c96343d2347145585da1b1f94`, `make_mirror.sh` blob `6c4be092edcf23b56b63a3befe238c099c45f590`;
+- controlled staging base: `teamleaderleo/mmdebstrap` `master` `574048f2a720057b75e56622003932f344dc700a`, same `make_mirror.sh` blob;
+- patch application command: `patch --dry-run --fuzz=0 -p1` then `patch --fuzz=0 -p1` using the fixed packet patch;
+- fuzz/offset result: zero fuzz; candidate commit created only after success;
+- conflict resolution: none;
+- complete diff reviewed: yes, one source file only, expected 46 additions and 6 deletions;
 - active overlap searched: indexed official issue/PR search on 2026-07-31 found no equivalent carrier; direct freshness check remains pending before authorization.
 
 ## Cleanup and rerun
 
-The retained tests use temporary directories, short-lived shell processes, owned proxy models, signal barriers, waits, and event logs. Candidate cases remove APT state, reap owned processes through the correct owner, omit later work, and pass immediate unsignaled reruns. The local synthetic patch check retained only `/tmp/unit14` files during analysis; no process, socket, mount, container, or source checkout survived.
+The retained tests use temporary directories, short-lived shell processes, owned proxy models, signal barriers, waits, and event logs. Candidate cases remove APT state, reap owned processes through the correct owner, omit later work, and pass immediate unsignaled reruns. The controlled branch builder left only the two intentional branches and commits in `teamleaderleo/mmdebstrap`; no test process, socket, mount, container, or generated mirror state was retained.
 
 ## Tests not run
 
-- full-tree application of the new collapsed carrier, due direct DNS failure before repository retrieval;
-- upstream-native focused/integration tests, because no controlled upstream branch exists yet;
-- complete mirror generation, which requires network mirror access and a deliberate integration run;
-- full coverage suite on the collapsed branch;
-- HUP, escalation, hostile descendant, permanently blocked cleanup, and process-group cases, which remain outside this unit.
+- the five retained lifecycle modules have not yet been rerun against exact candidate head `c94132e...` as a source-branch identity gate;
+- no upstream-native focused test currently targets `update_cache()` lifecycle directly;
+- complete mirror generation and full coverage remain unexecuted because they require a deliberate network/mirror integration run;
+- HUP, escalation, hostile descendant, permanently blocked cleanup, and process-group cases remain outside this unit;
+- final canonical Forgejo branch CI remains unavailable until a delivery-compatible fork or route exists.
 
 ## Failure classification
 
-- direct `git clone` and direct `curl` retrieval failed at DNS resolution before source retrieval: environment/tooling failure;
-- `container.download` reached the raw source but rejected `text/x-shellscript` as a disallowed materialization type: tooling/materialization failure;
-- the first local synthetic patch invocation targeted a file named `synthetic` while the patch names `make_mirror.sh`; after renaming the fixture, both hunks applied cleanly: local fixture setup failure, then pass;
+- direct assistant-container Git/DNS retrieval failures remain environment/tooling failures and no longer block controlled source construction;
+- the controlled GitHub repository has downstream history, but the changed file base matched canonical upstream exactly; this is a repository-ancestry caveat, not source drift for unit 14;
 - historical malformed hunk packaging in PR #238 was a patch-carrier defect repaired before canonical composition;
 - historical duplicate unittest discovery in PR #286 was a test import defect repaired before the exact green head.
 
 ## Final evidence statement
 
-The current upstream source is the exact blob exercised by the retained Linux Fieldwork matrices. Those matrices establish the complete two-stage worker lifecycle: ownership separation, terminating signal statuses, once-only cleanup, cleanup-failure precedence, first cleanup-time signal retention, later-signal suppression, state removal, and immediate rerun. This pass created one upstream-facing patch with fixed digest and verified its hunk arithmetic. Full-tree application of that newly collapsed carrier and upstream-native execution remain the first technical gate.
+The canonical upstream source, Linux Fieldwork import, and controlled staging base share the exact `make_mirror.sh` blob exercised by the retained component matrices. The collapsed patch now applies with zero fuzz to that full file and produces a source-only candidate commit with valid shell syntax, clean diff hygiene, correct ownership assertions, and no unrelated changes. The retained dynamic matrices establish the complete worker lifecycle on the canonical component compositions. The first incomplete technical gate is rerunning the relevant dynamic lifecycle evidence against exact candidate head `c94132e...`, followed by the smallest credible upstream-native check.
