@@ -1,0 +1,118 @@
+diff --git a/coverage.txt b/coverage.txt
+--- a/coverage.txt
++++ b/coverage.txt
+@@ -78,6 +78,8 @@ Skip-If:
+ Test: tarfilter-idshift
+ Needs-QEMU: true
+ 
++Test: tarfilter-path-dotfiles
++
+ Test: progress-bars-on-fake-tty
+ 
+ Test: debug-output-on-fake-tty
+diff --git a/tarfilter b/tarfilter
+--- a/tarfilter
++++ b/tarfilter
+@@ -214,13 +214,18 @@ Lastly, shift user id and group id of each entry by the value given by the
+     # same logic as in dpkg/src/filters.c/filter_should_skip()
+     prefix_prog = re.compile(r"^([^*?[\\]*).*")
+ 
++    def normalize_filter_path(name):
++        # Remove only complete archive syntax prefixes. Leading dots that are
++        # part of the first pathname component remain part of its identity.
++        while name.startswith(("./", "/")):
++            name = name[2:] if name.startswith("./") else name[1:]
++        return "/" + name
++
+     def path_filter_should_skip(member):
+         skip = False
+         if not hasattr(args, "pathfilter"):
+             return False
+-        # normalize path and make it absolute by stripping off all leading
+-        # dots and slashes and then prepending a slash
+-        name = "/" + member.name.lstrip("./")
++        name = normalize_filter_path(member.name)
+         for t, r in args.pathfilter:
+             if r.match(name) is not None:
+                 if t == "path_include":
+diff --git a/tests/tarfilter-path-dotfiles b/tests/tarfilter-path-dotfiles
+new file mode 100755
+--- /dev/null
++++ b/tests/tarfilter-path-dotfiles
+@@ -0,0 +1,76 @@
++#!/bin/sh
++set -eu
++export LC_ALL=C.UTF-8
++
++MMTARFILTER=${MMTARFILTER:-}
++[ -n "$MMTARFILTER" ] || [ ! -x /usr/bin/mmtarfilter ] || MMTARFILTER=/usr/bin/mmtarfilter
++[ -n "$MMTARFILTER" ] || [ ! -x ./tarfilter ] || MMTARFILTER=./tarfilter
++[ -n "$MMTARFILTER" ]
++
++python3 - "$MMTARFILTER" <<'PY'
++import io
++import subprocess
++import sys
++import tarfile
++
++mmtarfilter = sys.argv[1]
++members = (
++    ".config",
++    "config",
++    "..name",
++    "...name",
++    "./.config",
++    "./config",
++    "././.config",
++    "././config",
++    "/./.config",
++    "/config",
++    "../config",
++)
++dotfiles = {".config", "./.config", "././.config", "/./.config"}
++plain = {"config", "./config", "././config", "/config"}
++
++
++def fixture():
++    output = io.BytesIO()
++    with tarfile.open(fileobj=output, mode="w", format=tarfile.PAX_FORMAT) as archive:
++        for index, name in enumerate(members):
++            payload = f"member-{index}:{name}\n".encode()
++            member = tarfile.TarInfo(name)
++            member.mode = 0o644
++            member.size = len(payload)
++            archive.addfile(member, io.BytesIO(payload))
++    return output.getvalue()
++
++
++def filtered_names(*options):
++    result = subprocess.run(
++        [sys.executable, mmtarfilter, *options],
++        input=fixture(),
++        stdout=subprocess.PIPE,
++        stderr=subprocess.PIPE,
++        check=False,
++    )
++    if result.returncode:
++        sys.stderr.buffer.write(result.stderr)
++        raise SystemExit(result.returncode)
++    with tarfile.open(fileobj=io.BytesIO(result.stdout), mode="r:*") as archive:
++        return set(archive.getnames())
++
++
++names = filtered_names("--path-exclude=/.config")
++assert dotfiles.isdisjoint(names), names
++assert plain <= names, names
++assert {"..name", "...name", "../config"} <= names, names
++
++names = filtered_names("--path-exclude=/config")
++assert plain.isdisjoint(names), names
++assert dotfiles <= names, names
++assert {"..name", "...name", "../config"} <= names, names
++
++names = filtered_names("--path-exclude=/*", "--path-include=/.config")
++assert names == dotfiles, names
++
++names = filtered_names("--path-exclude=/*", "--path-include=/..name")
++assert names == {"..name"}, names
++PY
