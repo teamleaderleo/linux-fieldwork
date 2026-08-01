@@ -124,7 +124,8 @@ def make_input(path: Path) -> None:
         add_file(tf, "usr2/tool", b"other\n", 0o755, 15, 25, 1_700_000_005)
         add_dir(tf, "opt", 0o705, 16, 26, 1_700_000_006, "unrelated-control")
         add_file(tf, "opt/tool", b"opt\n", 0o755, 17, 27, 1_700_000_007)
-        add_symlink(tf, "linkroot", "usr", 0o777, 1_700_000_008)
+        add_symlink(tf, "linkroot", "usr/bin", 0o777, 1_700_000_008)
+        add_file(tf, "linkroot/tool", b"linked\n", 0o744, 18, 28, 1_700_000_009)
 
 
 def filter_tar(src: Path, dst: Path, pathfilter: list[Rule], predicate) -> None:
@@ -186,6 +187,7 @@ def relation_matrix() -> list[dict[str, object]]:
         ("component boundary", "/usr", "/usr2/tool", False),
         ("unrelated", "/opt", "/usr/bin/tool", False),
         ("leading wildcard conservative", "/opt", "*/tool", True),
+        ("symlink parent exact descendant", "/linkroot", "/linkroot/tool", True),
     ]
     rows = []
     for label, name, glob, expected in cases:
@@ -223,6 +225,30 @@ def main() -> int:
         assert cand_manifest[0]["pax"]["SCHILY.xattr.user.unit21"] == "usr-parent"
         assert cand_manifest[1]["pax"]["SCHILY.xattr.user.unit21"] == "bin-parent"
 
+        symlink_baseline = workdir / "symlink-baseline.tar"
+        symlink_candidate = workdir / "symlink-candidate.tar"
+        symlink_rules = rules(
+            ("path_exclude", "/*"), ("path_include", "/linkroot/tool")
+        )
+        filter_tar(src, symlink_baseline, symlink_rules, baseline_should_skip)
+        filter_tar(src, symlink_candidate, symlink_rules, candidate_should_skip)
+        symlink_base_manifest = archive_manifest(symlink_baseline)
+        symlink_cand_manifest = archive_manifest(symlink_candidate)
+        assert [row["name"] for row in symlink_base_manifest] == ["linkroot/tool"]
+        assert [row["name"] for row in symlink_cand_manifest] == [
+            "linkroot",
+            "linkroot/tool",
+        ]
+        assert symlink_cand_manifest[0]["type"] == "symlink"
+        assert symlink_cand_manifest[0]["linkname"] == "usr/bin"
+        assert symlink_cand_manifest[0]["uid"] == 44
+        assert symlink_cand_manifest[0]["gid"] == 55
+        assert symlink_cand_manifest[0]["mtime"] == 1_700_000_008
+        assert (
+            symlink_cand_manifest[0]["pax"]["SCHILY.xattr.user.unit21"]
+            == "symlink-parent"
+        )
+
         result = {
             "python": os.sys.version.split()[0],
             "baseline": {
@@ -232,6 +258,10 @@ def main() -> int:
             "candidate": {
                 "members": cand_manifest,
                 "extracted_modes": extracted_modes(candidate),
+            },
+            "symlink_case": {
+                "baseline": symlink_base_manifest,
+                "candidate": symlink_cand_manifest,
             },
             "relation_matrix": relation_matrix(),
         }
