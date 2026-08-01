@@ -2,8 +2,10 @@
 
 Status: `DRAFT`  
 Proposed destination: `josch/mmdebstrap` Forgejo pull request  
-Proposed base branch: `main`  
-Candidate branch or patch series: `NEEDS FORK` / `NEEDS BRANCH`; packet patch `patches/0001-tarfilter-transform-metadata.patch`  
+Proposed base branch: `main` at `77ec9be5417ee44c96343d2347145585da1b1f94`  
+Controlled fork: `teamleaderleo/mmdebstrap`  
+Candidate branch: `linux-fieldwork/unit-15-tarfilter-transform-metadata`  
+Candidate head: `505bf81079a3b76c7d56bffa8097c1b5a494898e`  
 External contact authorized: `false`
 
 ## Proposed title
@@ -39,48 +41,74 @@ The transform parser records the delimiter-aware pattern and replacement, case/g
 
 ### Tests
 
-Executed on the exact candidate source with Python 3.13.5 and GNU tar 1.35:
+A project-native regression is included as `tests/tarfilter-transform-metadata` and registered in `coverage.txt`.
 
-- baseline losing controls for ordinary replacement, `g`, stale link targets, stale PAX paths, and numeric predecessor rejection;
-- GNU tar differential replacement matrix;
-- default and uppercase-`S` target-scope matrix;
-- hard-link extraction and inode identity;
-- 120-byte PAX path/linkpath regeneration;
-- numeric, numeric-plus-global, zero, ordering, repeated decimal runs, link-target counting, and non-ASCII rejection;
-- cleanup and immediate rerun with identical receipts.
+Direct execution on Python 3.13.5 and GNU tar 1.35 establishes:
 
-Upstream-native repository tests, formatting, and package gates remain to be executed on the final branch before this draft can become ready.
+- the exact baseline fails with status `1` at the first-replacement assertion;
+- the exact candidate passes twice with status `0`;
+- ordinary/global, case-insensitive, whole-match, escaped-delimiter, default/`S` scope, hard-link extraction, PAX regeneration, numeric selector, and non-ASCII rejection cases pass;
+- Python compile and POSIX shell syntax checks pass;
+- no matching temporary directories survive.
+
+The broader packet-owned matrix produced identical PASS receipts across repeated runs.
+
+Execution through the complete `coverage.py` runner, shellcheck, shfmt, package/build gates, and hosted CI remains before this draft can become ready.
 
 ### Compatibility
 
 The patch keeps the existing Python regular-expression pattern dialect. GNU basic/extended regex translation and broader transform grammar remain outside this change. Unsupported or duplicate retained flags fail explicitly.
 
-## Proposed commits or patch order
+## Current controlled-fork diff
 
-Current default:
+```text
+base and merge base: 77ec9be5417ee44c96343d2347145585da1b1f94
+head: 505bf81079a3b76c7d56bffa8097c1b5a494898e
+ahead: 3
+behind: 0
+coverage.txt                         +2   -0
+tarfilter                          +179  -23
+tests/tarfilter-transform-metadata +250  -0
+```
 
-1. `tarfilter: keep transform targets and PAX paths consistent`
+Current commits:
 
-Possible ordered series after upstream-native review:
+1. `f7833615824ad99023c21a495840d10f64c6401a` — source candidate
+2. `f7337a7d2f33d280c8e5b1576dd729f4d076c13a` — native regression
+3. `505bf81079a3b76c7d56bffa8097c1b5a494898e` — test registration
 
-1. `tarfilter: implement retained substitution and occurrence semantics`
-2. `tarfilter: keep link targets and PAX paths consistent`
+This three-commit internal form preserves exact source/test/registration identities. Final upstream commit organization remains a review decision.
 
 ## Reviewer notes
 
-Please focus on the shared occurrence state for member names and each selected link target, default `rsh` scope, uppercase scope opt-outs, hard-link strip behavior, and PAX authority after logical-name changes.
+Focus review on:
+
+- occurrence counting for the member name and each selected link target;
+- default `rsh` scope and uppercase opt-outs;
+- hard-link target rewriting during component stripping;
+- PAX authority after logical name or link-target changes;
+- whether the current source change should remain one semantic commit.
 
 ## Submission checklist
 
-- [x] Clean patch generated from the exact baseline.
-- [x] Baseline regression loses and candidate passes.
+- [x] Clean source patch generated from the exact baseline.
+- [x] Controlled fork and exact canonical snapshot branch exist.
+- [x] Candidate source branch exists at an exact head.
+- [x] Native test and `coverage.txt` registration are committed.
+- [x] Baseline regression loses and candidate passes directly.
 - [x] Focused GNU tar differential matrix passes repeatedly.
+- [x] Python and POSIX shell syntax pass.
 - [x] Cleanup and immediate rerun pass.
+- [x] Complete three-file fork diff boundary reviewed.
 - [x] Active equivalent work rechecked on 2026-08-01.
-- [ ] Candidate applied and committed in a full current-upstream checkout.
-- [ ] Upstream-native focused tests pass.
-- [ ] Formatting/lint and relevant package gates pass.
-- [ ] Complete final upstream diff reviewed.
-- [ ] Fork and branch exist.
+- [ ] Selected test passes through the complete `coverage.py` runner.
+- [ ] Shellcheck and shfmt pass.
+- [ ] Relevant package/build gates pass.
+- [ ] Hosted CI passes if the controlled fork provides an applicable workflow.
+- [ ] Final upstream commit organization reviewed.
 - [ ] Explicit authorization recorded.
 - [ ] Public reference and exact submitted head recorded after submission.
+
+## Authority note
+
+This is an internal draft. No upstream object has been created or updated.
