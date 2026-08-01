@@ -1,0 +1,24 @@
+Unit: 20 tarfilter dotfile identity
+Date: 2026-08-01
+Patch SHA-256: 2a62ae1ff84c1c613a0db89d1172e7f987164a472df0ea5da0e3b5b9037388c8
+Baseline tarfilter blob: ad776167a8473d5d15dbe22e850f4f6db35cf278
+
+Command:
+patch -p1 -d /tmp/unit20-final-apply -i /tmp/0001-tarfilter-preserve-dotfile-identity.patch
+
+Exit status: 0
+Output:
+patching file coverage.txt
+patching file tarfilter
+patching file tests/tarfilter-path-dotfiles
+
+No fuzz or offset was reported.
+
+Follow-up commands:
+python3 -m py_compile /tmp/unit20-final-apply/tarfilter
+MMTARFILTER=/tmp/unit20-final-apply/tarfilter /tmp/unit20-final-apply/tests/tarfilter-path-dotfiles
+
+Both exited 0.
+Candidate tarfilter SHA-256: fdd55d9a6737bf1b5992da0254b0d6804f2b7f7598a385ed2f5b50f5196991de
+Applied test SHA-256: e9d4fc52860b718a6997c16770b98482c610a7016f0cd369c8da042ed113cc3d
+Apply-output SHA-256: c493e77cf648ac0c7a7bac547be8830df166d1fb040a91f56f1c1dcd49d74bb8
