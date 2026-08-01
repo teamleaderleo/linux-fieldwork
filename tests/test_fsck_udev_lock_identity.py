@@ -15,8 +15,15 @@ class FsckUdevLockIdentityTests(unittest.TestCase):
         text = SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn('fsck -l -t ext4 "$loopdev"', text)
-        self.assertIn('FSCK_PATH="$fake_path"', text)
+        self.assertIn('PATH="$fake_path:/usr/sbin:/usr/bin:/sbin:/bin"', text)
+        self.assertNotIn('FSCK_PATH="$fake_path"', text)
         self.assertIn('lockpath="/run/fsck/$loopname.lock"', text)
+
+        self.assertIn('rotational_original=$(cat "$rotational_path")', text)
+        self.assertIn('mount --bind "$rotational_override" "$rotational_path"', text)
+        self.assertIn('[[ $(cat "$rotational_path") == 1 ]]', text)
+        self.assertIn('umount "$rotational_path"', text)
+
         self.assertIn('flock -sn "$lockpath" true', text)
         self.assertIn('flock -sn "$loopdev" true', text)
         self.assertIn('flock -x 9', text)
