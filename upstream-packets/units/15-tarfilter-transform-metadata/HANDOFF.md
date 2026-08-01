@@ -10,7 +10,8 @@ State: `ACTIVE`
 | --- | --- |
 | Linux Fieldwork branch | `upstream/unit-15-tarfilter-transform-metadata` |
 | Linux Fieldwork packet base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Linux Fieldwork packet commit | the commit adding this bundle; exact SHA is recorded in the unit checkpoint on #397 |
+| Linux Fieldwork packet content commit | `e1939b91da03b173c5ecb66c50e6580f1c13ce44` |
+| Linux Fieldwork branch tip | this handoff-only commit; exact SHA is recorded in the unit checkpoint on #397 |
 | Upstream base repository/branch | `https://gitlab.mister-muffin.de/josch/mmdebstrap`, `main` |
 | Upstream base commit | `77ec9be5417ee44c96343d2347145585da1b1f94` |
 | Upstream tarfilter file commit | prefix `87b9b385b3`, 2024-09-13 |
