@@ -1,0 +1,78 @@
+{
+  "candidate": "unit-21 component-bounded two-direction predicate",
+  "cases": [
+    {
+      "candidate_reincludes": true,
+      "case": "exact include retains top ancestor",
+      "dpkg_reincludes": false,
+      "include": "/usr/bin/tool",
+      "interpretation": "the candidate adds the missing ancestor direction",
+      "literal_prefix": "/usr/bin/tool",
+      "path": "/usr"
+    },
+    {
+      "candidate_reincludes": true,
+      "case": "exact include retains immediate ancestor",
+      "dpkg_reincludes": false,
+      "include": "/usr/bin/tool",
+      "interpretation": "the candidate adds the missing ancestor direction",
+      "literal_prefix": "/usr/bin/tool",
+      "path": "/usr/bin"
+    },
+    {
+      "candidate_reincludes": true,
+      "case": "wildcard prefix retains descendant directory",
+      "dpkg_reincludes": true,
+      "include": "/usr/*/tool",
+      "interpretation": "both keep dpkg's conservative fixed-prefix behavior",
+      "literal_prefix": "/usr",
+      "path": "/usr/bin"
+    },
+    {
+      "candidate_reincludes": true,
+      "case": "leading wildcard retains all candidate parents",
+      "dpkg_reincludes": true,
+      "include": "*/tool",
+      "interpretation": "zero-length prefix remains deliberately conservative",
+      "literal_prefix": "",
+      "path": "/opt"
+    },
+    {
+      "candidate_reincludes": false,
+      "case": "exact include does not alias a sibling name",
+      "dpkg_reincludes": true,
+      "include": "/usr",
+      "interpretation": "component boundaries remove dpkg's plain-prefix over-inclusion",
+      "literal_prefix": "/usr",
+      "path": "/usr2"
+    },
+    {
+      "candidate_reincludes": false,
+      "case": "wildcard prefix does not alias a sibling name",
+      "dpkg_reincludes": true,
+      "include": "/usr/*",
+      "interpretation": "component boundaries remove dpkg's plain-prefix over-inclusion",
+      "literal_prefix": "/usr",
+      "path": "/usr2"
+    },
+    {
+      "candidate_reincludes": true,
+      "case": "exact include keeps descendants below the included path",
+      "dpkg_reincludes": true,
+      "include": "/usr/bin/tool",
+      "interpretation": "both retain descendants conservatively",
+      "literal_prefix": "/usr/bin/tool",
+      "path": "/usr/bin/tool/cache"
+    },
+    {
+      "candidate_reincludes": false,
+      "case": "unrelated path remains excluded",
+      "dpkg_reincludes": false,
+      "include": "/usr/bin/tool",
+      "interpretation": "neither predicate retains unrelated paths",
+      "literal_prefix": "/usr/bin/tool",
+      "path": "/opt"
+    }
+  ],
+  "reference": "guillemj/dpkg main src/main/filters.c blob 4fc1600a5717726faddc2fb556730f217e7f22a2"
+}
