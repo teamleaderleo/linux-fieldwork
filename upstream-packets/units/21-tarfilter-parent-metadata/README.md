@@ -8,7 +8,7 @@ External contact authorized: `false`
 
 ## TL;DR
 
-Current mmdebstrap `tarfilter` drops explicit parent directory and symlink entries when an exclude-all rule is followed by a nested include. The retained candidate stores the original glob beside the compiled matcher and uses component-bounded parent/descendant checks. The exact current `tarfilter` blob fails the focused regression; the patched exact source passes five cases and preserves parent metadata. Full repository application and upstream-native gates remain.
+Current mmdebstrap `tarfilter` drops explicit parent directory and symlink entries when an exclude-all rule is followed by a nested include. The retained candidate stores the original glob beside the compiled matcher and uses component-bounded parent/descendant checks. The exact current `tarfilter` blob fails the focused regression; the patched exact source passes five cases and preserves parent metadata. A source-level dpkg comparison now records the deliberate compatibility boundary. Full repository application and upstream-native gates remain.
 
 ## Accomplished behavior
 
@@ -26,6 +26,7 @@ Extraction tools auto-create omitted parents with default metadata. In the exact
 - conservative parent/descendant relation from the original glob's literal prefix;
 - component-boundary protection for `/usr` and `/usr2`;
 - directory and symlink parent metadata regression;
+- exact dpkg source-model comparison;
 - `coverage.txt` registration.
 
 ### Excluded
@@ -49,6 +50,7 @@ Extraction tools auto-create omitted parents with default metadata. In the exact
 | Candidate source branch | `NEEDS BRANCH` |
 | Patched `tarfilter` Git blob | `a7bdcb73e574aa1720b319b8531f65d10fbd2446` |
 | Candidate test Git blob | `9212cb89dfcb954d84d2f7f8e6557755d59e1986` |
+| dpkg reference file | `guillemj/dpkg main:src/main/filters.c@4fc1600a5717726faddc2fb556730f217e7f22a2` |
 | Linux Fieldwork branch | `upstream/unit-21-tarfilter-parent-metadata` |
 | Linux Fieldwork base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
 | Patch | `patches/0001-tarfilter-retain-parent-metadata.patch` |
@@ -76,8 +78,9 @@ Extraction tools auto-create omitted parents with default metadata. In the exact
 - exact current source blob `ad776…` fails the focused test at the exact-include case and emits only `usr/bin/tool`;
 - candidate source blob `a7bd…` passes exact, wildcard, character-class, component-boundary, and symlink-parent cases;
 - directory metadata survives: `usr` mode `0700`, uid/gid `11/21`, mtime `1700000001`, PAX marker `usr-parent`; `usr/bin` mode `0711`, uid/gid `12/22`, mtime `1700000002`, PAX marker `bin-parent`;
-- symlink metadata survives: link target `usr/bin`, mode `0777`, mtime `1700000008`, and PAX marker `symlink-parent`;
+- symlink metadata survives: link target `usr/bin`, mode `0777`, uid/gid `18/28`, mtime `1700000008`, and PAX marker `symlink-parent`;
 - `python3 -m py_compile tarfilter`, `sh -n tests/tarfilter-parent-metadata`, focused execution, and `git diff --check` pass on the patched exact source;
+- dpkg comparison: wildcard conservatism is preserved, exact ancestry is added, and plain-prefix `/usr`→`/usr2` aliases are rejected;
 - active upstream issue and pull-request listings expose no equivalent parent-metadata work as of 2026-08-01.
 
 ### Pending demonstration
@@ -89,7 +92,7 @@ Extraction tools auto-create omitted parents with default metadata. In the exact
 
 ### Compatibility boundary
 
-Ordinary last-match-wins filtering continues through the compiled regex. The special directory/symlink retention remains conservative, matching dpkg's documented preference for retaining extra parents. Component separators prevent plain string-prefix aliases.
+Ordinary last-match-wins filtering continues through the compiled regex. The special directory/symlink retention keeps dpkg's conservative wildcard policy, adds the exact-ancestor direction missing from dpkg's current one-direction comparison, and uses component separators to reject lexical sibling aliases. The candidate claims compatible intent, not exact predicate parity.
 
 ## Candidate organization
 
