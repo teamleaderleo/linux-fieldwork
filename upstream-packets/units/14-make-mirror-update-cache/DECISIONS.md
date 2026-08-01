@@ -1,182 +1,133 @@
 # Decision log
 
-## 2026-07-31 — select PR #286 and PR #324 as canonical components
+## 2026-07-31 — canonical component carriers
 
-**Decision:** Treat merged PR #286 as the canonical ownership/once-only finalizer component and merged PR #324 as the canonical cleanup-time signal-retention component. PRs #238, #259, #260, #267, and #305 remain historical construction carriers.
+**Decision:** Use merged PR #286 for worker ownership, terminating results, once-only cleanup, and base precedence; use merged PR #324 for first-signal retention through cleanup. Treat PRs #238, #259, #260, #267, and #305 as historical construction carriers.
 
-**Reason:** #286 and #324 are the landed exact-head generations with successful hosted CI, complete reviews, and the final retained test set. Earlier carriers contain stale ancestry, intermediate repairs, or superseded routing.
+**Reason:** #286 and #324 are the landed exact-head generations with successful hosted CI and the final retained test set.
 
-**Evidence:** `SOURCE_MAP.md`; PR #286 CI `30624335126` / 842; PR #324 CI `30630467076` / 916.
+**Evidence:** PR #286 CI `30624335126` / 842; PR #324 CI `30630467076` / 916; `SOURCE_MAP.md`.
 
-**Alternatives considered:**
+**Reopen trigger:** unique source or regression evidence is found outside the canonical components.
 
-- use PR #267 as the canonical first repair;
-- use PR #305 as the cleanup-signal carrier;
-- reconstruct from the original stacked PR #238.
-
-**Consequences:**
-
-- evidence citations use the merged component heads;
-- historical carriers are read for unique failure and packaging history only;
-- no stale branch becomes an upstream base.
-
-**Reopen trigger:** a missing unique source or regression blob is discovered outside #286/#324.
-
-**Authority effect:** Internal routing only; external-contact state remains false.
+**Authority effect:** Internal routing only; external contact remains unauthorized.
 
 ---
 
-## 2026-07-31 — compose the two internal patches into one upstream patch
+## 2026-07-31 — one composed source correction
 
-**Decision:** Submit the complete worker lifecycle as one source patch, while retaining the two internal patches as provenance.
+**Decision:** Collapse the two internal patches into one final source commit while retaining both provenance patches.
 
-**Reason:** Patch 0002 depends on the finalizer introduced by patch 0001 and edits the same source block. Submitting patch 0001 alone would present a known cleanup-time signal gap. One patch lets upstream review the final invariant without accepting an intermediate state.
+**Reason:** The cleanup-time refinement depends on the finalizer introduced by the first repair and edits the same source block. Sending the first repair alone would publish a known intermediate defect.
 
-**Evidence:** `DEEP_DIVE.md`; packet patch `patches/0001-update-cache-worker-lifecycle.patch`; digest `980720d262d0f5d4a568be54851e144652ae6d882a8ad0e8aa228c8ffed2ae42`.
+**Evidence:** packet patch `patches/0001-update-cache-worker-lifecycle.patch`, SHA-256 `980720d262d0f5d4a568be54851e144652ae6d882a8ad0e8aa228c8ffed2ae42`.
 
-**Alternatives considered:**
+**Alternatives considered:** two source commits; first repair only; broad composition with top-level proxy ownership.
 
-- two ordered commits mirroring PR #286 and PR #324;
-- submit only the first ownership repair and defer cleanup-time signals;
-- broaden the patch to top-level proxy lifecycle.
+**Consequences:** The source behavior is reviewed as one invariant. The native regression remains a separate second commit.
 
-**Consequences:**
+**Reopen trigger:** upstream requests a split source sequence.
 
-- the proposed upstream diff touches only `make_mirror.sh`;
-- the finalizer and cleanup-signal policy are reviewed together;
-- the top-level owner work stays in unit 13.
-
-**Reopen trigger:** upstream requests a two-commit review sequence or the collapsed patch cannot apply cleanly while the provenance series does.
-
-**Authority effect:** Draft organization only; external-contact state remains false.
+**Authority effect:** Draft organization only.
 
 ---
 
-## 2026-07-31 — exclude prompt descendant cancellation
+## 2026-07-31 — exclude broader cancellation supervision
 
-**Decision:** Keep issue #263 / PR #264 outside unit 14 and preserve its source-expansion hold.
+**Decision:** Keep issue #263 / PR #264 outside unit 14.
 
-**Reason:** The accepted worker lifecycle eventually reports cancellation and cleans correctly. Prompt PID-only cancellation of unowned foreground descendants requires process-group or supervisor ownership across ordinary commands and pipelines. The retained research found that larger mechanism disproportionate without measured harmful latency or an accepted dependency contract.
+**Reason:** Prompt cancellation of unowned foreground descendants requires broader process-group or supervisor ownership for an unmeasured latency problem. The selected unit fixes false success, wrong-owner cleanup, duplicate cleanup, result replacement, and retained state.
 
-**Evidence:** issue #263 and PR #264 exact head `257d05eb91bc6e5a83e16a38f0c2e255c1792371`.
+**Reopen trigger:** measured harmful APT cancellation latency or an accepted supervisor/group contract.
 
-**Alternatives considered:**
-
-- add `setsid`/group signaling to this patch;
-- supervise every worker child and pipeline stage;
-- rely on caller process-group isolation.
-
-**Consequences:**
-
-- no new dependency or process-group contract enters this unit;
-- this unit claims eventual correct status/cleanup, not prompt descendant termination.
-
-**Reopen trigger:** a real or faithful APT workload demonstrates materially harmful latency, or upstream adopts a supervisor/group contract that lowers the marginal cost.
-
-**Authority effect:** Scope decision only; external-contact state remains false.
+**Authority effect:** Scope only.
 
 ---
 
-## 2026-07-31 — pin current upstream base by commit and blob
+## 2026-08-01 — preserve downstream master
 
-**Decision:** Use canonical upstream `main` commit `77ec9be5417ee44c96343d2347145585da1b1f94` as the initial base and `make_mirror.sh` blob `6c4be092edcf23b56b63a3befe238c099c45f590` as the source identity.
+**Decision:** Leave `teamleaderleo/mmdebstrap` `master` at `574048f2a720057b75e56622003932f344dc700a`. Use dedicated Linux Fieldwork branches.
 
-**Reason:** The official repository page identified that `main` head, while the current source view and Debian dgit source identified the exact blob. The blob matches the Linux Fieldwork import used by the retained tests, so no source rebase edit is required.
+**Reason:** `master` carries independent downstream history. Replacing it would destroy user-owned lineage. Its relevant source blob matched canonical upstream, allowing a guarded staging build while a canonical snapshot was created.
 
-**Evidence:** `SOURCE_MAP.md` and `TESTS.md`.
+**Evidence:** base blob `6c4be092edcf23b56b63a3befe238c099c45f590`; staging source head `c94132e344f97cee95901623552df6bcde5039bb`.
 
-**Alternatives considered:**
+**Alternatives considered:** force-update `master`; treat downstream ancestry as canonical; create another GitHub repository.
 
-- use a Debian release tarball as the base;
-- use the Linux Fieldwork import without confirming upstream head;
-- use a historical component PR base.
+**Consequences:** `master` remains intact. The final candidate uses canonical Forgejo ancestry instead.
 
-**Consequences:**
+**Reopen trigger:** repository owner explicitly repurposes `master` as a pure mirror.
 
-- the candidate starts from a confirmed canonical source identity;
-- a hosted canonical clone can refresh the exact head while retaining the blob discriminator.
-
-**Reopen trigger:** canonical `main` or the `make_mirror.sh` blob changes before final candidate creation.
-
-**Authority effect:** Public read only; no upstream write or contact occurred.
+**Authority effect:** Internal controlled-repository work only.
 
 ---
 
-## 2026-07-31 — choose pull request delivery and keep issue draft as fallback
+## 2026-08-01 — canonical Forgejo history is the candidate base
 
-**Decision:** Prepare one upstream pull request; mark the standalone issue draft `NOT NEEDED` unless contribution practice or maintainer feedback requires issue-first discussion.
+**Decision:** Mirror current Forgejo `main` to `linux-fieldwork/upstream-main-snapshot` and build the candidate directly on it.
 
-**Reason:** The defect, fix, bounded compatibility statement, and deterministic regression evidence fit one reviewable source change. A separate issue would duplicate the same material.
+**Reason:** This removes the staging repository ancestry caveat while preserving the exact public upstream commit graph.
 
-**Evidence:** `UPSTREAM_PR.md` and `UPSTREAM_ISSUE.md`.
+**Evidence:** canonical snapshot `77ec9be5417ee44c96343d2347145585da1b1f94`; canonical sync receipt; source commit `b2a9a09b36fd13f22a024ebf8522ac58543eac28`.
 
-**Alternatives considered:**
+**Consequences:** The final branch is directly comparable to canonical upstream: two commits ahead, zero behind.
 
-- issue-only report;
-- issue followed by pull request;
-- patch email.
+**Reopen trigger:** canonical `main` advances or `make_mirror.sh` changes before submission.
 
-**Consequences:**
-
-- a canonical Forgejo-compatible branch or accepted patch route remains the delivery prerequisite;
-- no public action occurs before explicit authorization.
-
-**Reopen trigger:** upstream contribution guidance requires another delivery method.
-
-**Authority effect:** External-contact state remains false; no submission is authorized.
+**Authority effect:** Read-only canonical clone and controlled-fork writes only.
 
 ---
 
-## 2026-08-01 — preserve downstream master and use dedicated controlled branches
+## 2026-08-01 — require exact-candidate dynamic proof
 
-**Decision:** Leave `teamleaderleo/mmdebstrap` `master` unchanged. Use dedicated Linux Fieldwork branches for the patch carrier, canonical upstream snapshot, and source candidate.
+**Decision:** Adapt the retained Linux Fieldwork matrices to consume the already-patched candidate source and run candidate-facing cases on the exact candidate blob.
 
-**Reason:** The GitHub repository has independent downstream history through commit `574048f2a720057b75e56622003932f344dc700a`. Replacing `master` would erase that lineage. Its `make_mirror.sh` blob is nevertheless byte-identical to the confirmed canonical source, so it was safe for the first guarded source construction while a canonical-history snapshot job was prepared.
+**Reason:** Component CI proved the provenance series; the collapsed candidate required a direct identity gate.
 
-**Evidence:** controlled base blob `6c4be092edcf23b56b63a3befe238c099c45f590`; carrier branch `linux-fieldwork/unit-14-make-mirror-update-cache`; first source candidate `c94132e344f97cee95901623552df6bcde5039bb`.
+**Evidence:** canonical sync receipt; ten cases passed in 3.459 seconds on source blob `7d92a29a05ade7f5da397a1a9d03e601092f9465`.
 
-**Alternatives considered:**
+**Consequences:** Ownership, INT/QUIT/TERM, cleanup-time signals, precedence, state removal, and rerun are tied to the final source commit.
 
-- force-update `master` to canonical upstream;
-- treat downstream repository ancestry as canonical;
-- create a separate GitHub repository.
+**Reopen trigger:** source commit changes or the adapter is shown to select a different mechanism.
 
-**Consequences:**
-
-- user-owned downstream history remains intact;
-- staging and evidence are isolated under explicit branch names;
-- final candidate ancestry must come from a canonical Forgejo clone, not from downstream `master`.
-
-**Reopen trigger:** the repository owner explicitly chooses to repurpose `master` as a pure upstream mirror.
-
-**Authority effect:** Internal controlled-repository work only; external-contact state remains false.
+**Authority effect:** Internal hosted testing only.
 
 ---
 
-## 2026-08-01 — require an exact-candidate dynamic receipt
+## 2026-08-01 — include a project-native regression
 
-**Decision:** Adapt the retained Linux Fieldwork lifecycle modules to consume the already-patched source candidate and execute candidate-facing cases on the exact candidate blob.
+**Decision:** Add `tests/make-mirror-update-cache-worker-lifecycle` and register it in `coverage.txt` as the second candidate commit.
 
-**Reason:** Component CI proved the two provenance patches, while the collapsed source commit needed its own dynamic identity gate. Reusing the tested model logic avoids a second behavioral implementation while excluding predecessor-only cases and obsolete intermediate-source assertions.
+**Reason:** The upstream unit needs a maintained project-side discriminator. The focused test can run without APT, root, QEMU, network, or a complete mirror cache.
 
-**Evidence:** controlled receipt `linux-fieldwork/unit-14-candidate-matrix-receipt.md`; source head `c94132e344f97cee95901623552df6bcde5039bb`; blob `7d92a29a05ade7f5da397a1a9d03e601092f9465`; ten tests passed in 3.464 seconds.
+**Evidence:** native test receipt; candidate head `76728bbb8e084b54261713ba80762cd6f6ada79a`; direct output `make_mirror update_cache worker lifecycle: PASS`.
 
-**Alternatives considered:**
+**Executed gates:** `sh -n`, shellcheck, upstream shfmt options, direct execution, and `git diff --check`.
 
-- rely only on component PR #286/#324 CI;
-- copy the five test modules into the controlled fork;
-- run a complete network mirror build as the first candidate gate.
+**Consequences:** The final candidate contains two commits and three paths. A complete mirror generation remains outside the focused gate.
 
-**Consequences:**
+**Reopen trigger:** upstream requests a different regression location or the full harness contradicts direct execution.
 
-- the collapsed candidate has direct worker-ownership, signal, precedence, cleanup, and rerun evidence;
-- a project-native regression and selected native entry point remain distinct review/package questions;
-- the full mirror build remains optional until the focused native gate is selected.
+**Authority effect:** Internal candidate work only.
 
-**Reopen trigger:** candidate source changes, adapter review finds a semantic mismatch, or a native regression contradicts the retained matrix.
+---
 
-**Authority effect:** Internal hosted testing only; no canonical-upstream contact occurred.
+## 2026-08-01 — canonical delivery remains authorization-bound
+
+**Decision:** Keep GitHub as controlled staging/evidence. Create a Forgejo-compatible fork/branch or use an accepted patch route only after explicit authorization.
+
+**Reason:** A GitHub branch cannot itself become a cross-host Forgejo pull request. The exact candidate is preserved and ready to transfer without further source work.
+
+**Evidence:** `UPSTREAM_PR.md`; candidate head `76728bbb...`.
+
+**Alternatives considered:** open a public Forgejo fork/PR now; submit a public issue; email the patch.
+
+**Consequences:** No upstream-visible write occurs in this pass.
+
+**Reopen trigger:** explicit authorization or project contribution guidance selecting another route.
+
+**Authority effect:** External contact remains false; none occurred.
 
 ## Final disposition
 
-`ACTIVE` on 2026-08-01. The composed source candidate and exact-candidate ten-case lifecycle matrix are complete. The current canonical-history sync job, project-native regression decision, smallest upstream-native gate, final overlap review, canonical delivery route, and explicit authorization remain before `READY FOR AUTHORIZATION`.
+`ACTIVE` on 2026-08-01. Source implementation, canonical rebase, zero-fuzz application, exact-candidate dynamic matrix, project-native regression, cleanup/rerun, complete diff review, and final draft are complete. The classified live overlap receipt is the first incomplete technical routing gate. A clean receipt would leave only explicit authorization and canonical delivery setup.
