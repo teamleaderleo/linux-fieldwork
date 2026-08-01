@@ -10,11 +10,12 @@ External contact authorized: `false`
 - Linux Fieldwork repository: `teamleaderleo/linux-fieldwork`
 - Branch: `upstream/unit-22-tarfilter-regular-type-class`
 - Branch base: `main@6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Exact branch head immediately before this final HANDOFF refresh: `abaec2a076de2ae02505dc5846bb6429dd2f6119`
+- Exact branch head immediately before this HANDOFF refresh: `2bf0060a89ac55db74fe519ae18981dbb63c5582`
 - Current branch head: the commit that updates this file; issue #397 checkpoint records the exact resulting SHA.
+- Internal integration PR: draft PR #410
 - Packet: `upstream-packets/units/22-tarfilter-regular-type-class/`
 
-A commit cannot embed its own SHA. Use the issue checkpoint or `git rev-parse upstream/unit-22-tarfilter-regular-type-class` for the final handoff commit.
+A commit cannot embed its own SHA. Use the issue checkpoint, PR #410 head, or `git rev-parse upstream/unit-22-tarfilter-regular-type-class` for the final handoff commit.
 
 ## Exact upstream and candidate identities
 
@@ -22,45 +23,67 @@ A commit cannot embed its own SHA. Use the issue checkpoint or `git rev-parse up
 - Intended base branch: `main`
 - Exact current upstream head: `77ec9be5417ee44c96343d2347145585da1b1f94`
 - Current upstream defect: `TypeFilterAction` still maps `REGTYPE`/`0` only to `tarfile.REGTYPE`
-- Current relevant source identity: matches imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`, independently recorded by unit 15
+- Current relevant source identity: Linux Fieldwork Git blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`
 - Debian package tag: `debian/1.5.7-3`
 - Debian package resolved commit: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
-- Imported source path: `upstream/mmdebstrap/tarfilter`
-- Imported source blob: `ad776167a8473d5d15dbe22e850f4f6db35cf278`
-- Canonical Linux Fieldwork candidate PR: #77
+- Canonical historical Linux Fieldwork candidate: PR #77
 - Retained candidate head: `e65989feaac9a9cb89c49fe536c26fe9e9ee8cb7`
 - Candidate merge commit: `4b9e24b0b20c1398dcae825310c6b7d0d5c273d0`
-- Exact-head CI: run `30537313944`, success
-- Retained patch: `patches/0001-tarfilter-treat-nul-as-regular.patch`
-- Retained focused regression: `scripts/test_regular_type_class.py`
+- Historical exact-head CI: run `30537313944`, success
+- Source patch: `patches/0001-tarfilter-treat-nul-as-regular.patch`
+- Python-focused packet regression: `scripts/test_regular_type_class.py`
+- Proposed native test: `native/tests/tarfilter-regular-type-class`
+- Proposed native registry stanza: `native/coverage.txt.fragment`
+- Exact-source integration gate: `tests/test_unit22_tarfilter_native_packet.py`
 - Controlled upstream fork: `NEEDS FORK`
 
-## State correction
+## State
 
-The previous `HOLD` disposition was wrong. Missing native-test execution is technical work, and exact current upstream plus adjacent source ownership are now resolved. Unit 22 is `ACTIVE` until the current-upstream native regression, broader gate, cleanup/rerun, and complete-diff review are complete. It becomes `READY FOR AUTHORIZATION` only when those gates leave a human send/hold decision as the sole remaining step.
+Unit 22 is `ACTIVE`. Current upstream, defect presence, selected mechanism, native test location, adjacent ownership, and bounded overlap are resolved. The hosted exact-source run and complete-upstream native execution remain technical work. Human approval is not a blocker and is not requested yet.
 
 ## Completed work
 
-1. Read issue #397, its packet protocol comment, `upstream-packets/README.md`, and `upstream-packets/INDEX.md`.
-2. Confirmed unit 22 had no prior claim, packet, or branch.
-3. Posted the internal claim for unit 22.
-4. Read every linked carrier: issue #76 and comment, PR #77 metadata and review, all three PR changed files, imported source metadata, and imported tarfilter source.
-5. Created the canonical Linux Fieldwork branch and full packet bundle.
-6. Retained the one-line source patch and self-contained archive-level regression.
-7. Recorded exact baseline/candidate/CI evidence and source ownership.
-8. Identified canonical current upstream as `josch/mmdebstrap` `main@77ec9be5417ee44c96343d2347145585da1b1f94`.
-9. Confirmed the current upstream source still carries the defective selector mapping.
-10. Identified the upstream-native individual-test command through `coverage.py`.
-11. Re-read active units 01, 15, and 16. They own separate code paths and create no final-order blocker for unit 22.
-12. Corrected `README.md`, `SOURCE_MAP.md`, `TESTS.md`, `DECISIONS.md`, both upstream drafts, and this handoff from `HOLD` to `ACTIVE` and from Salsa packaging identity to canonical Forgejo upstream identity.
-13. Fixed the upstream issue-draft title typo and replaced stale merge-request terminology/base placeholders.
-14. Attempted source materialization from upstream, Salsa, GitHub, and Linux Fieldwork Git endpoints; DNS resolution failed before checkout.
+1. Read issue #397, its durable packet protocol, project instructions, packet README/INDEX, and every linked unit-22 carrier.
+2. Created the canonical branch and full packet bundle.
+3. Retained the one-line source patch and historical exact-source archive regression.
+4. Identified canonical current upstream as `josch/mmdebstrap` `main@77ec9be5417ee44c96343d2347145585da1b1f94`.
+5. Confirmed current relevant `tarfilter` content matches blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` and still carries the defect.
+6. Corrected the packet from `HOLD` to `ACTIVE` and corrected the destination from Debian Salsa packaging context to canonical Forgejo implementation upstream.
+7. Re-read units 01, 15, and 16 and established that they own separate code paths; no final-order blocker exists for unit 22.
+8. Read upstream `tests/tarfilter-idshift`, `coverage.txt`, `coverage.py`, and `run_null.sh` to identify exact test ownership and execution mechanics.
+9. Added upstream-native test `native/tests/tarfilter-regular-type-class` and exact registration stanza `native/coverage.txt.fragment`.
+10. Added `tests/test_unit22_tarfilter_native_packet.py`, which verifies exact source blob identity, requires baseline failure, applies with GNU patch `--fuzz=0`, and requires two candidate passes.
+11. Opened internal draft PR #410 to obtain exact-head Linux Fieldwork CI. This is internal Fieldwork work, not upstream contact.
+12. Performed a Python 3.13.5 semantics probe: `REGTYPE` is `b"0"`, `AREGTYPE` is `b"\0"`, and both are regular according to `TarInfo.isfile()`.
+13. Verified Python USTAR round-trip preserves both type bytes and payloads distinctly.
+14. Verified GNU tar 1.35 lists and extracts both encodings as ordinary regular files with exact payloads.
+15. Characterized the native shell test against a faithful minimal model: baseline failed with leaked `nul-regular`; candidate passed twice.
+16. Performed a bounded canonical Forgejo issue/pull-request overlap search and found no visible equivalent current work.
+17. Recorded the Git transport DNS limitation separately from product/source conclusions.
+18. Updated `README.md`, `SOURCE_MAP.md`, `DEEP_DIVE.md`, and `TESTS.md` with exact findings and remaining donuts.
 
 ## Latest distinguishing result
 
-On imported/current relevant source blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`, the baseline under `--type-exclude=REGTYPE` removes the `b"0"` member and retains the `b"\0"` member. On exact retained candidate head `e65989feaac9a9cb89c49fe536c26fe9e9ee8cb7`, selectors `REGTYPE` and `0` remove both regular encodings while a directory control remains; `DIRTYPE` remains independent. Linux Fieldwork CI run `30537313944` succeeded on that head. Current upstream `main@77ec9be5417ee44c96343d2347145585da1b1f94` still has the defective mapping.
+The current upstream selector stores only `b"0"`, while both Python 3.13.5 and GNU tar 1.35 classify `b"0"` and `b"\0"` as regular files. The native test fails on the baseline because `nul-regular` survives `--type-exclude=REGTYPE`, then passes twice after the selected mapping expands the class to both bytes. Historical exact-source CI run `30537313944` passed the retained candidate. Draft PR #410 now carries an exact-source integration gate; its latest hosted run is queued, so no new hosted success is claimed yet.
+
+## Current hosted state
+
+- Internal draft PR: #410
+- Workflow: `Linux Fieldwork CI`
+- Latest observed state before this handoff refresh: queued
+- Interpretation: queue presence is not evidence. Fetch the exact current PR head, associated run, jobs, steps, and failure logs before changing the disposition.
 
 ## First incomplete step
+
+Inspect the latest exact-head workflow for PR #410:
+
+1. Resolve the current branch head.
+2. Fetch its `Linux Fieldwork CI` run.
+3. When the `lab-tools` job completes, inspect every step.
+4. On failure, fetch the decoded job log and repair the first owned failure.
+5. On success, record exact run and job IDs in `TESTS.md`, this handoff, PR #410, and issue #397.
+
+## Next safe technical action after hosted CI
 
 Materialize the exact current upstream checkout in an environment with Git access:
 
@@ -73,42 +96,47 @@ git hash-object tarfilter
 git status --short
 ```
 
-Record the exact tarfilter blob and clean status before applying the patch.
+Then:
 
-## Next safe technical action
-
-1. Apply the retained patch with zero fuzz and zero offsets.
-2. Convert `scripts/test_regular_type_class.py` into the current upstream native test owner and add its test name to `coverage.py` where appropriate.
-3. Run the baseline focused test and retain its NUL-member leak.
-4. Run the candidate focused test through the documented native command form:
+1. Copy `native/tests/tarfilter-regular-type-class` to `tests/tarfilter-regular-type-class` and set executable mode.
+2. Add `Test: tarfilter-regular-type-class` to `coverage.txt`.
+3. Apply the source patch with zero fuzz and zero offsets.
+4. Run shellcheck and shfmt through the real `coverage.py` path.
+5. Run the focused candidate test using:
 
 ```sh
-CMD=./mmdebstrap ./coverage.py --dist unstable <unit-22-test-name>
+CMD=./mmdebstrap ./coverage.py --dist unstable tarfilter-regular-type-class
 ```
 
-5. Run the relevant broader tarfilter/project gate.
-6. Clean the checkout and rerun the focused candidate test.
-7. Compose with current adjacent tarfilter candidates for one compatibility run; no final ordering dependency exists.
-8. Review the complete diff and active upstream overlap.
-9. Move directly to `READY FOR AUTHORIZATION` when those technical gates pass.
+6. Run the relevant broader tarfilter/project gate.
+7. Clean the checkout and rerun the focused test immediately.
+8. Compose with adjacent tarfilter candidates for one compatibility run.
+9. Review the complete diff and refresh overlap.
+10. Move directly to `READY FOR AUTHORIZATION` when the technical gates pass.
 
 ## Tests and gates still pending
 
-- exact upstream checkout materialization;
-- clean patch application receipt;
-- mmdebstrap-native focused regression;
-- relevant broader tarfilter/project gate;
+- draft PR #410 exact-head CI completion and raw log review;
+- shellcheck/shfmt acceptance in the upstream runner;
+- complete upstream checkout materialization;
+- zero-fuzz/zero-offset source, test, and registry application;
+- upstream-native focused execution;
+- relevant broader gate;
 - cleanup and immediate rerun;
-- composed adjacent-candidate compatibility run;
-- complete current-upstream diff and overlap review.
+- executable native test mode in the final diff;
+- adjacent-candidate compatibility run;
+- complete final diff and refreshed overlap review.
 
 ## Cleanup state
 
+- Local semantics and GNU tar probes used temporary directories and removed their state.
+- The native shell test owns a temporary directory with an EXIT/HUP/INT/TERM cleanup trap.
+- The Python integration gate uses `TemporaryDirectory` and runs the candidate twice.
 - Failed clone targets contain no successful checkout.
-- No mounts, sockets, containers, package installs, background processes, or credentials were created.
-- GitHub branch and packet files are intentional retained state.
-- No upstream fork, branch, issue, pull request, comment, review, email, or other contact was created.
+- No mounts, sockets, containers, package installations, background processes, or credentials were created.
+- Linux Fieldwork branch, packet files, draft PR #410, and issue checkpoint are intentional retained internal state.
+- No upstream fork, branch, issue, pull request, comment, review, email, or other public contact was created.
 
 ## Authority
 
-Internal Linux Fieldwork work and issue checkpoints are authorized. External contact remains unauthorized. Explicit authorization is required before creating or using an upstream fork for public contribution, opening a pull request, posting an issue/comment/review, or sending email.
+Internal Linux Fieldwork work, draft PRs, tests, review, and issue checkpoints are authorized. External contact remains unauthorized. Explicit authorization is required before creating or using an upstream fork for public contribution, opening an upstream pull request, posting an upstream issue/comment/review, or sending email.
