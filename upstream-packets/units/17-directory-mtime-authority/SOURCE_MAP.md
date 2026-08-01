@@ -16,7 +16,7 @@
 | --- | --- | --- | --- |
 | Issue #380 | run-999 policy owner | 123 directory-only mtime differences | canonical issue |
 | PR #383 | head `169d1d95d58ae362d13aec1f115fb2c0c6c58f16`; merge `2c3aa47067319163ac84512d01454fcfac08da50` | four-policy evidence matrix | canonical evidence |
-| PR #384 | `5e9d64bb0bf19c1476915c23d2f6989a4bf15093` | first pathname candidate | rejected replacement race |
+| PR #384 | `5e9d64bb0bf19c1476915c23d2f6989a4bf15093` | first pathname candidate with access-time repair | rejected replacement race |
 | PR #386 | `c8455f41347b2d113fb111726a9dd29df9f16f1e`; merge `169d1d95d58ae362d13aec1f115fb2c0c6c58f16` | symlink and real-directory identity | component evidence |
 | PR #388 | `4cfc86f3549192c7207b7b3b91de1c7ab319f023` | same-device pruning | component evidence |
 | PR #390 | `efb8ac9ce36b866fc7a5821cf8c5596de7501ba2` | xattr and sparse-source controls | component evidence |
@@ -25,14 +25,23 @@
 | Issue #392 | authority owner | inode identity versus current tree membership | canonical hold issue |
 | PR #394 | `cffc0ce00f57050539a0e11f11e609d13e9ca604`; merge `0ccc162df2fcf4a9a63332eea40bebe88de0f9f3` | authority matrix | canonical authority evidence |
 | PR #393 | `592eeed2bfdc4ce3e73b4693721a197eac491521` | older pathname candidate | retired history |
-| PR #395 | live `74c996394819c3a717d55193d84336c2e06b3b7c`; body names earlier `e700839034a3b1ce3f3ddbfed5cf6d43a4c6987c` | current pathname carrier | held; prose identity stale |
+| PR #395 | live `74c996394819c3a717d55193d84336c2e06b3b7c`; generated merge `a7fa7fe838e499ee52912c7be276cc89cfad4dec` | current pathname carrier | held: atime overwrite, path authority, incomplete dedicated run |
 
-## Packet code and tests
+## Packet code, tests, and review records
 
 | File | Role | Evidence boundary |
 | --- | --- | --- |
 | `scripts/archive_boundary_process_probe.py` | captures ancestry, process group/session, cgroup, zombie state, root references, namespaces, and atomic JSON | Linux `/proc`; evidence only |
 | `scripts/test_archive_boundary_process_probe.py` | parser, live descendant, zombie, and CLI/self-exclusion controls | local synthetic process tree |
+| `LIVE_HEAD_REVIEW.md` | complete nine-file review of PR #395 live head and exact CI classification | internal carrier review only |
+
+## Candidate code ownership
+
+| File or symbol | Current behavior | Review result |
+| --- | --- | --- |
+| PR #395 `normalize_archive_directory_mtimes` | `lstat`, same-device prune, path `utime($mtime, $mtime, path)` | overwrites directory atime and retains path replacement race |
+| PR #389 descriptor helper | opens and timestamps retained directory handle | prevents redirection; operation ownership after out-of-root rename unresolved |
+| packet process probe | observes worker boundary without changing product source | ready for disposable integration |
 
 ## Patch and branch links
 
@@ -40,7 +49,7 @@
 - Controlled upstream fork: `NEEDS FORK`
 - Candidate upstream branch: `NEEDS BRANCH`
 - Current internal candidate carriers: PR #389 and PR #395
-- Packet product patch: absent pending authority selection
+- Packet product patch: absent pending authority and atime selection
 
 ## Operation ownership map
 
@@ -49,9 +58,17 @@
 | setup and package work | mmdebstrap worker and helpers | unchanged | source and issue #392 |
 | hook completion | worker socket protocol | unchanged | current source |
 | directory mtime convergence | GNU tar clamp | unresolved pre-tar normalizer or archive writer | PR #383/#389/#394/#395 |
+| directory access time | current tree/package state | must remain unchanged | PR #384 history and PR #395 review |
 | final archive traversal | GNU tar using pathname root | unchanged in current candidates | current source |
 | boundary observation | absent | packet process probe | packet scripts |
 | authority policy | implicit stable completed tree | explicit after runtime receipts | issue #392 |
+
+## Current execution state
+
+- PR #395 Linux Fieldwork CI `30659899178` / 1099: success.
+- PR #395 dedicated run `30659899105` / 25, job `91253360438`: failed at whole-source sid formatting.
+- Real product-helper metadata step: skipped.
+- Receipt artifact: absent.
 
 ## Overlap and current upstream state
 
