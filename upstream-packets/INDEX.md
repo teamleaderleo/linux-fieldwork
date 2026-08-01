@@ -4,14 +4,14 @@ Canonical initiative: issue #397.
 
 This index maps each contribution unit to its durable packet directory. Issue #397 remains authoritative for priority and scope. The packet directory becomes authoritative for the unit's technical state after it is created.
 
-| Unit | Tranche | Contribution unit | Initial state | Packet directory |
+| Unit | Tranche | Contribution unit | Initial or current state | Packet directory |
 | ---: | ---: | --- | --- | --- |
 | 00 | 0 | mmdebstrap: explicit `TMPDIR` is honored without silent fallback | SENT; record closeout | `units/00-mmdebstrap-explicit-tmpdir/` |
 | 01 | 1 | mmdebstrap tarfilter: GNU basic and extended transform regex compatibility | Near release | `units/01-tarfilter-regex-dialects/` |
 | 02 | 1 | mmdebstrap caching_proxy: complete request, response, and atomic-cache repair | Composed; rebase and package | `units/02-caching-proxy-complete-repair/` |
 | 03 | 1 | mmdebstrap gpgvnoexpkeysig: complete verifier-wrapper lifecycle | Composed; real fixture needed | `units/03-gpgvnoexpkeysig-lifecycle/` |
 | 04 | 1 | mmdebstrap QEMU image builder: atomic publication and terminating signals | Internally complete; upstream extraction needed | `units/04-qemu-image-builder-lifecycle/` |
-| 05 | 1 | mmdebstrap run_qemu.sh: host, guest, signal, and cleanup precedence | Internally complete; upstream extraction needed | `units/05-run-qemu-result-precedence/` |
+| 05 | 1 | mmdebstrap run_qemu.sh: host, guest, signal, and cleanup precedence | HOLD: current Salsa reconciliation and upstream-native QEMU gate | `units/05-run-qemu-result-precedence/` |
 | 06 | 2 | mmdebstrap chrootless maintainer-script boundary hardening | Composition or justified split needed | `units/06-chrootless-maintainer-boundary/` |
 | 07 | 2 | mmdebstrap file-mirror-automount: setup and cleanup confinement | Focused candidate; current rebase needed | `units/07-file-mirror-confinement/` |
 | 08 | 2 | mmdebstrap package tests: current-sid phase-correct execution | Compose product test corrections | `units/08-current-sid-package-tests/` |
