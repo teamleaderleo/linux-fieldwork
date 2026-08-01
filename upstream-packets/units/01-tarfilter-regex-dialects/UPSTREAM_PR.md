@@ -8,75 +8,70 @@ tarfilter: honor basic and extended transform regex dialects
 
 ## Summary
 
-`tarfilter --transform` now interprets the characterized GNU basic-regex spelling by default and the characterized extended spelling when `x` is present. Patterns are translated or rejected before Python compilation, preventing silent Python-specific rename behavior.
+`tarfilter --transform` now uses the characterized GNU basic-regex spelling by default and extended spelling when `x` is present. The parser translates the supported subset before Python compilation and rejects unresolved forms before archive output.
 
 ## Changes
 
-- select GNU basic syntax by default and extended syntax with `x`;
-- translate the executed operator, group, alternation, interval, backreference, and contextual-anchor subset into Python spelling;
-- preserve user capture numbering while normalizing the executed repeated-quantifier cases;
-- reject Python-only active `(?...)` extensions before archive processing;
-- preserve escaped-parenthesis and bracket-expression neighbors of the active-`(?` guard;
+- add explicit basic/extended transform dialect selection;
+- translate operators, groups, alternation, intervals, backreferences, and contextual anchors;
+- preserve capture numbering while normalizing the executed nested-quantifier forms;
+- reject active Python-only `(?...)` extensions;
+- preserve escaped-parenthesis and bracket-expression neighbors of that guard;
 - reject malformed active intervals and proven-invalid consecutive basic intervals;
-- treat an unmatched extended closing parenthesis as a literal when no group is open;
-- retain composition with numeric occurrence selectors and member, hard-link, and symlink target scopes;
-- add direct GNU tar differential regressions under `LC_ALL=C`.
+- treat unmatched extended `)` as literal when no group is open;
+- compose with replacement, target-scope, PAX, and numeric-occurrence behavior;
+- add direct GNU tar differential coverage.
 
 ## Why
 
-The previous implementation passed transform patterns directly to Python `re`. GNU tar uses basic regular expressions by default, so punctuation such as `+`, `?`, `|`, parentheses, and interval braces can have the opposite meaning. The command could succeed while emitting different archive paths.
+The previous source passed GNU-style transform patterns directly to Python `re`. For member `aaa`, default expression `s/a+/b/` therefore produced `b`; GNU tar basic mode leaves `aaa` unchanged because `+` is literal. Similar silent differences affect grouping, alternation, intervals, anchors, and link targets.
 
-For example, default expression `s/a+/b/` on member `aaa` produced `b` through Python, while GNU tar leaves `aaa` unchanged because `+` is literal in basic mode.
+## Candidate series
+
+1. transform metadata/occurrence prerequisite;
+2. regenerated regex dialect patch.
+
+The exact current internal candidate is built from source blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` and produces blob `ca8e656c036172230c796a8a12cb17f262108c39`.
+
+The historical regex patch was regenerated because its old context applied two hunks with offsets and failed the final parser hunk after the clean prerequisite. The retained series applies with zero fuzz and no offsets.
+
+## Validation completed
+
+Environment:
+
+```text
+Python 3.13.5
+GNU tar 1.35
+LC_ALL=C
+```
+
+Results:
+
+- exact base, prerequisite, and candidate blobs verified;
+- both patches applied with `patch --fuzz=0`, zero offsets;
+- Python compilation passed;
+- baseline and prerequisite mismatch controls passed;
+- 41 candidate/GNU successful comparisons passed;
+- two numeric-occurrence/link-scope comparisons passed;
+- 11 shared rejection comparisons passed;
+- three explicit unsupported-POSIX boundary comparisons passed;
+- a freshly materialized representative gate passed twice with an identical digest;
+- temporary source and archive state was removed.
 
 ## Compatibility boundary
 
-This merge request covers the executed GNU tar 1.35 subset under `LC_ALL=C`. Unsupported POSIX bracket constructs, unresolved alphabetic escapes, expression lists, persistent flags, replacement case conversion, locale-sensitive matching, complete diagnostic parity, and regex resource policy remain outside the claim and fail early where relevant.
+This change covers the executed GNU tar 1.35 subset under `LC_ALL=C`. POSIX classes, collating/equivalence forms, locale-sensitive matching, GNU alphabetic escapes, expression lists, persistent flags, replacement case conversion, full diagnostics, and regex resource policy remain outside the claim.
 
-## Tests
+## Preparation gates remaining
 
-The focused matrix compares candidate archive snapshots directly with GNU tar and covers:
-
-- basic/extended operator reversal;
-- captures, backreferences, and contextual anchors;
-- ordinary bracket expressions and early rejection of unresolved POSIX bracket forms;
-- numeric occurrence selection;
-- member, hard-link, and symlink target scopes;
-- branch-leading basic `*` and literal `\0`;
-- nested simple and interval quantifiers;
-- Python-only special groups;
-- accepted guard neighbors `s/\(?/X/x`, `s/[(?]/X/x`, and `s/\(/X/x`;
-- malformed active intervals;
-- unmatched extended closing parentheses;
-- cleanup and immediate rerun.
-
-Historical internal receipts:
-
-- repaired grammar head `55d20a4cc08c93b34961c679bdb73458fea4c408` passed Linux Fieldwork hosted run `30581672669` / job `625`;
-- proof head `bb0a79dec47958c6b865d4b382a44baff17ab736` passed run `30582215292` / 634, direct inherited tests twice, focused current-main tests 15/15, and full regex discovery 38/38.
-
-The final merge request must replace these historical receipts with the exact current-Salsa base/head and fresh current-source results.
-
-## Upstream-native execution plan
-
-The current published project runner stages local `./tarfilter` into `shared/tarfilter`. After rebasing, run the exact transform-related names selected from current `coverage.txt` and `tests/` through:
-
-```sh
-CMD=./mmdebstrap ./coverage.py --dist unstable TEST-NAME
-```
-
-Then run the appropriate broader project suite, with `./make_mirror.sh` preparation when the current test instructions require it. Record exact commands, environment, exit statuses, cleanup, and immediate rerun.
-
-## Current preparation gates
-
-- [ ] resolve exact current canonical Salsa `master` and `tarfilter` blob;
-- [ ] rebase or regenerate without fuzz or offsets;
-- [ ] record exact candidate head and complete diff;
-- [ ] run focused GNU differential matrix on that head;
-- [ ] run current upstream-native focused and broader entry points;
-- [ ] clean generated state and rerun;
-- [ ] search exact live Salsa issues and merge requests for equivalent work;
-- [ ] obtain explicit authorization before creating or sending this merge request.
+- [ ] port or select upstream-native transform tests;
+- [ ] run focused native tests through current `coverage.py`;
+- [ ] run the appropriate broader native gate;
+- [ ] compose selected independent tarfilter units and review the combined diff;
+- [ ] resolve exact canonical Salsa head and live issue/MR overlap;
+- [ ] create the candidate branch and compare URL;
+- [ ] obtain explicit authorization before any upstream write.
 
 ## Authority
 
-Internal draft only. No Salsa fork, branch, merge request, issue, comment, review, or email has been created by this unit.
+Internal draft only. No Salsa issue, merge request, branch, comment, review, email, or mailing-list post has been created by this unit.
