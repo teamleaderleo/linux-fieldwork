@@ -1,0 +1,52 @@
+Unit 21 exact-source validation
+Date: 2026-08-01 +08
+
+Canonical upstream main: 77ec9be5417ee44c96343d2347145585da1b1f94
+Current tarfilter Git blob: ad776167a8473d5d15dbe22e850f4f6db35cf278
+Reconstructed local tarfilter Git blob: ad776167a8473d5d15dbe22e850f4f6db35cf278
+
+Baseline focused test:
+  status: 1
+  first failure:
+    AssertionError: (['usr/bin/tool'], ['usr', 'usr/bin', 'usr/bin/tool'])
+
+Patch:
+  path: patches/0001-tarfilter-retain-parent-metadata.patch
+  SHA-256: 8bdd156eb375114c3f3be80c4433a06f6ac8a6d8e189023a02d39774d80c2f74
+
+Patch application evidence:
+  tarfilter hunk: exact current blob, zero offset
+  test: new executable file
+  coverage.txt context: exact public lines matched
+  local apply fixture result:
+    Checking patch coverage.txt...
+    Hunk #1 succeeded at 9 (offset -69 lines).
+    Checking patch tarfilter...
+    Checking patch tests/tarfilter-parent-metadata...
+  Interpretation: the offset comes from a local fixture containing only the
+  exact coverage registration window at line 9. Full coverage.txt application
+  remains pending.
+
+Candidate:
+  tarfilter Git blob: a7bdcb73e574aa1720b319b8531f65d10fbd2446
+  tarfilter SHA-256: 3554e3f18e830ece9a1bd9822e2f6d17bfc6b2a7468b865128fe7d93d715059d
+  test Git blob: 9212cb89dfcb954d84d2f7f8e6557755d59e1986
+  focused five-case status: 0
+  python3 -m py_compile tarfilter: PASS
+  sh -n tests/tarfilter-parent-metadata: PASS
+  git diff --check: PASS
+
+Retained local matrix:
+  path: artifacts/local-matrix.json
+  SHA-256: f061350cf1e975dadad5e6e812ad0219cf664bfbfce6d4963e7459a45873a3b1
+  baseline extracted modes: usr=0755, usr/bin=0755
+  candidate extracted modes: usr=0700, usr/bin=0711
+  symlink candidate: linkroot -> usr/bin; mode 0777; uid/gid 44/55;
+    mtime 1700000008; PAX marker symlink-parent
+
+Pending first gate:
+  full canonical checkout application at 77ec9be5417ee44c96343d2347145585da1b1f94
+  CMD=./mmdebstrap ./coverage.py tarfilter-parent-metadata
+
+External contact authorized: false
+External contact occurred: false
