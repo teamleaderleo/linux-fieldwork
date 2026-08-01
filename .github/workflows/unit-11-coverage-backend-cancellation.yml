@@ -9,6 +9,12 @@ on:
       - "upstream/mmdebstrap/run_null.sh"
       - "upstream-packets/units/11-coverage-backend-cancellation/**"
       - ".github/workflows/unit-11-coverage-backend-cancellation.yml"
+  pull_request:
+    paths:
+      - "upstream/mmdebstrap/coverage.py"
+      - "upstream/mmdebstrap/run_null.sh"
+      - "upstream-packets/units/11-coverage-backend-cancellation/**"
+      - ".github/workflows/unit-11-coverage-backend-cancellation.yml"
   workflow_dispatch:
 
 permissions:
