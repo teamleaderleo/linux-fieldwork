@@ -6,27 +6,24 @@ import tarfile
 import tempfile
 import unittest
 
-from tests.test_tarfilter_type_excluded_final_name_identity import (
-    TarfilterTypeExcludedFinalNameIdentityTest as FinalIdentityTest,
-)
+from tests import test_tarfilter_type_excluded_final_name_identity as final_identity_tests
 
 
 class TarfilterTypeExcludedInheritedMatrixTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        FinalIdentityTest.setUpClass()
+        final_identity_tests.TarfilterTypeExcludedFinalNameIdentityTest.setUpClass()
 
     @staticmethod
-    def helper() -> FinalIdentityTest:
-        return FinalIdentityTest(methodName="runTest")
+    def helper():
+        return final_identity_tests.TarfilterTypeExcludedFinalNameIdentityTest(
+            methodName="runTest"
+        )
 
-    def prepare_candidate(
-        self, root: pathlib.Path
-    ) -> tuple[FinalIdentityTest, pathlib.Path]:
+    def prepare_candidate(self, root: pathlib.Path):
         helper = self.helper()
         helper.prepare_predecessor(root)
-        source = helper.apply_candidate(root / "candidate")
-        return helper, source
+        return helper, helper.apply_candidate(root / "candidate")
 
     def test_leading_prefix_equivalence_and_distinct_dot_prefix(self) -> None:
         equivalent_targets = (
@@ -37,22 +34,14 @@ class TarfilterTypeExcludedInheritedMatrixTest(unittest.TestCase):
             ".//root/base",
             "//root/base",
         )
-        with tempfile.TemporaryDirectory(
-            prefix="tarfilter-unit16-prefixes-"
-        ) as td:
+        with tempfile.TemporaryDirectory(prefix="tarfilter-unit16-prefixes-") as td:
             root = pathlib.Path(td)
             helper, candidate = self.prepare_candidate(root)
-
             for index, target in enumerate(equivalent_targets):
                 with self.subTest(target=target):
                     archive = helper.archive_bytes(
                         (
-                            (
-                                "root/base",
-                                tarfile.REGTYPE,
-                                "",
-                                b"prefix-target\n",
-                            ),
+                            ("root/base", tarfile.REGTYPE, "", b"prefix-target\n"),
                             ("root/peer", tarfile.LNKTYPE, target, b""),
                         )
                     )
@@ -66,7 +55,6 @@ class TarfilterTypeExcludedInheritedMatrixTest(unittest.TestCase):
                         (destination / "root/peer").read_bytes(),
                         b"prefix-target\n",
                     )
-
                     rejected = helper.run_filter(
                         candidate, archive, "--type-exclude=REGTYPE"
                     )
@@ -79,12 +67,7 @@ class TarfilterTypeExcludedInheritedMatrixTest(unittest.TestCase):
 
             distinct = helper.archive_bytes(
                 (
-                    (
-                        "root/base",
-                        tarfile.REGTYPE,
-                        "",
-                        b"distinct-target\n",
-                    ),
+                    ("root/base", tarfile.REGTYPE, "", b"distinct-target\n"),
                     (
                         "root/peer",
                         tarfile.LNKTYPE,
@@ -95,7 +78,6 @@ class TarfilterTypeExcludedInheritedMatrixTest(unittest.TestCase):
             )
             direct, _ = helper.extract(distinct, root, "direct-distinct")
             self.assertNotEqual(direct.returncode, 0)
-
             filtered = helper.run_filter(
                 candidate, distinct, "--type-exclude=REGTYPE"
             )
@@ -121,7 +103,6 @@ class TarfilterTypeExcludedInheritedMatrixTest(unittest.TestCase):
         ) as td:
             root = pathlib.Path(td)
             helper, candidate = self.prepare_candidate(root)
-
             for label in ("first", "rerun"):
                 result = helper.run_filter(
                     candidate,
@@ -138,9 +119,7 @@ class TarfilterTypeExcludedInheritedMatrixTest(unittest.TestCase):
                     helper.member_map(result.stdout),
                     {"base": (tarfile.REGTYPE, "")},
                 )
-                extracted, destination = helper.extract(
-                    result.stdout, root, label
-                )
+                extracted, destination = helper.extract(result.stdout, root, label)
                 self.assertEqual(
                     extracted.returncode,
                     0,
@@ -328,7 +307,6 @@ class TarfilterTypeExcludedInheritedMatrixTest(unittest.TestCase):
         ) as td:
             root = pathlib.Path(td)
             helper, candidate = self.prepare_candidate(root)
-
             direct = helper.run_filter(
                 candidate,
                 archive,
