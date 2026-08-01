@@ -15,6 +15,9 @@ permissions:
   actions: read
   contents: read
 
+env:
+  PINNED_SYSTEMD: 6a863b4dc31adc49fdfdd5deba32ed1b115adda3
+
 jobs:
   source-proof:
     runs-on: ubuntu-24.04
@@ -27,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: systemd/systemd
-          ref: 6d7a2ec6ba21184cac1cfd39fe50d0def23220f2
+          ref: ${{ env.PINNED_SYSTEMD }}
           path: upstream-systemd
           fetch-depth: 1
 
@@ -41,11 +44,11 @@ jobs:
             upstream-systemd \
             --output evidence/source-proof.json
 
-      - name: Verify regression applies to the pinned integration test
+      - name: Verify retained regression patch
         run: |
           set -euo pipefail
           patch_file="$GITHUB_WORKSPACE/investigations/systemd-oomd-reporter-collision/0001-test-preserve-system-registration-across-user-reload.patch"
-          git -C upstream-systemd apply --check "$patch_file"
+          git -C upstream-systemd apply --check --whitespace=error-all "$patch_file"
           git -C upstream-systemd apply "$patch_file"
           bash -n upstream-systemd/test/units/TEST-55-OOMD.sh
           grep -F 'testcase_user_manager_reload_preserves_system_oomd_registration()' \
@@ -73,7 +76,7 @@ jobs:
               stdout=subprocess.PIPE,
           ).stdout.strip()
           record = {
-              "schema_version": 1,
+              "schema_version": 2,
               "linux_fieldwork_head": os.environ["GITHUB_SHA"],
               "systemd_head": upstream,
               "run_id": os.environ["GITHUB_RUN_ID"],
@@ -81,6 +84,8 @@ jobs:
               "source_proof": "source-proof.json",
               "regression_diff": "regression.diff",
               "runtime_vm_executed": False,
+              "controlled_fork_pr": "teamleaderleo/systemd#1",
+              "controlled_fork_branch": "linux-fieldwork/oomd-reporter-collision-current-main",
               "authority": "internal Linux Fieldwork investigation; no upstream contact",
           }
           pathlib.Path("evidence/receipt.json").write_text(
@@ -124,11 +129,16 @@ jobs:
           receipt = json.loads(pathlib.Path("evidence/receipt.json").read_text(encoding="utf-8"))
           diff = pathlib.Path("evidence/regression.diff").read_text(encoding="utf-8")
 
-          require(source.get("schema_version") == 1, "unsupported source-proof schema")
+          require(source.get("schema_version") == 2, "unsupported source-proof schema")
           require(
               source.get("systemd_revision")
-              == "6d7a2ec6ba21184cac1cfd39fe50d0def23220f2",
+              == "6a863b4dc31adc49fdfdd5deba32ed1b115adda3",
               "source proof used an unexpected systemd revision",
+          )
+          require(
+              source.get("source_blobs", {}).get("test")
+              == "43937c6ec7877df23f66ccd3827a1b6f154943ff",
+              "source proof used an unexpected TEST-55-OOMD blob",
           )
           chain = source.get("demonstrated_source_chain", {})
           required = {
@@ -147,7 +157,7 @@ jobs:
           )
           require(
               receipt.get("systemd_head")
-              == "6d7a2ec6ba21184cac1cfd39fe50d0def23220f2",
+              == "6a863b4dc31adc49fdfdd5deba32ed1b115adda3",
               "receipt does not match the pinned systemd head",
           )
           require(receipt.get("run_id") == os.environ["GITHUB_RUN_ID"], "run_id mismatch")
@@ -155,7 +165,7 @@ jobs:
               receipt.get("run_attempt") == os.environ["GITHUB_RUN_ATTEMPT"],
               "run_attempt mismatch",
           )
-          require(receipt.get("runtime_vm_executed") is False, "receipt overclaims VM execution")
+          require(receipt.get("runtime_vm_executed") is False, "source receipt overclaims VM execution")
           require(
               "testcase_user_manager_reload_preserves_system_oomd_registration" in diff,
               "retained regression is absent from diff evidence",
