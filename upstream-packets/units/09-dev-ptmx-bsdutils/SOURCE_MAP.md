@@ -1,91 +1,92 @@
 # Source map
 
-## Canonical upstream source
+## Canonical ownership
 
 | Role | Identity |
 | --- | --- |
-| Canonical repository | `josch/mmdebstrap` on `gitlab.mister-muffin.de` |
-| Intended base branch | `main` |
-| Advertised base head | `77ec9be5417ee44c96343d2347145585da1b1f94` |
+| Repository | `josch/mmdebstrap` on Muffin Forgejo |
+| Stable branch inspected | `main` at `77ec9be5417ee44c96343d2347145585da1b1f94` |
+| Development branch inspected | `develop` at `6e1e572bc49456daab7fd1274b1f3b8ec4a1c248` |
 | Owning file | `tests/dev-ptmx` |
-| Owning line | generated-root `--include=` declaration |
+| Baseline blob on `main` | `ca1cde040f945fe871f904ef6a56e040b6a5c9ea` |
+| Corrected blob on `develop` | `258a7f9579b2a2b91b6758952851296b44197ae0` |
+| Owning commit | `c75b58e3c88b1f49626b9ee073e9e9688d38922c` |
+| Commit subject | `make_mirror.sh,tests/dev-ptmx: explicitly install bsdutils for script utility` |
+| Author date | `2025-11-16T00:04:44+01:00` |
+| Corrected tag | `1.5.7+develop` |
 | Command used in root | `/usr/bin/script` |
 | Provider | Debian package `bsdutils` |
-| Final delivery | Canonical Forgejo fork and pull request after authorization |
+| Delivery disposition | already implemented; no new submission |
 
-## Controlled GitHub implementation carrier
+Canonical branch distinction:
+
+```text
+main:    --include=gcc,libc6-dev,python3,passwd
+develop: --include=gcc,libc6-dev,python3,passwd,bsdutils
+```
+
+## Read-only canonical audit
+
+| Role | Identity |
+| --- | --- |
+| Linux Fieldwork audit PR | `#411` |
+| Audit branch | `investigation/mmdebstrap-canonical-audit-unit09` |
+| Audit carrier head | `8c8b8a1753881b86f1d5628be659a98fbcc02c6f` |
+| Workflow run | `30704384974` |
+| Job | `91380861751` |
+| Artifact | `8819850852` |
+| Artifact digest | `sha256:0504ab41ec727ffb87c5f803a6dc0611534ce0df0c0eadc2587a998808de9c2b` |
+| Durable receipt | `artifacts/CANONICAL-FORGEJO-AUDIT.md` |
+
+The audit used mirror clones and inspected all advertised refs and full path history. Broad issue and mailing-list term counts were noisy; canonical Git history supplied the decisive exact successor.
+
+## Controlled downstream implementation carrier
 
 | Role | Identity |
 | --- | --- |
 | Repository | `teamleaderleo/mmdebstrap` |
-| Provenance | GitHub fork of `deepin-community/mmdebstrap` |
-| Downstream base branch | `master` |
-| Downstream base head | `574048f2a720057b75e56622003932f344dc700a` |
-| Base commit subject | `feat: update mmdebstrap to 1.5.7-3` |
-| Base source blob | `tests/dev-ptmx` at `ca1cde040f945fe871f904ef6a56e040b6a5c9ea` |
+| Provenance | fork of `deepin-community/mmdebstrap` |
+| Downstream base | `master` at `574048f2a720057b75e56622003932f344dc700a` |
+| Base generation | Debian `mmdebstrap 1.5.7-3` |
+| Base blob | `ca1cde040f945fe871f904ef6a56e040b6a5c9ea` |
 | Candidate branch | `linux-fieldwork/unit-09-dev-ptmx-bsdutils` |
 | Candidate head | `43082a6bc959e2d7cefae48f52e045cc90869287` |
-| Candidate blob | `tests/dev-ptmx` at `fa93b4b845ff4927a72f258364bd920e8c7dc573` |
-| Candidate compare | one commit; one file; one insertion; one deletion |
-| Pull request | none; branch only |
+| Candidate blob | `fa93b4b845ff4927a72f258364bd920e8c7dc573` |
+| Compare | one commit; one file; one insertion; one deletion |
+| Pull request | none |
+| Final role | historical execution evidence only |
 
-This carrier is suitable for the Debian `1.5.7-3` package-source case. It is not canonical mmdebstrap ancestry and cannot prove inclusion of later Forgejo or mailing-list-carried patches.
+The downstream fork omitted later canonical `develop` history. Its candidate placed `bsdutils` first; canonical appends it. The package set is equivalent, and canonical ordering owns the final source.
 
-## GitHub mirror survey
-
-The accessible GitHub repositories named `mmdebstrap` do not contain canonical Forgejo commit `77ec9be5417ee44c96343d2347145585da1b1f94`.
-
-| Repository | Newest inspected identity | `tests/dev-ptmx` result |
-| --- | --- | --- |
-| `deepin-community/mmdebstrap` | `574048f2a720057b75e56622003932f344dc700a`, downstream `1.5.7-3` import | blob `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`; omits `bsdutils` |
-| `teamleaderleo/mmdebstrap` | controlled fork of the same Deepin head | baseline blob `ca1cde...`; candidate blob `fa93b4...` |
-| `RubisetCie/mmdebstrap` | two local commits after the same Deepin base, latest `453ed7e65ccea6d5b0ac19c7ca617fab1fd4ce39` | blob still `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`; omits `bsdutils` |
-| `Ranger-qyf/mmdebstrap` | one ZIP import from 2024 | stale independent import |
-| `openkylin/mmdebstrap` | one initial commit from 2023 | stale independent import |
-
-The Rubiset fork demonstrates that a newer GitHub timestamp can represent local divergence instead of canonical freshness. None of these repositories resolves the mailing-list or Forgejo-history gate.
-
-## Linux Fieldwork source and candidate
+## Linux Fieldwork packet
 
 | Role | Path or identity |
 | --- | --- |
-| Linux Fieldwork branch | `upstream/unit-09-dev-ptmx-bsdutils` |
-| Internal validation PR | draft `#402` |
-| Focused sid execution PR | draft `#403` |
+| Branch | `upstream/unit-09-dev-ptmx-bsdutils` |
+| Packet | `upstream-packets/units/09-dev-ptmx-bsdutils/` |
 | Imported baseline | `upstream/mmdebstrap/tests/dev-ptmx` |
 | Imported blob | `ca1cde040f945fe871f904ef6a56e040b6a5c9ea` |
-| Existing internal patch | `investigations/mmdebstrap-dev-ptmx-bsdutils/0001-include-bsdutils.patch` |
-| Upstream-path packet patch | `patches/0001-tests-include-bsdutils-for-dev-ptmx.patch` |
+| Retained upstream-path patch | `patches/0001-tests-include-bsdutils-for-dev-ptmx.patch` |
 | Historical evidence | `investigations/mmdebstrap-dev-ptmx-bsdutils/debci-72574145-summary.json` |
 | Original regression | `tests/test_mmdebstrap_dev_ptmx_dependency.py` |
-| Packet/fork regression | `tests/test_upstream_packet_unit_09_dev_ptmx_bsdutils.py` |
-| Reusable lesson | `notes/debian/tests-must-declare-command-providers-not-essential-set-assumptions.md` |
+| Packet regression | `tests/test_upstream_packet_unit_09_dev_ptmx_bsdutils.py` |
+| Dynamic receipt | `artifacts/CURRENT-SID-DOUBLE-PASS.md` |
+| Canonical receipt | `artifacts/CANONICAL-FORGEJO-AUDIT.md` |
 
-## Carrier chain read
+## Carrier chain
 
-- Issue `#397`: canonical unit boundary and packet protocol.
-- Issue `#53`: central investigation, recovered run identity, owner, and separated follow-on defects.
-- PR `#82`: disposable immutable Debian CI capture; closed without merge.
-- Issue `#84`: focused source boundary and regression requirement.
-- PR `#86`: first focused candidate; closed after divergent history was superseded.
-- PR `#89`: clean current-main promotion; merged into Linux Fieldwork at `96f344e708279d246ea19fdea93a9f8b7a4ff4a6`.
-- PR `#60`: durable transition dossier and classifier; historical ownership agrees with this unit.
-- PR `#72`: reusable current-sid disposable execution carrier; its later phase-scope defects are separate from unit 09.
-- Unit `08` packet: current distilled Debian `1.5.7-3` package-test series and exact executable base `debian/1.5.7-3` at `6fde999741f4fe1e7bf38079acf29432ef87a35e`.
-- PR `#361`: proven current-sid disposable carrier base at `c2b7c43a4b6ce883f6dcdbef8d489bcf48323266`.
-- Draft PR `#402`: internal CI activation for the unit-09 packet regression.
-- Draft PR `#403`: focused current-sid execution carrier for `dev-ptmx`.
-
-## Historical artifact identity
-
-- Debian CI run: `72574145`
-- Capture workflow: `30538316641`
-- Artifact: `debci-mmdebstrap-72574145-capture-2`
-- Artifact digest: `sha256:9e9ded80793210b59ff34398e7d78a6e33be2723515b77eee26e9b40fc5a138a`
-- Compressed log: `222237` bytes
-- Decompressed log: `1713654` bytes
-- Artifact tar: `4097` bytes
+- Issue `#397`: unit boundary and packet protocol.
+- Issue `#53`: recovered Debian CI owner and separated follow-ons.
+- PR `#82`: immutable Debian CI capture.
+- Issue `#84`: focused dependency boundary.
+- PRs `#86` and `#89`: initial and clean Linux Fieldwork candidates.
+- PR `#60`: transition dossier.
+- PR `#72` and unit `08`: reusable current-sid package-test carriers.
+- PR `#402`: packet static validation.
+- PR `#403`: superseded full-cache dynamic carrier; retained two positive artifacts.
+- PR `#407`: optional direct dynamic carrier; no longer required.
+- PR `#411`: read-only canonical audit that found the existing upstream successor.
 
 ## Ownership boundary
 
-This unit changes a package-test fixture dependency. It leaves mmdebstrap runtime code, util-linux packaging, mirror readiness, non-Debian suite classification, subordinate-ID matching, signal behavior, broad current-sid phase ordering, Deepin packaging changes, and unrelated mailing-list patches untouched.
+The unit concerns one package-test fixture dependency. Runtime code, util-linux packaging, mirror readiness, subordinate-ID matching, signal behavior, broad current-sid phase ordering, and unrelated canonical development remain outside this unit.
