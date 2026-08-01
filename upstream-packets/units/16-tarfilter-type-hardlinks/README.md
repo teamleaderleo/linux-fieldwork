@@ -68,6 +68,7 @@ Unit 15 owns the general rewrite operation, transform language, occurrence selec
 | Inherited matrix green head | `300b51056ded64a56ec3998bc639a57e9ea81125` |
 | Expanded matrix head | `371802ab8728f149ddbac5a959e83ca8d0edef2d` |
 | Duplicate-cleanup head | `7fe46662141fa39a3b18ae1baba29b2b39f6c330` |
+| Latest packet head | use branch ref; latest commit includes current handoff and drafts |
 | Proposed destination | Debian mmdebstrap Salsa project |
 | Delivery method | GitLab/Salsa fork and merge request; `NEEDS FORK`; external authorization required |
 
