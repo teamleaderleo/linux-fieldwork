@@ -20,7 +20,7 @@
 
 **Decision:** Claim complete settlement only for the executed TERM-responsive null, QEMU-wrapper, and passwordless-sudo models.
 
-**Reason:** Group-wide signal delivery and arbitrary descendant quiescence are separate claims. Resistant, deferring, or group-escaping descendants were outside the selected candidate.
+**Reason:** Group-wide signal delivery and arbitrary descendant quiescence are separate claims. Resistant, deferring, or group-escaping descendants remain outside the selected candidate.
 
 ## 2026-08-01 — Hold TERM-to-KILL escalation outside unit 11
 
@@ -36,22 +36,46 @@
 
 **Reason:** The project homepage, repository, issue tracker, and contributor instructions point there. Debian's Salsa repository remains relevant packaging context.
 
-**Current blocker:** `NEEDS FORK` plus explicit external-contact authorization.
+## 2026-08-01 — Require exact current-base execution
 
-## 2026-08-01 — Rebase before requesting authorization
+**Decision:** Require zero-fuzz packet-patch application and focused null/QEMU/sudo execution on canonical upstream commit `77ec9be5417ee44c96343d2347145585da1b1f94` before authorization readiness.
 
-**Decision:** Keep state `ACTIVE` until the retained patch applies with zero fuzz and the focused matrix runs on current upstream head `77ec9be5417ee44c96343d2347145585da1b1f94`.
-
-**Reason:** Historical Linux Fieldwork receipts establish mechanism behavior, while upstream submission requires an exact current-base candidate and current execution receipt.
+**Result:** Completed by workflow run `30689911760`. Canonical source identity, patch application, compilation, 6-control packet matrix, and 14-control refined topology matrix all passed twice.
 
 ## 2026-08-01 — Preserve the QEMU evidence refinement
 
-**Decision:** Treat PR #339 as the preferred QEMU negative-control form when porting tests.
+**Decision:** Use PR #339 exact head `8253ab2ef6fed22b34fc5f5d6d20cda75c25e2c7` as the final topology carrier.
 
-**Reason:** It records handler entry before deliberate survivor release, removing an ordering ambiguity without changing product source.
+**Reason:** Its QEMU losing controls record Python SIGINT-handler entry before deliberate survivor release, removing the remaining ordering ambiguity without changing product source.
+
+**Executed result:** refined QEMU test blob `0c2a050faf8e98320fc0c4fe4634d46bdf7f0dfa` passed in both complete canonical topology runs.
+
+## 2026-08-01 — Treat broad system runs as limits, not blockers
+
+**Decision:** Real QEMU/debvm, prepared-mirror coverage, non-Linux execution, and maintainer CI remain explicit evidence limits.
+
+**Reason:** The selected source claim concerns parent-only SIGINT delivery and responsive processes inside one caller-owned group. Exact canonical wrapper controls distinguish that mechanism directly. Broader operations add environment coverage while leaving the source discriminator unchanged.
+
+## 2026-08-01 — Promote to READY FOR AUTHORIZATION
+
+**Decision:** Set unit 11 to `READY FOR AUTHORIZATION` after run `30689911760`.
+
+**Basis:**
+
+- canonical commit `77ec9be...` cloned and verified;
+- canonical/imported `coverage.py` blob equality proven;
+- packet patch applied with `--fuzz=0` and compiled twice;
+- six packet controls passed twice;
+- fourteen refined null/QEMU-wrapper/passwordless-sudo controls passed twice with no skips;
+- cleanup and immediate rerun completed;
+- polished upstream drafts and exact identities are present.
+
+**Remaining decision:** authorize `SEND` with a controlled fork, or place the unit on `HOLD`.
 
 ## 2026-08-01 — No upstream contact
 
 **Decision:** Create no public issue, pull request, review, email, or comment.
 
 **Reason:** Issue #397 authorizes internal work only. External contact requires explicit authorization.
+
+**Result:** no upstream contact occurred. Read-only cloning for exact source verification created no upstream interaction record.
