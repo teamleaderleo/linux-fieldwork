@@ -33,9 +33,10 @@ The retained script creates a PAX archive with:
 - `usr/`: mode `0700`, uid/gid `11/21`, mtime `1700000001`, PAX marker `usr-parent`;
 - `usr/bin/`: mode `0711`, uid/gid `12/22`, mtime `1700000002`, PAX marker `bin-parent`;
 - `usr/bin/tool`: mode `0755` and content `tool\n`;
-- `/usr2` and `/opt` controls.
+- `/usr2` and `/opt` controls;
+- `linkroot -> usr/bin` plus `linkroot/tool` for symlink-parent retention.
 
-The baseline model reproduces the current source path and emits only `usr/bin/tool`. GNU tar 1.35 creates omitted parents as mode `0755`. The candidate emits all three entries, retaining archive metadata; GNU tar extracts the explicit parents as `0700` and `0711`.
+The exact current `tarfilter` blob emits only `usr/bin/tool` in the headline case. GNU tar 1.35 creates omitted parents as mode `0755`. The patched exact source emits all three entries, retaining archive metadata; GNU tar extracts the explicit parents as `0700` and `0711`. The symlink case preserves target, mode, ownership, timestamp, and PAX marker.
 
 Full commands and hashes live in `TESTS.md`.
 
@@ -60,7 +61,7 @@ Full commands and hashes live in `TESTS.md`.
 ### Approach C — conservative bounded two-direction relation
 
 - mechanism: retain the original glob, extract its literal prefix, normalize the current member without a trailing slash, then retain when either path is the same as or a component-bounded ancestor of the other. An empty literal prefix retains all candidate parents.
-- evidence: eight-case local relation matrix; focused exact/wildcard/class/boundary test;
+- evidence: exact-current-source five-case regression, eight-case local relation matrix, and eight-case dpkg comparison;
 - result: preserves exact ancestors and wildcard descendants while rejecting `/usr` versus `/usr2`;
 - compatibility cost: can retain extra directories after an early wildcard, consistent with dpkg's documented conservative policy;
 - disposition: selected for retained patch.
@@ -71,7 +72,7 @@ Full commands and hashes live in `TESTS.md`.
 - evidence: conceptual review only;
 - result: potentially tighter retention;
 - compatibility cost: substantially more code and more room for divergence from Python `fnmatch` edge cases;
-- disposition: deferred. Reopen only if maintainers require minimal rather than conservative parent retention.
+- disposition: deferred. Reopen only if maintainers require minimal instead of conservative parent retention.
 
 ## Selected correction
 
@@ -93,9 +94,15 @@ Surviving parent entries retain their original `TarInfo`, including mode, uid, g
 
 Ordinary files keep current last-match-wins matching against compiled `fnmatch.translate()` regexes. The special branch remains limited to excluded directories and symlinks.
 
-### Conservative over-inclusion
+### Exact dpkg comparison
 
-An include whose first metacharacter occurs early can retain extra parents. dpkg documents this conservative behavior to avoid unpack failures. The candidate preserves that policy and adds component boundaries.
+Current dpkg `src/main/filters.c` blob `4fc1600a5717726faddc2fb556730f217e7f22a2` stores the raw pattern and compares the candidate path against the fixed prefix in one direction with `strncmp()`. The retained comparison receipt establishes three distinct outcomes:
+
+- exact nested includes: dpkg's one-direction comparison drops `/usr` and `/usr/bin`; the candidate adds the missing ancestor direction;
+- wildcard and leading-wildcard includes: both predicates retain candidate parents conservatively;
+- sibling names: dpkg's plain prefix can retain `/usr2` for `/usr` or `/usr/*`; the candidate requires a pathname-component boundary.
+
+The candidate therefore follows dpkg's conservative intent while correcting two concrete edge behaviors. It does not claim byte-for-byte predicate parity.
 
 ### Adjacent features
 
@@ -106,29 +113,30 @@ PAX filtering, type filtering, transforms, component stripping, id shifting, har
 - Current algorithm: exact include emits only the leaf and loses parent metadata.
 - Original-glob-only mutation: exact ancestors still fail because comparison direction remains wrong.
 - One-direction ancestor-only mutation: wildcard `/usr/*/tool` fails for `/usr/bin`.
-- Boundary mutation using raw `startswith()` would retain `/usr` for `/usr2/tool`; the matrix requires false.
+- Boundary mutation using raw `startswith()` would retain `/usr2` for include `/usr`; the comparison artifact requires false.
 - Unrelated `/opt` with include `/usr/bin/tool` remains excluded.
+- The dpkg model itself can lose the exact-ancestor cases and over-include the sibling-prefix cases, proving the comparison script can produce both outcomes.
 
 ## Current upstream and historical review
 
-Current upstream still presents the affected source logic. The implementation comment cites dpkg's filter logic. Historical dpkg code stores the raw glob and uses its literal prefix, while current dpkg documentation explicitly permits retaining more directories and symlinks than required. No equivalent active upstream carrier surfaced in the 2026-07-31 search.
+Current mmdebstrap still presents the affected source logic. Current dpkg source was reviewed through `guillemj/dpkg` `main`, file blob `4fc1600a5717726faddc2fb556730f217e7f22a2`. Its source comment explicitly accepts over-including directories and symlinks to avoid unpack failures. The unit preserves that policy for wildcard prefixes while adding exact ancestry and component separators. No equivalent active mmdebstrap carrier surfaced in the 2026-08-01 overlap search.
 
 ## Remaining questions
 
-1. **Exact patch application:** discriminator is `git apply --check` on canonical `main@77ec9be5417ee44c96343d2347145585da1b1f94`.
+1. **Complete patch application:** discriminator is `git apply --check` on a full canonical checkout at `77ec9be5417ee44c96343d2347145585da1b1f94`.
 2. **Upstream-native focused gate:** discriminator is `CMD=./mmdebstrap ./coverage.py tarfilter-parent-metadata` or the exact current invocation selected from the checkout.
-3. **Formatting gate:** discriminator is the repository's shell/Python formatting and line-length checks on the candidate.
-4. **Conservative policy acceptance:** discriminator is maintainer review after explicit authorization; no contact has occurred.
+3. **Formatting gate:** discriminator is the repository's Black and line-length checks on the candidate.
+4. **Compatibility acceptance:** discriminator is maintainer review of the explicit dpkg departure after external authorization; no contact has occurred.
 
 ## Evidence boundary
 
-Demonstrated on Debian 13, x86_64, Python 3.13.5, GNU tar 1.35 using a self-contained source-path model and a focused candidate executable. The retained patch received synthetic exact-context application, Python compilation, shell parsing, and focused test execution. Full upstream checkout and integration evidence remain open.
+Demonstrated on Debian 13, x86_64, Python 3.13.5, GNU tar 1.35. The exact current `tarfilter` blob loses the focused baseline. The patched exact source passes five focused cases, syntax and whitespace checks, and the local metadata matrix. The dpkg comparison is a deterministic source-level model tied to exact source blob `4fc1600…`; it is not a compiled dpkg integration run. Full mmdebstrap checkout and project-native execution remain open.
 
 ## Reopen triggers
 
 - upstream changes `PathFilterAction` tuple ownership or parent-retention logic;
-- current dpkg policy removes conservative over-inclusion;
-- exact upstream patch application conflicts;
-- focused upstream test exposes a trailing-slash, symlink, or glob-class incompatibility;
+- current dpkg changes its conservative retention policy;
+- exact full-checkout patch application conflicts;
+- focused upstream execution exposes a trailing-slash, symlink, or glob-class incompatibility;
 - a public equivalent issue or pull request appears;
 - external authorization changes.
