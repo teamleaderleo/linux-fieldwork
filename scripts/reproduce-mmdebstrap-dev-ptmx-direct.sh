@@ -30,7 +30,7 @@ finish_early() {
 if [[ $(id -u) -ne 0 ]]; then
   finish_early 77 "direct dev-ptmx reproduction requires root in a disposable container"
 fi
-for command in curl findmnt mmdebstrap patch python3 shellcheck shfmt sudo script; do
+for command in curl findmnt mmdebstrap patch pgrep python3 shellcheck shfmt sudo script; do
   command -v "$command" >/dev/null 2>&1 || finish_early 77 "$command is unavailable"
 done
 [[ -f $imported_source/coverage.py ]] || finish_early 2 "imported coverage.py is missing"
@@ -114,7 +114,7 @@ curl --fail --location --silent --show-error \
   printf -- '- Patch contract: `zero fuzz and zero offset`\n'
   printf '\n## Package versions\n\n```text\n'
   dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' \
-    mmdebstrap apt bsdutils python3-debian shellcheck shfmt sudo util-linux 2>&1 || true
+    mmdebstrap apt bsdutils procps python3-debian shellcheck shfmt sudo util-linux 2>&1 || true
   printf '```\n\n## Input hashes\n\n```text\n'
   sha256sum "$candidate_patch" "$inrelease" "$source_tree/tests/dev-ptmx"
   printf '```\n'
