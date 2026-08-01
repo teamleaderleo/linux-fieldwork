@@ -57,7 +57,7 @@ jobs:
             echo "coverage_last_commit=$(git -C "$canonical" log -1 --format=%H -- coverage.py)"
           } | tee unit-11-canonical-source.txt
 
-      - name: Run exact canonical-source matrix twice
+      - name: Run exact canonical-source null matrix twice
         shell: bash
         run: |
           set -euo pipefail
@@ -67,7 +67,7 @@ jobs:
             python3 "$test_script" -v 2>&1 | tee "unit-11-${pass}.log"
           done
 
-      - name: Upload exact logs
+      - name: Upload exact null logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -75,4 +75,88 @@ jobs:
           path: |
             unit-11-*.txt
             unit-11-*.log
+          if-no-files-found: error
+
+  canonical-pr313-topology-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out Linux Fieldwork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Materialize exact mechanism carrier and canonical source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mechanism_commit="e90fc438f530f7bd78ffd6fd1ba24c665bd96913"
+          canonical_commit="77ec9be5417ee44c96343d2347145585da1b1f94"
+          expected_coverage_blob="9a522484aef05deae514a98e4b6adf5feb6c886d"
+          historical="$RUNNER_TEMP/linux-fieldwork-pr313"
+          canonical="$RUNNER_TEMP/mmdebstrap-pr313"
+
+          git fetch --no-tags --depth=1 origin "$mechanism_commit"
+          git worktree add --detach "$historical" FETCH_HEAD
+          test "$(git -C "$historical" rev-parse HEAD)" = "$mechanism_commit"
+
+          git clone --filter=blob:none --no-checkout \
+            https://gitlab.mister-muffin.de/josch/mmdebstrap.git "$canonical"
+          git -C "$canonical" checkout --detach "$canonical_commit"
+          test "$(git -C "$canonical" rev-parse HEAD)" = "$canonical_commit"
+          test "$(git -C "$canonical" hash-object coverage.py)" = "$expected_coverage_blob"
+
+          cp "$canonical/coverage.py" "$historical/upstream/mmdebstrap/coverage.py"
+          cp "$canonical/run_null.sh" "$historical/upstream/mmdebstrap/run_null.sh"
+          cp "$canonical/run_qemu.sh" "$historical/upstream/mmdebstrap/run_qemu.sh"
+
+          test "$(git -C "$historical" hash-object tests/test_mmdebstrap_coverage_parent_sigint.py)" \
+            = 9bedaa7cd2368f8679de9948d9fecb3fe75c6bd2
+          test "$(git -C "$historical" hash-object tests/test_mmdebstrap_coverage_process_group.py)" \
+            = 1649c10f8d6639bd26a42b9ab3587b64d84e072c
+          test "$(git -C "$historical" hash-object tests/test_mmdebstrap_coverage_qemu_process_group.py)" \
+            = 96a2ed73da3efad6e61fde3a1bf93607f982afb8
+          test "$(git -C "$historical" hash-object tests/test_mmdebstrap_coverage_sudo_process_group.py)" \
+            = 8cc7cffb129595a5e4b967385616fbeede4814db
+
+          {
+            echo "mechanism_commit=$mechanism_commit"
+            echo "canonical_commit=$canonical_commit"
+            echo "canonical_coverage_blob=$(git -C "$canonical" hash-object coverage.py)"
+            echo "canonical_run_null_blob=$(git -C "$canonical" hash-object run_null.sh)"
+            echo "canonical_run_qemu_blob=$(git -C "$canonical" hash-object run_qemu.sh)"
+            echo "group_patch_blob=$(git -C "$historical" hash-object investigations/mmdebstrap-coverage-process-group/0001-own-backend-process-group.patch)"
+          } | tee unit-11-pr313-topology-source.txt
+
+      - name: Run exact null, QEMU-wrapper, and sudo matrix twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          historical="$RUNNER_TEMP/linux-fieldwork-pr313"
+          modules=(
+            tests.test_mmdebstrap_coverage_process_group
+            tests.test_mmdebstrap_coverage_qemu_process_group
+            tests.test_mmdebstrap_coverage_sudo_process_group
+          )
+          python3 -m py_compile \
+            "$historical/upstream/mmdebstrap/coverage.py" \
+            "$historical/tests/test_mmdebstrap_coverage_parent_sigint.py" \
+            "$historical/tests/test_mmdebstrap_coverage_process_group.py" \
+            "$historical/tests/test_mmdebstrap_coverage_qemu_process_group.py" \
+            "$historical/tests/test_mmdebstrap_coverage_sudo_process_group.py"
+          for pass in topology-first topology-immediate-rerun; do
+            (
+              cd "$historical"
+              python3 -m unittest -v "${modules[@]}"
+            ) 2>&1 | tee "unit-11-${pass}.log"
+          done
+
+      - name: Upload exact topology logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-11-canonical-pr313-topology-gate
+          path: |
+            unit-11-pr313-topology-source.txt
+            unit-11-topology-*.log
           if-no-files-found: error
