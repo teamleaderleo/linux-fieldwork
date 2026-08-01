@@ -1,0 +1,87 @@
+#!/bin/sh
+set -eu
+export LC_ALL=C.UTF-8
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
+
+MMTARFILTER=
+[ -x /usr/bin/mmtarfilter ] && MMTARFILTER=/usr/bin/mmtarfilter
+[ -x ./tarfilter ] && MMTARFILTER=./tarfilter
+if [ -z "$MMTARFILTER" ]; then
+  echo "mmtarfilter executable not found" >&2
+  exit 1
+fi
+
+python3 - "$tmpdir/input.tar" <<'PY'
+import io
+import sys
+import tarfile
+
+output = sys.argv[1]
+with tarfile.open(output, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+    for name, member_type, payload in (
+        ("zero-regular", tarfile.REGTYPE, b"zero\n"),
+        ("nul-regular", tarfile.AREGTYPE, b"nul\n"),
+    ):
+        member = tarfile.TarInfo(name)
+        member.type = member_type
+        member.size = len(payload)
+        member.mode = 0o644
+        archive.addfile(member, io.BytesIO(payload))
+
+    directory = tarfile.TarInfo("directory")
+    directory.type = tarfile.DIRTYPE
+    directory.mode = 0o755
+    archive.addfile(directory)
+PY
+
+"$MMTARFILTER" --type-exclude=REGTYPE \
+  <"$tmpdir/input.tar" >"$tmpdir/regtype.tar"
+"$MMTARFILTER" --type-exclude=0 \
+  <"$tmpdir/input.tar" >"$tmpdir/zero.tar"
+"$MMTARFILTER" --type-exclude=DIRTYPE \
+  <"$tmpdir/input.tar" >"$tmpdir/dirtype.tar"
+
+python3 - \
+  "$tmpdir/regtype.tar" \
+  "$tmpdir/zero.tar" \
+  "$tmpdir/dirtype.tar" <<'PY'
+import sys
+import tarfile
+
+
+def inspect(path):
+    result = {}
+    with tarfile.open(path, mode="r:*") as archive:
+        for member in archive:
+            payload = None
+            if member.isfile():
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    raise SystemExit(f"regular member has no payload: {member.name}")
+                payload = extracted.read()
+            result[member.name] = (member.type, payload)
+    return result
+
+
+regular_expected = {"directory": (tarfile.DIRTYPE, None)}
+for selector, path in (("REGTYPE", sys.argv[1]), ("0", sys.argv[2])):
+    observed = inspect(path)
+    if observed != regular_expected:
+        raise SystemExit(
+            f"unexpected members for {selector}: {observed!r}; "
+            f"expected {regular_expected!r}"
+        )
+
+directory_expected = {
+    "zero-regular": (tarfile.REGTYPE, b"zero\n"),
+    "nul-regular": (tarfile.AREGTYPE, b"nul\n"),
+}
+observed = inspect(sys.argv[3])
+if observed != directory_expected:
+    raise SystemExit(
+        f"unexpected members for DIRTYPE: {observed!r}; "
+        f"expected {directory_expected!r}"
+    )
+PY
