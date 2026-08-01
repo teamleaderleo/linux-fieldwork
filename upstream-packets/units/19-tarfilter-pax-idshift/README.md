@@ -8,7 +8,9 @@ External contact authorized: `false`
 
 ## TL;DR
 
-`tarfilter --idshift` changes `TarInfo.uid` and `TarInfo.gid`, while retained PAX `uid` and `gid` strings can override those shifted values in the emitted archive. The retained two-line source patch removes only the stale numeric PAX keys after validation and shifting, allowing Python to regenerate correct large IDs. The prior exact-source regression passed, and a fresh Python 3.13.5 semantic probe reproduced the losing baseline, corrected output, unrelated-PAX preservation, and negative-shift round trip. A current upstream checkout, native test edit, and exact candidate branch remain to be materialized.
+`tarfilter --idshift` changes `TarInfo.uid` and `TarInfo.gid`, while retained PAX `uid` and `gid` strings can override those shifted values in the emitted archive. The retained source patch removes only the stale numeric PAX keys after validation and shifting, allowing Python to regenerate correct large IDs. The retained native-test patch extends the existing `tests/tarfilter-idshift` owner with a large-ID discriminator that loses on the current model and passes on the candidate model.
+
+The project instructions are now mapped exactly. The focused readiness command is `CMD=./mmdebstrap ./coverage.sh tarfilter-idshift` after `./make_mirror.sh`; it requires QEMU, checks `tarfilter` with Black, and checks the generated native test with ShellCheck and shfmt. A current upstream checkout, controlled candidate branch, and exact QEMU-backed run remain.
 
 ## Accomplished behavior
 
@@ -26,6 +28,7 @@ The current command exits successfully while silently leaving large PAX-carried 
 - ordinary and PAX-large numeric ID controls;
 - unrelated PAX metadata and payload preservation;
 - positive shift and inverse negative-shift round trip;
+- native test ownership and exact project gate mapping;
 - current-upstream identity and overlap refresh.
 
 ### Excluded
@@ -55,8 +58,10 @@ This unit changes only the two numeric PAX keys whose stale values contradict `-
 | Linux Fieldwork branch | `upstream/unit-19-tarfilter-pax-idshift` |
 | Linux Fieldwork starting head | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
 | Imported/local source identity | `upstream/mmdebstrap/tarfilter`, blob `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
+| Imported native test identity | `upstream/mmdebstrap/tests/tarfilter-idshift`, blob `6956e76aca153147d3a8a6668196d913ebc8a49e` |
 | Prior reviewed candidate | PR #78 head `8d6443626e4338b180ec0533969bfe4d32b20d52` |
-| Patch or series path | `patches/0001-tarfilter-regenerate-shifted-pax-ownership.patch` |
+| Retained source patch | `patches/0001-tarfilter-regenerate-shifted-pax-ownership.patch` |
+| Retained native-test patch | `patches/0002-tests-cover-pax-idshift.patch` |
 | Proposed destination | canonical mmdebstrap repository |
 | Delivery method | Forgejo/Gitea fork and pull request; pending explicit authorization |
 
@@ -68,6 +73,7 @@ This unit changes only the two numeric PAX keys whose stale values contradict `-
 - Packet source map: [`SOURCE_MAP.md`](SOURCE_MAP.md)
 - Deep dive: [`DEEP_DIVE.md`](DEEP_DIVE.md)
 - Tests and receipts: [`TESTS.md`](TESTS.md)
+- Project instructions and gate map: [`PROJECT_INSTRUCTIONS.md`](PROJECT_INSTRUCTIONS.md)
 - Decisions: [`DECISIONS.md`](DECISIONS.md)
 - Current handoff: [`HANDOFF.md`](HANDOFF.md)
 - Upstream issue draft: [`UPSTREAM_ISSUE.md`](UPSTREAM_ISSUE.md)
@@ -77,20 +83,23 @@ This unit changes only the two numeric PAX keys whose stale values contradict `-
 
 ### Demonstrated
 
-- current upstream tarfilter still shifts fields without removing stale PAX numeric keys;
-- the Linux Fieldwork import is the same retained tarfilter blob used by the accepted candidate;
+- current upstream tarfilter still shifts fields while retaining stale PAX numeric keys;
 - prior exact-source CI run `30538012863` passed on PR #78 head `8d6443626e4338b180ec0533969bfe4d32b20d52`;
 - fresh Python 3.13.5 probe reproduced large-ID baseline failure and candidate success twice with identical output;
 - unrelated `comment` PAX metadata and file payloads survived;
-- inverse shift restored both ordinary and large IDs.
+- inverse shift restored both ordinary and large IDs;
+- the draft native detector exits `1` with `large ownership was not shifted` on the baseline model and exits `0` on the candidate model;
+- the exact focused project gate, formatter/linter behavior, QEMU requirement, and Debian autopkgtest skip behavior are recorded.
 
-### Not yet demonstrated
+### Remaining technical work
 
 - clean application to a checked-out current upstream repository head;
-- upstream-native `tests/tarfilter-idshift` extension and execution on the exact candidate head;
-- complete current-upstream ordinary gate;
+- Black success for `tarfilter`;
+- generated-test ShellCheck and shfmt success;
+- QEMU-backed `CMD=./mmdebstrap ./coverage.sh tarfilter-idshift` success and immediate rerun;
+- complete current-upstream two-file diff review;
 - controlled fork and clean candidate branch;
-- exhaustive external tar-reader interoperability.
+- current overlap recheck before authorization.
 
 ### Compatibility boundary
 
@@ -98,18 +107,18 @@ The candidate removes only PAX `uid` and `gid` after a successful nonzero shift.
 
 ## Candidate organization
 
-One reviewable patch:
+One reviewable upstream commit assembled from two retained preparation patches:
 
-1. `tarfilter: regenerate shifted PAX ownership` — two source lines plus an upstream-native large-ID regression to be added during materialization.
+1. `tarfilter: regenerate shifted PAX ownership` — two source lines and the native large-ID regression in `tests/tarfilter-idshift`.
 
 ## Current disposition
 
-`ACTIVE` — source behavior and focused semantics are established; current-upstream branch materialization and native gates remain.
+`ACTIVE` — source behavior, native ownership, detector behavior, and project gate requirements are established; current-upstream materialization and exact QEMU-backed gates remain.
 
 ## Next human decision
 
-No send decision is ready. The next internal action is to create or verify a controlled mmdebstrap fork, materialize the patch and native test on exact upstream head `77ec9be5417ee44c96343d2347145585da1b1f94`, and run the focused gate.
+No send decision is ready. The next internal action is to create or verify a controlled mmdebstrap fork, materialize both retained patches on exact upstream head `77ec9be5417ee44c96343d2347145585da1b1f94`, and run the project-aligned focused gate.
 
 ## Authority
 
-Internal reads, branch work, tests, packet drafting, and issue checkpoints are authorized. External issues, pull requests, comments, email, reviews, and other contact remain unauthorized. No external contact occurred during this pass.
+Internal reads, branch work, tests, packet drafting, and issue checkpoints are authorized. External issues, pull requests, comments, email, reviews, reactions, and other contact remain unauthorized. No external contact occurred during this pass.
