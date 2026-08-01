@@ -1,0 +1,21 @@
+Unit: 20 tarfilter dotfile identity
+Date: 2026-08-01
+Environment: Python 3.13.5; Linux 6.12.13 x86_64; GNU patch 2.8
+Source: upstream/mmdebstrap/tarfilter blob ad776167a8473d5d15dbe22e850f4f6db35cf278
+Source SHA-256: 442b056aeb414aef0e33d59b6235623ca4d6072c62272508281d126cb3f3d957
+Test SHA-256: e9d4fc52860b718a6997c16770b98482c610a7016f0cd369c8da042ed113cc3d
+
+Command:
+MMTARFILTER=/tmp/tarfilter-baseline /tmp/tarfilter-path-dotfiles
+
+Exit status: 1
+
+Output:
+Traceback (most recent call last):
+  File "<stdin>", line 52, in <module>
+AssertionError: {'..name', '../config', '...name', '/./.config', '././config', './.config', './config', 'config', '/config', '.config', '././.config'}
+
+Interpretation:
+The first assertion expected --path-exclude=/.config to remove every archive-syntax spelling of .config while retaining plain and multi-dot names. The baseline retained all dotfile spellings. Separate detailed execution of the same matrix produced five failures, including the inverse /config alias and ../config collapse.
+
+Receipt SHA-256 before commit: 6b84355e92120b6dde662ee67009e30b577a4951ccf0b7f7cdf5983f93bd3ada
