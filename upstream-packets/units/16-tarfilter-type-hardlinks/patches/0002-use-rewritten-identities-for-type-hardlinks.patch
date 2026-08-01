@@ -1,0 +1,154 @@
+diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
+--- a/upstream/mmdebstrap/tarfilter
++++ b/upstream/mmdebstrap/tarfilter
+@@ -341,50 +341,70 @@ def main():
+                 return True
+         return False
+ 
++    hardlink_prefix = re.compile(r"^(?:(?:\.\.?/)|/)+")
++
++    def normalize_hardlink_name(name):
++        return hardlink_prefix.sub("", name)
++
++    def rewrite_name(name, scope, strip_components):
++        aliases = {normalize_hardlink_name(name)}
++        if strip_components and args.strip_components:
++            comps = name.split("/")
++            if len(comps) <= args.strip_components:
++                return None, set()
++            name = "/".join(comps[args.strip_components :])
++            aliases.add(normalize_hardlink_name(name))
++        if hasattr(args, "trans"):
++            for regex, replacement, count, scopes in args.trans:
++                if scopes[scope]:
++                    name = regex.sub(replacement, name, count=count)
++                    aliases.add(normalize_hardlink_name(name))
++        return name, aliases
++
+     # starting with Python 3.8, the default format became PAX_FORMAT but we
+     # are still explicit here in case of future changes.
+     with tarfile.open(fileobj=sys.stdin.buffer, mode="r|*") as in_tar, tarfile.open(
+         fileobj=sys.stdout.buffer, mode="w|", format=tarfile.PAX_FORMAT
+     ) as out_tar:
+-        hardlink_prefix = re.compile(r"^(?:(?:\.\.?/)|/)+")
+-        type_excluded_members = set()
++        type_excluded_name_aliases = set()
+         retained_member_names = set()
+         hardlink_dependency_failure = False
+         for member in in_tar:
+             if path_filter_should_skip(member):
+                 continue
++
++            input_member_name = member.name
++            input_linkname = member.linkname
+             if type_filter_should_skip(member):
+-                normalized_name = hardlink_prefix.sub("", member.name)
+-                if normalized_name not in retained_member_names:
+-                    type_excluded_members.add(normalized_name)
++                projected_name, aliases = rewrite_name(member.name, "r", True)
++                if projected_name is not None:
++                    type_excluded_name_aliases.update(aliases)
+                 continue
+-            if member.islnk() and hardlink_prefix.sub(
+-                "", member.linkname
+-            ) in type_excluded_members:
+-                print(
+-                    "hard-link target excluded by type filter: %s -> %s"
+-                    % (member.name, member.linkname),
+-                    file=sys.stderr,
++
++            rewritten_name, _ = rewrite_name(member.name, "r", True)
++            if rewritten_name is None:
++                continue
++            member.name = rewritten_name
++            if member.name != input_member_name:
++                member.pax_headers.pop("path", None)
++
++            if member.islnk():
++                rewritten_linkname, _ = rewrite_name(
++                    member.linkname, "h", True
+                 )
+-                hardlink_dependency_failure = True
+-                break
+-            normalized_name = hardlink_prefix.sub("", member.name)
+-            if args.strip_components:
+-                comps = member.name.split("/")
+-                # just as with GNU tar, archive members with less or equal
+-                # number of components are not passed through at all
+-                if len(comps) <= args.strip_components:
++                if rewritten_linkname is None:
+                     continue
+-                member.name = "/".join(comps[args.strip_components :])
+-                member.pax_headers.pop("path", None)
+-                if member.islnk():
+-                    link_comps = member.linkname.split("/")
+-                    if len(link_comps) <= args.strip_components:
+-                        continue
+-                    member.linkname = "/".join(
+-                        link_comps[args.strip_components :]
+-                    )
+-                    member.pax_headers.pop("linkpath", None)
++                member.linkname = rewritten_linkname
++            elif member.issym():
++                member.linkname, _ = rewrite_name(
++                    member.linkname, "s", False
++                )
++            if (
++                (member.islnk() or member.issym())
++                and member.linkname != input_linkname
++            ):
++                member.pax_headers.pop("linkpath", None)
++
+             member.pax_headers = {
+                 k: v
+                 for k, v in member.pax_headers.items()
+@@ -399,31 +419,26 @@ def main():
+                     exit(1)
+                 member.uid += args.idshift
+                 member.gid += args.idshift
+-            if hasattr(args, "trans"):
+-                original_name = member.name
+-                original_linkname = member.linkname
+-                for regex, replacement, count, scopes in args.trans:
+-                    if scopes["r"]:
+-                        member.name = regex.sub(
+-                            replacement, member.name, count=count
+-                        )
+-                    if member.islnk() and scopes["h"]:
+-                        member.linkname = regex.sub(
+-                            replacement, member.linkname, count=count
+-                        )
+-                    elif member.issym() and scopes["s"]:
+-                        member.linkname = regex.sub(
+-                            replacement, member.linkname, count=count
+-                        )
+-                if member.name != original_name:
+-                    member.pax_headers.pop("path", None)
++
++            if member.islnk():
++                normalized_linkname = normalize_hardlink_name(
++                    member.linkname
++                )
+                 if (
+-                    (member.islnk() or member.issym())
+-                    and member.linkname != original_linkname
++                    normalized_linkname not in retained_member_names
++                    and normalized_linkname in type_excluded_name_aliases
+                 ):
+-                    member.pax_headers.pop("linkpath", None)
+-            type_excluded_members.discard(normalized_name)
+-            retained_member_names.add(normalized_name)
++                    print(
++                        "hard-link target excluded by type filter: %s -> %s"
++                        % (input_member_name, input_linkname),
++                        file=sys.stderr,
++                    )
++                    hardlink_dependency_failure = True
++                    break
++
++            retained_member_names.add(
++                normalize_hardlink_name(member.name)
++            )
+             if member.isfile():
+                 with in_tar.extractfile(member) as file:
+                     out_tar.addfile(member, file)
