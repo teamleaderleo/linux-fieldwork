@@ -1,6 +1,6 @@
 # Current handoff
 
-Updated: `2026-08-01 15:55 +08:00`  
+Updated: `2026-08-01 15:57 +08:00`  
 Worker or variant: `GPT-5.6 Thinking`  
 State: `ACTIVE`
 
@@ -10,7 +10,7 @@ State: `ACTIVE`
 | --- | --- |
 | Linux Fieldwork branch | `upstream/unit-10-subid-exact-match` |
 | Linux Fieldwork base | `main` at `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Linux Fieldwork head | this HANDOFF update follows packet commit `219dc1136ac90851eb64904a6d2efc3325795d7c`; replace with the resulting exact commit after this write |
+| Linux Fieldwork packet parent | `5a9c462a23d6019d9fc92d61dcc4fee112bf1122`; the exact branch tip containing this self-referential handoff is recorded in the latest #397 checkpoint |
 | User-controlled fork | `teamleaderleo/mmdebstrap` |
 | Fork base branch | `master` |
 | Fork base commit | `574048f2a720057b75e56622003932f344dc700a` |
