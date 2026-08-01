@@ -10,7 +10,7 @@ External contact authorized: `false`
 
 Four upstream-facing test-suite corrections have been extracted from the carrier history into an ordered patch series. The series accepts Deb822 sources, pins behavioral execution to `/usr/bin/mmdebstrap`, uses a current-sid process-group SIGINT spelling, and runs the no-`CAP_SYS_ADMIN` consumer with a phase-local `tar1.txt` producer while allowing broad-phase regeneration. Linux Fieldwork-only proxies, workflows, artifact collectors, probes, and guard harnesses are excluded.
 
-The current exact executable base is Debian mmdebstrap `debian/1.5.7-3` at `6fde999741f4fe1e7bf38079acf29432ef87a35e`. Historical real-sid run 999 cleared the phase-local producer/consumer repair and reached the independent `chrootless` directory-mtime result after 154 completed tests. This unit remains `ACTIVE` until the distilled series receives zero-fuzz application and focused execution on a fresh checkout, plus a live Salsa-master overlap/rebase check.
+The current exact executable base is Debian mmdebstrap `debian/1.5.7-3` at `6fde999741f4fe1e7bf38079acf29432ef87a35e`. Historical real-sid run 999 cleared the phase-local producer/consumer repair and reached the independent `chrootless` directory-mtime result after 154 completed tests. An executable Linux Fieldwork gate now applies the exact ordered series twice with zero-fuzz/zero-offset requirements, syntax checks, deterministic candidate digests, and imported-source immutability checks. The gate is committed and syntax-valid; repository execution and the live Salsa-master overlap/rebase check remain pending.
 
 ## Accomplished behavior
 
@@ -28,13 +28,14 @@ Each prior failure stopped the package matrix before the next independent produc
 - `debian/tests/testsuite`: use `/usr/bin/mmdebstrap` for the broad installed-package command.
 - `tests/sigint-during-customize-hook`: use the status-zero dash builtin spelling proven on current sid.
 - `coverage.txt`, `coverage.py`, and `debian/tests/testsuite`: add the hook-free hard class, prepend `create-directory`, preserve ordinary failure, map timeout 124 to 77, and allow broad producer regeneration.
+- `tests/test_upstream_packet_unit_08_current_sid_package_tests.py`: execute and rerun the complete distilled series against fresh imported-source copies.
 
 ### Excluded
 
 - the formatted installed-command proxy and every proxy regression;
 - disposable-container workflow activation, artifact capture, checkout receipts, bug-report capture, and phase-reordering tools;
 - generic process-group probe and selector machinery from PR #326;
-- Linux Fieldwork patch-application guards and synthetic shell fakes;
+- predecessor Linux Fieldwork patch-application guards and synthetic shell fakes;
 - the independent `chrootless` directory-mtime policy owned by #380.
 
 ### Split boundary
@@ -51,8 +52,9 @@ The four patches stay ordered in one package-test submission because they remove
 | Upstream base commit | `6fde999741f4fe1e7bf38079acf29432ef87a35e` |
 | Controlled fork | `NEEDS FORK` |
 | Candidate source branch | patch-series packet; upstream branch absent |
-| Candidate head | `PENDING EXACT SERIES GATE` |
+| Candidate head | `PENDING EXECUTED SERIES GATE` |
 | Linux Fieldwork branch | `upstream/unit-08-current-sid-package-tests` |
+| Linux Fieldwork series-gate commit | `7782872ae2f731a27ed672df3a37b1d3b1581aa4` |
 | Linux Fieldwork head | see `HANDOFF.md` |
 | Imported/local source identity | `upstream/mmdebstrap/.linux-fieldwork-source.json`; imported 2026-07-30 |
 | Patch or series path | `upstream-packets/units/08-current-sid-package-tests/patches/series` |
@@ -80,10 +82,11 @@ The four patches stay ordered in one package-test submission because they remove
 - Current-sid signal selection found dash builtin `kill -s INT -- -PGID` and external compact `kill -INT -- -PGID` as status-zero whole-group spellings; the retained package patch uses the dash builtin.
 - Run 974 executed `create-directory` followed by `root-without-cap-sys-admin`; both passed, exposing phase leakage into broad consumers.
 - Run 999 executed the focused producer/consumer and the later broad producer successfully, completed 154 tests, and first failed independently at `chrootless` directory mtimes.
+- The complete-series test module was committed at `7782872ae2f731a27ed672df3a37b1d3b1581aa4`; its exact source passed Python byte-compilation and AST parsing with SHA-256 `a16b060b02a7c9e1b43db600f0f5789e6e5fc3add7cf93dc95ca32ad314b3dd6`.
 
 ### Yet to be demonstrated
 
-- zero-fuzz, zero-offset application of this newly distilled four-patch series as a series;
+- execution of the complete-series test against the repository tree;
 - focused syntax and package-test execution on the exact distilled head;
 - live overlap/rebase against current Salsa `master`;
 - a current sid run from the exact upstream-facing series without the proxy or other evidence machinery.
@@ -106,7 +109,7 @@ The order follows the historical first-failure sequence and keeps each behavior 
 
 ## Current disposition
 
-`ACTIVE` — the exact series exists, while the fresh application/focused gate and live Salsa-master refresh remain incomplete.
+`ACTIVE` — the exact series and its executable repository gate exist. The gate execution, focused upstream-native run, current-sid exact-series run, and live Salsa-master refresh remain incomplete.
 
 ## Next human decision
 
