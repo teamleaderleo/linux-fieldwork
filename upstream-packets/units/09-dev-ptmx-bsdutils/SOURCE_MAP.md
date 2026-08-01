@@ -31,12 +31,27 @@
 
 This carrier is suitable for the Debian `1.5.7-3` package-source case. It is not canonical mmdebstrap ancestry and cannot prove inclusion of later Forgejo or mailing-list-carried patches.
 
+## GitHub mirror survey
+
+The accessible GitHub repositories named `mmdebstrap` do not contain canonical Forgejo commit `77ec9be5417ee44c96343d2347145585da1b1f94`.
+
+| Repository | Newest inspected identity | `tests/dev-ptmx` result |
+| --- | --- | --- |
+| `deepin-community/mmdebstrap` | `574048f2a720057b75e56622003932f344dc700a`, downstream `1.5.7-3` import | blob `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`; omits `bsdutils` |
+| `teamleaderleo/mmdebstrap` | controlled fork of the same Deepin head | baseline blob `ca1cde...`; candidate blob `fa93b4...` |
+| `RubisetCie/mmdebstrap` | two local commits after the same Deepin base, latest `453ed7e65ccea6d5b0ac19c7ca617fab1fd4ce39` | blob still `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`; omits `bsdutils` |
+| `Ranger-qyf/mmdebstrap` | one ZIP import from 2024 | stale independent import |
+| `openkylin/mmdebstrap` | one initial commit from 2023 | stale independent import |
+
+The Rubiset fork demonstrates that a newer GitHub timestamp can represent local divergence instead of canonical freshness. None of these repositories resolves the mailing-list or Forgejo-history gate.
+
 ## Linux Fieldwork source and candidate
 
 | Role | Path or identity |
 | --- | --- |
 | Linux Fieldwork branch | `upstream/unit-09-dev-ptmx-bsdutils` |
 | Internal validation PR | draft `#402` |
+| Focused sid execution PR | draft `#403` |
 | Imported baseline | `upstream/mmdebstrap/tests/dev-ptmx` |
 | Imported blob | `ca1cde040f945fe871f904ef6a56e040b6a5c9ea` |
 | Existing internal patch | `investigations/mmdebstrap-dev-ptmx-bsdutils/0001-include-bsdutils.patch` |
@@ -57,7 +72,9 @@ This carrier is suitable for the Debian `1.5.7-3` package-source case. It is not
 - PR `#60`: durable transition dossier and classifier; historical ownership agrees with this unit.
 - PR `#72`: reusable current-sid disposable execution carrier; its later phase-scope defects are separate from unit 09.
 - Unit `08` packet: current distilled Debian `1.5.7-3` package-test series and exact executable base `debian/1.5.7-3` at `6fde999741f4fe1e7bf38079acf29432ef87a35e`.
+- PR `#361`: proven current-sid disposable carrier base at `c2b7c43a4b6ce883f6dcdbef8d489bcf48323266`.
 - Draft PR `#402`: internal CI activation for the unit-09 packet regression.
+- Draft PR `#403`: focused current-sid execution carrier for `dev-ptmx`.
 
 ## Historical artifact identity
 
