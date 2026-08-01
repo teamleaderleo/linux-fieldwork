@@ -1,7 +1,7 @@
 diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 --- a/upstream/mmdebstrap/tarfilter
 +++ b/upstream/mmdebstrap/tarfilter
-@@ -369,50 +369,72 @@ def main():
+@@ -369,50 +369,71 @@ def main():
                  return True
          return False
  
@@ -11,21 +11,18 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +        return hardlink_prefix.sub("", name)
 +
 +    def rewrite_name(name, scope, strip_components):
-+        aliases = {normalize_hardlink_name(name)}
 +        if strip_components and args.strip_components:
 +            comps = name.split("/")
 +            if len(comps) <= args.strip_components:
-+                return None, set()
++                return None
 +            name = "/".join(comps[args.strip_components :])
-+            aliases.add(normalize_hardlink_name(name))
 +        if hasattr(args, "trans"):
 +            for regex, replacement, occurrence, global_after, scopes in args.trans:
 +                if scopes[scope]:
 +                    name = _sed_substitute(
 +                        regex, replacement, name, occurrence, global_after
 +                    )
-+                    aliases.add(normalize_hardlink_name(name))
-+        return name, aliases
++        return name
 +
      # starting with Python 3.8, the default format became PAX_FORMAT but we
      # are still explicit here in case of future changes.
@@ -33,8 +30,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
          fileobj=sys.stdout.buffer, mode="w|", format=tarfile.PAX_FORMAT
      ) as out_tar:
 -        hardlink_prefix = re.compile(r"^(?:(?:\.\.?/)|/)+")
--        type_excluded_members = set()
-+        type_excluded_name_aliases = set()
+         type_excluded_members = set()
          retained_member_names = set()
          hardlink_dependency_failure = False
          for member in in_tar:
@@ -47,9 +43,11 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 -                normalized_name = hardlink_prefix.sub("", member.name)
 -                if normalized_name not in retained_member_names:
 -                    type_excluded_members.add(normalized_name)
-+                projected_name, aliases = rewrite_name(member.name, "r", True)
++                projected_name = rewrite_name(member.name, "r", True)
 +                if projected_name is not None:
-+                    type_excluded_name_aliases.update(aliases)
++                    normalized_name = normalize_hardlink_name(projected_name)
++                    if normalized_name not in retained_member_names:
++                        type_excluded_members.add(normalized_name)
                  continue
 -            if member.islnk() and hardlink_prefix.sub(
 -                "", member.linkname
@@ -59,7 +57,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 -                    % (member.name, member.linkname),
 -                    file=sys.stderr,
 +
-+            rewritten_name, _ = rewrite_name(member.name, "r", True)
++            rewritten_name = rewrite_name(member.name, "r", True)
 +            if rewritten_name is None:
 +                continue
 +            member.name = rewritten_name
@@ -67,7 +65,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +                member.pax_headers.pop("path", None)
 +
 +            if member.islnk():
-+                rewritten_linkname, _ = rewrite_name(
++                rewritten_linkname = rewrite_name(
 +                    member.linkname, "h", True
                  )
 -                hardlink_dependency_failure = True
@@ -92,7 +90,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 -                    member.pax_headers.pop("linkpath", None)
 +                member.linkname = rewritten_linkname
 +            elif member.issym():
-+                member.linkname, _ = rewrite_name(
++                member.linkname = rewrite_name(
 +                    member.linkname, "s", False
 +                )
 +            if (
@@ -104,7 +102,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
              member.pax_headers = {
                  k: v
                  for k, v in member.pax_headers.items()
-@@ -427,49 +449,26 @@ def main():
+@@ -427,49 +448,26 @@ def main():
                      exit(1)
                  member.uid += args.idshift
                  member.gid += args.idshift
@@ -153,7 +151,7 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 -                    (member.islnk() or member.issym())
 -                    and member.linkname != original_linkname
 +                    normalized_linkname not in retained_member_names
-+                    and normalized_linkname in type_excluded_name_aliases
++                    and normalized_linkname in type_excluded_members
                  ):
 -                    member.pax_headers.pop("linkpath", None)
 -            type_excluded_members.discard(normalized_name)
@@ -166,9 +164,9 @@ diff --git a/upstream/mmdebstrap/tarfilter b/upstream/mmdebstrap/tarfilter
 +                    hardlink_dependency_failure = True
 +                    break
 +
-+            retained_member_names.add(
-+                normalize_hardlink_name(member.name)
-+            )
++            normalized_name = normalize_hardlink_name(member.name)
++            type_excluded_members.discard(normalized_name)
++            retained_member_names.add(normalized_name)
              if member.isfile():
                  with in_tar.extractfile(member) as file:
                      out_tar.addfile(member, file)
