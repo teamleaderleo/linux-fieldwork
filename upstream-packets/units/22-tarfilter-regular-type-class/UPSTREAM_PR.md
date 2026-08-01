@@ -1,4 +1,4 @@
-# Upstream merge-request draft
+# Upstream pull-request draft
 
 Status: retained draft only; external submission is unauthorized.
 
@@ -13,6 +13,8 @@ tarfilter: treat NUL and 0 as regular-file types
 ## Problem
 
 The selector previously stored only `tarfile.REGTYPE`. The filter compares raw member type bytes, so a NUL-flagged regular file survived regular-file exclusion even though `TarInfo.isfile()` classifies it as a regular file and tarfilter copies its payload through the regular-file path.
+
+Current upstream `main@77ec9be5417ee44c96343d2347145585da1b1f94` still carries this mapping.
 
 ## Change
 
@@ -32,17 +34,18 @@ The focused archive regression contains `REGTYPE`, `AREGTYPE`, and `DIRTYPE` mem
 Replace this section with exact current-upstream receipts:
 
 ```text
-Base commit: <current Salsa master>
+Base commit: 77ec9be5417ee44c96343d2347145585da1b1f94
 Candidate head: <controlled fork commit>
-Focused test: <command and result>
+Focused native test: CMD=./mmdebstrap ./coverage.py --dist unstable <test-name>
 Relevant broader gate: <command and result>
 Cleanup/rerun: <result>
+Complete diff and overlap review: <result>
 ```
 
 ## Scope
 
-This merge request changes regular selector membership only. Hard-link dependency handling, transforms, path/PAX metadata, passthrough bytes, ID shifting, dotfile normalization, and parent metadata remain separate work.
+This pull request changes regular selector membership only. Hard-link dependency handling, transforms, path/PAX metadata, passthrough bytes, ID shifting, dotfile normalization, and parent metadata remain separate work.
 
 ## Authority
 
-This draft has not been submitted. Creating a fork, branch, merge request, comment, or review requires explicit authorization.
+This draft has not been submitted. Creating a fork, branch, pull request, comment, or review requires explicit authorization.
