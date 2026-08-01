@@ -8,6 +8,36 @@ Reason: all four govern the same maintainer-script launch boundary and overlap o
 
 Reopen trigger: current upstream has adopted one or more components in a way that leaves a clean independent subset.
 
+## 2026-08-01 — Split system dpkg configuration isolation to a separate HOLD
+
+Decision: do not add system dpkg-configuration isolation as a fifth patch in the environment/TMPDIR/PATH/wrapper series.
+
+Reason: the four-patch series governs construction of the dpkg and maintainer-script launch environment. Dpkg reads `/etc/dpkg/dpkg.cfg.d/*` and `/etc/dpkg/dpkg.cfg` under a different owner before package scripts execute. The retained probe demonstrated that `env -i` removes user `~/.dpkg.cfg` by removing `HOME`, while system `pre-invoke`, `post-invoke`, and `status-logger` commands still run.
+
+Evidence: `scripts/run-dpkg-config-probe.sh`, `artifacts/dpkg-config-probe.txt`, and `DPKG_CONFIG_DEEP_DIVE.md`.
+
+Disposition: `HOLD` pending selection of one complete policy:
+
+1. a dpkg pre-parse interface to disable/select configuration;
+2. a bounded fail-closed mmdebstrap preflight as an interim compatibility policy;
+3. a private configuration namespace only if its authority and dependency cost are justified.
+
+Reopen trigger: dpkg exposes an official configuration-disable interface, or an exact current-distribution inventory supports a reviewable fail-closed policy.
+
+## 2026-08-01 — Do not claim the environment scrub isolates host dpkg policy
+
+Decision: describe the scrub as blocking direct caller environment and user dpkg-config inheritance, not as blocking system dpkg configuration.
+
+Reason: the controlled system-fragment matrix executed all three command-bearing hooks under `env -i`. Appending replacement hooks did not erase configured commands and caused the deliberate losing cases to return `141` after original commands had already run.
+
+Compatibility note: final `--path-include=*` and target-local `--log=...` neutralized the tested path-filter and log-destination classes. That does not provide a general reset for unknown dpkg options.
+
+## 2026-08-01 — Keep APT host inhibition separate
+
+Decision: do not combine APT shutdown/sleep inhibitor policy with the four-patch candidate or the dpkg-config hold.
+
+Reason: LF-02 demonstrated an APT-owned system-bus call with exact existing APT options that remove it. It has a separate compatibility and policy owner from dpkg configuration and package-script environment construction.
+
 ## 2026-08-01 — Derive target TMPDIR inside the boundary helper
 
 Decision: use `$root/tmp`, reject symlink/non-directory, create when absent, and enforce 01777.
@@ -49,6 +79,12 @@ Reason: the packet must rebase onto exact canonical current upstream. The import
 Decision: record released/imported `6fde999741f4fe1e7bf38079acf29432ef87a35e` and mark current Salsa `master` unresolved.
 
 Reason: the project page and released source were accessible; branch API/raw master and direct clone were unavailable in this execution environment. Guessing that master equals the released tag would corrupt the rebase record.
+
+## 2026-08-01 — Private disclosure must distinguish fixed and held boundaries
+
+Decision: any later private maintainer note may state that both environment inheritance and host dpkg-config execution were dynamically demonstrated, while attaching the four-patch candidate only after its final gates. It must state plainly that system dpkg-config isolation remains unresolved.
+
+Reason: bundling the unresolved dpkg interface problem into a claimed complete fix would overstate the candidate and create a difficult review unit.
 
 ## 2026-08-01 — External-contact state remains closed
 
