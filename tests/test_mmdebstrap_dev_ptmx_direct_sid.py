@@ -71,6 +71,7 @@ class MmdebstrapDevPtmxDirectSidTests(unittest.TestCase):
         self.assertIn("--variant=apt", script)
         self.assertIn("dev-ptmx", script)
         self.assertIn("CMD=/usr/bin/mmdebstrap", script)
+        self.assertIn("for command in curl findmnt mmdebstrap patch pgrep", script)
         self.assertNotIn("make_mirror.sh", script)
         self.assertIn("residual-mounts.txt", script)
         self.assertIn("residual-files.txt", script)
@@ -95,7 +96,10 @@ class MmdebstrapDevPtmxDirectSidTests(unittest.TestCase):
         self.assertIn("investigation/mmdebstrap-dev-ptmx-direct-sid", workflow)
         self.assertIn("docker run --privileged --rm", workflow)
         self.assertIn("debian:sid-slim", workflow)
-        self.assertIn("bsdutils ca-certificates curl mmdebstrap patch", workflow)
+        self.assertIn(
+            "bsdutils ca-certificates curl mmdebstrap patch procps",
+            workflow,
+        )
         self.assertIn("python3-debian shellcheck shfmt sudo util-linux", workflow)
         self.assertNotIn("curl findmnt mmdebstrap", workflow)
         self.assertIn("bash scripts/reproduce-mmdebstrap-dev-ptmx-direct.sh", workflow)
