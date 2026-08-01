@@ -30,7 +30,7 @@ clone_mirror() {
   local name=$1
   local url=$2
   local mirror="$work_root/$name.git"
-  printf 'Cloning %s read-only from %s\n' "$name" "$url"
+  printf 'Cloning %s read-only from %s\n' "$name" "$url" >&2
   git clone --mirror "$url" "$mirror" \
     >"$run_dir/$name-clone.stdout" 2>"$run_dir/$name-clone.stderr"
   git --git-dir="$mirror" remote -v >"$run_dir/$name-remotes.txt"
@@ -42,7 +42,7 @@ clone_mirror() {
   printf '%s\n' "$mirror"
 }
 
-canonical_mirror=$(clone_mirror canonical "$canonical_url" | tail -n1)
+canonical_mirror=$(clone_mirror canonical "$canonical_url")
 canonical_head=$(git --git-dir="$canonical_mirror" rev-parse refs/heads/main)
 printf '%s\n' "$canonical_head" >"$run_dir/canonical-main-head.txt"
 
@@ -98,9 +98,10 @@ curl --fail --location --silent --show-error \
   >"$run_dir/forgejo-issues-page1.json"
 curl --fail --location --silent --show-error \
   "$forgejo_api/pulls?state=all&limit=50&page=1" \
-  >"$run_dir/forgejo-pulls-page1.json"\n
+  >"$run_dir/forgejo-pulls-page1.json"
+
 # Debian packaging history can carry changes absent from a downstream GitHub fork.
-salsa_mirror=$(clone_mirror salsa "$salsa_url" | tail -n1)
+salsa_mirror=$(clone_mirror salsa "$salsa_url")
 git --git-dir="$salsa_mirror" log --all --date=iso-strict \
   --format='%H%x09%aI%x09%D%x09%s' >"$run_dir/salsa-all-history.tsv"
 git --git-dir="$salsa_mirror" log --all --date=iso-strict -p \
@@ -186,7 +187,6 @@ forgejo_pull_hits = json_hits(run_dir / "forgejo-pulls-page1.json")
 mail_hits: dict[str, int] = {}
 for path in sorted(run_dir.glob("debian-lists-*.html")):
     text = path.read_text(encoding="utf-8", errors="replace")
-    # Debian's search page reports a result table or explicit no-hit text.
     mail_hits[path.name] = len(re.findall(r"(?i)(mmdebstrap|dev-ptmx|bsdutils)", text))
 
 bts_text = (run_dir / "debian-bts-mmdebstrap.html").read_text(
