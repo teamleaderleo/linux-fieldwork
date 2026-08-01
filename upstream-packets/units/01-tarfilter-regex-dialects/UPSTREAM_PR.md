@@ -16,6 +16,7 @@ tarfilter: honor basic and extended transform regex dialects
 - translate the executed operator, group, alternation, interval, backreference, and contextual-anchor subset into Python spelling;
 - preserve user capture numbering while normalizing the executed repeated-quantifier cases;
 - reject Python-only active `(?...)` extensions before archive processing;
+- preserve escaped-parenthesis and bracket-expression neighbors of the active-`(?` guard;
 - reject malformed active intervals and proven-invalid consecutive basic intervals;
 - treat an unmatched extended closing parenthesis as a literal when no group is open;
 - retain composition with numeric occurrence selectors and member, hard-link, and symlink target scopes;
@@ -33,7 +34,7 @@ This merge request covers the executed GNU tar 1.35 subset under `LC_ALL=C`. Uns
 
 ## Tests
 
-The retained focused matrix compares candidate archive snapshots directly with GNU tar and covers:
+The focused matrix compares candidate archive snapshots directly with GNU tar and covers:
 
 - basic/extended operator reversal;
 - captures, backreferences, and contextual anchors;
@@ -43,20 +44,37 @@ The retained focused matrix compares candidate archive snapshots directly with G
 - branch-leading basic `*` and literal `\0`;
 - nested simple and interval quantifiers;
 - Python-only special groups;
+- accepted guard neighbors `s/\(?/X/x`, `s/[(?]/X/x`, and `s/\(/X/x`;
 - malformed active intervals;
 - unmatched extended closing parentheses;
 - cleanup and immediate rerun.
 
-Historical internal receipt: repaired head `55d20a4cc08c93b34961c679bdb73458fea4c408` passed Linux Fieldwork hosted run `30581672669` / job `625`. The final merge request must replace this section with exact current-Salsa base/head, upstream-native commands, and fresh results.
+Historical internal receipts:
+
+- repaired grammar head `55d20a4cc08c93b34961c679bdb73458fea4c408` passed Linux Fieldwork hosted run `30581672669` / job `625`;
+- proof head `bb0a79dec47958c6b865d4b382a44baff17ab736` passed run `30582215292` / 634, direct inherited tests twice, focused current-main tests 15/15, and full regex discovery 38/38.
+
+The final merge request must replace these historical receipts with the exact current-Salsa base/head and fresh current-source results.
+
+## Upstream-native execution plan
+
+The current published project runner stages local `./tarfilter` into `shared/tarfilter`. After rebasing, run the exact transform-related names selected from current `coverage.txt` and `tests/` through:
+
+```sh
+CMD=./mmdebstrap ./coverage.py --dist unstable TEST-NAME
+```
+
+Then run the appropriate broader project suite, with `./make_mirror.sh` preparation when the current test instructions require it. Record exact commands, environment, exit statuses, cleanup, and immediate rerun.
 
 ## Current preparation gates
 
-- [ ] rebase/regenerate against exact current canonical Salsa `master`;
+- [ ] resolve exact current canonical Salsa `master` and `tarfilter` blob;
+- [ ] rebase or regenerate without fuzz or offsets;
 - [ ] record exact candidate head and complete diff;
 - [ ] run focused GNU differential matrix on that head;
-- [ ] run current upstream-native test entry points;
+- [ ] run current upstream-native focused and broader entry points;
 - [ ] clean generated state and rerun;
-- [ ] search current issues and merge requests for equivalent work;
+- [ ] search exact live Salsa issues and merge requests for equivalent work;
 - [ ] obtain explicit authorization before creating or sending this merge request.
 
 ## Authority
