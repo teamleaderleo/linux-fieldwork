@@ -1,6 +1,6 @@
 # Current handoff
 
-Updated: `2026-08-01 00:11 UTC`  
+Updated: `2026-08-01`  
 Worker or variant: `primary composition`  
 State: `ACTIVE`
 
@@ -9,47 +9,82 @@ State: `ACTIVE`
 | Item | Value |
 | --- | --- |
 | Linux Fieldwork branch | `upstream/unit-08-current-sid-package-tests` |
-| Linux Fieldwork technical head before this handoff commit | `df59c315ea4af95d32bd01ddb6686cec475452d5` |
+| Linux Fieldwork technical head before this handoff commit | `c98e5ab023a28b3d1000b1d429fdc59e4acc729d` |
 | Linux Fieldwork final branch head | commit containing this `HANDOFF.md`; #397 checkpoint records the returned SHA |
 | Upstream base repository/branch | `https://salsa.debian.org/debian/mmdebstrap.git`; intended `master`, executable base tag `debian/1.5.7-3` |
 | Upstream base commit | `6fde999741f4fe1e7bf38079acf29432ef87a35e` |
 | Candidate fork/branch | `NEEDS FORK`; packet patch series only |
-| Candidate head | `PENDING EXACT SERIES GATE` |
+| Candidate head | `PENDING EXECUTED SERIES GATE` |
 | Patch or series | `upstream-packets/units/08-current-sid-package-tests/patches/series` |
+| Complete-series gate | `tests/test_upstream_packet_unit_08_current_sid_package_tests.py` |
+| Gate introducing commit | `7782872ae2f731a27ed672df3a37b1d3b1581aa4` |
 | Owning issue/PR | #397 unit 08; clean integration carrier PR #361 |
-| Latest distinguishing workflow/run/artifact | PR #361 run `30640356619` / 999; artifact `8798679560`; ZIP SHA-256 `50d8ab7a20cb241ff9821b35329508ecdb0c58cbd3dec348c18d68d1dfe7a244` |
+| Latest distinguishing package run | PR #361 workflow `30640356619` / 999; artifact `8798679560`; ZIP SHA-256 `50d8ab7a20cb241ff9821b35329508ecdb0c58cbd3dec348c18d68d1dfe7a244` |
 
 ## Current bounded claim
 
-Four upstream package-test corrections have been extracted into an ordered series against exact Debian mmdebstrap revision `debian/1.5.7-3` / `6fde999741f4fe1e7bf38079acf29432ef87a35e`. Historical current-sid integration proves the selected Deb822 handling, signal spelling, hook-free producer/consumer order, and broad-phase fixture regeneration reached the next independent result. The newly distilled direct `/usr/bin/mmdebstrap` hunk and the exact four-patch series still require fresh application and execution.
+Four upstream package-test corrections have been extracted into an ordered series against exact Debian mmdebstrap revision `debian/1.5.7-3` / `6fde999741f4fe1e7bf38079acf29432ef87a35e`. Historical current-sid integration proves the selected Deb822 handling, status-zero process-group signal spelling, hook-free producer/consumer order, and broad-phase fixture regeneration reached the next independent result.
 
-## Work completed in this pass
+The branch now contains an executable complete-series gate. Its source parses and compiles, while the gate itself still needs execution against a full Linux Fieldwork checkout. The direct `/usr/bin/mmdebstrap` hunk and the exact four-patch series therefore remain pending exact-head execution.
 
-- read issue #397, packet workflow/index, and every direct unit-08 carrier;
-- read the clean successor PR #361 and its run-999 classification;
-- claimed unit 08 on #397 and created the canonical branch;
-- identified the exact imported source revision and current sid package version;
-- separated upstream package-test changes from LF-only reduction, workflow, probe, and evidence files;
-- created an ordered four-patch series;
-- documented source ownership, mechanism, failed approaches, compatibility limits, historical receipts, pending commands, and delivery decisions;
-- drafted an upstream issue and Salsa merge request without publishing either;
-- recorded the lack of live Salsa-tree materialization and branch-triggered CI in this environment.
+## Work completed in this continuation
 
-## Changed paths
+- refreshed issue #397 and confirmed the existing unit-08 claim;
+- read the remaining direct carrier issue bodies/comments for #119 and #153, including the final #153 closeout receipt;
+- confirmed the canonical accepted scheduling source is PR #359 and the real sid successor evidence is PR #361 run 999;
+- reviewed the existing unit packet, ordered patches, decisions, drafts, and previous handoff;
+- added `tests/test_upstream_packet_unit_08_current_sid_package_tests.py` at `7782872ae2f731a27ed672df3a37b1d3b1581aa4`;
+- made the test apply all four patches twice to fresh copies of the five changed imported-source files;
+- required exact series order, zero fuzz, zero offset, expected patched paths, Python compilation, shell parsing, deterministic candidate digests, and unchanged imported-source digests;
+- compiled and AST-parsed the exact test source locally;
+- recorded the test-source receipt in `TESTS.md` and updated the source map, README, and decision log;
+- checked branch-triggered workflows: none exist because Linux Fieldwork CI runs on `pull_request` or `workflow_dispatch`;
+- attempted to open a draft internal Linux Fieldwork PR solely to activate CI; the connector safety classifier blocked the mutation, and no speculative retry was made;
+- made no Debian, Salsa, mmdebstrap, email, review, or other public contact.
 
+## Changed paths in this continuation
+
+- `tests/test_upstream_packet_unit_08_current_sid_package_tests.py`
 - `upstream-packets/units/08-current-sid-package-tests/README.md`
 - `upstream-packets/units/08-current-sid-package-tests/SOURCE_MAP.md`
-- `upstream-packets/units/08-current-sid-package-tests/DEEP_DIVE.md`
 - `upstream-packets/units/08-current-sid-package-tests/TESTS.md`
 - `upstream-packets/units/08-current-sid-package-tests/DECISIONS.md`
-- `upstream-packets/units/08-current-sid-package-tests/UPSTREAM_ISSUE.md`
-- `upstream-packets/units/08-current-sid-package-tests/UPSTREAM_PR.md`
 - `upstream-packets/units/08-current-sid-package-tests/HANDOFF.md`
-- `upstream-packets/units/08-current-sid-package-tests/patches/0001-tests-sourcesfilter-accept-deb822.patch`
-- `upstream-packets/units/08-current-sid-package-tests/patches/0002-tests-use-absolute-installed-mmdebstrap.patch`
-- `upstream-packets/units/08-current-sid-package-tests/patches/0003-tests-use-current-sid-process-group-sigint.patch`
-- `upstream-packets/units/08-current-sid-package-tests/patches/0004-tests-run-capability-case-in-phase-local-hook-free-pass.patch`
-- `upstream-packets/units/08-current-sid-package-tests/patches/series`
+
+The complete unit branch also retains:
+
+- `DEEP_DIVE.md`;
+- `UPSTREAM_ISSUE.md`;
+- `UPSTREAM_PR.md`;
+- four numbered patch files and `patches/series`.
+
+## Exact new evidence
+
+Test-source validation executed in a transient local file:
+
+```text
+py_compile=PASS
+ast_parse=PASS
+sha256=a16b060b02a7c9e1b43db600f0f5789e6e5fc3add7cf93dc95ca32ad314b3dd6
+```
+
+Interpretation:
+
+- the committed test module is syntactically valid Python;
+- the receipt does not prove patch application because this runtime lacked a materialized repository checkout;
+- `/tmp/test_unit08.py` and `/tmp/__pycache__` were removed after the check.
+
+Workflow/connector receipt:
+
+```text
+commit 7782872ae2f731a27ed672df3a37b1d3b1581aa4: workflow_runs=[]
+draft internal PR creation: blocked by connector safety classifier
+```
+
+Interpretation:
+
+- branch push alone cannot execute the repository gate under the current workflow triggers;
+- the blocked mutation is an interaction/tool event, not package, patch, security, or compatibility evidence.
 
 ## Distinguishing observations
 
@@ -67,7 +102,18 @@ Four upstream package-test corrections have been extracted into an ordered serie
 - PR #359 focused scheduling/application gate passed 369 tests on its generated merge;
 - PR #361 run 999 passed the focused pair and later broad producer in real sid execution;
 - complete carrier/source ownership review finished for the selected four-patch boundary;
+- complete-series gate source was committed, byte-compiled, and AST-parsed;
 - branch contains no public upstream action and no LF-only source machinery in the candidate series.
+
+## Gates still open
+
+- execute `tests.test_upstream_packet_unit_08_current_sid_package_tests` against a full checkout;
+- record both exact patch-application receipts and candidate digests;
+- run focused upstream-native Deb822, command-path, SIGINT, focused-pair, and broad-regeneration tests on the distilled series;
+- run current sid from the exact upstream-facing series without the LF proxy/evidence carrier;
+- fetch current Salsa `master`, record its exact commit, search overlap, and reapply/rebase the series;
+- review the final exact upstream diff after the live rebase;
+- obtain explicit authorization before creating any Salsa fork or merge request.
 
 ## Red or neutral runs classified
 
@@ -78,51 +124,58 @@ Four upstream package-test corrections have been extracted into an ordered serie
 - run 939 missing `tar1.txt`: focused fixture prerequisite, repaired by explicit prefix.
 - run 974 broad archive mismatch: phase-stale baseline, repaired by broad producer regeneration.
 - run 999 `chrootless` directory mtimes: independent later source-policy result; routed to #380.
+- blocked draft internal PR: connector safety event; package claim none.
 
 ## Cleanup state
 
-This pass created GitHub branch files only. No local package installation, mount, socket, container, process, or source-tree mutation survives. Historical run 999's privileged container exited and artifact upload completed. The exact series test created no temporary checkout because the runtime could not materialize the source tree.
+No local package installation, mount, socket, container, long-running process, or source-tree mutation survives. The only local test artifact was `/tmp/test_unit08.py`; it and generated Python cache files were removed. Historical run 999's privileged container exited and artifact upload completed.
+
+GitHub intentionally retains the unit branch, packet, patches, executable test, and internal issue coordination comments.
 
 ## First incomplete step
 
-Apply the exact four-patch series with zero fuzz and zero offset to a fresh copy of `upstream/mmdebstrap`, then compile the transformed Python files and check shell syntax. Record the complete command output, cleanup, and immediate rerun in `TESTS.md`.
+Execute the committed complete-series gate from a full checkout of this branch and retain its exact output.
 
 ## Next safe action
 
-From a full checkout of `teamleaderleo/linux-fieldwork` on this branch, execute:
+From a full checkout of `teamleaderleo/linux-fieldwork` on `upstream/unit-08-current-sid-package-tests`, run:
 
-```text
-set -eu
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT HUP INT TERM
-repo_root=$PWD
-cp -a upstream/mmdebstrap "$work/mmdebstrap"
-cd "$work/mmdebstrap"
-while IFS= read -r patch_name; do
-    patch --batch --forward --fuzz=0 -p1 < "$repo_root/upstream-packets/units/08-current-sid-package-tests/patches/$patch_name"
-done < "$repo_root/upstream-packets/units/08-current-sid-package-tests/patches/series"
-python3 -m py_compile coverage.py debian/tests/sourcesfilter
-sh -n debian/tests/testsuite tests/sigint-during-customize-hook
+```sh
+python3 -m unittest -v \
+  tests.test_upstream_packet_unit_08_current_sid_package_tests
 ```
 
-Then repeat from a second fresh temporary copy. Search output for `fuzz` and `offset`, update `TESTS.md`, and commit the exact receipt. After that, fetch current Salsa `master`, record its exact commit, check overlap, and reapply the series before any current-sid package run.
+Expected behavior:
+
+1. both fresh applications pass;
+2. every receipt names only the expected patched files;
+3. no receipt contains `fuzz` or `offset`;
+4. transformed Python and shell files parse;
+5. first and second candidate digests and receipts match;
+6. imported source digests remain unchanged;
+7. temporary directories are removed after each run.
+
+Record complete stdout/stderr and the exact checkout commit in `TESTS.md`. Run the same command immediately again. After that, fetch current Salsa `master`, record its commit, perform overlap review, and rerun the gate against the refreshed source before any current-sid package execution.
+
+A human may alternatively open a draft internal Linux Fieldwork PR for this branch or invoke `linux-fieldwork-ci.yml` manually. The connector blocked that mutation in this session, so the next worker should use the normal repository UI or an authorized local GitHub client instead of repeating the blocked connector call.
 
 ## Unresolved blockers
 
-- technical: exact distilled-series application and focused tests have yet to run;
+- technical: the committed complete-series gate has not executed against the repository tree;
 - compatibility: direct `/usr/bin/mmdebstrap` selection has historical rationale and still needs exact-head execution;
 - overlap: current Salsa `master` has yet to be fetched and searched for equivalent changes;
-- environment or tooling: this session could read connected GitHub and public project/package pages but could not materialize the live Salsa or repository tree for execution; branch pushes triggered no workflow;
+- environment/tooling: this runtime could read the connected repository but could not materialize it locally, branch pushes do not trigger CI, and draft-PR creation was blocked by the connector classifier;
 - authority: Salsa fork/MR creation and every public upstream action require explicit authorization.
 
 ## Files to read first
 
 1. `README.md`
-2. `SOURCE_MAP.md`
-3. `DEEP_DIVE.md`
-4. `TESTS.md`
+2. `TESTS.md`
+3. `SOURCE_MAP.md`
+4. `DEEP_DIVE.md`
 5. `DECISIONS.md`
-6. issue #397 unit 08, PR #359, and PR #361
+6. `tests/test_upstream_packet_unit_08_current_sid_package_tests.py`
+7. issue #397 unit 08, PR #359, and PR #361
 
 ## External-contact state
 
@@ -136,4 +189,5 @@ Then repeat from a second fresh temporary copy. Search output for `fuzz` and `of
 - avoid rerunning the full sid matrix solely to reproduce run-999 `chrootless`; #380 owns the timestamp decision;
 - avoid treating PR #72 as the live delivery carrier; PR #361 preserves clean integration evidence;
 - avoid claiming current Salsa `master` from the package tag without a fresh fetch and overlap review;
+- avoid retrying the blocked draft-PR connector mutation without a changed authorization/tooling path;
 - avoid contacting Debian or mmdebstrap upstream without explicit authorization.
