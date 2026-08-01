@@ -1,0 +1,45 @@
+diff --git a/debian/tests/sourcesfilter b/debian/tests/sourcesfilter
+--- a/debian/tests/sourcesfilter
++++ b/debian/tests/sourcesfilter
+@@ -1,34 +1,35 @@
+ #!/usr/bin/env python3
+ 
+-from aptsources.sourceslist import SourcesList, Deb822SourceEntry
++from aptsources.sourceslist import SourcesList
+ import apt_pkg
+ import glob
+ import os.path
+ import sys
+ import os
+ 
+ 
+ def main(rootfs):
+     sources = SourcesList(False, deb822=True)
+ 
+     dbglvl = os.environ.get("MMDEBSTRAP_VERBOSITY", "-1")
+     try:
+         dbglvl = int(dbglvl)
+     except ValueError:
+         dbglvl = -1
+     if dbglvl >= 2:
+         print("before:", file=sys.stderr)
+         for s in sources.list:
+             print(s.str(), end="", file=sys.stderr)
+ 
+     os.makedirs(rootfs + "/etc/apt/sources.list.d", exist_ok=True)
+ 
++    # Exploded Deb822 entries proxy their parent file path read-only, so root
++    # the raw output files before splitting multi-value source paragraphs.
++    for source in sources.list:
++        source.file = rootfs + source.file
++
+     # remove all the things we do not want and change components and uri
+-    for s in list(sources):
+-        # since we put everything into a single output file, only one-line
+-        # format is supported for now
+-        assert not isinstance(s, Deb822SourceEntry), s
+-        s.file = rootfs + s.file
++    for s in list(sources.exploded_list()):
+         # if it's a local file:// repo, don't mangle it
+         if s.uri.startswith("file://"):
+             continue
