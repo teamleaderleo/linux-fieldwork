@@ -4,22 +4,24 @@ External contact authorized: `false`
 
 ## Proposed title
 
-`run_qemu.sh` can replace the primary failure during cleanup
+`run_qemu.sh` can replace an earlier host, guest, or signal result during cleanup
 
 ## Proposed issue body
 
-`run_qemu.sh` currently uses one cleanup function for `EXIT`, `INT`, and `TERM`. The handler captures `$?`, performs cleanup, reads the guest result, and may replace the captured status with generic failure 1.
+`run_qemu.sh` combines host execution, guest status publication, signal handling, and cleanup. The original shared `EXIT INT TERM` cleanup handler can replace the result that already owns the failure.
 
-This can produce several misleading results:
+Observed failure classes include:
 
-- a QEMU, timeout, or host failure can become guest failure 1;
-- INT or TERM can return a guest-dependent status instead of 130 or 143;
-- calling `exit` from the signal handler can re-enter cleanup through the installed EXIT trap;
-- a second signal can replace the first signal result or interrupt cleanup;
-- the first signal during ordinary EXIT cleanup can disappear;
-- a later cleanup-time signal can replace a guest failure that had already completed.
+- host timeout or command failure becoming generic guest failure 1;
+- INT or TERM returning a guest-dependent status instead of 130 or 143;
+- signal cleanup re-entering through the installed EXIT trap;
+- a later signal replacing the first or interrupting cleanup;
+- a signal during ordinary cleanup disappearing as success;
+- a later cleanup signal replacing a completed guest failure;
+- a second signal entering before the explicit handler replaces its traps and replacing first-signal identity;
+- a signal entering ordinary EXIT cleanup before recorder traps are installed and bypassing completed guest precedence.
 
-The proposed behavior preserves outcomes in execution order:
+The selected result order is:
 
 ```text
 captured host failure
@@ -29,16 +31,28 @@ captured host failure
 > success
 ```
 
-The candidate separates ordinary EXIT and explicit signal handlers, clears EXIT before finalization, retains the first signal during ordinary cleanup, ignores later handled INT/TERM during bounded cleanup, records the first cleanup failure while continuing later cleanup actions, and selects the earliest authoritative result.
+The candidate separates ordinary EXIT and explicit signal cleanup, clears EXIT before finalization, retains the first cleanup failure while continuing cleanup, records the first ordinary-cleanup signal, and closes handler-entry windows before overlapping signal handling can re-enter.
 
-A reduced real-`/bin/sh` regression matrix covers host, guest, signal, and cleanup combinations, competing signals, cleanup completion, and immediate rerun. A current upstream base identity and upstream-native test command should be added before this draft is used.
+Deterministic reduced `/bin/sh` controls include:
+
+```text
+host 124 + guest failure: original 1, candidate 124
+TERM then INT during explicit handler entry: four-commit candidate 130, repaired candidate 143
+completed guest 1 + TERM during EXIT handler entry: four-commit candidate 143, repaired candidate 1
+early cleanup TERM + later INT: repaired candidate 143 with cleanup complete
+```
+
+The established lifecycle matrix passes 58/58 checks on the repaired source, including cleanup completion and immediate rerun.
+
+Before using this draft, add the exact current Salsa base, equivalent-work search, and current mmdebstrap QEMU-classified project-test results.
 
 ## Publication checklist
 
 - [ ] explicit authorization recorded;
-- [ ] current Salsa `master` SHA recorded;
-- [ ] equivalent open issue or merge request search completed;
-- [ ] exact current source comparison completed;
-- [ ] rebased candidate and test receipts linked;
-- [ ] maintainer-preferred issue channel confirmed;
-- [ ] private Linux Fieldwork-only identifiers removed or translated.
+- [ ] current canonical Salsa `master` and file blob recorded;
+- [ ] equivalent issue, branch, and merge-request search completed;
+- [ ] five logical changes rebased on the exact canonical head;
+- [ ] upstream-native QEMU tests and cleanup/rerun recorded;
+- [ ] checked-in setup-window regression executed in checkout or CI;
+- [ ] maintainer-preferred destination confirmed;
+- [ ] Linux Fieldwork-only identifiers removed from public text.
