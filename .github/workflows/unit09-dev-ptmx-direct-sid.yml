@@ -1,0 +1,80 @@
+name: Unit 09 dev-ptmx direct sid
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/unit09-dev-ptmx-direct-sid.yml"
+      - "scripts/reproduce-mmdebstrap-dev-ptmx-direct.sh"
+      - "investigations/mmdebstrap-dev-ptmx-bsdutils/**"
+      - "upstream/mmdebstrap/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  direct-dev-ptmx:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'investigation/mmdebstrap-dev-ptmx-direct-sid')) ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'investigation/mmdebstrap-dev-ptmx-direct-sid'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RUN_ID: direct-gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Run direct dev-ptmx case in disposable sid container
+        shell: bash
+        run: |
+          set -uo pipefail
+          run_dir="investigations/mmdebstrap-dev-ptmx-bsdutils/runs/$RUN_ID"
+          mkdir -p "$run_dir"
+          set +e
+          docker run --privileged --rm \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            --env RUN_ID="$RUN_ID" \
+            debian:sid-slim \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                bsdutils ca-certificates curl findmnt mmdebstrap patch \
+                python3 python3-debian shellcheck shfmt sudo util-linux
+              apt-get clean
+              bash scripts/reproduce-mmdebstrap-dev-ptmx-direct.sh
+            '
+          status=$?
+          set -e
+          printf '%s\n' "$status" >"$run_dir/container-exit-status"
+          exit 0
+
+      - name: Upload direct execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit09-dev-ptmx-${{ env.RUN_ID }}
+          path: investigations/mmdebstrap-dev-ptmx-bsdutils/runs/${{ env.RUN_ID }}/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Classify direct execution result
+        if: always()
+        shell: bash
+        run: |
+          status=$(cat "investigations/mmdebstrap-dev-ptmx-bsdutils/runs/$RUN_ID/container-exit-status")
+          case "$status" in
+            0)
+              echo "The direct dev-ptmx case passed with clean teardown."
+              ;;
+            77)
+              echo "The direct dev-ptmx case returned neutral status."
+              ;;
+            *)
+              echo "The direct dev-ptmx case failed with status $status."
+              exit "$status"
+              ;;
+          esac
