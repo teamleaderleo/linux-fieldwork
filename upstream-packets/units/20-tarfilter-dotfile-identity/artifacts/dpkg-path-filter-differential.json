@@ -1,0 +1,73 @@
+{
+  "dpkg": "Debian 'dpkg' package management program version 1.22.22 (amd64).",
+  "interpretation": {
+    "boundary": "bare and repeated ./ prefixes extract to the same consumer pathname but are outside dpkg's native filter match",
+    "native_member_form": "dpkg path filters match the ordinary ./path package-member spelling"
+  },
+  "rows": [
+    {
+      "name": "./.config",
+      "pattern": "/.config",
+      "payload_paths": [],
+      "status": 0,
+      "stderr": []
+    },
+    {
+      "name": "./.config",
+      "pattern": "/config",
+      "payload_paths": [
+        "root/.config"
+      ],
+      "status": 0,
+      "stderr": []
+    },
+    {
+      "name": "./config",
+      "pattern": "/config",
+      "payload_paths": [],
+      "status": 0,
+      "stderr": []
+    },
+    {
+      "name": "./config",
+      "pattern": "/.config",
+      "payload_paths": [
+        "root/config"
+      ],
+      "status": 0,
+      "stderr": []
+    },
+    {
+      "name": "./..name",
+      "pattern": "/..name",
+      "payload_paths": [],
+      "status": 0,
+      "stderr": []
+    },
+    {
+      "name": "./...name",
+      "pattern": "/...name",
+      "payload_paths": [],
+      "status": 0,
+      "stderr": []
+    },
+    {
+      "name": ".config",
+      "pattern": "/.config",
+      "payload_paths": [
+        "root/.config"
+      ],
+      "status": 0,
+      "stderr": []
+    },
+    {
+      "name": "././.config",
+      "pattern": "/.config",
+      "payload_paths": [
+        "root/.config"
+      ],
+      "status": 0,
+      "stderr": []
+    }
+  ]
+}
