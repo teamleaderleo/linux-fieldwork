@@ -4,182 +4,233 @@
 
 | Item | Value |
 | --- | --- |
-| Upstream base | `josch/mmdebstrap` `main` `77ec9be5417ee44c96343d2347145585da1b1f94` |
-| Candidate head | local composed source SHA-256 `adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e` |
+| Canonical upstream base | `josch/mmdebstrap` `main` `77ec9be5417ee44c96343d2347145585da1b1f94` |
+| Controlled fork/base | `teamleaderleo/mmdebstrap`, `linux-fieldwork/upstream-main-snapshot` at the same commit |
+| Controlled candidate branch | `linux-fieldwork/unit-15-tarfilter-transform-metadata` |
+| Controlled candidate head | `505bf81079a3b76c7d56bffa8097c1b5a494898e` |
+| Candidate source commit | `f7833615824ad99023c21a495840d10f64c6401a` |
+| Native-test commit | `f7337a7d2f33d280c8e5b1576dd729f4d076c13a` |
+| Coverage-registration commit | `505bf81079a3b76c7d56bffa8097c1b5a494898e` |
 | Linux Fieldwork branch | `upstream/unit-15-tarfilter-transform-metadata` |
-| Linux Fieldwork packet base | `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Platform/distribution | execution container; distro package identity not recorded |
-| Architecture | `x86_64` execution environment |
-| Kernel | container host kernel; exact release not retained in first run |
-| Shell/runtime | POSIX shell wrapper; Python 3.13.5 |
-| Privilege boundary | unprivileged focused archive operations |
-| Important tool versions | GNU tar 1.35; GNU patch 2.8; Git available |
+| Runtime | Python 3.13.5; GNU tar 1.35; GNU patch 2.8 |
+| Kernel/architecture | Linux 6.12.13, x86_64 |
+| Privilege boundary | unprivileged archive creation, filtering, inspection, and extraction in disposable directories |
 
-## Source and patch identity
+## Exact file identities
 
 ```text
-baseline Git blob:
+baseline tarfilter Git blob:
   ad776167a8473d5d15dbe22e850f4f6db35cf278
-baseline SHA-256:
+baseline tarfilter SHA-256:
   442b056aeb414aef0e33d59b6235623ca4d6072c62272508281d126cb3f3d957
-historical PR #68 patch blob:
-  1703984aa0c030e5131618a3541ee85bfd68ec65
-historical PR #102 patch blob:
-  81828a468854e7ec9ef4cda9626b9c57314afba3
-regenerated patch SHA-256:
-  4d8cb2f180cb7798a15195c2dcfac164b409f68a18c69d507cfc624d4725703c
-candidate source SHA-256:
+candidate tarfilter Git blob:
+  adb330efcc941bf5e646f195c245a3184e42f8e2
+candidate tarfilter SHA-256:
   adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e
+native test Git blob:
+  bc9fb4e0593df5a37dee986308ebb62abc4b6839
+native test SHA-256:
+  adab3852d9c8e719d64a24e1aed386d2eeccb45a43922f854d7458aa486f8caa
+coverage.txt Git blob after registration:
+  fdac8b9f86b04e48af6476c32b649b1ed4bda95a
+regenerated source patch SHA-256:
+  4d8cb2f180cb7798a15195c2dcfac164b409f68a18c69d507cfc624d4725703c
+controlled-fork native receipt SHA-256:
+  74d0ceff423a8bbc57bd5e8ae4dff3aa6ba1cfc105ebdbfd47d717f9e20f33a1
+packet matrix JSON SHA-256:
+  325db677bba5b435c45de2f09f89b2f52fd88e62137660094457623adb1e8106
 ```
 
-## Baseline reproducer
+## Controlled fork diff
 
-### Command
+Comparison from `linux-fieldwork/upstream-main-snapshot` to `linux-fieldwork/unit-15-tarfilter-transform-metadata`:
 
-The packet wrapper materializes the exact imported source and runs all controls:
+```text
+base and merge base: 77ec9be5417ee44c96343d2347145585da1b1f94
+head: 505bf81079a3b76c7d56bffa8097c1b5a494898e
+status: ahead
+ahead_by: 3
+behind_by: 0
+files:
+  coverage.txt                         +2   -0
+  tarfilter                          +179  -23
+  tests/tarfilter-transform-metadata +250  -0
+```
+
+The three commits separate source materialization, native-test addition, and test registration. They do not represent a decided upstream series shape.
+
+## Native test location and ownership
+
+- Test file: `tests/tarfilter-transform-metadata`
+- Registration: `coverage.txt` paragraph `Test: tarfilter-transform-metadata`
+- Upstream runner behavior: `coverage.py` verifies one-to-one filename/paragraph registration, copies the selected test into `shared/test.sh`, runs shellcheck and shfmt, and executes through `run_null.sh`, `run_qemu.sh`, or sudo according to the test configuration.
+- This test has no root, QEMU, or APT-config marker, so the runner would select the null path in a complete checkout.
+
+## Exact direct native rerun
+
+The rerun used two disposable source roots. Both contained the same native test. The baseline root was produced by reverse-applying the clean packet patch with zero fuzz; the candidate root contained the exact fork source bytes.
+
+### Baseline preparation and command
 
 ```sh
-upstream-packets/units/15-tarfilter-transform-metadata/scripts/materialize_and_run.sh
+patch --fuzz=0 -R -p1 -d /mnt/data/unit15-native-rerun/baseline \
+  -i /mnt/data/unit15-local/patch.diff
+
+cd /mnt/data/unit15-native-rerun/baseline/upstream/mmdebstrap/tests
+./tarfilter-transform-metadata
 ```
 
-The core baseline replacement control is equivalent to:
+Observed:
+
+```text
+reverse patch status: 0
+baseline source SHA-256: 442b056aeb414aef0e33d59b6235623ca4d6072c62272508281d126cb3f3d957
+test status: 1
+stdout: empty
+first stderr line: Traceback (most recent call last):
+last stderr line: AssertionError: s/a/b/
+```
+
+The assertion is the intended first-versus-global losing control. The old implementation changes `a/a` to `b/b`; the expected GNU behavior is `b/a`.
+
+### Candidate syntax and command
 
 ```sh
-python3 upstream/mmdebstrap/tarfilter --transform='s/a/b/' < a-a.tar > baseline.tar
-python3 upstream/mmdebstrap/tarfilter --transform='s/a/b/g' < a-a.tar > /dev/null
+python3 -m py_compile \
+  /mnt/data/unit15-native-rerun/candidate/upstream/mmdebstrap/tarfilter
+
+sh -n \
+  /mnt/data/unit15-native-rerun/candidate/upstream/mmdebstrap/tests/tarfilter-transform-metadata
+
+cd /mnt/data/unit15-native-rerun/candidate/upstream/mmdebstrap/tests
+./tarfilter-transform-metadata
+./tarfilter-transform-metadata
 ```
 
-### Expected distinguishing result
+Observed:
 
-- ordinary replacement changes both matches under Python's default `re.sub()` behavior;
-- explicit `g` is rejected;
-- default transform leaves hard-link and symlink target text prefixed;
-- strip leaves a stale long PAX path;
-- the PR #68 predecessor rejects a numeric selector.
-
-### Observed result
-
-- status: baseline ordinary command `0`; `g` command nonzero;
-- archive name: `b/b` for `s/a/b/`;
-- links: `hard -> prefix/target`, `sym -> prefix/target` after member rename;
-- PAX: prefixed 120-byte path remains visible after strip;
-- predecessor: numeric `2` rejected;
-- receipt: `artifacts/matrix-result.json`.
-
-## Candidate reproducer
-
-### Patch application
-
-```sh
-patch --fuzz=0 -p1 -d /path/to/mmdebstrap \
-  -i upstream-packets/units/15-tarfilter-transform-metadata/patches/0001-tarfilter-transform-metadata.patch
+```text
+Python compile status: 0
+POSIX shell syntax status: 0
+candidate run 1 status: 0
+candidate run 1 stdout: tarfilter transform metadata: PASS
+candidate run 1 stderr: empty
+candidate run 2 status: 0
+candidate run 2 stdout: tarfilter transform metadata: PASS
+candidate run 2 stderr: empty
+matching leftover temporary directories: 0
 ```
 
-Observed: status `0`, no fuzz, no offsets, and output byte-identical to the composed source. See `artifacts/APPLICATION.txt`.
+Receipt: `artifacts/FORK_NATIVE_TEST.txt`.
 
-### Focused matrix
+### Formatting tool availability
+
+```text
+shellcheck: NOT_INSTALLED
+shfmt: NOT_INSTALLED
+```
+
+Those are unexecuted gates, not failures.
+
+## Native test matrix
+
+| Case | Baseline or predecessor | Candidate | Reference/control |
+| --- | --- | --- | --- |
+| Ordinary replacement | `a/a -> b/b`; native test stops | `a/a -> b/a` | GNU tar |
+| Global replacement | `g` rejected | `a/a -> b/b` | GNU tar |
+| Whole-match `&` | unsupported semantics | `[a]/a` | GNU tar |
+| Escaped delimiter | narrow parser boundary | `x#y/a` | GNU tar |
+| Default target scopes | link targets remain prefixed | default `rsh` | GNU tar |
+| Uppercase `S` | no scope model | symlink target preserved | GNU tar |
+| Hard-link extraction | transformed target unavailable | extraction succeeds and inode is shared | filesystem assertion |
+| Long PAX strip | stale prefixed `path`/`linkpath` | regenerated leaf values | archive inspection and extraction |
+| Numeric selectors | PR #68 predecessor rejects | `2`, `2g`, `g2`, `0`, `0g`, `22`, `2g3`, `i2g` pass | GNU tar |
+| Non-ASCII numerals | unsupported | rejected | negative control |
+| Cleanup/rerun | n/a | two passes, no leftovers | `/tmp` scan |
+
+## Packet-owned matrix
+
+The packet wrapper remains the broad retained differential:
 
 ```sh
 upstream-packets/units/15-tarfilter-transform-metadata/scripts/materialize_and_run.sh \
   > /tmp/unit15-matrix.json
 ```
 
-### Expected result
+Observed across three direct executions plus one wrapper execution:
 
-Candidate output matches GNU tar for the retained replacement, scope, PAX, and numeric matrix; extraction and inode checks pass; unsupported non-ASCII selectors fail.
+```text
+status: PASS
+Python: 3.13.5
+GNU tar: 1.35
+candidate SHA-256: adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e
+JSON SHA-256: 325db677bba5b435c45de2f09f89b2f52fd88e62137660094457623adb1e8106
+```
 
-### Observed result
+The packet matrix additionally retains the PR #68 predecessor rejection, independent numeric counting for link targets, and exact source blob check.
 
-- status: `0`;
-- result JSON: `status: PASS`;
-- candidate SHA-256: `adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e`;
-- GNU tar: 1.35;
-- Python: 3.13.5;
-- wrapper output SHA-256: `325db677bba5b435c45de2f09f89b2f52fd88e62137660094457623adb1e8106`.
+## Patch application
 
-## Matrix
+Selected source application:
 
-| Case | Baseline or predecessor | Candidate | Exact gate | Result identity |
-| --- | --- | --- | --- | --- |
-| Ordinary replacement | `a/a -> b/b` | `a/a -> b/a` | wrapper, `s/a/b/` | matches GNU tar |
-| Global replacement | `g` rejected | `a/a -> b/b` | wrapper, `s/a/b/g` | matches GNU tar |
-| Whole-match `&` | unsupported semantics | `[a]/a` | wrapper, `s/a/[&]/` | matches GNU tar |
-| Escaped delimiter | narrow parser boundary | `x#y/a` | wrapper, `s#a#x\#y#` | matches GNU tar |
-| Default target scopes | link targets stale | default `rsh` | wrapper, default expression | matches GNU tar |
-| Uppercase `S` | no scope model | symlink text preserved | wrapper, `S` expression | matches GNU tar |
-| Hard-link extraction | transformed target unavailable | extraction succeeds; shared inode | wrapper extraction assertion | pass |
-| Long PAX strip | stale prefixed `path`/`linkpath` | regenerated leaf values | wrapper, 120-byte leaf | pass |
-| Numeric `2` | PR #68 predecessor rejects | second match only | wrapper | matches GNU tar |
-| Numeric plus global | predecessor rejects | start at selected match | wrapper, `2g` and `g2` | matches GNU tar |
-| Zero | predecessor rejects | ordinary/global default | wrapper, `0` and `0g` | matches GNU tar |
-| Repeated decimal runs | predecessor rejects | last run selected | wrapper, `2g3` | matches GNU tar |
-| Non-ASCII numerals | rejected | rejected | wrapper | matches GNU tar rejection |
-| Cleanup | no retained temp root expected | no `unit15-matrix.*` root remains | wrapper trap | pass |
-| Immediate rerun | n/a | identical JSON | three direct runs plus wrapper run | SHA-256 identical |
+```sh
+patch --fuzz=0 -p1 -d /path/to/mmdebstrap \
+  -i upstream-packets/units/15-tarfilter-transform-metadata/patches/0001-tarfilter-transform-metadata.patch
+```
 
-## Upstream-native gates
+Observed: status `0`, no fuzz, no offsets, and candidate bytes exactly equal to the controlled-fork source. Historical PR #68 plus PR #102 Git patches remain provenance; their offset behavior and GNU patch 2.8 parser-hunk rejection are recorded in `artifacts/APPLICATION.txt`.
 
-| Gate | Exact command | Result | Candidate head |
+## Upstream-native gate table
+
+| Gate | Exact command or entry point | Result | Exact candidate |
 | --- | --- | --- | --- |
-| Focused upstream tarfilter test | unresolved upstream-native entry point | NOT RUN | local SHA-256 `adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e` |
-| Relevant integration tests | current checkout required | NOT RUN | local SHA-256 `adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e` |
-| Formatting/lint | current checkout required | NOT RUN | local SHA-256 `adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e` |
-| Build/package test | current checkout required | NOT RUN | local SHA-256 `adb1a8353bcd676a8acdba4318b198539820b890e2a96016b9909d382942e42e` |
+| Native test direct baseline | `tests/tarfilter-transform-metadata` against exact baseline | EXPECTED FAIL, status 1 at first replacement | baseline blob `ad776167...` |
+| Native test direct candidate | same test against fork source | PASS twice, status 0 | fork head `505bf810...` source bytes |
+| Python syntax | `python3 -m py_compile tarfilter` | PASS | source SHA-256 `adb1...` |
+| Shell syntax | `sh -n tests/tarfilter-transform-metadata` | PASS | test SHA-256 `adab...` |
+| `coverage.txt` registration | exact filename paragraph added | PRESENT; structural diff reviewed | coverage blob `fdac...` |
+| `coverage.py` selected test | `CMD=./mmdebstrap ./coverage.py tarfilter-transform-metadata` in full checkout | NOT RUN | fork head `505bf810...` |
+| shellcheck | runner arguments from `coverage.py` | NOT RUN; tool absent | fork head `505bf810...` |
+| shfmt | runner arguments from `coverage.py` | NOT RUN; tool absent | fork head `505bf810...` |
+| relevant package/build tests | project-specific full checkout gates | NOT RUN | fork head `505bf810...` |
+| hosted CI | controlled fork workflow, if configured | NOT RUN | fork head `505bf810...` |
 
-## Linux Fieldwork retained gates
+## Historical exact-head receipts
 
-| Gate or fixture | Exact command/run | Result | Artifact/digest |
-| --- | --- | --- | --- |
-| Direct matrix run 1 | `python3 scripts/run_unit15_matrix.py` in materialized worktree | PASS | `artifacts/matrix-result.json`; SHA-256 `325db677bba5b435c45de2f09f89b2f52fd88e62137660094457623adb1e8106` |
-| Immediate rerun | same command after cleanup | PASS, identical | retained hash in this file |
-| Third direct rerun | same command in this continuation | PASS, identical | retained hash in this file |
-| Packet wrapper gate | `scripts/materialize_and_run.sh` in synthetic checkout | PASS, identical | retained hash in this file |
-| Clean patch application | GNU patch 2.8, `--fuzz=0` | PASS, byte-identical | `artifacts/APPLICATION.txt` |
+- PR #56: workflow `30535166174` success on `640f414cb18cf47b3e803856392c720414bea333`.
+- PR #68: workflow `30536181358` success on `1f8f16bf0841a720bdc1da727000c26a3ab13a09`.
+- PR #102: workflow `30543327305` success on `46f49d04639d6baf43243e5096175866c7e6a58e`; corrected code run `30543032983`; initial differential `30542362599`.
 
-Historical exact-head CI receipts retained from carriers:
+These receipts support provenance. The direct controlled-fork rerun is the current-head evidence.
 
-- PR #56: `30535166174` success on `640f414cb18cf47b3e803856392c720414bea333`.
-- PR #68: `30536181358` success on `1f8f16bf0841a720bdc1da727000c26a3ab13a09`.
-- PR #102: `30543327305` success on `46f49d04639d6baf43243e5096175866c7e6a58e`; corrected code run `30543032983`; initial differential `30542362599`.
+## Environment and interruption classification
 
-## Patch application and rebase
+An attempted local `git clone` of the controlled fork failed because the execution container could not resolve `github.com`. The connected GitHub repository API remained available and was used to create and inspect the branch. This is an environment/network result, not a product or patch failure.
 
-- base identity: imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`, matching the relevant inspected current-upstream source;
-- historical application command: `git apply` PR #68 patch then PR #102 patch;
-- historical result: both apply, with offsets recorded in `artifacts/APPLICATION.txt`;
-- GNU patch historical result: PR #68 parser hunk rejected by patch 2.8;
-- selected application command: GNU patch 2.8 with `--fuzz=0` on regenerated patch;
-- selected result: clean, no offsets, byte-identical candidate;
-- conflict resolution: none in regenerated patch;
-- complete source diff reviewed: one file, 179 insertions, 23 deletions; semantic review recorded in `DEEP_DIVE.md`;
-- active overlap searched: 2026-08-01; receipt in `artifacts/UPSTREAM_OVERLAP.md`.
+## Cleanup
 
-## Cleanup and rerun
+The native fixture uses Python `TemporaryDirectory` instances. After the baseline run and two candidate runs, a `/tmp` scan found zero directories matching:
 
-The direct Python matrix uses `TemporaryDirectory` for every archive case. The wrapper uses `mktemp -d` and a trap for EXIT, HUP, INT, and TERM. The recorded leftover scan is empty. Three direct executions and one wrapper execution produced byte-identical JSON.
+```text
+tarfilter-transform-*
+tarfilter-targets-*
+tarfilter-pax-*
+tarfilter-occurrence-*
+```
 
-No process, socket, mount, container, image, cache entry, package state, or source-tree modification remains. The packet intentionally retains the patch, scripts, JSON receipt, hashes, and prose records.
+No process, socket, mount, package state, cache entry, or external repository object was left running or modified. Intentional state is the controlled fork branch and Linux Fieldwork packet.
 
 ## Tests not run
 
-- full current-upstream checkout tests;
-- an upstream-native committed regression in the project's preferred form;
+- selected test through the complete `coverage.py`/`run_null.sh` path;
+- shellcheck and shfmt;
+- complete `coverage.sh` suite;
 - Debian package build and autopkgtest;
-- other GNU tar versions;
-- other Python versions;
-- BSD tar or other tar implementations;
-- full unit 01 regex-dialect composition;
-- persistent `flags=`, expression lists, case conversion, locale/collation, and malformed-expression parity.
-
-## Failure classification
-
-- Historical PR #48 malformed patch: patch packaging carrier.
-- Historical stale default symlink expectation: test contract/product compatibility carrier.
-- Historical PR #102 `str.isdigit()` issue: product parser over-acceptance.
-- Historical reference diagnostic decode failure: evidence harness.
-- GNU patch 2.8 rejection of the retained PR #68 parser hunk in this pass: patch-application portability of the retained carrier.
-- No red result occurred for the regenerated candidate matrix.
+- other GNU tar and Python versions;
+- other architectures and distributions;
+- unit 01 regex-dialect composition;
+- persistent `flags=`, expression lists, case conversion, locale/collation, and broad malformed-expression parity.
 
 ## Final evidence statement
 
-The executed matrix establishes that the regenerated candidate cleanly applies to the exact baseline and matches GNU tar 1.35 for the tested replacement language, default and `S` target scopes, hard-link extraction, long PAX path/linkpath regeneration, and numeric occurrence semantics. It also establishes deterministic cleanup and rerun behavior. The conclusion ends before full current-upstream checkout integration and upstream-native gates.
+The controlled fork at `505bf81079a3b76c7d56bffa8097c1b5a494898e` is exactly based on canonical upstream `77ec9be5417ee44c96343d2347145585da1b1f94` and contains only the source candidate, one native regression, and its registration. The exact baseline loses the native test at the first replacement discriminator. The exact candidate passes that test twice, passes Python and shell syntax, matches the retained GNU tar differential matrix, extracts hard links correctly, regenerates tested PAX metadata, and leaves no matching temporary state. The conclusion stops before execution through the complete upstream runner, formatting tools, package gates, hosted CI, and broader environment coverage.
