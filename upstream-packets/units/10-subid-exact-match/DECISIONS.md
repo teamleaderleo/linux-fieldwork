@@ -32,7 +32,7 @@
 
 **Reason:** This separates record parsing from identity comparison and closes the observed substring, regex, malformed-row, and leading-option cases.
 
-**Evidence:** PR #92 repair history, PR #291 test matrix, `DEEP_DIVE.md`, and the fresh packet-local synthetic smoke in `TESTS.md`.
+**Evidence:** PR #92 repair history, PR #291 test matrix, `DEEP_DIVE.md`, and the exact imported-source gate in `TESTS.md`.
 
 **Alternatives considered:**
 
@@ -105,17 +105,43 @@
 
 ---
 
-## 2026-08-01 — keep the unit ACTIVE pending direct current-base and package integration gates
+## 2026-08-01 — admit exact source bytes before applying the packet patch
 
-**Decision:** State remains `ACTIVE`.
+**Decision:** Treat the full imported testsuite as admissible test input only after its Git blob matches `9f4eda87430da38b08a23a50a51e53b22cf7414b`.
 
-**Reason:** Public refresh identified the current released package and dgit/upstream revisions, and the upstream-path patch passed a fresh synthetic smoke. Direct Salsa checkout, exact current-base apply, and focused package/user-namespace execution remain.
+**Reason:** A reconstructed excerpt proves the local predicate but cannot detect drift elsewhere in the file or a copy error. Full-file Git identity makes the application and shell-syntax result attributable to the exact recorded Debian 1.5.7-3 source.
 
-**Evidence:** `TESTS.md` and `HANDOFF.md`.
+**Evidence:** `artifacts/2026-08-01-exact-imported-source-gate.md` and `TESTS.md`.
 
 **Alternatives considered:**
 
-- `READY FOR AUTHORIZATION` based on historical proof;
+- retain the earlier nine-line synthetic smoke as the strongest current gate;
+- trust copied source without checking its blob;
+- wait for live Salsa DNS before running any stronger local gate.
+
+**Consequences:**
+
+- the packet now has exact baseline and candidate file blobs;
+- Git whitespace checking, mail-patch application, full shell syntax, and the behavior matrix share one admitted source;
+- live Salsa drift remains a clearly separate gate.
+
+**Reopen trigger:** the live Salsa file blob differs, the packet patch changes, or the recorded imported source identity is corrected.
+
+**Authority effect:** Internal read/test work only; no external action.
+
+---
+
+## 2026-08-01 — keep the unit ACTIVE pending live current-base and package integration gates
+
+**Decision:** State remains `ACTIVE`.
+
+**Reason:** The exact imported-source gate is green, but direct live Salsa head/blob verification and focused package/user-namespace execution remain.
+
+**Evidence:** `README.md`, `TESTS.md`, the exact-source artifact, and `HANDOFF.md`.
+
+**Alternatives considered:**
+
+- `READY FOR AUTHORIZATION` based on exact imported-source proof;
 - `HOLD` on missing network access;
 - `RETIRED` due runtime numeric-ID work.
 
@@ -123,12 +149,13 @@
 
 - the technical queue has one executable next step;
 - no authorization request is premature;
-- runtime numeric-ID work stays adjacent.
+- runtime numeric-ID work stays adjacent;
+- the exact imported-source result need not be repeated unless source or patch identity changes.
 
-**Reopen trigger:** completion of the direct current-base and focused integration gates, or discovery of equivalent active upstream work.
+**Reopen trigger:** completion of the live current-base and focused integration gates, or discovery of equivalent active upstream work.
 
 **Authority effect:** External contact remains false; none occurred.
 
 ## Final disposition
 
-`ACTIVE` on 2026-08-01. The exact candidate and synthetic proof are ready for direct current-Salsa application and focused Debian package/user-namespace testing. External contact remains unauthorized.
+`ACTIVE` on 2026-08-01. The exact candidate is proven on the recorded Debian 1.5.7-3 source and is ready for live Salsa identity/application and focused Debian package/user-namespace testing. External contact remains unauthorized.
