@@ -22,24 +22,35 @@ Use repositories with visible current commits, multiple contributors, active hum
 
 This is continuation work rather than a fresh candidate.
 
-### 2. Start: libarchive cpio large-inode test and mapping correctness
+### 2. Started: libarchive cpio large-inode mapping correctness
 
 - Upstream: `libarchive/libarchive#3314`
 - State on refresh: open, unassigned, no matching pull request found.
 - Maintainer direction: a pull request is explicitly welcome. Tests should prove that in-range inode values remain correct and out-of-range values receive unique in-range archive values.
 - Reporter state: reporter lacks bandwidth and uses a downstream tmpfs workaround.
-- Likely boundary:
-  - `cpio/test/test_format_newc.c`
-  - `cpio/test/test_option_c.c`
-  - cpio inode-number assignment/mapping code
-- First discriminator:
-  1. make the tests deterministic without relying on the host filesystem allocating a huge inode;
-  2. establish current behavior for in-range, colliding truncated, and out-of-range inode values;
-  3. decide whether the defect belongs only to test expectations or to archive inode synthesis;
-  4. require uniqueness after representational narrowing.
-- Promotion signal: one bounded product correction plus regression coverage on ordinary Linux CI.
+- Controlled fork branch: `teamleaderleo/libarchive`, `linux-fieldwork/cpio-large-inode-probe`.
+- Internal draft PR: `teamleaderleo/libarchive#2`.
+- Fork base: `5cbeac6081fd4ea07ea71f6a8d3d8988f4449d68`.
+- Canonical/fork current newc writer blob: `b9de7d362e221520d77bcf690c0d1dbddf7932f2`.
+- Product source changes: none; the branch currently contains only an executable probe, workflow, and handoff.
 
-This is the best fresh candidate from the refresh.
+Source reading found a product-level distinction:
+
+- newc writes `archive_entry_ino64(entry) & 0xffffffff` after warning, so distinct same-device inputs differing by `2^32` collide;
+- odc already synthesizes unique archive inode values and reuses a value for repeated hardlink identity;
+- the deterministic library writer test `libarchive/test/test_write_format_cpio_newc.c` is a better regression owner than waiting for ext4 to allocate a large inode in a cpio program test.
+
+The retained public-API probe constructs inode `1` and inode `0x100000001` on the same device and checks:
+
+- `NEWC_DISTINCT_COLLISION=PASS`;
+- `ODC_DISTINCT_UNIQUE=PASS`;
+- `ODC_HARDLINK_STABLE=PASS`.
+
+The key design constraint is single-pass output. A writer cannot preserve every in-range inode verbatim while guaranteeing that an earlier synthetic overflow value will never collide with a later in-range value unless it pre-scans all input. The smallest source-local model is therefore to synthesize all nonzero newc inode identities, following odc, while explicitly testing hardlink and device semantics.
+
+First incomplete step: obtain the focused CI receipt on the exact branch head, then add the deterministic product regression and smallest mapping implementation.
+
+This is the best fresh candidate from the refresh and is now active internal work.
 
 ### 3. Scan pool: BuildKit beginner and UX queue
 
@@ -72,12 +83,13 @@ This is the best fresh candidate from the refresh.
 
 ## Immediate execution order
 
-1. inspect the current `teamleaderleo/libarchive` fork at exact source identity;
-2. locate the two failing cpio tests and inode assignment owner;
-3. construct a deterministic narrow-range fixture before selecting a fix;
+1. complete the libarchive deterministic probe CI;
+2. add a product regression in `libarchive/test/test_write_format_cpio_newc.c`;
+3. implement and test newc inode identity synthesis with explicit hardlink/device rules;
 4. keep systemd PR `#245` queued for its VM gate;
-5. perform no upstream contact or claim without explicit authorization.
+5. repeat narrow BuildKit overlap scans between product passes;
+6. perform no upstream contact or claim without explicit authorization.
 
 ## Authority
 
-Public source, issues, pull requests, and review traffic were read. This branch records internal research only. No upstream issue comment, pull request, review, reaction, email, or other contact was created.
+Public source, issues, pull requests, and review traffic were read. Controlled branches and draft PRs were created only inside the user's forks and repositories. No upstream issue comment, pull request, review, reaction, email, or other contact was created.
