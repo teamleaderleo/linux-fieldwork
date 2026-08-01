@@ -1,186 +1,107 @@
 # Decision log
 
-## 2026-08-01 — retain one regex dialect unit
+## 2026-08-01 — keep one repaired regex dialect unit
 
-**Decision:** Keep the core dialect translator and the Python-group, malformed-interval, unmatched-close, and repeated-quantifier repairs in one upstream review unit.
+**Decision:** Keep basic/extended translation, repeated-quantifier normalization, Python-group rejection, malformed-interval handling, unmatched-close handling, and PR #220 accepted-neighbor controls in one unit.
 
-**Reason:** They modify one transform-pattern parser boundary, overlap source context, and share one GNU differential matrix. Sending the core without the repairs would preserve known success/error divergence.
+**Reason:** They modify the same transform-pattern boundary and require one GNU differential matrix. The accepted-neighbor controls prove the rejection guard remains narrow.
 
-**Evidence:** Issue #212; PRs #151, #202, and #216; `DEEP_DIVE.md`.
+**Evidence:** PRs #151, #216, and #220; `scripts/run_matrix.py`.
 
-**Alternatives considered:**
-
-- split each grammar repair into a separate merge request;
-- send only the core translator and document the known gaps;
-- expand this unit into complete POSIX/GNU regex compatibility.
-
-**Consequences:**
-
-- the current-source diff must contain the complete repaired parser state;
-- broader locale/classes/flags/replacement work remains separate;
-- review remains bounded to one language-boundary change.
-
-**Reopen trigger:** Current canonical-source review reveals independently mergeable files or a maintainer contribution rule requiring a smaller sequence.
-
-**Authority effect:** Internal work only; external contact remains unauthorized.
-
----
-
-## 2026-08-01 — retain PR #220 as proof-only evidence
-
-**Decision:** Add PR #220's accepted-neighbor regression to the unit evidence and final test plan, without adding a product-source commit.
-
-**Reason:** The active-`(?` rejection needs positive controls proving that escaped literal parentheses and bracket-expression content remain accepted. PR #220 changes two proof files, zero product-source files, inherits the full regex matrix, and passed exact-head plus current-main execution.
-
-**Evidence:** PR #220 head `bb0a79dec47958c6b865d4b382a44baff17ab736`; merge `ed49c01a85e9d363626db5d2973a33b67209e13b`; CI `30582215292` / 634; `tests/test_tarfilter_transform_regex_python_group_controls.py` blob `5a7bbac729caf71be6033f71d792dfde0d5f653a`.
-
-**Alternatives considered:**
-
-- omit the controls because the product fix is already green;
-- create a fifth source patch;
-- broaden the guard test into general POSIX bracket support.
-
-**Consequences:**
-
-- final upstream regression should include the three accepted-neighbor cases;
-- candidate source remains the four-patch product state;
-- the compatibility claim remains bounded.
-
-**Reopen trigger:** Current upstream already contains an equivalent regression or its test conventions require the cases in another native test.
-
-**Authority effect:** Internal work only; external contact remains unauthorized.
-
----
-
-## 2026-08-01 — treat target scopes and occurrences as prerequisites pending current-source review
-
-**Decision:** Preserve PR #68 and PR #102 patches in the ordered rebase manifest, while withholding a final one-MR versus ordered-series decision until current canonical source is inspected.
-
-**Reason:** The retained regex tests apply those patches first and prove composition across target fields and numeric occurrence state. Unit 15 owns broader transform/PAX semantics, so current upstream may already contain, supersede, or require separation of those prerequisite behaviors.
-
-**Evidence:** `SOURCE_MAP.md`; PRs #68, #102, and #151; focused test setup.
-
-**Alternatives considered:**
-
-- declare all four patches one final merge request now;
-- drop the prerequisites and claim only parser-unit tests;
-- move the entire regex unit into unit 15.
-
-**Consequences:**
-
-- the next worker must inspect exact current source before generating a final patch;
-- fuzz or offsets cannot be used to force the old stack;
-- the final candidate may be one current-source commit or an ordered series, with the regex translator and repairs remaining together.
-
-**Reopen trigger:** Exact current Salsa `master` establishes which prerequisite behavior is present and which source lines remain.
-
-**Authority effect:** Internal work only; external contact remains unauthorized.
-
----
-
-## 2026-08-01 — record Debian 1.5.7-3 as package-source corroboration
-
-**Decision:** Treat current Debian archive source `1.5.7-3` as useful source-generation evidence while keeping exact Salsa `master` as the canonical gate.
-
-**Reason:** Debian Sources lists `1.5.7-3` in sid/forky and a 11,453-byte `tarfilter`. Salsa publishes tag `debian/1.5.7-3` at abbreviated commit `6fde9997`. A package-version mirror commit described as updating to `1.5.7-3` carries the same `tarfilter` Git blob as the Linux Fieldwork import. The runtime could not obtain a direct Debian archive file digest or exact current Salsa tree.
-
-**Evidence:** `README.md`, `SOURCE_MAP.md`, and `TESTS.md`; Debian package source page; Debian Sources; Salsa tags; mirror commit `574048f2a720057b75e56622003932f344dc700a`.
-
-**Alternatives considered:**
-
-- promote the package snapshot to canonical base;
-- ignore package-source freshness entirely;
-- rerun only against the old imported blob.
-
-**Consequences:**
-
-- the packet can state that the retained source aligns with the current Debian package generation;
-- the unit remains `ACTIVE` until exact Salsa `master` and its `tarfilter` blob are recorded;
-- package evidence cannot authorize fuzz, offsets, or a release-ready claim.
-
-**Reopen trigger:** Direct canonical access reveals a newer or different `tarfilter`, or a direct archive digest disproves the package-generation correspondence.
-
-**Authority effect:** Internal work only; external contact remains unauthorized.
-
----
-
-## 2026-08-01 — select the native test path
-
-**Decision:** Use the project's `coverage.py`/`coverage.sh` runner for the upstream-native gate after the current-source candidate exists.
-
-**Reason:** The published `1.5.7-3` README documents full and individual execution, and `coverage.py` stages local `./tarfilter` as `shared/tarfilter`. This provides a direct path for testing the rebased source file under project-owned orchestration.
-
-**Evidence:** Debian Sources `README.md` and `coverage.py`; `TESTS.md`.
-
-**Alternatives considered:**
-
-- treat Linux Fieldwork unittests as the only gate;
-- invent an upstream command before reading the current tree;
-- test only the installed `/usr/bin/mmtarfilter`.
-
-**Consequences:**
-
-- the next worker must inspect current `coverage.txt` and `tests/` to select exact transform-related names;
-- the candidate must be present as `./tarfilter` so the runner avoids the installed fallback;
-- focused Linux Fieldwork differentials and upstream-native tests both remain required.
-
-**Reopen trigger:** Current Salsa changes its runner or provides a dedicated tarfilter test entrypoint.
+**Reopen trigger:** Current upstream test conventions require a smaller source/test split.
 
 **Authority effect:** Internal work only.
 
 ---
 
-## 2026-08-01 — decline to repeat the old-base test matrix
+## 2026-08-01 — adopt unit 15 as the exact prerequisite
 
-**Decision:** Stop after pinning the current evidence and rebase manifest instead of reapplying the retained patches to imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`.
+**Decision:** Vendor unit 15's regenerated transform metadata/occurrence patch as `patches/0001-transform-metadata-prerequisite.patch`.
 
-**Reason:** Existing exact-head receipts already cover that retained composition. Issue #397 requires current canonical-upstream evidence. The runtime could not transfer the exact Salsa tree or Debian source archive into the shell environment.
+**Reason:** Unit 15 proved the historical PR #68 carrier is unsuitable for GNU patch 2.8 and produced a clean zero-fuzz/no-offset replacement. Unit 1 needs its replacement, target-scope, PAX, and numeric-occurrence state.
 
-**Evidence:** `TESTS.md` records DNS failures for Git and archive download; issue #212 and PR #220 record green exact-head receipts.
+**Evidence:** Unit-15 branch and handoff; prerequisite patch blob `38510533dc015182f3e87e9d2f3777eea5b8c93b`; result blob `adb330efcc941bf5e646f195c245a3184e42f8e2`.
 
 **Alternatives considered:**
 
-- rerun the old matrix solely to create a fresh timestamp;
-- use the package-version mirror as canonical base;
-- infer Salsa `master` from the release tag.
+- force the historical PR #68/#102 series;
+- omit target/link/occurrence composition;
+- fold all unit-15 work invisibly into the regex patch.
 
-**Consequences:**
+**Consequences:** The packet is a transparent two-patch series. Unit 15 remains independently owned.
 
-- no fresh execution result is claimed;
-- the first incomplete step remains exact canonical checkout and patch application;
-- evidence stays useful to the next worker.
+**Reopen trigger:** Upstream already contains equivalent prerequisite behavior.
 
-**Reopen trigger:** A runtime can fetch the canonical Salsa repository and exact `master` commit.
-
-**Authority effect:** No change; internal work only.
+**Authority effect:** Internal work only.
 
 ---
 
-## 2026-08-01 — destination and publication boundary
+## 2026-08-01 — regenerate the regex carrier
 
-**Decision:** Record `GitLab/Salsa fork and merge request` as the intended delivery method, with `NEEDS FORK`, `NEEDS BRANCH`, and explicit authorization gates.
+**Decision:** Replace the historical regex application form with `patches/0002-tarfilter-regex-dialects.patch` generated directly from prerequisite blob `adb330ef...` to candidate blob `ca8e656c...`.
 
-**Reason:** Issue #212 names the canonical mmdebstrap Salsa project. Issue #397 authorizes internal preparation and forbids new public contact without a deliberate unit-specific authorization.
+**Reason:** Applying historical core blob `2d7c457...` after the clean prerequisite yielded offsets `+25`, `+19`, then a failed parser hunk. Accepting offsets or manual placement would hide the exact source boundary.
 
-**Evidence:** Issue #397 authority section; issue #212 destination and authority sections; `README.md`.
+**Evidence:** `artifacts/APPLICATION.txt`; regenerated patch blob `7e7d37a77b0215af033b0c97770c83cce130911a`.
 
 **Alternatives considered:**
 
-- Debian BTS patch;
-- mailing-list patch series;
-- direct maintainer email;
-- public Salsa issue before a merge request.
+- accept the two offsets and repair the failed hunk manually;
+- keep four historical patches as the release series;
+- merge prerequisite and regex semantics into one opaque patch.
 
-**Consequences:**
+**Consequences:** The current regex patch applies with zero fuzz and zero offsets and includes every retained grammar repair. Historical patches remain evidence only.
 
-- no fork, branch, issue, merge request, comment, review, or email may be created yet;
-- the packet drafts remain internal;
-- authorization should occur only after the technical gate is complete.
+**Reopen trigger:** A newer exact upstream source requires another regeneration.
 
-**Reopen trigger:** Current contribution instructions identify another required delivery path, or the repository owner explicitly selects one.
+**Authority effect:** Internal work only.
+
+---
+
+## 2026-08-01 — accept the direct matrix as current product evidence
+
+**Decision:** Treat the complete regenerated 57-case matrix as current product evidence for the exact 1.5.7-3 fork source and matching current visible upstream `tarfilter` bytes.
+
+**Reason:** The wrapper verifies base, prerequisite, and candidate blobs before execution. Candidate and GNU tar agree for 41 success cases, two link/occurrence cases, and 11 shared-invalid cases; three POSIX forms preserve the explicit candidate-reject/GNU-accept boundary.
+
+**Evidence:** `artifacts/FULL_MATRIX.txt`, receipt SHA-256 `573cf47dcb947f62910fd3cdd77fe8103a0499b99b2d5d63dc0f081fb60ea8c0`; representative rerun digest `731adb7f...` twice.
+
+**Consequences:** Exact source application and focused behavior are green. Upstream-native execution remains independent and required.
+
+**Reopen trigger:** Candidate bytes move, GNU reference behavior changes, or upstream-native tests expose a product gap.
+
+**Authority effect:** Internal work only.
+
+---
+
+## 2026-08-01 — keep parallel tarfilter units separate during this pass
+
+**Decision:** Reuse unit 15 only. Record units 16 and 18–22 as later composition work.
+
+**Reason:** They contain substantive corrections in distinct source paths. Unit 16 already vendors unit 15; none supersedes regex dialect handling.
+
+**Evidence:** `artifacts/PARALLEL_UNITS.md` and branch comparisons.
+
+**Consequences:** Unit 1 stays reviewable. A later combined branch must compose selected units and review ordinary line overlap.
+
+**Reopen trigger:** The owner selects a combined tarfilter submission branch.
+
+**Authority effect:** Internal work only.
+
+---
+
+## 2026-08-01 — native test and publication boundary
+
+**Decision:** Run focused upstream-native tests through `coverage.py`, then the appropriate broader gate. Keep Salsa publication behind explicit authorization.
+
+**Reason:** The project runner stages local `./tarfilter`. Direct GNU differentials and native orchestration test different risks.
+
+**Consequences:** No send decision yet. A user-controlled GitHub fork exists, while a candidate branch and authorized Salsa MR remain absent.
+
+**Reopen trigger:** Current upstream changes its test or contribution path.
 
 **Authority effect:** External contact remains `false`.
 
 ## Current disposition
 
-`ACTIVE` as of 2026-08-01. Exact current canonical base and blob, clean current-source application/regeneration, current-source focused and native tests, exact live Salsa overlap search, and complete-diff review remain.
+`ACTIVE` as of 2026-08-01. Exact application and the full direct GNU matrix are green. Upstream-native execution, selected parallel-unit composition, canonical Salsa head/overlap verification, and candidate-branch creation remain.
