@@ -1,0 +1,12 @@
+test_cleanup_precedence (tests.test_packet_patch.PacketPatchTest.test_cleanup_precedence) ... ok
+test_failure_preserves_existing_and_absent (tests.test_packet_patch.PacketPatchTest.test_failure_preserves_existing_and_absent) ... ok
+test_hup_int_term_and_rerun (tests.test_packet_patch.PacketPatchTest.test_hup_int_term_and_rerun) ... ok
+test_patch_applies_without_offset_or_fuzz_to_exact_imported_source (tests.test_packet_patch.PacketPatchTest.test_patch_applies_without_offset_or_fuzz_to_exact_imported_source) ... skipped 'exact imported source unavailable at /upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu'
+test_success_mode_and_post_publication_term (tests.test_packet_patch.PacketPatchTest.test_success_mode_and_post_publication_term) ... ok
+test_trailing_slash_rejected_before_mktemp (tests.test_packet_patch.PacketPatchTest.test_trailing_slash_rejected_before_mktemp) ... ok
+test_upstream_paths_coordinates_and_single_publication (tests.test_packet_patch.PacketPatchTest.test_upstream_paths_coordinates_and_single_publication) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 1.087s
+
+OK (skipped=1)
