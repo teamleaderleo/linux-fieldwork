@@ -1,0 +1,53 @@
+{
+  "schema": "linux-fieldwork-upstream-packet-test-receipt/1",
+  "unit": 18,
+  "date": "2026-08-01",
+  "linux_fieldwork_branch": "upstream/unit-18-tarfilter-no-option-passthrough",
+  "branch_head_before_receipt": "d27d46c88307f98353d11ae8b6587bf65498b3f7",
+  "execution_method": "clean local reconstruction from exact GitHub branch blobs because the shell environment had no network DNS",
+  "exact_blobs": {
+    "upstream/mmdebstrap/tarfilter": "ad776167a8473d5d15dbe22e850f4f6db35cf278",
+    "investigations/tarfilter-no-option-passthrough/tarfilter-no-option-passthrough.patch": "44428ecf8d83a6edf2fca4f4da030129daacb13f",
+    "tests/test_tarfilter_no_option_passthrough.py": "0b8a0e092a6dd2bf7481e077e7c7ec0f27b461bb",
+    "upstream-shaped-patch": "9f856f389c7a991813dbe9d959edaf94c1155dec"
+  },
+  "environment": {
+    "python": "3.13.5",
+    "gnu_tar": "1.35",
+    "gnu_patch": "2.8"
+  },
+  "commands": [
+    "python3 -m unittest -v tests.test_tarfilter_no_option_passthrough",
+    "python3 -m py_compile upstream/mmdebstrap/tarfilter tests/test_tarfilter_no_option_passthrough.py",
+    "patch --dry-run --fuzz=0 -p1 -d <temporary-upstream-root> -i patches/0001-tarfilter-restore-no-option-passthrough.patch",
+    "patch --fuzz=0 -p1 -d <temporary-upstream-root> -i patches/0001-tarfilter-restore-no-option-passthrough.patch",
+    "python3 -m py_compile <temporary-upstream-root>/tarfilter"
+  ],
+  "results": {
+    "focused_first_run": {
+      "tests": 3,
+      "seconds": 10.181,
+      "status": "PASS",
+      "exit_status": 0
+    },
+    "focused_clean_rerun": {
+      "tests": 3,
+      "seconds": 8.617,
+      "status": "PASS",
+      "exit_status": 0
+    },
+    "source_and_test_py_compile": "PASS",
+    "upstream_patch_dry_run_fuzz_0": "PASS",
+    "upstream_patch_apply_fuzz_0": "PASS",
+    "upstream_candidate_py_compile": "PASS",
+    "upstream_candidate_sha256": "8fec7cf1b1c6e314714e9a0347a7485f41d176e5cbc2769904f10af84a07e4ac",
+    "cleanup": "PASS; no tarfilter-no-option-* temporary directories remained"
+  },
+  "coverage": [
+    "baseline gzip rewrite negative control",
+    "plain/gzip/bzip2/xz/GNU-PAX-sparse byte identity",
+    "strip zero and ID-shift zero byte identity",
+    "active path/PAX/type/strip/transform/ID-shift semantic controls"
+  ],
+  "external_contact": false
+}
