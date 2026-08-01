@@ -24,14 +24,7 @@ The composed stream processes each member through these logical operations:
 5. scoped transforms;
 6. output.
 
-Patch 0001 adds:
-
-- normalized names removed by type;
-- names actually retained;
-- first-known dependency rejection;
-- loop break followed by normal tar-context close and status 1.
-
-Its dependency check occurs before steps 3 through 5. Its retained update occurs after those steps but uses a saved input identity. Lifecycle timing is correct; identity timing is wrong.
+Patch 0001 adds normalized names removed by type, names actually retained, first-known dependency rejection, and loop break followed by normal tar-context close and status 1. Its dependency check occurs before steps 3 through 5. Its retained update occurs after those steps but uses a saved input identity. Lifecycle timing is correct; identity timing is wrong.
 
 Patch 0002 introduces one `rewrite_name()` path backed by unit 15's `_sed_substitute`:
 
@@ -69,29 +62,15 @@ Options:
 --type-exclude=SYMTYPE --strip-components=1
 ```
 
-Predecessor:
+Predecessor returns status 1 and a finalized partial archive containing regular `base`.
 
-- status 1;
-- diagnostic names `root/peer -> root/base`;
-- finalized partial archive containing regular `base`.
-
-Selected candidate:
-
-- status 0;
-- archive contains regular `base` and hard link `peer -> base`;
-- GNU tar extracts successfully;
-- both files share one inode.
+Selected candidate returns status 0, emits regular `base` and hard link `peer -> base`, and GNU tar extracts one inode.
 
 ### Genuine removed final target
 
 Input regular `root/base` followed by hard link `root/peer -> root/base`; option `--type-exclude=REGTYPE`.
 
-Selected candidate:
-
-- status 1;
-- original-name diagnostic;
-- no hard-link member emitted;
-- finalized valid empty archive.
+Selected candidate returns status 1, retains the original-name diagnostic, emits no hard-link member, and finalizes a valid empty archive.
 
 ### Strip-dropped target and dependent link
 
@@ -101,21 +80,7 @@ A one-component target name and hard-link target are both dropped by `--strip-co
 
 ### Strip-only reference failure
 
-Input:
-
-```text
-regular root/base
-hard link prefix/peer -> prefix/root/base
-```
-
-`--strip-components=1` already emits:
-
-```text
-regular base
-hard link peer -> root/base
-```
-
-GNU tar extraction fails even with no type exclusion. Adding `--type-exclude=REGTYPE` removes `base` but does not create the reference mismatch. Unit 16 therefore preserves status 0 and the same broken retained link. Unit 15 owns the general strip-reference behavior.
+Input regular `root/base` and hard link `prefix/peer -> prefix/root/base`. `--strip-components=1` already emits regular `base` and broken hard link `peer -> root/base`. GNU tar extraction fails without type exclusion. Unit 16 preserves that result and leaves the general rewrite behavior with unit 15.
 
 ### Transform `H` scope failure
 
@@ -127,41 +92,27 @@ These controls reject a broader “any alias ever seen” policy.
 
 ### Member-local type filtering
 
-- Removes matching members independently.
-- PR #244 demonstrates status 0 with a dangling hard link.
-- Rejected for the tarfilter-specific type option.
+PR #244 demonstrates status 0 with a dangling hard link. Rejected for the tarfilter-specific type option.
 
 ### Input-name focused rejection
 
-- PR #248 remembers normalized type-skipped input names.
-- Catches genuine target-before-link removal.
-- Originally interrupted archive finalization and mishandled duplicate names.
-- Superseded by PR #310.
+PR #248 catches a genuine target-before-link removal but originally interrupted archive finalization and mishandled duplicate names. Superseded by PR #310.
 
 ### Finalized rejection and retained duplicate state
 
-- PR #310 closes the output stream before status 1.
-- Preserves an earlier retained target across a later excluded duplicate.
-- Updates retention after later skip decisions.
-- Selected as patch-0001 predecessor.
+PR #310 closes the output stream before status 1, preserves an earlier retained target across a later excluded duplicate, and updates retention after later skip decisions. Selected as patch-0001 predecessor.
 
 ### Alias projection
 
-- Stored input, post-strip, and post-transform aliases.
-- Passed all 442 tests in run `30690434953`.
-- Direct controls prove over-attribution: it reports a type-filter failure for an archive already broken by strip processing.
-- Rejected and retained under `patches/rejected/`.
+Alias projection stored input, post-strip, and post-transform aliases. It passed all 442 tests in run `30690434953`. Direct controls prove over-attribution: it reports a type-filter failure for an archive already broken by strip processing. Rejected and retained under `patches/rejected/`.
 
 ### Final projected identity
 
-- Stores one surviving final identity per excluded or retained member.
-- Uses hard-link target scope for retained references.
-- Preserves original strings for diagnostics.
-- Selected.
+Final projected identity stores one surviving final identity per excluded or retained member, uses hard-link target scope for retained references, and preserves original strings for diagnostics. Selected.
 
 ## Clean prerequisite selection
 
-The historical PR #68 patch records reviewed transform and target-scope behavior, yet its parser hunk does not apply with zero fuzz to exact imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`. Runs `30689716762`, `30690001217`, and `30690165287` preserved that packaging evidence.
+The historical PR #68 patch records reviewed transform and target-scope behavior, yet its parser hunk does not apply with zero fuzz to exact imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`. Runs `30689716762`, `30690001217`, and `30690165287` preserve that packaging evidence.
 
 Unit 15 regenerated the transform/metadata candidate against the imported blob. Unit 16 retains that exact patch as 0000 and generates patches 0001 and 0002 for its five-field transform tuple and `_sed_substitute` helper.
 
@@ -213,25 +164,24 @@ Dpkg-compatible path filtering remains unchanged.
 
 ### Selected focused gate
 
-Run `30690541675`, job `91344358024`, exact head `ec55994f0db12044f9c7ef9f843fe42aec7393e6`:
-
-- 4 patch files and 11 hunks validated;
-- compilation passed;
-- 442 tests passed;
-- all four focused cases passed;
-- shell and command-help gates passed.
+Run `30690541675`, job `91344358024`, exact head `ec55994f0db12044f9c7ef9f843fe42aec7393e6` validated 4 patch files and 11 hunks, compiled, passed 442 tests, and passed shell and command-help gates.
 
 ### Inherited gate
 
-Run `30690583438`, job `91344466738`, head `300b51056ded64a56ec3998bc639a57e9ea81125`:
-
-- 4 patch files and 11 hunks validated;
-- compilation passed;
-- 450 tests passed;
-- prefix, independent-filter rerun, first-peer, and duplicate-target cases passed;
-- shell and command-help gates passed.
+Run `30690583438`, job `91344466738`, head `300b51056ded64a56ec3998bc639a57e9ea81125` validated the same active series, compiled, passed 450 tests, and passed shell and command-help gates.
 
 That run also exposed four accidental duplicate focused tests through a module-level class alias. Commit `7fe46662141fa39a3b18ae1baba29b2b39f6c330` changes the import to a module reference. The clean expanded rerun is `30691015678`.
+
+## Complete branch review
+
+Comparison with `main` at `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` shows exactly 14 added files:
+
+- 2 executable test modules;
+- 8 packet records and drafts;
+- 3 active ordered patches;
+- 1 rejected patch retained as evidence.
+
+The branch does not modify the imported tarfilter directly. The patch series remains the source candidate.
 
 ## Why the patches belong together
 
