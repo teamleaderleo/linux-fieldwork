@@ -1,0 +1,55 @@
+Command:
+/bin/sh upstream-packets/units/03-gpgvnoexpkeysig-lifecycle/scripts/run-real-gpg-fixture.sh
+
+Host:
+Linux 6.12.13 x86_64
+apt 3.0.3 (amd64)
+Python 3.13.5 available
+
+=== run 1 ===
+fixture=unit03-real-gpg-apt-release
+gpg=gpg (GnuPG) 2.4.7
+gpgv=gpgv (GnuPG) 2.4.7
+baseline_blob=83370755454a1322bf6862751aab7381d175aa8b
+candidate_blob=de7e0ae24218632fe2e32a1130f5c2a39f8c4aed
+fixture_fingerprint=101ADC118DCAD3250E318197BC128341BFCB45C5
+direct_expired_rc=0
+baseline_expired_rc=0
+candidate_expired_rc=0
+direct_badsig_rc=1
+baseline_badsig_rc=0
+candidate_badsig_rc=1
+baseline_apt_expired_rc=0
+candidate_apt_expired_rc=0
+direct_expired_status=[GNUPG:] EXPKEYSIG BC128341BFCB45C5 Linux Fieldwork Unit 03 <unit03@example.invalid>
+candidate_expired_status=[GNUPG:] GOODSIG BC128341BFCB45C5 Linux Fieldwork Unit 03 <unit03@example.invalid>
+direct_badsig_status=[GNUPG:] BADSIG BC128341BFCB45C5 Linux Fieldwork Unit 03 <unit03@example.invalid>
+candidate_badsig_status=[GNUPG:] BADSIG BC128341BFCB45C5 Linux Fieldwork Unit 03 <unit03@example.invalid>
+candidate_tmpdirs_empty=yes
+result=PASS
+
+=== run 2 ===
+fixture=unit03-real-gpg-apt-release
+gpg=gpg (GnuPG) 2.4.7
+gpgv=gpgv (GnuPG) 2.4.7
+baseline_blob=83370755454a1322bf6862751aab7381d175aa8b
+candidate_blob=de7e0ae24218632fe2e32a1130f5c2a39f8c4aed
+fixture_fingerprint=37D9D7286BA777801A42E57D4E40D9FA91A683D2
+direct_expired_rc=0
+baseline_expired_rc=0
+candidate_expired_rc=0
+direct_badsig_rc=1
+baseline_badsig_rc=0
+candidate_badsig_rc=1
+baseline_apt_expired_rc=0
+candidate_apt_expired_rc=0
+direct_expired_status=[GNUPG:] EXPKEYSIG 4E40D9FA91A683D2 Linux Fieldwork Unit 03 <unit03@example.invalid>
+candidate_expired_status=[GNUPG:] GOODSIG 4E40D9FA91A683D2 Linux Fieldwork Unit 03 <unit03@example.invalid>
+direct_badsig_status=[GNUPG:] BADSIG 4E40D9FA91A683D2 Linux Fieldwork Unit 03 <unit03@example.invalid>
+candidate_badsig_status=[GNUPG:] BADSIG 4E40D9FA91A683D2 Linux Fieldwork Unit 03 <unit03@example.invalid>
+candidate_tmpdirs_empty=yes
+result=PASS
+
+=== digests ===
+script_sha256=dce709f2aeca82a2e0d38b427a1fd3aaff0b0c8a6deea1b80b3f13d91d6e6e98
+fixture_sha256=0c17479259d62505307d0f8df9759195a724a6f2e2900dc56c15e10104918dcc
