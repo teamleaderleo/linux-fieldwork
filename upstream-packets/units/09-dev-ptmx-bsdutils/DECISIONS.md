@@ -20,22 +20,40 @@
 
 **Reason:** the earlier internal patch targets `upstream/mmdebstrap/tests/dev-ptmx`, which is correct for Linux Fieldwork regression but unsuitable as a direct upstream patch.
 
-## 2026-08-01 — Require exact current-head application before authorization
+## 2026-08-01 — Use the user GitHub fork as a downstream implementation carrier
 
-**Decision:** keep state `ACTIVE` until the patch applies with zero fuzz and zero offset to upstream head `77ec9be5417ee44c96343d2347145585da1b1f94`, or a fresher verified head.
+**Decision:** create `teamleaderleo/mmdebstrap:linux-fieldwork/unit-09-dev-ptmx-bsdutils` from `master` head `574048f2a720057b75e56622003932f344dc700a` and commit the one-line source correction at `43082a6bc959e2d7cefae48f52e045cc90869287`.
 
-**Reason:** this environment could read the official repository page but DNS resolution prevented a canonical clone or raw-file fetch. The local imported source still matches the known defect, yet direct current-head byte evidence remains preferable before external delivery.
+**Evidence:** the base `tests/dev-ptmx` blob equals the Linux Fieldwork import blob `ca1cde040f945fe871f904ef6a56e040b6a5c9ea`. The candidate blob is `fa93b4b845ff4927a72f258364bd920e8c7dc573`. GitHub compare reports one commit, one file, one insertion, and one deletion.
+
+**Boundary:** the repository head matches `deepin-community/mmdebstrap` and carries downstream `1.5.7-3` packaging history. It is a valid Debian-package execution carrier, not proof of canonical upstream freshness.
+
+## 2026-08-01 — Treat missing mailing-list and canonical-main patches as a rebase risk
+
+**Decision:** keep the canonical overlap gate open even though the downstream candidate is exact and minimal.
+
+**Reason:** the controlled GitHub fork has Deepin downstream ancestry, while canonical mmdebstrap uses Forgejo `main`. Equivalent fixes, later test edits, or mailing-list-carried patches may exist outside the GitHub history. Final delivery must rebase or reapply against verified canonical bytes.
+
+## 2026-08-01 — Add a packet-specific exact-blob regression
+
+**Decision:** commit `tests/test_upstream_packet_unit_09_dev_ptmx_bsdutils.py` and execute it through draft internal PR `#402`.
+
+**Reason:** the test independently reproduces both exact Git blob identities, applies the upstream-rooted packet patch to a fresh tree, rejects fuzz and offset, requires one changed line, and preserves every customize hook. This connects the durable packet to the controlled fork commit without relying on network checkout.
+
+## 2026-08-01 — Require canonical current-head application before authorization
+
+**Decision:** keep state `ACTIVE` until the patch applies with zero fuzz and zero offset to canonical head `77ec9be5417ee44c96343d2347145585da1b1f94`, or a fresher verified head, after overlap review.
+
+**Reason:** this environment can read the official repository page but DNS resolution prevents canonical clone or raw-file fetch. The downstream carrier proves the candidate against Debian `1.5.7-3`; direct canonical byte evidence remains required for an upstream pull request.
 
 ## 2026-08-01 — Keep current-sid named execution as an open gate
 
-**Decision:** run `dev-ptmx --mode=root --variant=apt` through the disposable sid carrier and repeat after cleanup before moving to `READY FOR AUTHORIZATION`.
+**Decision:** run `dev-ptmx --mode=root --variant=apt` through the unit-08 disposable sid carrier and repeat after cleanup before moving to `READY FOR AUTHORIZATION`.
 
-**Reason:** historical ownership is proven and the static candidate is green. Dynamic execution confirms the current package universe and catches drift in the test fixture or harness.
+**Reason:** historical ownership is proven and the static candidate is green. Debian sid still carries `mmdebstrap 1.5.7-3`, making the controlled carrier relevant to current package execution. Dynamic execution confirms the current package universe and catches harness drift.
 
-## 2026-08-01 — Use a Forgejo fork and pull request
+## 2026-08-01 — Preserve final delivery on canonical Forgejo
 
-**Decision:** intended delivery is a fork of `josch/mmdebstrap` and a pull request against `main`.
+**Decision:** the GitHub downstream branch is staging and evidence only. Intended final delivery remains a fork of `josch/mmdebstrap` and a pull request against canonical `main`.
 
-**Current prerequisite:** `NEEDS FORK`.
-
-**Authority:** external creation, comment, issue, pull request, email, or other contact requires explicit authorization.
+**Authority:** external creation, comment, issue, pull request, email, or other contact requires explicit authorization. Draft Linux Fieldwork PR `#402` is internal coordination and CI only.
