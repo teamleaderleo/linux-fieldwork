@@ -72,6 +72,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: unit-11-canonical-upstream-gate
-          path: unit-11-*.txt
-                unit-11-*.log
+          path: |
+            unit-11-*.txt
+            unit-11-*.log
           if-no-files-found: error
