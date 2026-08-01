@@ -1,8 +1,7 @@
-diff --git a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
-index dce7687..ee9f343 100644
---- a/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
-+++ b/upstream/mmdebstrap/mmdebstrap-autopkgtest-build-qemu
-@@ -1,12 +1,78 @@
+diff --git a/mmdebstrap-autopkgtest-build-qemu b/mmdebstrap-autopkgtest-build-qemu
+--- a/mmdebstrap-autopkgtest-build-qemu
++++ b/mmdebstrap-autopkgtest-build-qemu
+@@ -318,12 +318,78 @@
  WORKDIR=
 +IMAGE_TMPDIR=
 +IMAGE_TMP=
@@ -83,7 +82,7 @@ index dce7687..ee9f343 100644
  
  FAT_OFFSET_SECTORS=$((1024 * 2))
  FAT_SIZE_SECTORS=$((1024 * 254))
-@@ -89,7 +155,7 @@ mmdebstrap "$@" | {
+@@ -406,7 +472,7 @@ mmdebstrap "$@" | {
      set -- "$@" -U "$uuid"
      EXTOPTS="$EXTOPTS,hash_seed=$uuid"
    fi
@@ -92,7 +91,7 @@ index dce7687..ee9f343 100644
    echo "+ mke2fs $*" >&2
    /sbin/mke2fs "$@"
  }
-@@ -148,8 +214,8 @@ mcopy -i "$WORKDIR/fat" "$WORKDIR/efiimg" "::EFI/BOOT/$EFIIMG"
+@@ -465,8 +531,8 @@ mcopy -i "$WORKDIR/fat" "$WORKDIR/efiimg" "::EFI/BOOT/$EFIIMG"
  
  rm -f "$WORKDIR/efiimg"
  
@@ -103,7 +102,7 @@ index dce7687..ee9f343 100644
  label: gpt
  unit: sectors
  
-@@ -157,7 +223,7 @@ start=$FAT_OFFSET_SECTORS, size=$FAT_SIZE_SECTORS, type=C12A7328-F81F-11D2-BA4B-
+@@ -474,7 +540,7 @@ start=$FAT_OFFSET_SECTORS, size=$FAT_SIZE_SECTORS, type=C12A7328-F81F-11D2-BA4B-
  start=$((FAT_OFFSET_SECTORS + FAT_SIZE_SECTORS)), type=0FC63DAF-8483-4772-8E79-3D69D8477DE4
  EOF
  
@@ -112,7 +111,7 @@ index dce7687..ee9f343 100644
  
  if test "$(dpkg --print-architecture)" != "$ARCHITECTURE" && test "$(dpkg-query -f '${db:Status-Status}' -W "qemu-system-$QEMUARCH")" != installed; then
    echo "I: you might need to install a package providing qemu-system-$QEMUARCH to use this image with autopkgtest-virt-qemu" >&2
-@@ -166,5 +232,7 @@ if test -n "$VMFPKG" && test "$(dpkg-query -f '${db:Status-Status}' -W "$VMFPKG"
+@@ -483,5 +549,7 @@ if test -n "$VMFPKG" && test "$(dpkg-query -f '${db:Status-Status}' -W "$VMFPKG"
    echo "I: you might need to install $VMFPKG to use this image with autopkgtest-virt-qemu" >&2
  fi
  
