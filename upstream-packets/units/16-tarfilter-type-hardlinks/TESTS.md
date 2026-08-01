@@ -13,7 +13,9 @@
 | Focused test | `tests/test_tarfilter_type_excluded_final_name_identity.py` |
 | Inherited and transform matrix | `tests/test_tarfilter_type_excluded_inherited_matrix.py` |
 | First selected-policy green head | `ec55994f0db12044f9c7ef9f843fe42aec7393e6` |
-| Expanded transform-matrix head | `371802ab8728f149ddbac5a959e83ca8d0edef2d` |
+| Inherited matrix green head | `300b51056ded64a56ec3998bc639a57e9ea81125` |
+| Expanded matrix head | `371802ab8728f149ddbac5a959e83ca8d0edef2d` |
+| Duplicate-cleanup head | `7fe46662141fa39a3b18ae1baba29b2b39f6c330` |
 | Internal PR | #399 |
 
 ## Exact composition commands
@@ -24,7 +26,7 @@ Each test obtains the imported source directly from Git's object database:
 git cat-file blob ad776167a8473d5d15dbe22e850f4f6db35cf278
 ```
 
-The disposable candidate tree then receives the ordered series:
+The disposable candidate tree receives the ordered series:
 
 ```sh
 patch --batch --forward --fuzz=0 -p1 \
@@ -55,7 +57,9 @@ Complete repository gate:
 python3 -m tools.run_fieldwork_unittests --verbosity 2
 ```
 
-## Focused selected-policy matrix
+## Selected-policy matrix
+
+### Focused cases
 
 | Case | Predecessor | Selected candidate |
 | --- | --- | --- |
@@ -64,7 +68,7 @@ python3 -m tools.run_fieldwork_unittests --verbosity 2
 | regular `root/base` is removed by type and retained `root/peer -> root/base` remains | status 1 and valid empty archive | status 1, original-name diagnostic, valid empty archive |
 | target and dependent link are both dropped by strip | predecessor rejects using input identity | status 0 and valid empty archive |
 
-## Inherited and transform matrix
+### Inherited and transform cases
 
 - GNU-equivalent leading `/`, `./`, and `../` target spellings reject when the target is removed by type.
 - `.../root/base` remains distinct and follows the pre-existing invalid-archive control.
@@ -135,23 +139,36 @@ The other three focused unit-16 cases passed. This run proves the selected patch
 - run `30690541675`, job `91344358024`;
 - patch validation: 4 files, 11 hunks;
 - compilation passed;
-- fieldwork discovery retained 442 of 465 tests and removed 23 exact inherited duplicates;
+- discovery retained 442 of 465 tests and removed 23 exact inherited duplicates;
 - all 442 tests passed in 164.133 seconds;
 - all four focused unit-16 cases passed;
 - shell syntax and command-help gates passed.
 
-### Run 1147 — inherited matrix
+### Run 1147 — inherited matrix green with duplicate discovery
 
-- head `300b51056ded64a56ec3998bc639a57e9ea81125`;
-- run `30690583438`;
-- patch validation and compilation passed;
-- unit tests were in progress at this record update.
+- exact head `300b51056ded64a56ec3998bc639a57e9ea81125`;
+- run `30690583438`, job `91344466738`;
+- patch validation: 4 files, 11 hunks;
+- compilation passed;
+- discovery retained 450 of 473 tests and removed 23 exact inherited duplicates;
+- all 450 tests passed in 162.772 seconds;
+- inherited prefix, independent-filter rerun, first-peer, and duplicate-target cases passed;
+- shell syntax and command-help gates passed.
 
-### Run 1150 — transform-scope expansion
+A module-level alias to the focused `TestCase` caused four focused tests to run twice. Commit `7fe46662141fa39a3b18ae1baba29b2b39f6c330` imports the helper module instead. The behavior result remains valid; the test count is superseded by the clean rerun.
+
+### Run 1150 — transform-scope expansion before duplicate cleanup
 
 - head `371802ab8728f149ddbac5a959e83ca8d0edef2d`;
 - run `30690790494`;
-- queued at this record update.
+- queued at the last status check.
+
+### Run 1157 — clean expanded rerun
+
+- head `7fe46662141fa39a3b18ae1baba29b2b39f6c330`;
+- run `30691015678`;
+- queued at the last status check;
+- expected clean discovery count: 449 selected tests.
 
 ## Baseline evidence inherited from carriers
 
@@ -164,16 +181,15 @@ The other three focused unit-16 cases passed. This run proves the selected patch
 
 Every source copy, patch application, archive, extraction directory, bytecode file, and rerun target lives below `TemporaryDirectory`. The tests create no persistent process, socket, mount, package mutation, device node, or external contact.
 
-The independent `LNKTYPE` transform control runs twice immediately in one disposable tree. A second exact-head complete workflow remains the final rerun gate after run 1150 succeeds.
+The independent `LNKTYPE` transform control runs twice immediately in one disposable tree. One unchanged-head complete workflow remains after run 1157 succeeds.
 
 ## Tests pending
 
-- final receipt for run `30690583438`;
-- final receipt for run `30690790494`;
-- second exact-head complete rerun after the expanded matrix succeeds;
-- complete diff review against unit 15's selected prerequisite;
+- final receipts for runs `30690790494` and `30691015678`;
+- one unchanged-head complete rerun after the clean expanded result;
+- current Salsa `master` zero-fuzz rebase and current upstream gate;
 - package pipeline, other extractor, platform, and privileged metadata gates, when useful and authorized.
 
 ## Interpretation rule
 
-A green expanded matrix demonstrates final projected identity for target-before-link streaming, including strip, transform, duplicate, prefix, scope, and lifecycle controls. Upstream readiness also requires an unchanged-head rerun, complete-diff review, current packet drafts, and an explicit human authorization decision.
+A green clean expanded matrix demonstrates final projected identity for target-before-link streaming, including strip, transform, duplicate, prefix, scope, lifecycle, and immediate-rerun controls. Upstream readiness still requires current-master rebase, final diff review, current packet drafts, and explicit authorization.
