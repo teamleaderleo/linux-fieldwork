@@ -8,17 +8,20 @@
 | Filter decision | `tarfilter`, `type_filter_should_skip()` | Compares `member.type` by raw equality against stored bytes. |
 | Archive copy | `tarfilter`, main member loop | Calls `member.isfile()` when copying payloads, showing Python already treats both regular encodings as files. |
 | User contract | `tarfilter` argparse description and `--type-exclude` help | Describes `REGTYPE` as “regular file” and `0` as its flag value. |
+| Native test runner | `coverage.py` | Supports individual named project tests; README documents `CMD=./mmdebstrap ./coverage.py --dist unstable <test-name>`. |
 
 ## Exact source identities
 
-- Canonical repository: `https://salsa.debian.org/debian/mmdebstrap.git`
-- Intended branch: `master`
-- Retained package tag: `debian/1.5.7-3`
-- Retained resolved commit: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
+- Canonical repository: `https://gitlab.mister-muffin.de/josch/mmdebstrap`
+- Intended branch: `main`
+- Exact current upstream commit: `77ec9be5417ee44c96343d2347145585da1b1f94`
+- Current upstream `tarfilter`: still maps `REGTYPE`/`0` only to `tarfile.REGTYPE`
+- Current relevant source identity: matches Linux Fieldwork imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`, independently recorded by unit 15
+- Debian package tag: `debian/1.5.7-3`
+- Debian package resolved commit: `6fde999741f4fe1e7bf38079acf29432ef87a35e`
 - Linux Fieldwork imported path: `upstream/mmdebstrap/tarfilter`
 - Imported blob: `ad776167a8473d5d15dbe22e850f4f6db35cf278`
 - Current Linux Fieldwork packet base: `main@6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Current Salsa `master` commit: unresolved because the runtime could read the official web project and tags but could not resolve DNS for `git clone`; no commit identity is inferred.
 
 ## Canonical carriers read
 
@@ -32,7 +35,11 @@
 | Investigation | `investigations/tarfilter-legacy-regular-type-filter/README.md` at `e65989feaac9a9cb89c49fe536c26fe9e9ee8cb7` | Durable original analysis |
 | Retained patch | `investigations/tarfilter-legacy-regular-type-filter/tarfilter-legacy-regular-type-filter.patch` at the same head | One-line source correction |
 | Retained regression | `tests/test_tarfilter_legacy_regular_type.py` at the same head | Baseline/candidate archive matrix |
-| Import metadata | `upstream/mmdebstrap/.linux-fieldwork-source.json` | Upstream tag and resolved commit |
+| Import metadata | `upstream/mmdebstrap/.linux-fieldwork-source.json` | Debian package tag and resolved commit |
+| Current upstream | `josch/mmdebstrap` `main@77ec9be5417ee44c96343d2347145585da1b1f94` | Current implementation base and native test conventions |
+| Unit 01 packet | branch `upstream/unit-01-tarfilter-regex-dialects` | Owns `TransformAction` regex grammar; no direct unit-22 overlap |
+| Unit 15 packet | branch `upstream/unit-15-tarfilter-transform-metadata` | Owns transform/link/PAX behavior; explicitly excludes unit 22 |
+| Unit 16 packet | branch `upstream/unit-16-tarfilter-type-hardlinks` | Owns hard-link dependency state; consumes type decisions after selector mapping |
 
 ## Packet files
 
@@ -43,16 +50,17 @@
 
 ## Adjacent ownership
 
-- Unit 01 owns GNU basic/extended transform regex compatibility.
-- Unit 15 owns transform, target, path, and PAX metadata semantics.
-- Unit 16 owns type-excluded hard-link dependency handling.
+- Unit 01 owns GNU basic/extended transform regex compatibility in `TransformAction`.
+- Unit 15 owns transform, target, path, link, and PAX metadata semantics.
+- Unit 16 owns type-excluded hard-link dependency handling and final-name state.
 - Units 18–21 own no-option byte preservation, shifted PAX IDs, dotfile identity, and parent metadata.
 
-The unit-22 patch touches `TypeFilterAction` only and can remain a separate upstream commit. Its final ordering must follow the source-line overlap review for the active tarfilter series.
+The unit-22 patch touches `TypeFilterAction` only. No adjacent packet changes the same source owner. Composition testing remains useful, while final adjacent patch order is no longer treated as a blocker.
 
 ## Destination map
 
-- Project host: Debian Salsa / GitLab.
-- Proposed delivery: controlled fork plus merge request.
+- Canonical project host: `gitlab.mister-muffin.de` Forgejo.
+- Proposed delivery: controlled fork branch plus pull request.
+- Debian Salsa/package repository: packaging context, not the current canonical implementation destination.
 - Controlled fork: `NEEDS FORK`.
 - External contact: unauthorized.
