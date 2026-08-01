@@ -10,7 +10,8 @@ import subprocess
 import sys
 from typing import Any
 
-PINNED_SYSTEMD = "6d7a2ec6ba21184cac1cfd39fe50d0def23220f2"
+PINNED_SYSTEMD = "6a863b4dc31adc49fdfdd5deba32ed1b115adda3"
+PINNED_TEST_BLOB = "43937c6ec7877df23f66ccd3827a1b6f154943ff"
 
 
 class VerificationError(RuntimeError):
@@ -28,26 +29,40 @@ def load(root: pathlib.Path, relative: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def git_output(root: pathlib.Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args],
+        cwd=root,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+
+
 def contains_all(source: str, fragments: list[str], label: str) -> None:
     missing = [fragment for fragment in fragments if fragment not in source]
     require(not missing, f"{label}: missing source fragments: {missing!r}")
 
 
 def verify(root: pathlib.Path) -> dict[str, Any]:
-    revision = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=root,
-        check=True,
-        text=True,
-        stdout=subprocess.PIPE,
-    ).stdout.strip()
+    revision = git_output(root, "rev-parse", "HEAD")
     require(revision == PINNED_SYSTEMD, f"unexpected systemd revision: {revision}")
 
-    cgroup = load(root, "src/core/cgroup.c")
-    unit = load(root, "src/core/unit.c")
-    varlink = load(root, "src/core/varlink.c")
-    oomd = load(root, "src/oom/oomd-manager.c")
-    test = load(root, "test/units/TEST-55-OOMD.sh")
+    paths = {
+        "cgroup": "src/core/cgroup.c",
+        "unit": "src/core/unit.c",
+        "varlink": "src/core/varlink.c",
+        "oomd": "src/oom/oomd-manager.c",
+        "test": "test/units/TEST-55-OOMD.sh",
+    }
+    blobs = {name: git_output(root, "hash-object", path) for name, path in paths.items()}
+    require(blobs["test"] == PINNED_TEST_BLOB, f"unexpected TEST-55-OOMD blob: {blobs['test']}")
+
+    cgroup = load(root, paths["cgroup"])
+    unit = load(root, paths["unit"])
+    varlink = load(root, paths["varlink"])
+    oomd = load(root, paths["oomd"])
+    test = load(root, paths["test"])
 
     contains_all(
         cgroup,
@@ -95,8 +110,9 @@ def verify(root: pathlib.Path) -> dict[str, Any]:
     )
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "systemd_revision": revision,
+        "source_blobs": blobs,
         "demonstrated_source_chain": {
             "user_manager_root_from_own_pid_cgroup": True,
             "root_slice_uses_manager_cgroup_root": True,
@@ -110,8 +126,8 @@ def verify(root: pathlib.Path) -> dict[str, Any]:
             "registration for the same cgroup path"
         ),
         "runtime_status": (
-            "source mechanism verified; current-main VM execution of the retained "
-            "regression is still required"
+            "source mechanism verified on current main; runtime execution is "
+            "performed separately in the controlled systemd fork"
         ),
         "authority": "internal Linux Fieldwork investigation; no upstream contact",
     }
