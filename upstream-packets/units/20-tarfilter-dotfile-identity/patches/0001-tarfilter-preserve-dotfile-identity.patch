@@ -41,14 +41,18 @@ diff --git a/tests/tarfilter-path-dotfiles b/tests/tarfilter-path-dotfiles
 new file mode 100755
 --- /dev/null
 +++ b/tests/tarfilter-path-dotfiles
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,249 @@
 +#!/bin/sh
 +set -eu
 +export LC_ALL=C.UTF-8
 +
 +MMTARFILTER=${MMTARFILTER:-}
-+[ -n "$MMTARFILTER" ] || [ ! -x /usr/bin/mmtarfilter ] || MMTARFILTER=/usr/bin/mmtarfilter
-+[ -n "$MMTARFILTER" ] || [ ! -x ./tarfilter ] || MMTARFILTER=./tarfilter
++if [ -z "$MMTARFILTER" ] && [ -x ./tarfilter ]; then
++  MMTARFILTER=./tarfilter
++fi
++if [ -z "$MMTARFILTER" ] && [ -x /usr/bin/mmtarfilter ]; then
++  MMTARFILTER=/usr/bin/mmtarfilter
++fi
 +[ -n "$MMTARFILTER" ]
 +
 +python3 - "$MMTARFILTER" <<'PY'
@@ -71,6 +75,8 @@ new file mode 100755
 +def regular(name, payload, mode=0o640, pax=None):
 +    member = tarfile.TarInfo(name)
 +    member.mode = mode
++    member.uid = 123
++    member.gid = 456
 +    member.mtime = 946684800
 +    member.size = len(payload)
 +    member.pax_headers = dict(pax or {})
@@ -81,6 +87,8 @@ new file mode 100755
 +    member = tarfile.TarInfo(name)
 +    member.type = tarfile.DIRTYPE
 +    member.mode = mode
++    member.uid = 123
++    member.gid = 456
 +    member.mtime = 946684800
 +    member.pax_headers = dict(pax or {})
 +    return member, None
@@ -91,6 +99,20 @@ new file mode 100755
 +    member.type = tarfile.SYMTYPE
 +    member.linkname = target
 +    member.mode = mode
++    member.uid = 123
++    member.gid = 456
++    member.mtime = 946684800
++    member.pax_headers = dict(pax or {})
++    return member, None
++
++
++def hardlink(name, target, mode=0o644, pax=None):
++    member = tarfile.TarInfo(name)
++    member.type = tarfile.LNKTYPE
++    member.linkname = target
++    member.mode = mode
++    member.uid = 123
++    member.gid = 456
 +    member.mtime = 946684800
 +    member.pax_headers = dict(pax or {})
 +    return member, None
@@ -115,6 +137,13 @@ new file mode 100755
 +        return {member.name: member for member in archive.getmembers()}
 +
 +
++def regular_payload(result, name):
++    with tarfile.open(fileobj=io.BytesIO(result), mode="r:*") as archive:
++        member = archive.getmember(name)
++        with archive.extractfile(member) as stream:
++            return stream.read()
++
++
 +spellings = (
 +    ".config",
 +    "config",
@@ -125,15 +154,18 @@ new file mode 100755
 +    "././.config",
 +    "././config",
 +    "/./.config",
++    "///.config",
 +    "/config",
++    "//config",
 +    "../config",
++    "./../config",
 +)
 +source = archive_bytes(
 +    [regular(name, f"member-{index}:{name}\n".encode()) for index, name in enumerate(spellings)]
 +)
-+dotfiles = {".config", "./.config", "././.config", "/./.config"}
-+plain = {"config", "./config", "././config", "/config"}
-+identity_controls = {"..name", "...name", "../config"}
++dotfiles = {".config", "./.config", "././.config", "/./.config", "///.config"}
++plain = {"config", "./config", "././config", "/config", "//config"}
++identity_controls = {"..name", "...name", "../config", "./../config"}
 +
 +names = set(members_by_name(run_filter(source, "--path-exclude=/.config")))
 +assert dotfiles.isdisjoint(names), names
@@ -166,7 +198,7 @@ new file mode 100755
 +)
 +assert names == {"..name"}, names
 +
-+root_spellings = (".", "./", "./.", "/.", "/./", "//./.")
++root_spellings = (".", "./", "./.", "/.", "/./", "//", "//./.")
 +root_source = archive_bytes([directory(name) for name in root_spellings])
 +root_names = set(members_by_name(run_filter(root_source, "--path-exclude=/")))
 +assert not root_names, root_names
@@ -196,26 +228,66 @@ new file mode 100755
 +            mode=0o777,
 +            pax={"unit20.kind": "symlink"},
 +        ),
++        hardlink(
++            "./.config-hardlink",
++            "./config",
++            mode=0o644,
++            pax={"unit20.kind": "hardlink"},
++        ),
 +    ]
 +)
-+retained = members_by_name(run_filter(metadata_source, "--path-exclude=/.config"))
-+assert set(retained) == {"./config", "./.cache", "./.config-link"}, retained
++filtered = run_filter(metadata_source, "--path-exclude=/.config")
++retained = members_by_name(filtered)
++assert set(retained) == {
++    "./config",
++    "./.cache",
++    "./.config-link",
++    "./.config-hardlink",
++}, retained
 +assert retained["./config"].isfile()
 +assert retained["./config"].mode == 0o640
++assert retained["./config"].uid == 123
++assert retained["./config"].gid == 456
 +assert retained["./config"].mtime == 946684800
 +assert retained["./config"].pax_headers["unit20.kind"] == "plain"
++assert regular_payload(filtered, "./config") == b"plain-payload\n"
 +assert retained["./.cache"].isdir()
 +assert retained["./.cache"].mode == 0o701
++assert retained["./.cache"].uid == 123
++assert retained["./.cache"].gid == 456
 +assert retained["./.cache"].pax_headers["unit20.kind"] == "directory"
 +assert retained["./.config-link"].issym()
 +assert retained["./.config-link"].linkname == ".config"
++assert retained["./.config-link"].uid == 123
++assert retained["./.config-link"].gid == 456
 +assert retained["./.config-link"].pax_headers["unit20.kind"] == "symlink"
++assert retained["./.config-hardlink"].islnk()
++assert retained["./.config-hardlink"].linkname == "./config"
++assert retained["./.config-hardlink"].uid == 123
++assert retained["./.config-hardlink"].gid == 456
++assert retained["./.config-hardlink"].pax_headers["unit20.kind"] == "hardlink"
 +
 +retained = members_by_name(run_filter(metadata_source, "--path-exclude=/.cache"))
 +assert "./.cache" not in retained, retained
-+assert {"./.config", "./config", "./.config-link"} <= set(retained), retained
++assert {
++    "./.config",
++    "./config",
++    "./.config-link",
++    "./.config-hardlink",
++} <= set(retained), retained
 +
 +retained = members_by_name(run_filter(metadata_source, "--path-exclude=/.config-link"))
 +assert "./.config-link" not in retained, retained
-+assert {"./.config", "./config", "./.cache"} <= set(retained), retained
++assert {
++    "./.config",
++    "./config",
++    "./.cache",
++    "./.config-hardlink",
++} <= set(retained), retained
++
++retained = members_by_name(
++    run_filter(metadata_source, "--path-exclude=/.config-hardlink")
++)
++assert "./.config-hardlink" not in retained, retained
++assert {"./.config", "./config", "./.cache", "./.config-link"} <= set(retained), retained
 +PY
