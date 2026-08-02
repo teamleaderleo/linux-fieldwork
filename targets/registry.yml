@@ -27,12 +27,38 @@ targets:
 
   systemd:
     title: systemd
-    state: inbox
+    state: active
+    canonical_repository: https://github.com/systemd/systemd.git
+    controlled_fork: https://github.com/teamleaderleo/systemd.git
+    map_path: targets/systemd/map.md
     programmes:
       - rootless-execution
       - services-resources
       - security-networking
       - boot-kernel
+
+  buildkit:
+    title: BuildKit
+    state: active
+    canonical_repository: https://github.com/moby/buildkit.git
+    controlled_fork: https://github.com/teamleaderleo/buildkit.git
+    map_path: targets/buildkit/map.md
+    programmes:
+      - rootless-execution
+      - filesystems-images
+      - services-resources
+      - ecosystem-contributions
+
+  curl:
+    title: curl and libcurl
+    state: active
+    canonical_repository: https://github.com/curl/curl.git
+    controlled_fork: https://github.com/teamleaderleo/curl.git
+    map_path: targets/curl/map.md
+    programmes:
+      - services-resources
+      - security-networking
+      - ecosystem-contributions
 
   linux-kernel:
     title: Linux kernel
