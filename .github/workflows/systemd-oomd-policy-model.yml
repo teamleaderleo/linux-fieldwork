@@ -1,0 +1,43 @@
+name: Verify systemd-oomd policy model
+
+on:
+  pull_request:
+    paths:
+      - "investigations/systemd-oomd-reporter-collision/model_policy.py"
+      - "investigations/systemd-oomd-reporter-collision/test_model_policy.py"
+      - ".github/workflows/systemd-oomd-policy-model.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  executable-specification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: investigations/systemd-oomd-reporter-collision
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile executable specification
+        run: |
+          set -euo pipefail
+          python3 -m py_compile model_policy.py test_model_policy.py
+
+      - name: Run lifecycle and authority matrix
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v test_model_policy.py
+
+      - name: Reject uncommitted generated state
+        working-directory: .
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
