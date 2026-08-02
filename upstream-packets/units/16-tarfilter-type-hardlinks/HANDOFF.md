@@ -2,19 +2,21 @@
 
 ## Current state
 
-State: `ACTIVE`  
+State: `ACTIVE — current-upstream fetch blocked in this execution environment`  
 Linux Fieldwork branch: `upstream/unit-16-tarfilter-type-hardlinks`  
 Internal draft PR: #399  
 External-contact state: unauthorized; none made
 
-The selected final-projected-identity candidate now has a clean expanded technical-head result and a successful complete rerun at the current internal PR head. The CI step recorded by the previous handoff is complete. The first incomplete technical work is the exact current-upstream fetch, comparison, zero-fuzz rebase, and current-source matrix.
+The selected final-projected-identity candidate has a clean expanded technical-head result and a successful complete rerun at the internal PR head. The CI step recorded by the older handoff is complete.
+
+A 2026-08-02 attempt to fetch exact current mmdebstrap Salsa `master` could confirm the canonical project, project ID `30687`, intended branch `master`, and the public project's advertised commit count, but could not retrieve the exact branch SHA or raw `tarfilter` bytes. The exact attempts and failures are durable in `artifacts/current-upstream-fetch-attempt-2026-08-02.md`. Do not infer or substitute a release tag, mirror, or package source.
 
 ## Exact branch and candidate identities
 
 | Item | Identity |
 | --- | --- |
 | Linux Fieldwork base | `main` at `6cc74d846c50b9bbb88247e8a128b67e8c174c1e` |
-| Current packet head before this update | `c0926e099b98252e3d8f0c8463d53e9709e2a470` |
+| Prior packet head before receipt recovery | `c0926e099b98252e3d8f0c8463d53e9709e2a470` |
 | Imported tarfilter blob | `ad776167a8473d5d15dbe22e850f4f6db35cf278` |
 | Unit-15 prerequisite | `patches/0000-unit15-transform-metadata-prerequisite.patch` |
 | Lifecycle/duplicate predecessor | `patches/0001-compose-pr310-predecessor-on-transform-carrier.patch` |
@@ -25,7 +27,10 @@ The selected final-projected-identity candidate now has a clean expanded technic
 | Expanded matrix head | `371802ab8728f149ddbac5a959e83ca8d0edef2d` |
 | Duplicate-clean technical head | `7fe46662141fa39a3b18ae1baba29b2b39f6c330` |
 | Canonical upstream repository | `https://salsa.debian.org/debian/mmdebstrap.git` |
+| Salsa project ID | `30687` |
 | Intended upstream branch | `master` |
+| Exact current upstream commit | unresolved; fetch blocked, not inferred |
+| Exact current upstream tarfilter | unresolved; fetch blocked, not inferred |
 | Controlled fork | `NEEDS FORK` |
 
 Use the branch ref for the latest packet head. Documentation commits after the technical heads do not change candidate or test bytes.
@@ -50,10 +55,12 @@ Intermediate aliases are deliberately excluded. A broken reference already produ
 6. Added focused strip/final-name tests plus inherited prefix, duplicate, lifecycle, filter, transform, collision, and scope controls.
 7. Rejected the mechanically green alias policy because direct controls show that it assigns a pre-existing strip failure to type exclusion.
 8. Removed accidental duplicate focused-test discovery from the inherited module.
-9. Reviewed the complete branch fence: 14 added files before the new receipt, with imported source unchanged.
+9. Reviewed the complete pre-receipt branch fence: 14 added files, with imported source unchanged.
 10. Completed the clean expanded run at technical head `7fe4666...`.
 11. Completed a full rerun at packet head `c0926e0...` with unchanged candidate and test bytes.
-12. Retained the two new exact receipts in `artifacts/ci-clean-expanded-and-rerun.md`.
+12. Retained the exact CI receipts in `artifacts/ci-clean-expanded-and-rerun.md`.
+13. Retried exact current Salsa identity through the public project page, branch API path, commit listing, raw path, and Git transport.
+14. Retained the blocked-fetch result instead of inventing a current SHA.
 
 ## Exact executed evidence
 
@@ -106,22 +113,43 @@ Run `30691660479`, job `91347358106`, PR head `c0926e099b98252e3d8f0c8463d53e970
 - Alias candidate run `30690434953`, job `91344069265`, head `87af719648d5fc43e616030e61dc6182d9273d3e` passed 442 tests but remains rejected on policy evidence.
 - Selected-policy red transition run `30690507583`, job `91344268061`, head `85c00c3d42be14b5774fb5c5222bb57484af7f0d` passed 441 of 442 tests; the sole failure was the superseded alias expectation.
 
+## Current upstream fetch result
+
+Recorded in `artifacts/current-upstream-fetch-attempt-2026-08-02.md`.
+
+Confirmed:
+
+- canonical project page and repository identity;
+- Salsa project ID `30687`;
+- intended branch `master`.
+
+Not established:
+
+- exact current `master` commit;
+- exact current `tarfilter` bytes or blob;
+- whether current source already contains any unit-15 or unit-16 portion.
+
+Observed blockers:
+
+- branch API and raw source could not be retrieved by the available web reader;
+- following the public `Commits` link returned a cache-miss failure;
+- `git ls-remote https://salsa.debian.org/debian/mmdebstrap.git refs/heads/master` failed with `Could not resolve host: salsa.debian.org`.
+
 ## First incomplete step
 
-Fetch the exact current `master` commit from the Debian mmdebstrap Salsa repository and write it into the packet before editing source or patches.
+From an environment with working Salsa DNS/HTTPS or a readable GitLab connector:
 
-Then:
+1. fetch `refs/heads/master` and record the full commit SHA;
+2. fetch `tarfilter` at that exact SHA and record its Git blob or SHA-256;
+3. compare it byte-for-byte with imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`;
+4. classify unit-15 and PR #310 overlap in current source;
+5. regenerate or rebase patches 0000 through 0002 with zero fuzz;
+6. run the focused and inherited matrices against the exact current upstream source;
+7. perform a fresh complete source-diff review;
+8. decide whether the prerequisite remains a full ordered series or can be reduced;
+9. keep `NEEDS FORK` until explicit authorization permits a controlled Salsa fork.
 
-1. obtain current upstream `tarfilter` bytes and record their blob/digest;
-2. compare them with imported blob `ad776167a8473d5d15dbe22e850f4f6db35cf278`;
-3. classify unit-15 and PR #310 overlap in current source;
-4. regenerate or rebase patches 0000 through 0002 with zero fuzz;
-5. run the focused and inherited matrices against the exact current upstream source;
-6. perform a fresh complete source-diff review;
-7. decide whether the prerequisite remains a full ordered series or can be reduced;
-8. keep `NEEDS FORK` until explicit authorization permits a controlled Salsa fork.
-
-If current public source cannot be fetched reliably, record the exact failed endpoint/tool result and stop rather than substituting an inferred commit.
+Do not substitute the latest visible release tag, Debian Sources package bytes, a third-party mirror, or an inferred commit.
 
 ## Complete-review checklist
 
@@ -135,8 +163,9 @@ If current public source cannot be fetched reliably, record the exact failed end
 - [x] focused and inherited selected-policy gates green;
 - [x] clean expanded run complete;
 - [x] current packet-head complete rerun green;
-- [x] destination and intended base branch identified;
+- [x] destination, project ID, and intended branch identified;
 - [x] complete pre-receipt branch fence reviewed;
+- [x] failed current-upstream retrieval attempt retained exactly;
 - [ ] exact current upstream base commit fetched;
 - [ ] current upstream tarfilter identity recorded;
 - [ ] current-master zero-fuzz rebase complete;
