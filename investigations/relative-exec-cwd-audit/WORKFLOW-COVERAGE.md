@@ -16,7 +16,7 @@ Therefore, a pull request can add a new relative-executable/child-cwd pattern un
 
 ## Repair
 
-The focused carrier adds `.github/workflows/relative-exec-cwd-inventory.yml`.
+The carrier adds `.github/workflows/relative-exec-cwd-inventory.yml`.
 
 It runs on pull requests that change any audited root and:
 
@@ -35,13 +35,19 @@ The existing dedicated workflow retains scanner regressions, downloaded-receipt 
 
 Complete review found that paths, executable strings, and cwd expressions originate in pull-request-controlled source. Writing them directly inside a Markdown code fence would place unescaped untrusted text on a rendered job-summary surface.
 
-The current workflow keeps the raw typed values only in the artifact and HTML-escapes each rendered summary line inside `<pre>` markup. A focused contract test forbids the earlier raw Markdown-fence form.
+The broad inventory workflow keeps raw typed values only in the artifact and HTML-escapes each rendered summary line inside `<pre>` markup. A focused contract test forbids the earlier raw Markdown-fence form.
 
 ### Checkout credential lifetime
 
-The repository is public, and the job's only declared permission is `contents: read`. Even so, the proposed scanner source runs after checkout, so retaining the checkout credential in Git configuration creates an unnecessary token surface.
+The repository is public. Even so, proposed scanner and Rust fixture source runs after checkout, so retaining the checkout credential in Git configuration creates an unnecessary token surface.
 
-The current workflow sets `persist-credentials: false`. The contract test requires that setting. The scanner still receives the checked-out public source and needs no GitHub credential to inventory it.
+Both the new broad inventory workflow and both checkout steps in the existing dedicated workflow set `persist-credentials: false`. Focused contract tests require those settings.
+
+### Raw finding output in the dedicated audit
+
+The dedicated Linux inventory previously printed every pull-request-controlled path, executable, and cwd value directly to the Actions log after schema validation. Actions logs interpret workflow-command syntax, so raw untrusted identity text does not belong on that channel.
+
+The current dedicated workflow prints only the validated finding count. The raw typed identities remain in the uploaded JSON artifact and are revalidated by the receipt job.
 
 ## Decision boundary
 
@@ -54,10 +60,16 @@ A future policy may promote selected finding classes to hard failures only after
 ```text
 branch: ci/relative-exec-cwd-inventory-coverage
 base: 6cc74d846c50b9bbb88247e8a128b67e8c174c1e
-head before this record update: 425ef3fd1cf0e9dc2d010acd2d79a58b713e8fc6
-workflow: .github/workflows/relative-exec-cwd-inventory.yml
-contract test: tests/test_relative_exec_cwd_inventory_workflow.py
+head before this record update: 8214d7f217e96ef288a7b2dd96a479177a9865ba
 ```
+
+## Five-file fence
+
+1. `.github/workflows/relative-exec-cwd-inventory.yml`;
+2. `.github/workflows/relative-exec-cwd-audit.yml`;
+3. `tests/test_relative_exec_cwd_inventory_workflow.py`;
+4. `tests/test_relative_exec_cwd_audit_receipt.py`;
+5. this record.
 
 ## Gates
 
@@ -71,7 +83,7 @@ python3 -m unittest -v \
   tests.test_relative_exec_cwd_inventory_workflow
 ```
 
-The pull-request workflow must also execute on its own branch because both the new workflow and its test are included in the trigger paths.
+The broad inventory, existing dedicated audit, and repository CI must all pass on the same exact head.
 
 ## Authority
 
