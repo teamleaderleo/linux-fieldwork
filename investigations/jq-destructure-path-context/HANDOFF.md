@@ -24,19 +24,23 @@ closed prior attempt: #3384
 repository: teamleaderleo/linux-fieldwork
 branch: investigation/cross-ecosystem-round-2026-08-02
 workflow: .github/workflows/jq-destructure-path-context.yml
+registered run: 30759608059
+state at handoff update: queued
 workspace: investigations/jq-destructure-path-context/
 ```
 
-The commits creating this investigation, in order, are:
+Creation and carrier-repair commits:
 
 ```text
 ffa9307948585b7ea3786dbc24ea53db794eca7a — exact variant patcher
 2876c92faf0d03d8dc521ecd10b1e6cf27842d26 — semantic/bytecode probe
-de1787dd7c550185bf52e1a95e263c114a18695b — controlled workflow
+de1787dd7c550185bf52e1a95e263c114a18695b — initial workflow
 bfe281587523f0a2e446d12cec2c519c3b613069 — investigation record
+688eacbf2e0cfb2b968e7878ef13734ee83175f8 — initial handoff
+32570b31838f9f9d8a494e435a43b5f59de7cde6 — fix invalid top-level matrix concurrency context
 ```
 
-This handoff commit advances the branch again; resolve the live branch head rather than assuming the last SHA above remains current.
+The initial workflow did not register because top-level concurrency referenced `matrix.variant`, which is unavailable outside the job matrix. Commit `32570b3...` changed the workflow-level key to the branch ref. GitHub then registered the named matrix run. No jq result exists from the invalid carrier.
 
 ## Matrix
 
@@ -65,7 +69,7 @@ Every row verifies exact source identities, applies only `src/compile.c` logic, 
 
 ## First incomplete step
 
-Locate the workflow run created from the current branch head and read every matrix job. Retain artifact IDs and digests. Do not infer a candidate from job color alone.
+Read every matrix job in run `30759608059`. Retain artifact IDs and digests. Do not infer a candidate from job color alone.
 
 ## Selection rule
 
