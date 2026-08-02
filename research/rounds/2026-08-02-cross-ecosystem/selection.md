@@ -2,7 +2,7 @@
 
 ## Goal
 
-Move beyond the saturated mmdebstrap lane and identify concrete, bounded contribution work across unrelated repositories and ecosystems. A fork is treated as an execution surface, not as evidence by itself. Each promoted item must have a current defect or cleanup target, an exact source boundary, a distinguishing test or probe, and no active equivalent implementation unless the retained work is explicitly an overlap review.
+Move beyond the saturated mmdebstrap lane and identify concrete, bounded contribution work across unrelated repositories and ecosystems. A fork is an execution surface, not evidence by itself. Each promoted item needs a current defect or cleanup target, an exact source boundary, a distinguishing test or probe, and no active equivalent implementation unless the work is explicitly an overlap review.
 
 External contact authorized: `false`.
 
@@ -31,17 +31,19 @@ The previous upstream attempt `astral-sh/uv#16282` guessed from TOML substrings 
 
 Workspace: `investigations/uv-lock-requirements-diagnostic/`.
 
-### WGPU/Naga: `vec2<f16> ↔ u32` bitcast capability
+### WGPU/Naga: current `vec2<f16> ↔ u32` bitcast capability
 
 - Canonical issue: `gfx-rs/wgpu#8896`.
 - Controlled fork: `teamleaderleo/wgpu`.
 - Evidence branch: `fieldwork/naga-f16-bitcast-probe`.
-- Evidence head: `91c59563534f6f239e6b35ce216ff5fca570e299`.
+- Current evidence head: `b39e1822d3317e1b2ab41108211adf048314fa7d`.
 - Internal draft PR: `teamleaderleo/wgpu#4`.
 - Exact base: `2eddc8c7b2fedd4267f5004745a8bc42974e17a0`.
-- Focused probe run: `30752645663`, queued at the stopping point.
+- Current focused run: `30752907389`, queued at the stopping point.
 
-The initial step is evidence-only. The branch builds `naga-cli`, requires a scalar `f32 → u32` bitcast control to pass, and requires both shape-changing f16 cases to fail with `Unable to cast`. It retains exact shaders, output hashes, binary hash, and IR/validator blob identities. No product implementation is selected yet because the current `Expression::As` representation cannot express all target-shape information cleanly and the change crosses frontends, validation, IR, and backends.
+The first run, `30752645663`, disproved the stale baseline assumption: current Naga accepted both the scalar control and the originally reported `vec2<f16> → u32` direction. The job failed only because the probe expected the old `Unable to cast` result and stopped before the reverse direction. Artifact `8834957333`, digest `sha256:aa8fb7e33a743b70026e709f8ed2167ba20351eba0ee1035435e73fe6d6c8da9`, retained the exact statuses and outputs.
+
+The repaired probe is a neutral three-case capability matrix. The investigation will become either a stale-issue closeout or a narrowly restated reverse-direction defect.
 
 Workspace: `investigations/wgpu-naga-f16-bitcast/`.
 
@@ -55,11 +57,19 @@ Workspace: `investigations/wgpu-naga-f16-bitcast/`.
 
 Debian 13's installed systemd 257 reproduced empty-path warnings when `BindPaths=` or `BindReadOnlyPaths=` contained repeated inter-entry spaces or line-continuation indentation. The parser must preserve empty colon fields for `source::options`, but should not interpret repeated whitespace between entries as empty paths.
 
-The active upstream PR rewrites more than the minimal whitespace boundary: parser representation, execution-context serialization/deserialization, and tests. This lane is retained as an overlap review rather than a competing source patch. Useful follow-up is to run distinguishing compatibility controls against the active PR, especially empty colon fields, escaped colons, quoted paths containing spaces, repeated line-continuation indentation, and state serialization.
+The active upstream PR rewrites more than the minimal whitespace boundary: parser representation, execution-context serialization/deserialization, and tests. This lane is retained as an overlap review rather than a competing source patch. Useful follow-up is to run distinguishing compatibility controls against the active PR.
 
 Workspace: `investigations/systemd-bind-path-whitespace-overlap/`.
 
 ## Screened but not promoted to source work
+
+### OpenTelemetry JS issue #6967
+
+The HTTP instrumentation crash is current and high-value, but canonical PR `open-telemetry/opentelemetry-js#6969` already owns the fix. Its scope includes non-string host candidates, cross-realm URL classification, non-string method/path handling, and a safety wrapper around attribute computation. Retain as a review target; do not duplicate the implementation.
+
+### ripgrep issue #3222
+
+The dash-leading compressed-filename bug is real, but active PR `BurntSushi/ripgrep#3224` already adds per-tool `--` boundaries and discusses the compatibility tradeoff with path prefixing. A later duplicate PR also exists. Retain as overlap, not a new patch.
 
 ### Workerd issue #176
 
@@ -82,8 +92,8 @@ The controlled non-seekable 7-Zip evidence is already complete and active upstre
 Continue broad discovery, but keep promotion strict. This round produced:
 
 1. one small owned source candidate in UV;
-2. one medium executable investigation in WGPU/Naga;
-3. one systemd overlap review;
-4. several current negative or stale-ticket findings.
+2. one executable WGPU capability investigation already yielding a stale-issue signal;
+3. one systemd overlap review with a durable reproducer;
+4. current overlap or stale-ticket findings in OpenTelemetry, ripgrep, Workerd, Execa, UV locking, and libarchive.
 
 No canonical upstream issue, pull request, comment, review, email, or patch submission was created.
