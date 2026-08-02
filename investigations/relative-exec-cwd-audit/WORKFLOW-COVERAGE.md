@@ -23,11 +23,17 @@ It runs on pull requests that change any audited root and:
 - checks out the proposed repository state;
 - runs the landed scanner across the exact audited roots;
 - validates the complete typed JSON finding schema;
-- writes the finding count and identities to the job summary;
-- uploads the JSON inventory for 14 days;
+- writes the finding count and escaped identities to the job summary;
+- uploads the raw JSON inventory for 14 days;
 - remains read-only and Ubuntu-only.
 
 The existing dedicated workflow retains scanner regressions, downloaded-receipt validation, and the Windows Rust identity probe. Those expensive or implementation-specific jobs remain tied to scanner-development changes.
+
+## Review repair
+
+Complete review found that paths, executable strings, and cwd expressions originate in pull-request-controlled source. Writing them directly inside a Markdown code fence would place unescaped untrusted text on a rendered job-summary surface.
+
+The current workflow keeps the raw typed values only in the artifact and HTML-escapes each rendered summary line inside `<pre>` markup. A focused contract test forbids the earlier raw Markdown-fence form.
 
 ## Decision boundary
 
@@ -40,6 +46,7 @@ A future policy may promote selected finding classes to hard failures only after
 ```text
 branch: ci/relative-exec-cwd-inventory-coverage
 base: 6cc74d846c50b9bbb88247e8a128b67e8c174c1e
+head before this record update: 27e1903b49548522a8d976d04448ebe7736e982b
 workflow: .github/workflows/relative-exec-cwd-inventory.yml
 contract test: tests/test_relative_exec_cwd_inventory_workflow.py
 ```
