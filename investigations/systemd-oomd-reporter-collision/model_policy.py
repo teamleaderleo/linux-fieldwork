@@ -65,6 +65,9 @@ class EqualAuthorityConflict(RuntimeError):
     """Two different authorities with equal precedence claimed one effective key."""
 
 
+_MISSING = object()
+
+
 class PolicyModel:
     def __init__(self) -> None:
         self.reporters: dict[Authority, ReporterState] = {}
@@ -107,18 +110,38 @@ class PolicyModel:
         path: str,
         policy: Policy | None,
     ) -> None:
-        """Insert/replace one explicit contribution, or withdraw it with None."""
+        """Atomically insert/replace one contribution, or withdraw it with None."""
         if authority not in self.reporters or not self.reporters[authority].links:
             raise RuntimeError("updates require a live reporter connection")
         if not property_name or not path.startswith("/"):
             raise ValueError("property and normalized absolute path are required")
 
         key = ContributionKey(authority, property_name, path)
+        previous_contribution: Policy | object = self.contributions.get(key, _MISSING)
+        previous_effective = self.effective.get((property_name, path))
+        previous_epoch = self._next_epoch
+
         if policy is None:
             self.contributions.pop(key, None)
         else:
             self.contributions[key] = policy
-        self._recompute(property_name, path)
+
+        try:
+            self._recompute(property_name, path)
+        except Exception:
+            if previous_contribution is _MISSING:
+                self.contributions.pop(key, None)
+            else:
+                assert isinstance(previous_contribution, Policy)
+                self.contributions[key] = previous_contribution
+
+            effective_key = (property_name, path)
+            if previous_effective is None:
+                self.effective.pop(effective_key, None)
+            else:
+                self.effective[effective_key] = previous_effective
+            self._next_epoch = previous_epoch
+            raise
 
     def drop_path(self, path: str) -> None:
         """Remove all durable and effective state for a disappeared cgroup path."""
