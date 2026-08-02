@@ -1,0 +1,176 @@
+name: jq destructuring path context
+
+on:
+  push:
+    branches:
+      - investigation/cross-ecosystem-round-2026-08-02
+    paths:
+      - .github/workflows/jq-destructure-path-context.yml
+      - investigations/jq-destructure-path-context/**
+  pull_request:
+    paths:
+      - .github/workflows/jq-destructure-path-context.yml
+      - investigations/jq-destructure-path-context/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jq-destructure-path-${{ github.ref }}-${{ matrix.variant }}
+  cancel-in-progress: true
+
+env:
+  JQ_SHA: 603db3f57741d217ba651e61086b550a72148b83
+  JQ_COMPILE_BLOB: 80b723c119b45f99c5e847c2a463568eb730f498
+  JQ_TEST_BLOB: 929c7217999f392d1ac536a39bc2c81456e2e6db
+
+jobs:
+  variant:
+    name: ${{ matrix.variant }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        variant:
+          - baseline
+          - closed-pr-3384
+          - issue-end-pop
+          - issue-pop-end
+
+    steps:
+      - name: Check out Linux Fieldwork carrier
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          path: fieldwork
+
+      - name: Check out exact jq source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          repository: jqlang/jq
+          ref: ${{ env.JQ_SHA }}
+          fetch-depth: 1
+          submodules: recursive
+          persist-credentials: false
+          path: jq
+
+      - name: Install jq build and analysis dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            autoconf automake bison flex libtool make valgrind
+
+      - name: Verify exact source and apply variant
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          test "$(git -C jq rev-parse HEAD)" = "$JQ_SHA"
+          test "$(git -C jq hash-object src/compile.c)" = "$JQ_COMPILE_BLOB"
+          test "$(git -C jq hash-object tests/jq.test)" = "$JQ_TEST_BLOB"
+          python3 fieldwork/investigations/jq-destructure-path-context/apply_variant.py \
+            "$VARIANT" jq/src/compile.c
+          git -C jq diff --check
+          mkdir -p artifacts/$VARIANT
+          git -C jq diff -- src/compile.c >"artifacts/$VARIANT/source.patch"
+          printf '%s\n' "$JQ_SHA" >"artifacts/$VARIANT/source-head.txt"
+          printf '%s\n' "$VARIANT" >"artifacts/$VARIANT/variant.txt"
+
+      - name: Build exact jq variant
+        env:
+          VARIANT: ${{ matrix.variant }}
+        working-directory: jq
+        run: |
+          set -euo pipefail
+          autoreconf -i
+          ./configure --with-oniguruma=builtin
+          make -j2
+          ./jq --version
+          git diff --check
+          git diff -- src/compile.c >"../artifacts/$VARIANT/source-after-build.patch"
+
+      - name: Run semantic and bytecode probe
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          bash fieldwork/investigations/jq-destructure-path-context/probe.sh \
+            "$PWD/jq/jq" "$PWD/artifacts/$VARIANT/probe"
+
+      - name: Run Valgrind discriminators
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          out="$PWD/artifacts/$VARIANT/valgrind"
+          mkdir -p "$out"
+          status=0
+          for name in \
+            issue-constant-object \
+            issue-dot-object \
+            alternation-object \
+            backtracking-object \
+            backtracking-alternation
+          do
+            filter=$(awk -F '\t' -v name="$name" \
+              '$1 == name {sub($1 FS, ""); print; exit}' \
+              "artifacts/$VARIANT/probe/filters.tsv")
+            case_status=0
+            timeout 30s valgrind \
+              --quiet \
+              --error-exitcode=97 \
+              --leak-check=full \
+              --errors-for-leak-kinds=definite,indirect,possible \
+              --track-origins=yes \
+              jq/jq -n -c "$filter" \
+              >"$out/$name.stdout" 2>"$out/$name.stderr" || case_status=$?
+            printf '%s\t%d\n' "$name" "$case_status" >>"$out/results.tsv"
+            if [[ "$case_status" == 97 || "$case_status" == 124 ]]; then
+              status=1
+            fi
+          done
+          printf '%d\n' "$status" >"$out/gate-status.txt"
+
+      - name: Run jq test suite
+        if: always()
+        env:
+          VARIANT: ${{ matrix.variant }}
+        working-directory: jq
+        run: |
+          set +e
+          make check >"../artifacts/$VARIANT/make-check.log" 2>&1
+          status=$?
+          set -e
+          printf '%d\n' "$status" >"../artifacts/$VARIANT/make-check-status.txt"
+          tail -n 80 "../artifacts/$VARIANT/make-check.log"
+
+      - name: Retain exact variant evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jq-destructure-${{ matrix.variant }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/${{ matrix.variant }}/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce analysis gates
+        if: always()
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          test -f "artifacts/$VARIANT/make-check-status.txt"
+          test "$(cat "artifacts/$VARIANT/make-check-status.txt")" = 0
+          test -f "artifacts/$VARIANT/valgrind/gate-status.txt"
+          test "$(cat "artifacts/$VARIANT/valgrind/gate-status.txt")" = 0
+          test -f "artifacts/$VARIANT/probe/results.tsv"
+          {
+            echo "### jq #3128 — $VARIANT"
+            echo
+            echo '```text'
+            cat "artifacts/$VARIANT/probe/results.tsv"
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
