@@ -1,0 +1,22 @@
+UNIT RECOVERY CHECKPOINT
+Date: 2026-08-02
+Unit: issue #397, unit 23
+Branch: upstream/unit-23-util-linux-lscpu-cpuset
+Exact head before this receipt: 24de4c4eaddbba8f4e3302a75fb5777eee1b5184
+State: HOLD — Debian stable-update composition
+
+Recovered and verified:
+- durable unit packet exists;
+- internal Linux Fieldwork PR #404 exists and is updated;
+- exact-head package workflow 30692256031 / job 91348929951 succeeded;
+- baseline malformed text/JSON exit 134 with duplicate-free diagnostic;
+- candidate malformed text/JSON exit 0;
+- valid text and JSON bytes are unchanged;
+- controlled util-linux native workflow 30691835019 / job 91347815601 succeeded;
+- package receipt, README, TESTS, DECISIONS, HANDOFF, PR body, and INDEX were refreshed;
+- no external contact was authorized or made.
+
+First incomplete step:
+Compose the minimal Debian stable-update quilt/changelog source delta, run the
+relevant native/package tests, build source and binary packages, retain a source
+debdiff against 2.41-5, and rerun the exact package matrix.
