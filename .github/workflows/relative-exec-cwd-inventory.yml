@@ -1,0 +1,86 @@
+name: Inventory relative executables across cwd changes
+
+on:
+  pull_request:
+    paths:
+      - "tools/**"
+      - "tests/**"
+      - "scripts/**"
+      - "investigations/**"
+      - "programmes/**"
+      - "upstream/**"
+      - ".github/workflows/relative-exec-cwd-inventory.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Inventory relative executable and cwd findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python3 tools/relative_exec_cwd_audit.py --json \
+            tools tests scripts investigations programmes upstream \
+            > evidence/findings.json
+          python3 - evidence/findings.json "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          evidence = pathlib.Path(sys.argv[1])
+          summary = pathlib.Path(sys.argv[2])
+          findings = json.loads(evidence.read_text(encoding="utf-8"))
+          required = {
+              "path",
+              "line",
+              "language",
+              "kind",
+              "program",
+              "cwd",
+              "explanation",
+          }
+          if not isinstance(findings, list):
+              raise SystemExit("audit output must be a JSON list")
+          for item in findings:
+              if not isinstance(item, dict) or set(item) != required:
+                  raise SystemExit(f"invalid finding: {item!r}")
+              if type(item["line"]) is not int:
+                  raise SystemExit(f"finding line must be an exact integer: {item!r}")
+              for field in required - {"line"}:
+                  if not isinstance(item[field], str):
+                      raise SystemExit(f"finding {field} must be a string: {item!r}")
+
+          with summary.open("a", encoding="utf-8") as stream:
+              stream.write("## Relative executable / cwd inventory\n\n")
+              stream.write(f"Findings: **{len(findings)}**\n\n")
+              stream.write(
+                  "Findings are review prompts. This workflow fails only when the "
+                  "scanner or evidence schema fails.\n\n"
+              )
+              if findings:
+                  stream.write("```text\n")
+                  for item in findings:
+                      stream.write(
+                          f"{item['path']}:{item['line']}: {item['program']!r} "
+                          f"with cwd {item['cwd']!r}\n"
+                      )
+                  stream.write("```\n")
+          print(f"relative executable / cwd findings: {len(findings)}")
+          PY
+
+      - name: Upload inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: relative-exec-cwd-inventory-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/findings.json
+          if-no-files-found: error
+          retention-days: 14
