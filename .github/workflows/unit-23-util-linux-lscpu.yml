@@ -16,17 +16,26 @@ jobs:
     timeout-minutes: 120
     env:
       EVIDENCE_DIR: upstream-packets/units/23-util-linux-lscpu-cpuset/artifacts/stable-update-${{ github.run_id }}-${{ github.run_attempt }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
-      - name: Check out proposed repository state
+      - name: Check out exact proposed branch head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
 
-      - name: Validate retained shell entry points and diff
+      - name: Validate exact head, retained shell entry points, and diff
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           bash -n upstream-packets/units/23-util-linux-lscpu-cpuset/scripts/build-trixie-stable-update.sh
           bash -n upstream-packets/units/23-util-linux-lscpu-cpuset/scripts/reproduce-trixie-lscpu-cpuset.sh
-          git diff --check "${{ github.event.pull_request.base.sha || github.event.before }}"..HEAD || git diff --check HEAD^
+          if [[ -n "$BASE_SHA" ]]; then
+            git diff --check "$BASE_SHA"..HEAD
+          else
+            git diff --check HEAD^
+          fi
 
       - name: Compose, build, test, and rerun the trixie stable update
         shell: bash
@@ -47,7 +56,8 @@ jobs:
           set -euo pipefail
           mkdir -p "$EVIDENCE_DIR"
           {
-            echo "head=$(git rev-parse HEAD)"
+            echo "expected_head=$EXPECTED_HEAD"
+            echo "checked_out_head=$(git rev-parse HEAD)"
             echo "workflow_run=${{ github.run_id }}"
             echo "workflow_attempt=${{ github.run_attempt }}"
             echo "result_file=$(test -f "$EVIDENCE_DIR/result.txt" && cat "$EVIDENCE_DIR/result.txt" || echo absent)"
