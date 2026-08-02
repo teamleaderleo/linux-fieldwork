@@ -1,7 +1,7 @@
 # Handoff — cross-ecosystem candidate round
 
 Handoff date: 2026-08-02  
-State: `ACTIVE — UV SOURCE HOLD; CONTROLLED RUNS QUEUED`  
+State: `ACTIVE — JQ AND SYSTEMD RUNS QUEUED; UV DESIGN HOLD`  
 External contact authorized: `false`  
 External contact made: `none`
 
@@ -11,116 +11,131 @@ External contact made: `none`
 repository: teamleaderleo/linux-fieldwork
 branch: investigation/cross-ecosystem-round-2026-08-02
 branch base: 6cc74d846c50b9bbb88247e8a128b67e8c174c1e
+internal draft PR: #414
 ```
 
-## Active owned candidate — UV
+Resolve the live branch head before resuming because this branch is being updated by concurrent Fieldwork lanes.
+
+## UV lock diagnostic
 
 ```text
 repository: teamleaderleo/uv
-base: 1da26a68629be6ae5fd7f924a7d49ff54763a7df
-source branch: fieldwork/uv-lock-requirements-diagnostic
+source PR: #12
 source head: ba55497fe83ea9bb07c04452f8ba190fa4440a05
-internal source PR: #12
-source state: HOLD / REPAIR
-
-current-source execution PR: #15
-focused run: 30754710006 — queued at last check
-ordinary CI: 30754710091 — queued at last check
-
+state: HOLD / REPAIR
+clean-source carrier PR: #15
+clean-source focused run: 30754710006
 parse-first experiment PR: #13
 experiment head: f0673123cbabe859c12fe6baacc1fff872060f17
-focused run: 30755038821 — queued at last check
+experiment run: 30755038821
 ```
 
-The current source models exact `uv.lock` and native `<script>.lock` producer names without reading lock contents. It repairs Unix non-UTF-8 path handling and uses producer-backed tests.
+### Current conclusion
 
-Review found a stronger false-positive boundary: because recognition runs before requirements parsing, a valid `action.py.lock` requirements file is rejected whenever neighboring `action.py` is valid PEP 723. Source PR #12 now records the defect and supersedes its earlier acceptance.
+The pre-parse source design has a real false positive: a valid requirements file `action.py.lock` is rejected whenever neighboring `action.py` is a valid PEP 723 script. Producer-compatible naming does not establish that a successfully parsed requirements file is a UV lockfile.
 
-PR #13 encodes a parse-first alternative with a provenance-carrying requirements source variant. It adds controls for the valid same-name collision, missing paths, and constraint routing. The constructor is also used by requirements-syntax exclusion files; constraints and overrides remain separate.
+### Execution classification
 
-First incomplete step: read run `30755038821` by first failing step, then run `30754710006`. If the experiment passes, revise source #12 and create a clean exact-source rerun. No result is claimed from queued state.
+- `30754710006`: failed only rustfmt on the exact pre-parse source; focused tests did not run. The source is mechanically fixable but semantically superseded.
+- `30755038821`: failed before compilation because the runner-local parse-first patch no longer matched the exact repaired source. A fallback step also lacked the `rustfmt` component. No UV product result was executed.
 
-Workspace:
+### First incomplete step
+
+Create a clean parse-first source transformation against `ba55497...` without brittle multiline replacement. Install rustfmt, enforce the changed-file fence, compile affected crates, and run producer-backed project/script/non-UTF-8 plus same-name valid requirements, missing-file and constraints controls.
+
+Workspace: `investigations/uv-lock-requirements-diagnostic/`.
+
+## WGPU/Naga f16 bitcast
 
 ```text
-investigations/uv-lock-requirements-diagnostic/
+state: RETIRED — CURRENT NAGA ACCEPTS BOTH DIRECTIONS
+controlled head: b39e1822d3317e1b2ab41108211adf048314fa7d
+focused run: 30752907389
+focused job: 91509997426
+artifact: 8835144866
+artifact digest: sha256:b507a9437f6f67de315317c79f4301b830388afd0072d66fcc5431a5615c8778
 ```
 
-## Active capability investigation — WGPU/Naga
+Exact matrix:
 
 ```text
-repository: teamleaderleo/wgpu
-base: 2eddc8c7b2fedd4267f5004745a8bc42974e17a0
-branch: fieldwork/naga-f16-bitcast-probe
-current head: b39e1822d3317e1b2ab41108211adf048314fa7d
-internal draft PR: #4
-current focused run: 30752907389
-state: queued
+scalar-control   status 0   accepted
+vec-to-scalar    status 0   accepted
+scalar-to-vec    status 0   accepted
 ```
 
-First run:
+All stdout files said `Validation successful`; stderr was empty. Ordinary WGPU workflows also passed. Internal WGPU PR #4 was closed without merge after the receipt was retained.
+
+No next technical step exists for issue #8896 unless canonical source regresses.
+
+Workspace: `investigations/wgpu-naga-f16-bitcast/`.
+
+## jq destructuring path context
 
 ```text
-run: 30752645663
-job: 91509299657
-artifact: 8834957333
-artifact digest: sha256:aa8fb7e33a743b70026e709f8ed2167ba20351eba0ee1035435e73fe6d6c8da9
+canonical issue: jqlang/jq#3128
+canonical commit: 603db3f57741d217ba651e61086b550a72148b83
+closed prior attempt: jqlang/jq#3384
+open equivalent PR: none found
+controlled run: 30759608059
+state at handoff update: queued
 ```
 
-The first run proved current Naga accepts the originally reported `vec2<f16> → u32` direction. Its red result belonged to a stale expected-failure classifier. The repaired run records both directions neutrally.
+The matrix compares current source, the closed PR, and both unresolved `SUBEXP_END`/`POP` orders from the issue draft. Every row builds exact jq, runs seventeen semantic controls, retains disassembly, executes Valgrind discriminators, and runs complete `make check`.
 
-First incomplete step: read run `30752907389`. Retire the issue internally if the reverse direction also passes; otherwise narrow the investigation to that asymmetry.
+The first workflow definition did not register because top-level concurrency referenced `matrix.variant`; commit `32570b31838f9f9d8a494e435a43b5f59de7cde6` repaired the carrier. Run `30759608059` is valid.
 
-Workspace:
+First incomplete step: read all four jobs and artifacts. Select no compiler layout from color alone.
 
-```text
-investigations/wgpu-naga-f16-bitcast/
-```
+Workspace: `investigations/jq-destructure-path-context/`.
 
-## Active overlap review — systemd
+## systemd bind-path whitespace overlap
 
 ```text
 canonical issue: systemd/systemd#43214
-active canonical PR: systemd/systemd#43217
-active PR head checked: d32993d1f67ec1b42719c89eeda9425042df57ce
-controlled product branch: none
+active PR: systemd/systemd#43217
+canonical base: 63e35ca3f99566095c84248e9eb41a3a6b32f2eb
+active PR head: d32993d1f67ec1b42719c89eeda9425042df57ce
+controlled run: 30759608071
+state at handoff update: queued
 ```
 
-A durable `systemd-analyze verify` fixture covers repeated spaces, line-continuation indentation, and an empty-colon-field compatibility control.
-
-First incomplete step: execute the fixture against canonical baseline and the active PR in disposable checkouts, then compare parsing and serialization behavior.
-
-Workspace:
+Documentation review corrected the grammar assumption. Valid tuples are:
 
 ```text
-investigations/systemd-bind-path-whitespace-overlap/
+source[:destination[:rbind|norbind]]
 ```
 
-## Screened overlap and negative results
+When destination is omitted, options must also be omitted. `source::norbind` is a documented invalid control.
 
-- OpenTelemetry JS #6967: active canonical PR #6969; review target, no duplicate.
-- ripgrep #3222: active canonical PR #3224 plus a duplicate; no new patch.
-- Workerd #176: obsolete against current cached CI implementation.
-- Execa: apparent bugs already closed; async iterator documentation not portable across supported Node versions.
-- UV #15996: active PR #19388 covers the lock paths and Android.
-- libarchive: completed controlled evidence; active canonical overlap remains.
+The corrected fixture covers repeated/mixed/continued whitespace, valid source/destination/triple forms, quoting, escaped colons, ignore-missing and reset behavior, plus invalid omitted destination, extra fields and invalid options.
 
-## Separate UV follow-up
+Run `30759608071` builds `systemd-analyze` from base and PR and executes the fixture. Parser output is only the first gate; execution-context serialization/deserialization remains required.
 
-Issue `astral-sh/uv#16209` remains a strong separate owned unit. BusyBox disagrees with the `realpath --` form in relocatable console and activation scripts. Preserve historical symlink behavior and test spaces, relative invocation, moved environments, symlinks, and leading-dash paths.
+Workspace: `investigations/systemd-bind-path-whitespace-overlap/`.
+
+## Screened overlaps and negative results
+
+- OpenTelemetry JS #6967 → active canonical PR #6969.
+- ripgrep #3222 → active canonical PR #3224 and duplicate.
+- bat #3866, #3845, #3844, #3798 → active fixes already exist.
+- fd #2067 and #2053 → active fixes already exist.
+- Workerd #176 → obsolete against current caching.
+- Execa apparent bugs → stale/closed; iterator docs not portable across supported Node versions.
+- UV #15996 → active PR #19388.
+- libarchive non-seekable 7-Zip → completed evidence with active overlap.
 
 ## Resume order
 
-1. UV parse-first experiment result and source repair.
-2. UV current-source run for comparative evidence.
-3. WGPU neutral capability matrix and stale/narrow decision.
-4. systemd active-PR compatibility execution.
-5. Start the separate UV BusyBox unit only after the diagnostic source state is explicit.
+1. jq run `30759608059`: classify every layout and retain artifacts.
+2. systemd run `30759608071`: classify build/parser results, then add the narrow serialization gate.
+3. UV: replace the broken runner-local parse-first carrier with a clean exact-source experiment.
+4. Continue discovery only after checking overlap; prefer one ownable source candidate over several duplicate reviews.
 
 ## Cleanup state
 
-No local repository checkout survived; the runtime could not resolve `github.com`. Controlled CI owns build products and temporary fixture cleanup. No credential, package installation, service, mount, device, or canonical upstream state was created.
+No local repository checkout survived because the runtime could not resolve `github.com`. Hosted workflows own build products and temporary cleanup. No credential, service, mount, device, or canonical upstream state was created.
 
 ## Publication boundary
 
-The UV and WGPU pull requests are internal drafts on controlled forks. No canonical upstream communication has been authorized or made.
+All pull requests and workflows referenced here are internal or controlled-fork carriers. No canonical upstream communication has been authorized or made.
