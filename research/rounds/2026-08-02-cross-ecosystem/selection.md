@@ -8,26 +8,30 @@ External contact authorized: `false`.
 
 ## Promoted investigations
 
-### UV: recognize UV lockfiles passed through `-r`
+### UV: recognize UV lockfiles passed through requirements-syntax file lanes
 
 - Canonical issue: `astral-sh/uv#16192`.
 - Controlled fork: `teamleaderleo/uv`.
-- Candidate branch: `fieldwork/uv-lock-requirements-diagnostic`.
-- Candidate head: `a67f97bec7782c6f60aceefb2a9bcd7045582015`.
-- Internal draft PR: `teamleaderleo/uv#12`.
+- Source branch: `fieldwork/uv-lock-requirements-diagnostic`.
+- Current source head: `ba55497fe83ea9bb07c04452f8ba190fa4440a05`.
+- Internal draft source PR: `teamleaderleo/uv#12`.
 - Exact base: `1da26a68629be6ae5fd7f924a7d49ff54763a7df`.
 - Current canonical head checked: `79bbface771210df216b738e9bdc7df95e5a9e6b`.
-- Canonical and controlled-base `crates/uv-requirements/src/sources.rs` blob: `cf6218326b96db5ce40e1fae31a0803e2c65e437`.
-- CI run: `30752526287`, queued at the stopping point.
+- Current-source execution PR: `teamleaderleo/uv#15`; focused run `30754710006`, queued at the last check.
+- Parse-first experiment PR: `teamleaderleo/uv#13`; focused run `30755038821`, queued at the last check.
 
-Selected design:
+The current source correctly models UV's producer names with native path operations:
 
-- recognize an existing file named exactly `uv.lock`;
-- recognize `<script-name>.lock` only when the sibling script parses through UV's existing PEP 723 parser;
-- retain arbitrary `.lock` files as requirements inputs;
-- do not inspect or guess lockfile contents.
+- project lockfiles at exact `uv.lock`;
+- script locks at `<complete-native-script-filename>.lock` when the exact sibling parses as PEP 723;
+- non-UTF-8 Unix filenames remain representable;
+- no lockfile-content guessing is introduced.
 
-The previous upstream attempt `astral-sh/uv#16282` guessed from TOML substrings and was rejected. The controlled candidate uses filenames UV itself generates and a canonical sibling-script parser instead.
+Review found a deeper collision: detection occurs before requirements parsing. A valid requirements file named `action.py.lock` is rejected whenever a neighboring `action.py` is a valid PEP 723 script. Possible producer naming is weaker evidence than a successful parse.
+
+Source PR #12 is therefore held. PR #13 applies a runner-local parse-first design with a provenance-carrying requirements source variant. It preserves valid same-name requirements files, missing-path ownership, native filenames, and distinct constraint/override errors. The constructor is also used by requirements-syntax exclusion files, so the accurate scope is broader than the literal `-r` flag.
+
+The previous upstream attempt `astral-sh/uv#16282` guessed from TOML substrings and was rejected. This work continues to avoid content sniffing.
 
 Workspace: `investigations/uv-lock-requirements-diagnostic/`.
 
@@ -87,13 +91,18 @@ Canonical issue `astral-sh/uv#15996` is valid, but active PR `astral-sh/uv#19388
 
 The controlled non-seekable 7-Zip evidence is already complete and active upstream PR `libarchive/libarchive#3070` remains open. No competing implementation.
 
+## Additional UV opportunity
+
+`astral-sh/uv#16209` is a separate high-value Linux portability unit. BusyBox rejects the `realpath --` form embedded in relocatable console scripts and activation scripts. Historical code shows `realpath` was introduced to preserve symlinked entrypoints, so the test matrix must cover symlinks, spaces, relative invocation, moved environments, and leading-dash paths. Keep it separate from the lockfile diagnostic.
+
 ## Decision
 
-Continue broad discovery, but keep promotion strict. This round produced:
+Continue the owned UV carrier, but keep source acceptance strict. This round currently contains:
 
-1. one small owned source candidate in UV;
+1. one UV source candidate held after a meaningful false-positive discovery, with a scoped replacement design encoded in controlled CI;
 2. one executable WGPU capability investigation already yielding a stale-issue signal;
 3. one systemd overlap review with a durable reproducer;
-4. current overlap or stale-ticket findings in OpenTelemetry, ripgrep, Workerd, Execa, UV locking, and libarchive.
+4. current overlap or stale-ticket findings in OpenTelemetry, ripgrep, Workerd, Execa, UV locking, and libarchive;
+5. a separate promising UV BusyBox portability unit for the next owned investigation.
 
 No canonical upstream issue, pull request, comment, review, email, or patch submission was created.
