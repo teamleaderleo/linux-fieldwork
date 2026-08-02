@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Inventory relative executable and cwd findings
         shell: bash
