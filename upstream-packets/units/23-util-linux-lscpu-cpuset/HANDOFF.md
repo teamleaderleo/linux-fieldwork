@@ -1,6 +1,6 @@
 # Handoff — unit 23 util-linux `lscpu` cpuset ownership
 
-Handoff date: 2026-08-01  
+Handoff date: 2026-08-02  
 State: `HOLD`  
 External contact authorized: `false`  
 External contact made: `none`
@@ -12,44 +12,119 @@ repository: teamleaderleo/linux-fieldwork
 branch: upstream/unit-23-util-linux-lscpu-cpuset
 internal PR: #404
 branch base: 6cc74d846c50b9bbb88247e8a128b67e8c174c1e
-complete packet head immediately before this handoff update: 52a6f2697b7c1be02ca45ee29c58de61f172c2d3
+last exact execution head: 7a82f99ceac6801536c78ba1c2d261bd6f0f3dc8
 ```
 
-The final handoff commit is recorded in the issue #397 unit checkpoint.
+The final branch head containing this handoff is recorded in the issue #397 unit checkpoint.
 
 ## Executive result
 
-Debian trixie `util-linux 2.41-5` is proven affected. A deterministic 16-CPU sysroot makes the installed `lscpu` abort in text and JSON modes on malformed `cpu/online` content `5,12-%`; valid controls exit 0 and the full matrix repeats cleanly.
+Debian trixie `util-linux 2.41-5` is proven affected. A deterministic 16-CPU sysroot makes the installed `lscpu` abort in text and JSON modes on malformed `cpu/online` content `5,12-%`; valid controls exit 0.
 
 Exact Debian source retains the stale caller-visible cpuset pointer. Canonical util-linux commit `4581ede384f22983d6155768635ce43cb5304cb0` clears the pointer after freeing it. The patch applies to Debian `2.41-5` with zero fuzz and the patched binary package builds.
 
-A bounded adjacent-repository pass did not identify another maintained package destination. NixOS `nixos-25.11` carries util-linux `2.41.4`, while `nixos-26.05` and the current package file carry `2.42.2`; upstream records the correction in `v2.41.2`. Debian trixie therefore remains the only proven maintained affected package lane in this unit.
+The exact-head package matrix has completed successfully. The baseline aborts with status 134 for malformed text and JSON. The candidate exits 0 for both malformed modes. Valid baseline and candidate text and JSON outputs are byte-identical.
 
-The pass did identify a useful parallel lane: current util-linux has the source fix but its exact native lscpu harness contains no generated malformed-cpuset case. A current-master, test-only branch now preserves that candidate without changing product code or contacting upstream.
+The controlled util-linux fork's focused native build and regression gate also succeeds. Candidate execution and focused native regression are no longer incomplete steps.
+
+The unit remains `HOLD` for Debian stable-update source composition, relevant complete native/package testing, source-package build, and source debdiff.
+
+## Completed exact-head package matrix
+
+```text
+requested Linux Fieldwork head:
+  7a82f99ceac6801536c78ba1c2d261bd6f0f3dc8
+workflow run:
+  30692256031
+job:
+  91348929951
+conclusion:
+  success
+artifact:
+  8817069887
+  unit-23-util-linux-30692256031-1
+artifact digest:
+  sha256:2b544b399e779bbf577ade1e99249436879fa928b639c5026f116044b461ac25
+```
+
+Result:
+
+```text
+baseline valid text:       0
+baseline valid JSON:       0
+baseline malformed text:   134
+baseline malformed JSON:   134
+candidate valid text:      0
+candidate valid JSON:      0
+candidate malformed text:  0
+candidate malformed JSON:  0
+```
+
+Baseline malformed stderr:
+
+```text
+free(): double free detected in tcache 2
+```
+
+Valid compatibility:
+
+```text
+text baseline/candidate SHA-256:
+  a8fc5c5ebc663afec6c11259ac5804aa808325208215ce08844131fd8e0274c7
+JSON baseline/candidate SHA-256:
+  bc46275fd166aa84e37a80bcb26af0207b04551d6167696dda18dccc3e5dc1ed
+```
+
+Full receipt:
+
+```text
+artifacts/2026-08-02-exact-head-package-matrix.txt
+```
+
+## Exact source and candidate identities
+
+| Item | Identity |
+| --- | --- |
+| Installed baseline | `util-linux 2.41-5 amd64` |
+| Baseline binary SHA-256 | `e3c6e0c09d617cb9e77a3655f79a7a83d2dd865e49eabeccfbaa0335c9ff722e` |
+| Debian `.dsc` SHA-256 | `9e84dcc64170262f850aa5fd65902846a1ebf054d556ab5c4ec17fa16b00e628` |
+| Debian upstream tar SHA-256 | `81ee93b3cfdfeb7d7c4090cedeba1d7bbce9141fd0b501b686b3fe475ddca4c6` |
+| Debian delta tar SHA-256 | `20ad832160d5ed8de4759ce00652f620ce642ab583c3c1c431b68a15cdba1d07` |
+| Effective baseline `lib/path.c` SHA-256 | `f934339cf7aba38ae6197e5b5ad3b6a9e7e5fb483ed3f807d45971968d3c7cda` |
+| Canonical correction | `4581ede384f22983d6155768635ce43cb5304cb0` |
+| Candidate `lib/path.c` SHA-256 | `d0460b4fa3a32b7bdd3cf8b95fa5780bf830fa24bc9e64559408c3ddd1abbb8d` |
+| Candidate package SHA-256 | `92f3aa6fa87a30b9d030263dbbb0446f7679c2ee0456760271ea530268f6b971` |
+| Candidate binary SHA-256 | `883912245c15612a224b761d01b838ecd23470eccf467369ec5c4a560a7946e1` |
+| Retained patch | `patches/0001-clear-cpuset-output-after-error.patch` |
 
 ## Controlled util-linux fork
-
-### Stable-source execution carrier
 
 ```text
 repository: teamleaderleo/util-linux
 canonical stable fix: 3cd5f1dd69495864f3046cdbcefa104786fe5a27
-
-fork-only CI base branch:
-  linux-fieldwork/unit-23-lscpu-cpuset-native-base
-  head 7669d148543822d56ffffa31d2f399f078f8e117
-
-fork-only CI gate branch:
-  linux-fieldwork/unit-23-lscpu-cpuset-native-gate
-  head 95ebc67e521195741040ffebb58756b259fb69b2
-
-internal controlled-fork draft PR:
-  teamleaderleo/util-linux#1
+CI base branch: linux-fieldwork/unit-23-lscpu-cpuset-native-base
+CI base head: 7669d148543822d56ffffa31d2f399f078f8e117
+CI gate branch: linux-fieldwork/unit-23-lscpu-cpuset-native-gate
+CI gate head: 95ebc67e521195741040ffebb58756b259fb69b2
+internal draft PR: teamleaderleo/util-linux#1
+native workflow run: 30691835019
+native job: 91347815601
+conclusion: success
+artifact: 8816802119
+artifact digest: sha256:d36f713357713593430fca369e4871e5ce3ff8f4c8455e07a67e8d83b95493c4
 ```
 
-The fork PR is an execution carrier only. It changes workflow/fixture files and adds no competing product implementation.
+The focused job completed autogen, configured and built `lscpu`, and passed `tests/ts/lscpu/cpuset-parse-failure` against the built executable.
 
-### Current-master regression candidate
+The controlled fork remains an internal execution and regression carrier. It does not propose a competing product implementation.
+
+## Adjacent repository workflow
+
+The controlled fork GCC workflow run `30691835043` passed x86_64, x86, coverage, and clang-analyzer jobs.
+
+The sampled armv7 qemu job `91347815797` reached and passed source build/test work, then failed pulling `multiarch/qemu-user-static` because Docker Hub returned HTTP 429 unauthenticated pull-rate limiting. This sampled red is infrastructure-owned. Other red qemu jobs require their own log-level confirmation before the same classification is applied.
+
+## Current-master regression candidate
 
 ```text
 repository: teamleaderleo/util-linux
@@ -62,131 +137,56 @@ product files changed: none
 external PR: none
 ```
 
-The candidate adds text and JSON native subtests using the retained bounded 16-CPU sysroot and malformed `online` value `5,12-%`. It requires fixed `lscpu` to complete normally after the parser rejects the malformed list. It has been statically inspected but has not executed in CI. It still copies host `/proc/cpuinfo`, so cross-architecture hermeticity and affected/fixed A/B evidence remain explicit gates.
-
-Full adjacent-pass receipt:
-
-```text
-artifacts/2026-08-01-adjacent-repository-pass.md
-```
-
-## Queued exact-head runs
-
-### Debian package carrier
-
-```text
-30690810870 at 187ab0c3c72eb4f733e5c9eebaeb7b748f687fbb — queued
-30690831292 at 8ba7537bda1f7fd15a659dfb918bbc8df110419d — queued
-30692218540 at 52a6f2697b7c1be02ca45ee29c58de61f172c2d3 — queued
-```
-
-### Controlled util-linux fork
-
-```text
-30691835019 — Linux Fieldwork unit 23 lscpu cpuset gate — queued
-30691835043 — util-linux Build test — queued
-```
-
-Current first incomplete owner: hosted execution queue. No source, patch, build, native-test, or fixture result can be inferred before a job starts.
-
-## Native gate contract
-
-The controlled fork gate uses util-linux's own documented paths:
-
-```sh
-.github/workflows/cibuild-setup-ubuntu.sh
-.github/workflows/cibuild.sh CONFIGUREFAST MAKE
-make check-programs
-sudo -E make check TS_OPTS="--parallel=1 lscpu"
-```
-
-It then runs the deterministic valid and malformed text/JSON sysroot cases twice against built `./lscpu` and requires:
-
-- status 0 for every candidate case;
-- valid JSON output;
-- no double-free, invalid-pointer, or abort diagnostic;
-- retained source head and `lib/path.c` blob;
-- retained built-binary digest;
-- project-native test outputs and diffs;
-- cleanup and immediate rerun.
-
-Receipt:
-
-```text
-artifacts/2026-08-01-controlled-util-linux-fork.txt
-```
-
-## Completed evidence
-
-| Item | Identity |
-| --- | --- |
-| Installed baseline | `util-linux 2.41-5 amd64` |
-| Baseline binary SHA-256 | `e3c6e0c09d617cb9e77a3655f79a7a83d2dd865e49eabeccfbaa0335c9ff722e` |
-| Baseline minimal matrix | `artifacts/2026-08-01-trixie-minimal-sysroot-reproduction.txt` |
-| Source/build run | `30690487287`, job `91344214299` |
-| Source/build artifact | `8815555088`; ZIP SHA-256 `ec7e883d7d0716123342c9dfcc01db8e4a8af97461d635467feddcbd51a41399` |
-| Effective baseline `lib/path.c` SHA-256 | `f934339cf7aba38ae6197e5b5ad3b6a9e7e5fb483ed3f807d45971968d3c7cda` |
-| Candidate `lib/path.c` SHA-256 | `d0460b4fa3a32b7bdd3cf8b95fa5780bf830fa24bc9e64559408c3ddd1abbb8d` |
-| Candidate package SHA-256 | `92f3aa6fa87a30b9d030263dbbb0446f7679c2ee0456760271ea530268f6b971` |
-| Candidate binary SHA-256 | `883912245c15612a224b761d01b838ecd23470eccf467369ec5c4a560a7946e1` |
-| Retained patch | `patches/0001-clear-cpuset-output-after-error.patch` |
-| Adjacent pass | `artifacts/2026-08-01-adjacent-repository-pass.md` |
-| Current-master test candidate | `teamleaderleo/util-linux@cf8aadf90786200c8cb7006fa78db428d0229985` |
+This test-only candidate remains internal. It has not been selected as the Debian package delivery mechanism and requires separate exact execution before any upstream-test proposal.
 
 ## First incomplete step
 
-Classify the first completed run among the exact IDs above.
+Create the final Debian stable-update source composition in a disposable tree:
 
-For a completed package run, retain job log, artifact ID/digest, candidate outputs, baseline/candidate valid-output comparison, malformed-case statuses, cleanup, and rerun.
+1. unpack exact `util-linux 2.41-5` source;
+2. add the canonical patch to `debian/patches/series` with original authorship retained;
+3. add a minimal stable-update changelog version following current Debian guidance;
+4. run the relevant native util-linux `lscpu` suite on the patched tree;
+5. build source and binary packages;
+6. retain a source debdiff against `2.41-5`;
+7. rerun the exact valid/malformed text and JSON actual-binary matrix from that final package composition;
+8. record cleanup and an immediate rerun.
 
-For a completed fork run, retain project-native `lscpu` test result, deterministic matrix result, source/binary identities, artifact ID/digest, cleanup, and rerun.
-
-If hosted execution remains unavailable, the next safe executor-backed action is to check out `teamleaderleo/util-linux@cf8aadf90786200c8cb7006fa78db428d0229985`, build with the project's documented CI path, run the focused lscpu suite twice, then transplant only the test hunk onto affected `v2.41` for an affected/fixed A/B. Record exact compiler, libc, architecture, source head, command, status, outputs, cleanup, and rerun. Do not infer a pass from static review.
+Do not describe `DEB_BUILD_OPTIONS=nocheck` as native test evidence.
 
 ## Next safe technical actions
 
-1. classify the first completed queued run;
-2. repair only the owner of the first failure;
-3. execute and retain the current-master regression candidate on an exact checkout;
-4. require affected/fixed A/B and assess host-`cpuinfo` hermeticity before considering an upstream test proposal;
-5. create a minimal Debian `2.41-5+deb13u1` source delta and debdiff after execution is green;
-6. rebuild source and binary packages;
-7. rerun focused package and native gates on the exact final head;
-8. move to `READY FOR AUTHORIZATION` only when the complete technical send gate passes;
-9. request an explicit send/hold decision before any Debian or util-linux interaction.
+1. compose the disposable Debian quilt/changelog delta;
+2. run relevant native/package tests;
+3. build source and binary packages;
+4. retain source debdiff and exact package identities;
+5. rerun the package matrix cleanly;
+6. finish useful architecture/infrastructure classification;
+7. move to `READY FOR AUTHORIZATION` only when the complete technical send gate passes;
+8. request an explicit send/hold decision before any Debian or util-linux interaction.
+
+## Evidence limits
+
+- successful package execution is amd64-only;
+- the completed binary-package build used `DEB_BUILD_OPTIONS=nocheck`;
+- the complete native `lscpu` suite on the patched Debian tree is not retained;
+- the final source package and source debdiff are absent;
+- the public issue #4401 attachment has not been executed against the final package pair;
+- ASan and Valgrind actual-package runs remain unexecuted.
 
 ## Cleanup state
 
-No local checkout or package build was created in this continuation. No process, mount, sysroot, package installation, credential, or external state remains. GitHub-side state is limited to the retained Linux Fieldwork packet commit and controlled util-linux test branch above.
+Hosted package work ran in a disposable Debian trixie container. Local fixture trees were removed. No process, mount, sysroot, package installation, credential, or external state remains under this unit's control.
+
+GitHub-side state is limited to the retained Linux Fieldwork branch and PR, controlled fork branches and internal PR, workflow logs, and artifacts.
 
 ## Stop and reassess when
 
 - Debian publishes an equivalent trixie correction;
-- candidate execution still aborts or changes valid output;
+- final package composition still aborts or changes valid output;
 - native tests identify an adjacent required patch;
-- the regression candidate is non-hermetic across architectures;
 - current public attachment behavior contradicts the deterministic fixture;
 - external-contact authority changes.
-
-## Other fork disposition
-
-The recent fork inventory is retained at:
-
-```text
-notes/handoffs/2026-08-01-recent-fork-disposition.md
-branch: coordination/recent-fork-disposition-2026-08-01
-head: be3daff51e98328e1733ddd1e0b8ed68cce461fe
-```
-
-It records:
-
-- mmdebstrap: technically saturated at named canonical/QEMU gates;
-- libarchive: completed overlap evidence, public PR #3070 still active;
-- systemd: formal lanes only, no exact investigation;
-- BuildKit: broad ecosystem mention only;
-- nixpkgs: broad harvesting/retirement lanes only.
-
-The bounded unit-specific pass in this continuation checked only NixOS package versions and util-linux's current native test surface. Do not turn those forks into a new broad scan during priority-zero closeout.
 
 ## Authority reminder
 
