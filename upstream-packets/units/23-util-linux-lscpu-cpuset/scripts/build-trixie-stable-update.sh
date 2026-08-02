@@ -147,7 +147,21 @@ dpkg-buildpackage -S -us -uc \
 
 new_dsc="$build/util-linux_${update_version}.dsc"
 [[ -f "$new_dsc" ]]
+set +e
 debdiff "$original_dsc" "$new_dsc" >"$outdir/source.debdiff"
+debdiff_rc=$?
+set -e
+case "$debdiff_rc" in
+  1) ;; # expected: the stable-update source packages differ
+  0)
+    echo "source debdiff unexpectedly reported no changes" >&2
+    exit 1
+    ;;
+  *)
+    echo "source debdiff failed with status $debdiff_rc" >&2
+    exit "$debdiff_rc"
+    ;;
+esac
 [[ -s "$outdir/source.debdiff" ]]
 
 # Build binary packages without suppressing tests.
