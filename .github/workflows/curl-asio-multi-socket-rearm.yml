@@ -7,6 +7,12 @@ on:
     paths:
       - experiments/curl-asio-multi-socket-rearm/**
       - .github/workflows/curl-asio-multi-socket-rearm.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - experiments/curl-asio-multi-socket-rearm/**
+      - .github/workflows/curl-asio-multi-socket-rearm.yml
   workflow_dispatch:
 
 permissions:
