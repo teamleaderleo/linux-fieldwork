@@ -1,0 +1,53 @@
+WGPU/Naga f16 shape-changing bitcast capability receipt
+Date: 2026-08-02
+
+controlled repository: teamleaderleo/wgpu
+base: trunk@2eddc8c7b2fedd4267f5004745a8bc42974e17a0
+probe branch: fieldwork/naga-f16-bitcast-probe
+probe head: b39e1822d3317e1b2ab41108211adf048314fa7d
+focused workflow run: 30752907389
+focused job: 91509997426
+focused conclusion: success
+artifact id: 8835144866
+artifact digest: sha256:b507a9437f6f67de315317c79f4301b830388afd0072d66fcc5431a5615c8778
+
+results.tsv
+-----------
+scalar-control	0	accepted	090e6f3602fcf35219e94c59dad7da0af1b4b0d1f0b44dbef3b37637b5129023	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+vec-to-scalar	0	accepted	090e6f3602fcf35219e94c59dad7da0af1b4b0d1f0b44dbef3b37637b5129023	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+scalar-to-vec	0	accepted	090e6f3602fcf35219e94c59dad7da0af1b4b0d1f0b44dbef3b37637b5129023	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+identity.txt
+------------
+head=825261dada66abdca4aafbc978b806a06c01cafc
+naga_cli=5d5383b217f3dd4574e34b0ae735ccbda5dd55ed
+validator=18188200e38db828e247299317fd6dc70a5a5649
+ir=e30c9f1bc5d38e59d7c3883f4962c263e65b24a0
+rustc=rustc 1.93.1 (01f6ddf75 2026-02-11)
+cargo=cargo 1.93.1 (083ac5135 2025-12-15)
+naga_sha256=9206fc6b43f4dcd9681ec34b055c26f86a35cf46989b6bf43335b0c53755326c
+
+shader cases
+------------
+scalar control:
+  bitcast<u32>(1.0)
+
+vec2<f16> to u32:
+  let halves = vec2<f16>(f16(1.0), f16(2.0));
+  let bits = bitcast<u32>(halves);
+
+u32 to vec2<f16>:
+  let halves = bitcast<vec2<f16>>(0x3c004000u);
+
+All stdout files contained: Validation successful
+All stderr files were empty.
+
+Ordinary fork workflows on the probe head also completed successfully:
+Shaders, Publish, Lazy, Docs, cargo-generate, CTS, and CI.
+
+Classification
+--------------
+Canonical issue gfx-rs/wgpu#8896 is stale against the tested current source in both directions. No product patch is required. The first red probe run belonged to an outdated expected-failure classifier, not Naga.
+
+External contact: none; unauthorized.
+Cleanup: temporary fixture directory removed by workflow trap; no GPU/device/service/credential state used.
