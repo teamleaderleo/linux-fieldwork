@@ -1,10 +1,6 @@
 name: Unit 23 util-linux lscpu cpuset
 
 on:
-  pull_request:
-    paths:
-      - "upstream-packets/units/23-util-linux-lscpu-cpuset/**"
-      - ".github/workflows/unit-23-util-linux-lscpu.yml"
   workflow_dispatch:
 
 permissions:
