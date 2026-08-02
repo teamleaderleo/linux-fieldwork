@@ -60,6 +60,17 @@ class RelativeExecCwdAuditReceiptTests(unittest.TestCase):
         self.assertIn("ntpath.normpath", receipt)
         self.assertIn("absolute-path control identity differs", receipt)
 
+    def test_proposed_code_has_no_persisted_checkout_credentials(self) -> None:
+        self.assertEqual(self.workflow.count("persist-credentials: false"), 2)
+
+    def test_inventory_does_not_print_raw_pr_controlled_findings(self) -> None:
+        start = self.workflow.index("      - name: Inventory current repository findings")
+        end = self.workflow.index("      - name: Upload audit inventory", start)
+        inventory = self.workflow[start:end]
+        self.assertIn("relative executable / cwd findings", inventory)
+        self.assertNotIn("f\"{item['path']}:{item['line']}", inventory)
+        self.assertNotIn("f\"with cwd {item['cwd']!r}\"", inventory)
+
     def test_receipt_remains_read_only(self) -> None:
         permissions = self.workflow.split("jobs:", 1)[0]
         self.assertIn("  actions: read", permissions)
