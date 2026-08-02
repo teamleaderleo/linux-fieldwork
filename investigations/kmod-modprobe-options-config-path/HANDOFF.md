@@ -6,29 +6,28 @@
 - State: `EXECUTING`
 - Linux Fieldwork branch: `investigation/kmod-modprobe-options-config-path`
 - Linux Fieldwork base: `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Exact technical head before this handoff commit: `1e59ba92f50d3aada6893de25d27afb7b75e1571`
+- Exact execution-carrier head before this handoff update: `2ec0759b45e0eedb6c1e6cb119f378c87347eb3a`
 - Internal draft PR: #412
 - External-contact state: unauthorized; none made
 
-## What was created
+## What exists
 
-- kmod added to `targets/registry.yml` as an active target;
-- durable source/test map at `targets/kmod/map.md`;
-- investigation record and executable test under `investigations/kmod-modprobe-options-config-path/`;
-- deterministic root result, immediate rerun, and unprivileged receipt;
-- broader shortlist at `notes/foundational-codebase-frontier-2026-08-01.md` covering kmod, shadow, procps-ng, libcap, and iproute2.
+- kmod target map and registry entry;
+- durable investigation record and deterministic package-level probe;
+- root, EUID 65534, quoted-control, parser-control, cleanup, and immediate-rerun receipts;
+- exact-master GCC/Clang sanitizer execution workflow at `.github/workflows/kmod-modprobe-config-path.yml`.
 
 ## Exact upstream identities
 
 - Canonical repository: `https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git`
 - Source-reading mirror: `https://github.com/kmod-project/kmod.git`
-- Mirror master observed 2026-08-01: `5086df53090b2fe9fa1c31351c05a78a12a4ba71`
+- Exact mirror master under test: `5086df53090b2fe9fa1c31351c05a78a12a4ba71`
 - Relevant source: `tools/modprobe.c`
 - Intent/documentation commit: `42d60a3267162a36ec6b6b39a7b91e5078b90979`
 - Current local executable: Debian `kmod 34.2-2`, `/usr/sbin/modprobe`
 - Local executable SHA-256: `a775c12b9d71d9548654ff98ecc0e5e3378bdaccd52ccb62fa80a5f41e849caf`
 
-## Latest distinguishing result
+## Latest demonstrated result
 
 ```text
 no-space config:
@@ -45,11 +44,9 @@ spaced config:
   MODPROBE_OPTIONS=-C $TMP/space/conf dir
 ```
 
-A manually quoted spaced path in `MODPROBE_OPTIONS` is a passing control. Leading/repeated spaces, tabs, and unmatched quotes all silently lose the marker while status remains 0.
+A manually quoted spaced path is a passing control. Leading/repeated spaces, tabs, and unmatched quotes silently lose the selected configuration while status remains 0. Root and EUID 65534 agree. No module insertion or removal occurs.
 
-The normalized root run and immediate rerun are byte-identical. The same decision-changing fields reproduce as EUID 65534. No module insertion or removal occurs.
-
-## Exact evidence identities
+## Exact retained evidence
 
 ```text
 test SHA-256: 8006c8cb24ef44803565fb580bd9334edb807e210f3a5c0f313679f260c211c1
@@ -58,29 +55,48 @@ immediate rerun SHA-256: c6ffd6ac62937b2ceb78786fe3b7610b5125f91db356f1f747c69fe
 unprivileged result SHA-256: 759550141d24d03543d0686b235e82b0aab8015181b50bddb169e9d297acd9cf
 ```
 
+## Exact-master execution carrier
+
+Workflow run `30759595582` was queued at the latest observation for head `2ec0759b45e0eedb6c1e6cb119f378c87347eb3a`.
+
+The workflow:
+
+1. checks out Linux Fieldwork without persisted credentials;
+2. checks out exact `kmod-project/kmod@5086df53090b2fe9fa1c31351c05a78a12a4ba71` read-only;
+3. records the source head and `tools/modprobe.c` blob;
+4. builds with GCC and Clang using AddressSanitizer and UndefinedBehaviorSanitizer;
+5. requires the retained unchanged probe to run against the built `build-<compiler>/modprobe`;
+6. runs the discriminator twice and requires byte-identical normalized results;
+7. verifies cleanup and an unchanged target source tree;
+8. uploads exact source, binary, result, environment, and digest receipts.
+
+No queued run is treated as a result.
+
 ## Interpretation
 
-The demonstrated defect is not that kmod rejects a spaced configuration directory. The parent accepts it. The defect is that kmod's own recursive install/remove transport flattens the valid pathname into an unquoted environment string, changing argv identity for the nested command. Both commands return success, so status-only evidence misses the policy change.
+The package-level evidence identifies argument serialization as the owner: kmod flattens a valid `-C` pathname into an unquoted environment string for its own recursive install/remove transport. The nested custom parser receives different arguments, falls back to another policy, and still exits successfully.
 
-Current master still contains the same raw append and custom parser, but master has not yet been built or executed in this runtime.
+The exact-master workflow will determine whether the same behavior is executable at the pinned current source revision. It does not yet select a repair.
 
 ## First incomplete step
 
-Obtain/build exact kmod master `5086df53090b2fe9fa1c31351c05a78a12a4ba71` and run the retained test unchanged against that build.
+Read workflow `30759595582` when terminal.
 
-Then:
+- If both compiler jobs reproduce the loss without sanitizer findings, retain job/artifact identities and move to a native `testsuite/test-modprobe.c` regression plus candidate comparison.
+- If setup/build fails, repair only the dependency or workflow owner and rerun unchanged product logic.
+- If source behavior differs, preserve the exact result and reclassify the current-source boundary before changing a candidate.
 
-1. integrate the regression into `testsuite/test-modprobe.c` and the fake rootfs harness;
-2. require a losing exact-master baseline;
-3. compare complete propagation mechanisms, including quote-containing paths, repeated whitespace, existing environment content, and multiple `-C` values;
-4. run the focused test with sanitizer-enabled GCC and Clang builds;
-5. retain cleanup/rerun and exact source/artifact identities;
-6. recheck active upstream issues and pull requests before any publication decision.
+After exact-master execution:
+
+1. integrate the regression into kmod's native fake-root/fake-syscall testsuite;
+2. compare complete propagation mechanisms, including quote-containing paths, repeated whitespace, existing environment content, and multiple `-C` values;
+3. retain sanitizer, cleanup, rerun, and exact artifact identities;
+4. recheck active upstream issues and pull requests before any publication decision.
 
 ## Cleanup
 
-All temporary configuration directories, helper scripts, nested outputs, and environment receipts were removed. No process, module, mount, socket, lock, or persistent host configuration remains.
+All local temporary configuration directories, helper scripts, nested outputs, and receipts were removed. The new work is hosted read-only execution machinery; no process, module, mount, socket, lock, or persistent host configuration remains.
 
 ## Authority
 
-PR #412 is an internal Linux Fieldwork review surface. No upstream issue, email, patch, pull request, comment, review, or other contact is authorized or performed.
+PR #412 and the workflow are internal Linux Fieldwork surfaces. No upstream issue, email, patch, pull request, comment, review, or other contact is authorized or performed.
