@@ -1,0 +1,81 @@
+name: BuildKit go-archive release readiness
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/buildkit-go-archive-release-readiness.yml"
+      - "investigations/buildkit-go-archive-release-readiness/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  implied-parent:
+    name: implied-parent (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: v0.2.0
+            ref: v0.2.0
+            go-version: "1.23.x"
+            expect: pass
+          - label: v0.2.1
+            ref: v0.2.1
+            go-version: "1.23.x"
+            expect: fail
+          - label: v0.3.0
+            ref: v0.3.0
+            go-version: "1.25.x"
+            expect: fail
+          - label: current-main
+            ref: 9e6d2c7c969f4871fe6ded98ae0e28963fde311f
+            go-version: "1.25.x"
+            expect: pass
+
+    steps:
+      - name: Check out Linux Fieldwork
+        uses: actions/checkout@v4
+
+      - name: Check out go-archive candidate
+        uses: actions/checkout@v4
+        with:
+          repository: moby/go-archive
+          ref: ${{ matrix.ref }}
+          path: go-archive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: false
+
+      - name: Record exact identities
+        shell: bash
+        run: |
+          set -euxo pipefail
+          go version
+          uname -a
+          git -C go-archive rev-parse HEAD
+          git -C go-archive status --short
+
+      - name: Run implied-parent discriminator
+        working-directory: investigations/buildkit-go-archive-release-readiness/probe
+        env:
+          EXPECT_IMPLIED_PARENT: ${{ matrix.expect }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          go mod edit -replace "github.com/moby/go-archive=${GITHUB_WORKSPACE}/go-archive"
+          go mod tidy
+          go test -count=1 -v ./...
+
+      - name: Verify disposable state
+        if: always()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -z "$(git status --short --untracked-files=no)"
+          test -z "$(git -C go-archive status --short)"
