@@ -12,6 +12,16 @@ targets:
       - filesystems-images
       - services-resources
 
+  glibc:
+    title: GNU C Library
+    state: active
+    canonical_repository: https://sourceware.org/git/glibc.git
+    map_path: targets/glibc/map.md
+    programmes:
+      - ecosystem-contributions
+      - services-resources
+      - security-networking
+
   dpkg:
     title: dpkg
     state: inbox
