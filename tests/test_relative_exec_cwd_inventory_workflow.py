@@ -51,6 +51,13 @@ class RelativeExecCwdInventoryWorkflowTests(unittest.TestCase):
         self.assertIn("actions/upload-artifact@v4", self.workflow)
         self.assertIn("retention-days: 14", self.workflow)
 
+    def test_pr_controlled_finding_text_is_escaped_in_summary(self) -> None:
+        self.assertIn("import html", self.workflow)
+        self.assertIn('stream.write("<pre>\\n")', self.workflow)
+        self.assertIn("html.escape(rendered)", self.workflow)
+        self.assertIn('stream.write("</pre>\\n")', self.workflow)
+        self.assertNotIn('stream.write("```text\\n")', self.workflow)
+
     def test_inventory_is_lightweight_and_read_only(self) -> None:
         permissions = self.workflow.split("jobs:", 1)[0]
         self.assertIn("  contents: read", permissions)
