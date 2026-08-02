@@ -23,6 +23,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 0
 
       - name: Validate exact head, retained shell entry points, and diff
         shell: bash
