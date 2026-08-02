@@ -1,28 +1,15 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Linux Fieldwork <internal@example.invalid>
-Date: Thu, 31 Jul 2026 00:00:00 +0000
-Subject: [PATCH] test: keep PID 1 oomd policy across user manager reload
-
-A user manager reload republishes its active units. Its root -.slice uses the
-manager's own cgroup root, which is the same path PID 1 reports for
-user@<uid>.service. Preserve a regression that proves the exact system-manager
-ManagedOOMMemoryPressure=kill registration and its configured limit remain
-visible after the user manager reloads and that the service itself did not
-restart.
----
- test/units/TEST-55-OOMD.sh | 57 ++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 57 insertions(+)
-
 diff --git a/test/units/TEST-55-OOMD.sh b/test/units/TEST-55-OOMD.sh
-index 43937c6ec7..0000000000 100755
+index 43937c6..75b19b6 100755
 --- a/test/units/TEST-55-OOMD.sh
 +++ b/test/units/TEST-55-OOMD.sh
-@@ -537,6 +537,63 @@ testcase_prekill_hook() {
+@@ -536,6 +536,119 @@ EOF
      done
  }
  
 +testcase_user_manager_reload_preserves_system_oomd_registration() {
-+    local active_enter after block uid user_service_path
++    local active_enter_after active_enter_before after block cursor
++    local nrestarts_after nrestarts_before outcome property_after property_before
++    local uid user_service_path
 +
 +    uid="$(id -u testuser)"
 +    user_service_path="/user.slice/user-${uid}.slice/user@${uid}.service"
@@ -38,8 +25,15 @@ index 43937c6ec7..0000000000 100755
 +        '
 +    }
 +
++    cleanup_reporter_collision_probe() {
++        rm -f /run/systemd/system/user@.service.d/zz-fieldwork-oomd-reporter-collision.conf
++        systemctl daemon-reload || true
++        loginctl disable-linger testuser || true
++    }
++    trap cleanup_reporter_collision_probe RETURN
++
 +    mkdir -p /run/systemd/system/user@.service.d/
-+    cat >/run/systemd/system/user@.service.d/zz-oomd-reload-regression.conf <<'EOF'
++    cat >/run/systemd/system/user@.service.d/zz-fieldwork-oomd-reporter-collision.conf <<'EOF'
 +[Service]
 +ManagedOOMMemoryPressure=kill
 +ManagedOOMMemoryPressureLimit=50%
@@ -55,35 +49,76 @@ index 43937c6ec7..0000000000 100755
 +        [[ -n "$block" ]] && break
 +        sleep 1
 +    done
-+    [[ -n "$block" ]]
-+    assert_in 'Memory Pressure Limit: 50.00%' "$block"
-+    active_enter="$(systemctl show "user@${uid}.service" -P ActiveEnterTimestampMonotonic)"
 +
++    if [[ -z "$block" ]]; then
++        echo "FIELDWORK_OOMD_REPORTER_COLLISION=CONTROL_FAILURE"
++        echo "FIELDWORK_REASON=system-registration-never-appeared"
++        return 1
++    fi
++
++    echo "FIELDWORK_OOMD_BEFORE_BEGIN"
++    printf '%s\n' "$block"
++    echo "FIELDWORK_OOMD_BEFORE_END"
++
++    assert_in 'Memory Pressure Limit: 50.00%' "$block"
++    active_enter_before="$(systemctl show "user@${uid}.service" -P ActiveEnterTimestampMonotonic)"
++    nrestarts_before="$(systemctl show "user@${uid}.service" -P NRestarts)"
++    property_before="$(systemctl show "user@${uid}.service" -P ManagedOOMMemoryPressure)"
++
++    cursor="$(journalctl -n 0 --show-cursor | sed -n 's/^-- cursor: //p')"
++    systemctl --machine "testuser@.host" --user log-level debug
 +    systemctl --machine "testuser@.host" --user daemon-reload
 +
-+    # The bug is silent and permanent. Check immediately and after multiple
-+    # oomd/user-manager event-loop turns instead of accepting a transient entry.
++    outcome=not-reproduced
 +    for after in 1 5 10; do
 +        sleep "$after"
 +        block="$(oomctl_block_for_path "$user_service_path")"
-+        [[ -n "$block" ]]
-+        assert_in 'Memory Pressure Limit: 50.00%' "$block"
-+        assert_eq \
-+            "$(systemctl show "user@${uid}.service" -P ActiveEnterTimestampMonotonic)" \
-+            "$active_enter"
-+        assert_eq "$(systemctl show "user@${uid}.service" -P NRestarts)" "0"
-+        assert_eq \
-+            "$(systemctl show "user@${uid}.service" -P ManagedOOMMemoryPressure)" \
-+            "kill"
++        echo "FIELDWORK_OOMD_AFTER_${after}_BEGIN"
++        printf '%s\n' "$block"
++        echo "FIELDWORK_OOMD_AFTER_${after}_END"
++        if [[ -z "$block" ]]; then
++            outcome=reproduced
++            break
++        fi
 +    done
 +
-+    rm -f /run/systemd/system/user@.service.d/zz-oomd-reload-regression.conf
-+    systemctl daemon-reload
-+    loginctl disable-linger testuser
++    active_enter_after="$(systemctl show "user@${uid}.service" -P ActiveEnterTimestampMonotonic)"
++    nrestarts_after="$(systemctl show "user@${uid}.service" -P NRestarts)"
++    property_after="$(systemctl show "user@${uid}.service" -P ManagedOOMMemoryPressure)"
++
++    echo "FIELDWORK_CONTROL_ACTIVE_ENTER_BEFORE=$active_enter_before"
++    echo "FIELDWORK_CONTROL_ACTIVE_ENTER_AFTER=$active_enter_after"
++    echo "FIELDWORK_CONTROL_NRESTARTS_BEFORE=$nrestarts_before"
++    echo "FIELDWORK_CONTROL_NRESTARTS_AFTER=$nrestarts_after"
++    echo "FIELDWORK_CONTROL_PROPERTY_BEFORE=$property_before"
++    echo "FIELDWORK_CONTROL_PROPERTY_AFTER=$property_after"
++
++    journalctl --sync
++    echo "FIELDWORK_RELOAD_JOURNAL_BEGIN"
++    journalctl --after-cursor="$cursor" \
++        -u systemd-oomd.service \
++        -u "user@${uid}.service" \
++        -o short-monotonic --no-pager || true
++    echo "FIELDWORK_RELOAD_JOURNAL_END"
++
++    if [[ "$active_enter_before" != "$active_enter_after" ||
++          "$nrestarts_before" != "$nrestarts_after" ||
++          "$property_before" != "kill" ||
++          "$property_after" != "kill" ]]; then
++        echo "FIELDWORK_OOMD_REPORTER_COLLISION=CONTROL_FAILURE"
++        echo "FIELDWORK_REASON=service-identity-or-policy-changed"
++        return 1
++    fi
++
++    if [[ "$outcome" == reproduced ]]; then
++        echo "FIELDWORK_OOMD_REPORTER_COLLISION=REPRODUCED"
++        return 1
++    fi
++
++    echo "FIELDWORK_OOMD_REPORTER_COLLISION=NOT_REPRODUCED"
++    return 0
 +}
 +
  run_testcases
  
  touch /testok
--- 
-2.50.1
