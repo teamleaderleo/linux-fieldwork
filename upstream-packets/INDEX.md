@@ -29,7 +29,7 @@ This index maps each contribution unit to its durable packet directory. Issue #3
 | 20 | 3 | mmdebstrap tarfilter: preserve dotfile identity during normalization | Clear fix; candidate needed | `units/20-tarfilter-dotfile-identity/` |
 | 21 | 3 | mmdebstrap tarfilter: retain parent metadata for nested includes | Design and compatibility matrix needed | `units/21-tarfilter-parent-metadata/` |
 | 22 | 3 | mmdebstrap tarfilter: treat NUL and `0` as regular-file types | Small bounded fix | `units/22-tarfilter-regular-type-class/` |
-| 23 | 3 | util-linux lscpu: derive cpuset ownership from owning mount | HOLD: Debian trixie package verification | `units/23-util-linux-lscpu-cpuset/` |
+| 23 | 3 | util-linux lscpu: derive cpuset ownership from owning mount | HOLD: Debian stable-update composition | `units/23-util-linux-lscpu-cpuset/` |
 
 ## Claim and creation rule
 
