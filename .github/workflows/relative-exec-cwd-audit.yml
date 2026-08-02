@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Run focused regressions
         run: |
@@ -65,11 +67,6 @@ jobs:
                           f"finding {field} must be a string: {item!r}"
                       )
           print(f"relative executable / cwd findings: {len(findings)}")
-          for item in findings:
-              print(
-                  f"{item['path']}:{item['line']}: {item['program']!r} "
-                  f"with cwd {item['cwd']!r}"
-              )
           PY
 
       - name: Upload audit inventory
@@ -86,6 +83,8 @@ jobs:
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Run Rust current_dir resolution probe
         shell: pwsh
