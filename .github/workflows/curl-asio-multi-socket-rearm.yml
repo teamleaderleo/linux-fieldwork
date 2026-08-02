@@ -1,0 +1,54 @@
+name: curl Asio re-arm discriminator
+
+on:
+  push:
+    branches:
+      - research/foundational-systems-deep-dive-2026-08-03
+    paths:
+      - experiments/curl-asio-multi-socket-rearm/**
+      - .github/workflows/curl-asio-multi-socket-rearm.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discriminator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out fieldwork branch
+        uses: actions/checkout@v4
+
+      - name: Install compiler and headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++ \
+            libboost-dev \
+            libcurl4-openssl-dev \
+            pkg-config
+
+      - name: Build fixture
+        working-directory: experiments/curl-asio-multi-socket-rearm
+        run: |
+          set -euxo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror \
+            -DBOOST_ERROR_CODE_HEADER_ONLY \
+            fixture.cpp -o fixture \
+            $(pkg-config --cflags --libs libcurl) -lpthread
+
+      - name: Run discriminator
+        working-directory: experiments/curl-asio-multi-socket-rearm
+        run: |
+          set -o pipefail
+          timeout 10s ./fixture | tee receipt.txt
+
+      - name: Publish receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: curl-asio-multi-socket-rearm-receipt
+          path: experiments/curl-asio-multi-socket-rearm/receipt.txt
+          if-no-files-found: warn
