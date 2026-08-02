@@ -62,12 +62,16 @@ jobs:
           git -C go-archive status --short
 
       - name: Run implied-parent discriminator
-        working-directory: investigations/buildkit-go-archive-release-readiness/probe
         env:
           EXPECT_IMPLIED_PARENT: ${{ matrix.expect }}
         shell: bash
         run: |
           set -euxo pipefail
+          probe_dir="$(mktemp -d "${RUNNER_TEMP}/goarchive-probe.XXXXXX")"
+          trap 'rm -rf "$probe_dir"' EXIT
+          cp investigations/buildkit-go-archive-release-readiness/probe/go.mod "$probe_dir/"
+          cp investigations/buildkit-go-archive-release-readiness/probe/implied_parent_test.go "$probe_dir/"
+          cd "$probe_dir"
           go mod edit -replace "github.com/moby/go-archive=${GITHUB_WORKSPACE}/go-archive"
           go mod tidy
           go test -count=1 -v ./...
@@ -79,3 +83,4 @@ jobs:
           set -euxo pipefail
           test -z "$(git status --short --untracked-files=no)"
           test -z "$(git -C go-archive status --short)"
+          test -z "$(find "${RUNNER_TEMP}" -maxdepth 1 -type d -name 'goarchive-probe.*' -print -quit)"
