@@ -1,7 +1,7 @@
 # Handoff — UV lockfile requirements diagnostic
 
 Handoff date: 2026-08-02  
-State: `ACTIVE — WAITING FOR CONTROLLED CI`  
+State: `ACTIVE — SOURCE HOLD; TWO CONTROLLED RUNS QUEUED`  
 External contact authorized: `false`  
 External contact made: `none`
 
@@ -11,62 +11,90 @@ External contact made: `none`
 controlled repo: teamleaderleo/uv
 base branch: main
 base commit: 1da26a68629be6ae5fd7f924a7d49ff54763a7df
-candidate branch: fieldwork/uv-lock-requirements-diagnostic
-candidate head: a67f97bec7782c6f60aceefb2a9bcd7045582015
-internal draft PR: #12
-CI run: 30752526287
-CI state: queued
-```
 
-Current canonical UV head checked:
+source branch: fieldwork/uv-lock-requirements-diagnostic
+source head: ba55497fe83ea9bb07c04452f8ba190fa4440a05
+internal source PR: #12
+source disposition: HOLD / REPAIR
 
-```text
+current-source execution PR: #15
+carrier head: b794c91c9bf50b2ee28cd588cd44e51eb44c1d09
+focused run: 30754710006 — queued at last check
+ordinary CI: 30754710091 — queued at last check
+
+parse-first experiment PR: #13
+experiment head: f0673123cbabe859c12fe6baacc1fff872060f17
+focused run: 30755038821 — queued at last check
+
+canonical UV head checked:
 79bbface771210df216b738e9bdc7df95e5a9e6b
 ```
 
-Canonical and controlled-base `crates/uv-requirements/src/sources.rs` were the same Git blob:
+## Current source result
 
-```text
-cf6218326b96db5ce40e1fae31a0803e2c65e437
-```
-
-## Implemented result
-
-The candidate detects only lockfiles UV itself can identify without reading lockfile contents:
+Head `ba55497...` recognizes:
 
 - exact existing `uv.lock`;
-- existing `<script-name>.lock` paired with a sibling that passes UV's PEP 723 parser.
+- existing `<complete-script-filename>.lock` when the exact sibling parses as PEP 723;
+- native non-UTF-8 script filenames on Unix.
 
-An arbitrary `.lock` paired with an ordinary script remains a requirements input. Missing paths remain owned by the existing missing-file path.
+Its tests generate project and script lockfiles through UV's real producers and preserve a `.lock` file beside a non-PEP-723 script.
 
-## Commits
+## Newly discovered source defect
 
-```text
-72aec38bee0581bf742a8ddac24f4b2c65021ac3 — focused positive and negative tests
-631b193e07768b29fe2aac983c65c53c727b1d89 — include focused test module
-1180b4e5a0bac4b42455666ca0bc2bac5383a6ed — source implementation
-a67f97bec7782c6f60aceefb2a9bcd7045582015 — remove unrelated reconstructed doc changes
-```
+Recognition occurs before `RequirementsTxt::parse_with_cache`.
+
+A valid requirements file named `action.py.lock` is therefore rejected whenever `action.py` is a valid PEP 723 script. The filename indicates possible UV provenance, not actual provenance. The current positive control does not cover this because its sibling is deliberately non-PEP-723.
+
+The source PR body now records this defect and supersedes its earlier internal acceptance.
+
+## Alternative design under test
+
+PR #13 checks out exact source `ba55497...` and applies a runner-local experiment:
+
+- add `RequirementsTxtWithUvLockDiagnostic(PathBuf)`;
+- return it only from the explicit requirements-file / `-r` constructor;
+- parse first;
+- replace a parse error with the UV-lock hint only on that variant;
+- keep constraints and overrides on `RequirementsTxt`;
+- move the filename helper to the parse layer while preserving native path operations.
+
+Additional tests cover:
+
+- valid same-name requirements collision succeeds;
+- missing `uv.lock` still reports `File not found`;
+- `-c` retains its original parser error;
+- existing project, script, non-UTF-8, and arbitrary `.lock` controls remain.
 
 ## First incomplete step
 
-Read run `30752526287` and classify the first non-green job or step. Do not infer success from queue state.
+Inspect run `30755038821` and classify the first non-green step. Then inspect run `30754710006` for the current source generation. Queue state is not evidence of success.
 
-## Required acceptance evidence
+## Acceptance decision
 
-- `cargo fmt` or repository formatting gate passes;
-- `uv-requirements` compiles with `uv_scripts::Pep723Metadata` usage;
-- exact `uv.lock` test reports the intended diagnostic;
-- paired PEP 723 script lock reports the intended diagnostic;
-- ordinary `.lock` losing control remains accepted;
-- missing-file behavior remains unchanged;
-- complete branch diff contains no unrelated changes;
-- cleanup and exact rerun state are recorded.
+If the parse-first experiment passes:
 
-## Design warning
+1. revise source branch #12 to the scoped source-variant design;
+2. retain producer-backed and non-UTF-8 tests;
+3. add the valid same-name collision, missing path, and constraint controls;
+4. create a clean exact-source execution carrier;
+5. rerun formatting, affected-crate compile, and focused tests;
+6. review the complete source diff again before changing the hold.
 
-Do not replace the sibling-script discriminator with lockfile substring matching. That recreates the rejected upstream approach and can classify arbitrary TOML content as UV-owned.
+If the experiment fails:
+
+1. identify whether the owner is transformation, formatting, exhaustive enum matching, error conversion, or test expectation;
+2. repair only that layer;
+3. keep source #12 held until the collision has executable evidence.
+
+## Residual ambiguity
+
+After a requirements parse failure, an invalid arbitrary `<script>.lock` beside a PEP 723 script is indistinguishable from a UV-generated script lock without inspecting the lock contents or storing provenance. The parse-first design intentionally accepts this bounded ambiguity because the file is invalid requirements input either way.
 
 ## Publication boundary
 
-The fork PR is internal and draft. Do not open or comment on a canonical UV issue or pull request without explicit authorization. Any eventual public communication must follow the project's current contribution policy and the user's explicit send decision.
+The canonical issue has prior implementations and an open overlapping attempt. All current PRs are controlled-fork drafts. Do not open, comment on, or update canonical UV issues or pull requests without explicit authorization and a fresh overlap review.
+
+## Separate follow-up
+
+Keep `astral-sh/uv#16209` as a separate unit. Its BusyBox `realpath --` failure intersects relocatable console scripts and activation scripts, and historical symlink behavior must be preserved.
