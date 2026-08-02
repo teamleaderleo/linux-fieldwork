@@ -1,0 +1,119 @@
+Unit 23 exact-head Debian trixie package matrix
+Date: 2026-08-02
+Repository: teamleaderleo/linux-fieldwork
+Branch: upstream/unit-23-util-linux-lscpu-cpuset
+Requested branch head: 7a82f99ceac6801536c78ba1c2d261bd6f0f3dc8
+Pull request: #404
+External contact: unauthorized; none made
+
+GitHub Actions identity
+=======================
+Workflow run: 30692256031
+Job: 91348929951 (trixie-package-matrix)
+Conclusion: success
+Checked-out pull-request merge commit: 7f7fb3995f0332bd7aabea3dc6c7642f925a5148
+Requested/persisted source head: 7a82f99ceac6801536c78ba1c2d261bd6f0f3dc8
+Artifact ID: 8817069887
+Artifact name: unit-23-util-linux-30692256031-1
+Artifact size: 97647408 bytes
+Artifact digest: sha256:2b544b399e779bbf577ade1e99249436879fa928b639c5026f116044b461ac25
+
+Exact Debian source identity
+============================
+Package version: util-linux 2.41-5
+Architecture: amd64
+util-linux_2.41-5.dsc SHA-256:
+  9e84dcc64170262f850aa5fd65902846a1ebf054d556ab5c4ec17fa16b00e628
+util-linux_2.41.orig.tar.xz SHA-256:
+  81ee93b3cfdfeb7d7c4090cedeba1d7bbce9141fd0b501b686b3fe475ddca4c6
+util-linux_2.41-5.debian.tar.xz SHA-256:
+  20ad832160d5ed8de4759ce00652f620ce642ab583c3c1c431b68a15cdba1d07
+Effective Debian baseline lib/path.c SHA-256:
+  f934339cf7aba38ae6197e5b5ad3b6a9e7e5fb483ed3f807d45971968d3c7cda
+Candidate lib/path.c SHA-256:
+  d0460b4fa3a32b7bdd3cf8b95fa5780bf830fa24bc9e64559408c3ddd1abbb8d
+Canonical patch: util-linux commit 4581ede384f22983d6155768635ce43cb5304cb0
+Patch dry-run: pass with --fuzz=0
+Patch application: pass with --fuzz=0
+
+Built candidate identity
+========================
+Candidate util-linux binary package SHA-256:
+  92f3aa6fa87a30b9d030263dbbb0446f7679c2ee0456760271ea530268f6b971
+Candidate lscpu SHA-256:
+  883912245c15612a224b761d01b838ecd23470eccf467369ec5c4a560a7946e1
+Installed Debian baseline lscpu SHA-256:
+  e3c6e0c09d617cb9e77a3655f79a7a83d2dd865e49eabeccfbaa0335c9ff722e
+Build command class: dpkg-buildpackage -b -uc -us -j2
+Build result: pass
+Build test policy: DEB_BUILD_OPTIONS=nocheck
+
+Deterministic execution matrix
+==============================
+The fixture uses a 16-CPU synthetic sysroot. The valid online list is 0-15.
+The malformed case changes only the online list to 5,12-%.
+
+baseline valid text:       exit 0
+baseline valid JSON:       exit 0
+baseline malformed text:   exit 134
+baseline malformed JSON:   exit 134
+candidate valid text:      exit 0
+candidate valid JSON:      exit 0
+candidate malformed text:  exit 0
+candidate malformed JSON:  exit 0
+
+Baseline malformed stderr:
+  free(): double free detected in tcache 2
+Candidate malformed stderr:
+  empty
+
+Valid text output SHA-256, baseline and candidate:
+  a8fc5c5ebc663afec6c11259ac5804aa808325208215ce08844131fd8e0274c7
+Valid JSON output SHA-256, baseline and candidate:
+  bc46275fd166aa84e37a80bcb26af0207b04551d6167696dda18dccc3e5dc1ed
+
+Interpretation
+==============
+The exact Debian trixie 2.41-5 package source retains the stale caller-visible
+cpuset pointer after the error-path free. The installed baseline aborts on the
+bounded malformed input. Applying the canonical free-then-NULL correction and
+building the resulting binary package removes the abort in text and JSON modes
+without changing the retained valid text or JSON bytes.
+
+Controlled util-linux fork regression
+=====================================
+Repository: teamleaderleo/util-linux
+Branch: fieldwork/unit-23-lscpu-cpuset-regression
+Draft pull request: #1
+Head: 95ebc67e521195741040ffebb58756b259fb69b2
+Native regression workflow run: 30691835019
+Native regression job: 91347815601
+Conclusion: success
+Artifact ID: 8816802119
+Artifact name: unit-23-native-regression-30691835019-1
+Artifact digest: sha256:d36f713357713593430fca369e4871e5ce3ff8f4c8455e07a67e8d83b95493c4
+
+The native job completed autogen, configured a focused lscpu build, built lscpu,
+and passed tests/ts/lscpu/cpuset-parse-failure against the built executable.
+
+Adjacent hosted build evidence
+==============================
+The fork GCC workflow run 30691835043 completed the x86_64 build, x86 build,
+coverage, and clang-analyzer jobs successfully. The sampled armv7 qemu job
+91347815797 reached and passed source build/test work, then failed while pulling
+multiarch/qemu-user-static because Docker Hub returned HTTP 429 unauthenticated
+pull-rate limiting. This is an infrastructure failure, not evidence against the
+source correction. Other red qemu jobs require the same log-level confirmation
+before being described identically.
+
+Evidence limits and remaining gates
+===================================
+- Exact package execution is amd64 only.
+- The binary-package build used DEB_BUILD_OPTIONS=nocheck.
+- The package workflow did not run the complete util-linux native lscpu suite.
+- A minimal Debian stable-update source delta, changelog, source package, and
+  source debdiff have not yet been produced.
+- The public issue #4401 attachment has not been executed against this package
+  pair in the retained workflow.
+- ASan and Valgrind actual-package runs remain unexecuted.
+- No Debian, util-linux, NixOS, or other external contact was authorized or made.
