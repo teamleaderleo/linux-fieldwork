@@ -65,6 +65,7 @@ class RelativeExecCwdInventoryWorkflowTests(unittest.TestCase):
         self.assertIn("runs-on: ubuntu-24.04", self.workflow)
         self.assertNotIn("windows-latest", self.workflow)
         self.assertIn("timeout-minutes: 5", self.workflow)
+        self.assertIn("persist-credentials: false", self.workflow)
 
 
 if __name__ == "__main__":
