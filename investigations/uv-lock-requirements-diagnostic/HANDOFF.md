@@ -53,10 +53,10 @@ The source PR body now records this defect and supersedes its earlier internal a
 PR #13 checks out exact source `ba55497...` and applies a runner-local experiment:
 
 - add `RequirementsTxtWithUvLockDiagnostic(PathBuf)`;
-- return it only from the explicit requirements-file / `-r` constructor;
+- return it from `from_requirements_txt`, which serves ordinary requirements files and requirements-syntax exclusion files;
 - parse first;
 - replace a parse error with the UV-lock hint only on that variant;
-- keep constraints and overrides on `RequirementsTxt`;
+- keep constraints and overrides on `RequirementsTxt` through their separate constructors;
 - move the filename helper to the parse layer while preserving native path operations.
 
 Additional tests cover:
@@ -65,6 +65,8 @@ Additional tests cover:
 - missing `uv.lock` still reports `File not found`;
 - `-c` retains its original parser error;
 - existing project, script, non-UTF-8, and arbitrary `.lock` controls remain.
+
+The complete matrix also records the exclusion-file lane; a direct executable exclusion control is still useful after the first compile/test pass.
 
 ## First incomplete step
 
@@ -76,7 +78,7 @@ If the parse-first experiment passes:
 
 1. revise source branch #12 to the scoped source-variant design;
 2. retain producer-backed and non-UTF-8 tests;
-3. add the valid same-name collision, missing path, and constraint controls;
+3. add the valid same-name collision, missing path, constraint, and exclusion-file controls;
 4. create a clean exact-source execution carrier;
 5. rerun formatting, affected-crate compile, and focused tests;
 6. review the complete source diff again before changing the hold.
@@ -91,10 +93,26 @@ If the experiment fails:
 
 After a requirements parse failure, an invalid arbitrary `<script>.lock` beside a PEP 723 script is indistinguishable from a UV-generated script lock without inspecting the lock contents or storing provenance. The parse-first design intentionally accepts this bounded ambiguity because the file is invalid requirements input either way.
 
+## Tooling cleanup note
+
+An attempted carrier-history cleanup created these empty fork-local branches, all pointing at exact source `ba55497...` and containing no changes:
+
+```text
+fieldwork/uv-lock-requirements-diagnostic-exec-clean
+fieldwork/uv-lock-requirements-diagnostic-exec-clean-2
+fieldwork/uv-lock-requirements-diagnostic-exec-clean-3
+fieldwork/uv-lock-requirements-diagnostic-exec-clean-4
+fieldwork/uv-lock-requirements-diagnostic-exec-clean-final
+fieldwork/uv-lock-requirements-diagnostic-exec-clean-actual
+fieldwork/uv-lock-requirements-diagnostic-exec-clean-stop
+```
+
+The connector exposes branch creation and ref movement but no ref deletion. These refs should be deleted through an authorized interface with delete-ref support. They contain no source delta and triggered no upstream interaction.
+
 ## Publication boundary
 
 The canonical issue has prior implementations and an open overlapping attempt. All current PRs are controlled-fork drafts. Do not open, comment on, or update canonical UV issues or pull requests without explicit authorization and a fresh overlap review.
 
 ## Separate follow-up
 
-Keep `astral-sh/uv#16209` as a separate unit. Its BusyBox `realpath --` failure intersects relocatable console scripts and activation scripts, and historical symlink behavior must be preserved.
+Keep `astral-sh/uv#16209` as a separate unit. Its BusyBox `realpath --` failure intersects relocatable console scripts and activation scripts, and historical symlink behavior must be preserved. A dedicated investigation packet now exists at `investigations/uv-busybox-relocatable-realpath/`.
