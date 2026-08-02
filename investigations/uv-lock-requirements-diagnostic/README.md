@@ -11,7 +11,7 @@ A user can reasonably pass a UV-generated lockfile to `uv pip install -r` while 
 
 A direct diagnostic would explain the format mismatch and point the user back toward an exported `requirements.txt`. The value is reduced debugging time in local development and CI, especially for script lockfiles whose `<script-name>.lock` naming does not visibly identify TOML.
 
-The diagnostic must preserve a more important invariant: `-r` means “parse this file as requirements.” The generic `.lock` suffix is also used for ordinary files, so UV must not reject a valid requirements file merely because its name resembles a UV output.
+The diagnostic must preserve a more important invariant: a requirements-syntax file lane should parse the file before rejecting it based on a possible producer name. The generic `.lock` suffix is also used for ordinary files, so UV must not reject a valid requirements file merely because its name resembles a UV output.
 
 ## Exact identities
 
@@ -46,7 +46,9 @@ This matters for Unix filenames containing non-UTF-8 bytes. The current source g
 
 A prior canonical attempt, `astral-sh/uv#16282`, inferred lock identity from TOML-looking contents. Review rejected that direction because unrelated files can contain the same strings. The current work does not inspect lockfile contents.
 
-The parse layer in `uv-requirements/src/specification.rs` is shared by requirements, constraints, and overrides. A repair placed there must carry source provenance; otherwise a `-c` parse failure could receive an `-r`-specific message.
+The parse layer in `uv-requirements/src/specification.rs` is shared by requirements, constraints, and overrides. A repair placed there must carry source provenance; otherwise a constraint or override parse failure could receive the wrong diagnostic.
+
+The `from_requirements_txt` constructor is reused for ordinary requirements files and requirements-syntax exclusion files. The accurate source scope is therefore wider than the literal `-r` spelling, while constraints and overrides retain separate constructors.
 
 ## Current source generation
 
@@ -81,8 +83,8 @@ The existing success control uses a non-PEP-723 sibling, so it does not exercise
 
 Execution PR #13 applies a bounded alternative to exact repaired source `ba55497...` inside the runner worktree:
 
-1. add a requirements-file source variant carrying permission for the UV-lock diagnostic;
-2. use that variant only for the explicit `-r` / requirements-file lane;
+1. add a requirements source variant carrying permission for the UV-lock diagnostic;
+2. return that variant from `from_requirements_txt`, preserving its ordinary requirements and exclusion-file scope;
 3. parse the file normally first;
 4. only after parsing fails, test exact `uv.lock` or the exact PEP 723 sibling naming rule;
 5. preserve ordinary errors for constraints and overrides;
@@ -92,7 +94,9 @@ Added distinguishing controls:
 
 - valid empty `action.py.lock` beside valid PEP 723 `action.py` succeeds;
 - missing `uv.lock` retains `File not found`;
-- `-c action.py.lock` retains the requirements parser error and does not receive the `-r` diagnostic.
+- `-c action.py.lock` retains the requirements parser error and does not receive the UV-lock diagnostic.
+
+The committed test matrix also includes the exclusion-file lane; an executable exclusion control should be added after the first compile/test pass.
 
 Run `30755038821` was queued at the last check. No compile or behavioral result is claimed yet.
 
