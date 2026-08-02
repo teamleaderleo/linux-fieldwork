@@ -45,10 +45,8 @@ An arbitrary `.lock` paired with an ordinary script remains a requirements input
 72aec38bee0581bf742a8ddac24f4b2c65021ac3 — focused positive and negative tests
 631b193e07768b29fe2aac983c65c53c727b1d89 — include focused test module
 1180b4e5a0bac4b42455666ca0bc2bac5383a6ed — source implementation
- a67f97bec7782c6f60aceefb2a9bcd7045582015 — remove unrelated reconstructed doc changes
+a67f97bec7782c6f60aceefb2a9bcd7045582015 — remove unrelated reconstructed doc changes
 ```
-
-The leading space before the final SHA above is formatting only; the exact head is `a67f97bec7782c6f60aceefb2a9bcd7045582015`.
 
 ## First incomplete step
 
@@ -71,4 +69,4 @@ Do not replace the sibling-script discriminator with lockfile substring matching
 
 ## Publication boundary
 
-The fork PR is internal and draft. Do not open or comment on a canonical UV issue or pull request without explicit authorization. Astral's repository guidance also separates AI-assisted coding from public communication; any eventual public text must be handled under the project's current policy and the user's explicit send decision.
+The fork PR is internal and draft. Do not open or comment on a canonical UV issue or pull request without explicit authorization. Any eventual public communication must follow the project's current contribution policy and the user's explicit send decision.
