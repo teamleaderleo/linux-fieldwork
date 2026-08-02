@@ -6,14 +6,14 @@
 | --- | --- |
 | Debian baseline | `util-linux 2.41-5 amd64` |
 | Installed binary | `/usr/bin/lscpu`, SHA-256 `e3c6e0c09d617cb9e77a3655f79a7a83d2dd865e49eabeccfbaa0335c9ff722e` |
-| Source base | exact Debian `2.41-5` checksums in `README.md` |
-| Candidate source | canonical patch `4581ede...`, effective path SHA-256 `d0460b4f...` |
-| Candidate package | SHA-256 `92f3aa6f...` |
-| Candidate binary | SHA-256 `88391224...` |
-| Local platform | Debian GNU/Linux 13, amd64, kernel 6.12.13 |
-| Privilege | unprivileged fixture execution; package build in disposable trixie container |
-| Linux Fieldwork source/build head | `fefa76c37d110f8fad8a575abc1eaa9e4ed76bb1` |
-| Current packet head before this update | `8ba7537bda1f7fd15a659dfb918bbc8df110419d` |
+| Canonical candidate | util-linux commit `4581ede384f22983d6155768635ce43cb5304cb0` |
+| Candidate package | SHA-256 `92f3aa6fa87a30b9d030263dbbb0446f7679c2ee0456760271ea530268f6b971` |
+| Candidate binary | SHA-256 `883912245c15612a224b761d01b838ecd23470eccf467369ec5c4a560a7946e1` |
+| Package execution platform | Debian trixie container, amd64 |
+| Privilege | unprivileged sysroot execution; package build in disposable container |
+| Exact completed Linux Fieldwork head | `7a82f99ceac6801536c78ba1c2d261bd6f0f3dc8` |
+| Exact package workflow | run `30692256031`, job `91348929951`, success |
+| Package artifact | `8817069887`, digest `sha256:2b544b399e779bbf577ade1e99249436879fa928b639c5026f116044b461ac25` |
 
 ## Retained model and patch matrix
 
@@ -36,7 +36,7 @@ fixture drift control: pass
 
 Receipt: `artifacts/2026-08-01-focused-regression.txt`.
 
-## Installed trixie package matrix
+## Installed trixie baseline reproduction
 
 Reusable command:
 
@@ -46,73 +46,151 @@ bash scripts/reproduce-trixie-lscpu-cpuset.sh \
   --output-dir OUTPUT
 ```
 
-Minimal fixture result:
+The deterministic sysroot fixes `kernel_max=15`, `possible=0-15`, `present=0-15`, and one NUMA cpumap. The valid online list is `0-15`; the malformed mutation changes only that file to `5,12-%`.
 
-| Case | Status | Output identity |
+Initial local baseline result:
+
+| Case | Status | Observation |
 | --- | ---: | --- |
-| valid text | 0 | stdout SHA-256 `35adecec4503be6121100b32b103cd1239dc36bafb0a9dddb33632f552fe300d` |
-| valid JSON | 0 | stdout SHA-256 `bcbc4706b6ba14380893f44f562156290c95d2f05b04bc77982330f1f374501e`; JSON parser passed |
-| malformed text | 134 | stderr `free(): double free detected in tcache 2`; SHA-256 `07b68cc9fbb3f4c23a151524e4cb2429dd42b71a91cb6b7552a01230f203bc9d` |
-| malformed JSON | 134 | same allocator diagnostic and digest |
+| valid text | 0 | ordinary output |
+| valid JSON | 0 | JSON parser passed |
+| malformed text | 134 | `free(): double free detected in tcache 2` |
+| malformed JSON | 134 | same allocator diagnostic |
 
-The four-case results file SHA-256 is `f842fa0f827a5ce72b96dd2d219177776ac6382e038dae122baf832ca132de00`. Two fresh runs were byte-identical.
+Two fresh local runs produced byte-identical receipts. Receipt: `artifacts/2026-08-01-trixie-minimal-sysroot-reproduction.txt`.
 
-A debug malformed run exited 134; stderr was 24,142 bytes, SHA-256 `87f0166196ac9755ab24f05c3258765aa46085b105e855a8463ef498a3876d6d`. The final trace reached ordinary CPU/type cleanup before the allocator detected the duplicate free.
+## Losing allocation-size control
 
-Receipt: `artifacts/2026-08-01-trixie-minimal-sysroot-reproduction.txt`.
+The same malformed logical input can exit 0 when `kernel_max` changes the allocation size and heap reuse. A bounded sweep produced aborting and clean values non-monotonically.
 
-## Losing control
+This is a detector-losing control, not evidence of a safe larger topology. The distinguishing regression therefore fixes the exact 16-CPU allocation identity.
 
-The same malformed logical input with a larger allocation identity can exit 0. An exploratory `kernel_max` sweep produced aborting and clean values non-monotonically. The regression fixes `kernel_max=15` and uses larger values only as detector-losing controls.
+## Exact Debian source, patch, and build
 
-## Exact source, patch, and package build
+The successful exact-head workflow fetched `util-linux=2.41-5` and recorded:
 
-Workflow run `30690487287`, job `91344214299`, artifact `8815555088`:
+```text
+util-linux_2.41-5.dsc
+  9e84dcc64170262f850aa5fd65902846a1ebf054d556ab5c4ec17fa16b00e628
+util-linux_2.41.orig.tar.xz
+  81ee93b3cfdfeb7d7c4090cedeba1d7bbce9141fd0b501b686b3fe475ddca4c6
+util-linux_2.41-5.debian.tar.xz
+  20ad832160d5ed8de4759ce00652f620ce642ab583c3c1c431b68a15cdba1d07
+```
 
-- exact source checksums verified;
-- effective Debian source retained the stale output;
-- zero-fuzz patch dry-run passed;
-- zero-fuzz real application passed;
-- candidate source order verified;
-- `dpkg-buildpackage -b -uc -us -j2` completed;
-- candidate `.deb` and `lscpu` hashes recorded.
+Effective source identities:
 
-First red owner: fixture copier. Broad `cp -a /sys/devices/system/cpu/*` encountered unreadable container power attributes before any binary case ran. Commit `187ab0c3c72eb4f733e5c9eebaeb7b748f687fbb` replaced it with the deterministic minimal sysroot.
+```text
+baseline lib/path.c
+  f934339cf7aba38ae6197e5b5ad3b6a9e7e5fb483ed3f807d45971968d3c7cda
+candidate lib/path.c
+  d0460b4fa3a32b7bdd3cf8b95fa5780bf830fa24bc9e64559408c3ddd1abbb8d
+```
 
-Receipt: `artifacts/2026-08-01-ci-run-30690487287.txt`.
+The canonical patch passed dry-run and real application with `--fuzz=0`. `dpkg-buildpackage -b -uc -us -j2` completed with `DEB_BUILD_OPTIONS=nocheck`.
 
-## Current candidate execution runs
+Built identities:
 
-| Run | Head | State at handoff | Purpose |
-| --- | --- | --- | --- |
-| `30690810870` | `187ab0c3c72eb4f733e5c9eebaeb7b748f687fbb` | queued | first deterministic-fixture package matrix |
-| `30690831292` | `8ba7537bda1f7fd15a659dfb918bbc8df110419d` | queued | exact packet-head package matrix |
+```text
+candidate package
+  92f3aa6fa87a30b9d030263dbbb0446f7679c2ee0456760271ea530268f6b971
+candidate lscpu
+  883912245c15612a224b761d01b838ecd23470eccf467369ec5c4a560a7946e1
+```
 
-Required candidate result:
+## Completed exact-head package matrix
 
-- valid text and JSON status 0;
-- malformed text and JSON status 0;
-- JSON remains parseable;
-- valid output compatibility recorded;
-- no fixture, process, package, or temporary-state residue.
+Workflow:
+
+```text
+run: 30692256031
+job: 91348929951
+requested head: 7a82f99ceac6801536c78ba1c2d261bd6f0f3dc8
+conclusion: success
+artifact: 8817069887
+artifact digest: sha256:2b544b399e779bbf577ade1e99249436879fa928b639c5026f116044b461ac25
+```
+
+Result:
+
+| Case | Baseline | Candidate |
+| --- | ---: | ---: |
+| valid text | 0 | 0 |
+| valid JSON | 0 | 0 |
+| malformed text | 134 | 0 |
+| malformed JSON | 134 | 0 |
+
+Baseline malformed stderr contains:
+
+```text
+free(): double free detected in tcache 2
+```
+
+Candidate malformed stderr is empty.
+
+Exact valid-output compatibility:
+
+```text
+text baseline SHA-256
+  a8fc5c5ebc663afec6c11259ac5804aa808325208215ce08844131fd8e0274c7
+text candidate SHA-256
+  a8fc5c5ebc663afec6c11259ac5804aa808325208215ce08844131fd8e0274c7
+JSON baseline SHA-256
+  bc46275fd166aa84e37a80bcb26af0207b04551d6167696dda18dccc3e5dc1ed
+JSON candidate SHA-256
+  bc46275fd166aa84e37a80bcb26af0207b04551d6167696dda18dccc3e5dc1ed
+```
+
+Full receipt: `artifacts/2026-08-02-exact-head-package-matrix.txt`.
+
+## Controlled util-linux native regression
+
+Controlled repository: `teamleaderleo/util-linux`  
+Gate branch head: `95ebc67e521195741040ffebb58756b259fb69b2`  
+Internal draft PR: #1
+
+Focused workflow:
+
+```text
+run: 30691835019
+job: 91347815601
+conclusion: success
+artifact: 8816802119
+artifact digest: sha256:d36f713357713593430fca369e4871e5ce3ff8f4c8455e07a67e8d83b95493c4
+```
+
+The job completed autogen, focused configure, `lscpu` build, and `tests/ts/lscpu/cpuset-parse-failure` against the built executable.
+
+## Adjacent repository workflow
+
+GCC workflow run `30691835043` passed:
+
+- x86_64 build;
+- x86 build;
+- coverage;
+- clang analyzer.
+
+The sampled armv7 qemu job `91347815797` completed source build/test work and then failed during qemu registration because Docker Hub returned HTTP 429 unauthenticated pull-rate limiting for `multiarch/qemu-user-static`.
+
+This sampled red is infrastructure-owned. Other red qemu jobs remain separately unclassified until their logs are read.
 
 ## Cleanup
 
-Local fixture trees lived under `/tmp`, core files were disabled, and every tree was removed. No host sysfs write, mount, package change, socket, lock, or surviving process remained. The matrix passed the immediate clean rerun.
+Local fixture trees lived under `/tmp`, core files were disabled, and each tree was removed. No host sysfs write, mount, package change, socket, lock, or surviving process remained.
 
-The Actions build used a disposable Debian trixie container. The failed run uploaded its receipts after the container exited.
+The hosted package build and execution used a disposable Debian trixie container. The successful workflow uploaded exact source, build, binary, matrix, and cleanup receipts after the container exited.
 
 ## Tests still required
 
-- candidate actual-binary matrix;
-- exact valid baseline/candidate output comparison;
-- util-linux native `lscpu` tests on the patched package tree;
-- source-package build and debdiff for a stable-update version;
-- architecture matrix;
-- actual issue #4401 archive;
-- ASan/Valgrind actual-package execution;
-- Debian stable-update review.
+- relevant complete util-linux native `lscpu` suite on the patched Debian tree;
+- Debian stable-update quilt/changelog source delta;
+- source-package build and source debdiff against `2.41-5`;
+- exact actual-binary rerun after the source-package composition;
+- useful architecture coverage after infrastructure classification;
+- actual issue #4401 attachment execution;
+- ASan or Valgrind actual-package execution;
+- Debian review or submission, only after explicit authorization.
 
 ## Final evidence statement
 
-The installed trixie package defect and effective source owner are reproduced. The canonical patch applies cleanly and builds a binary package. Candidate execution remains the first incomplete gate.
+The installed trixie defect, effective source owner, canonical correction, patched package build, and baseline/candidate actual-binary distinction are demonstrated. Candidate execution is no longer pending. The first incomplete gate is Debian stable-update source composition plus the relevant native/package test and source-debdiff record.
