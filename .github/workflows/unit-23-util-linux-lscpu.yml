@@ -11,8 +11,54 @@ permissions:
   contents: read
 
 jobs:
-  transition-hold:
-    if: ${{ false }}
+  trixie-stable-update-composition:
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      EVIDENCE_DIR: upstream-packets/units/23-util-linux-lscpu-cpuset/artifacts/stable-update-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - run: echo "unit 23 workflow held while the stable-update composition gate is installed"
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Validate retained shell entry points and diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n upstream-packets/units/23-util-linux-lscpu-cpuset/scripts/build-trixie-stable-update.sh
+          bash -n upstream-packets/units/23-util-linux-lscpu-cpuset/scripts/reproduce-trixie-lscpu-cpuset.sh
+          git diff --check "${{ github.event.pull_request.base.sha || github.event.before }}"..HEAD || git diff --check HEAD^
+
+      - name: Compose, build, test, and rerun the trixie stable update
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          docker run --rm \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            debian:trixie-slim \
+            bash /work/upstream-packets/units/23-util-linux-lscpu-cpuset/scripts/build-trixie-stable-update.sh \
+              --output-dir "/work/$EVIDENCE_DIR"
+
+      - name: Summarize first distinguishing result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          {
+            echo "head=$(git rev-parse HEAD)"
+            echo "workflow_run=${{ github.run_id }}"
+            echo "workflow_attempt=${{ github.run_attempt }}"
+            echo "result_file=$(test -f "$EVIDENCE_DIR/result.txt" && cat "$EVIDENCE_DIR/result.txt" || echo absent)"
+            find "$EVIDENCE_DIR" -maxdepth 2 -type f -printf '%P\n' | sort
+          } >"$EVIDENCE_DIR/workflow-summary.txt"
+
+      - name: Upload stable-update composition receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-23-stable-update-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}/
+          if-no-files-found: error
+          retention-days: 30
