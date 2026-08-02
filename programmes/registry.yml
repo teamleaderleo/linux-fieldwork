@@ -252,8 +252,10 @@ programmes:
       - id: LF-39
         slug: foundational-library-boundary-corpus
         title: Foundational-library boundary corpus
-        state: inbox
-        environment: current-ci
+        state: mapped
+        priority: immediate
+        environment: current-ci-plus-containers
+        path: programmes/ecosystem-contributions/lanes/LF-39-foundational-library-boundary-corpus/brief.md
       - id: LF-40
         slug: package-metadata-provenance-verification
         title: Package metadata, provenance, and verification
