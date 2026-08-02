@@ -1,57 +1,79 @@
 # Handoff — BuildKit / go-archive release readiness
 
-State: `ACTIVE — EXECUTION PENDING`  
-Linux Fieldwork branch: `research/hot-repos-2026-08-01`  
+State: `ACTIVE — direct implied-parent matrix launched`  
+Linux Fieldwork branch: `investigation/buildkit-go-archive-matrix`  
+Internal draft PR: #416  
 External contact authorized: `false`  
 External contact made: `none`
 
+## Exact current identities
+
+| Item | Identity |
+| --- | --- |
+| BuildKit rollback merge | `275d6864ff0ce91a06225af5f5b012887bd257cf` |
+| BuildKit rollback test head | `22ea4efb43c3c91651dab7f44d1599c4c42b9412` |
+| user's observed BuildKit fork head | `df0761886a20e368d75e0aa6bb3f20874f58b692` |
+| go-archive v0.2.0 | tag `v0.2.0` |
+| go-archive v0.2.1 | tag `v0.2.1` |
+| go-archive v0.3.0 | tag `v0.3.0` |
+| repaired go-archive main | `9e6d2c7c969f4871fe6ded98ae0e28963fde311f` |
+| investigation PR head before this checkpoint | `26621980368c75b01d738ecb7f59ce06603593a4` |
+| workflow installation on research base | `dc5a109dda5b742cc1a53548a352717fa74c7912` |
+
+Use the branch ref for the latest documentation head.
+
 ## Completed
 
-- read Linux Fieldwork project, coordination, fieldwork, target, and programme instructions;
-- refreshed active upstream repositories and recent issue/PR state;
-- checked Linux Fieldwork overlap for the shortlisted candidates;
-- retained libarchive AppleDouble PR #3334 as an active-fix reference;
-- selected BuildKit/go-archive release readiness as the highest-value current-CI investigation;
-- pinned BuildKit rollback and go-archive repair identities;
-- defined the four-candidate dependency matrix, negative controls, metadata checks, containment checks, performance boundary, cleanup requirements, and stop rules;
-- recorded libarchive RAR5 #3300 as the next direct implementation candidate;
+- refreshed go-archive current `main` and retained exact repair identities;
+- added a standalone Go module under `probe/`;
+- added an explicit-parent passing control;
+- added a directory-with-implied-parent discriminator;
+- defined a four-state matrix across v0.2.0, v0.2.1, v0.3.0, and repaired current `main`;
+- installed the workflow on the internal research base so GitHub can execute it for pull requests;
+- opened internal draft PR #416;
+- retained the unsafe-test boundary for old direct absolute-symlink extraction;
 - made no upstream contact.
 
-## Exact source identities to refresh before execution
+## Current executable gate
 
-- BuildKit rollback merge: `275d6864ff0ce91a06225af5f5b012887bd257cf`
-- BuildKit test head: `22ea4efb43c3c91651dab7f44d1599c4c42b9412`
-- user's observed BuildKit fork head: `df0761886a20e368d75e0aa6bb3f20874f58b692`
-- go-archive implied-parent merge: `279fa6d455e5a39d8e24e67dd236abee6e2de08b`
-- go-archive absolute-symlink/hard-link merge: `9e6d2c7c969f4871fe6ded98ae0e28963fde311f`
+The probe creates:
+
+```text
+etc/dnf/
+etc/dnf/dnf.conf
+```
+
+without an `etc/` header and extracts it through `archive.Untar`. The explicit-parent control includes `etc/` and must pass in every row.
+
+The matrix declares these expected outcomes:
+
+| Candidate | Expected implied-parent result |
+| --- | --- |
+| v0.2.0 | pass |
+| v0.2.1 | fail |
+| v0.3.0 | fail |
+| current main `9e6d2c7...` | pass |
+
+Each row records the exact checkout SHA, Go version, kernel, and clean go-archive source state.
+
+## Harness correction
+
+The first PR head did not schedule the new workflow because GitHub evaluates `pull_request` workflows from the base branch. The identical workflow was installed on the internal research base, and this checkpoint advances the PR head so the merge-ref can execute it.
+
+This was a harness ownership issue, not a product result.
+
+## Safety boundary
+
+The direct matrix intentionally covers only implied-parent behavior. It does not run old direct `Untar` versions through absolute symlinks such as `var/run -> /run`, because older unbounded implementations could follow the host-root target. Absolute-symlink and hard-link compatibility must run in a disposable container, chroot, or BuildKit integration sandbox.
 
 ## First incomplete step
 
-Create clean local BuildKit and go-archive checkouts, confirm the current upstream heads, and run the rollback's focused integration tests against:
-
-1. go-archive v0.2.0;
-2. go-archive v0.2.1;
-3. go-archive v0.3.0;
-4. go-archive current `main`.
-
-Record the exact Go version, kernel, filesystem, test package/selectors, command outputs, statuses, tree and inode checks, timing/syscall evidence, cleanup, and immediate rerun.
-
-## First command sequence
-
-```sh
-git clone https://github.com/teamleaderleo/buildkit.git buildkit-go-archive-readiness
-cd buildkit-go-archive-readiness
-git remote add upstream https://github.com/moby/buildkit.git
-git fetch upstream
-git checkout --detach 275d6864ff0ce91a06225af5f5b012887bd257cf
-
-git clone https://github.com/moby/go-archive.git ../go-archive-candidate
-cd ../go-archive-candidate
-git checkout 9e6d2c7c969f4871fe6ded98ae0e28963fde311f
-go test ./...
-```
-
-Return to BuildKit, replace the dependency with the absolute candidate path, identify the exact package selector for the two new Dockerfile ADD tests, and run them. Do not treat an invalid Go test selector or missing integration backend as a product failure.
+1. classify the exact four-row workflow result;
+2. retain logs and exact candidate SHAs;
+3. rerun the matrix once from a clean merge ref;
+4. update `README.md` and `TESTS.md` with the direct result;
+5. move to contained BuildKit integration cases for implied parents and absolute symlinks;
+6. add metadata, hard-link identity, confinement, cleanup, and performance gates before any dependency-bump recommendation.
 
 ## Stop conditions
 
@@ -61,17 +83,6 @@ Return to BuildKit, replace the dependency with the absolute candidate path, ide
 - containment negative controls weaken;
 - cleanup cannot prove no retained process, mount, socket, trace, temporary tree, or module mutation.
 
-## Next candidate if blocked
-
-Open a refreshed branch from `libarchive/libarchive` current `master` for issue #3300. Add the smallest normal/overlong RAR5 fixture and prove exact byte consumption before changing `read_var()`.
-
-## Read first
-
-1. `README.md`
-2. `../../research/rounds/2026-08-01-hot-repository-refresh/selection.md`
-3. BuildKit PR #7005
-4. go-archive PRs #92 and #93
-
 ## Authority
 
-Internal fork synchronization, branches, tests, benchmarks, and evidence records are allowed. No public issue, pull request, comment, review, or email is authorized.
+Internal fork synchronization, branches, tests, benchmarks, and evidence records are allowed. No public BuildKit or go-archive issue, pull request, comment, review, or email is authorized.
