@@ -31,10 +31,25 @@ The executable exits nonzero unless both expectations hold.
 
 ```sh
 g++ -std=c++20 -O2 -Wall -Wextra -Werror \
+    -DBOOST_ERROR_CODE_HEADER_ONLY \
     fixture.cpp -o fixture \
-    -lcurl -lboost_system -lpthread
+    $(pkg-config --cflags --libs libcurl) -lpthread
 ./fixture
 ```
+
+The header-only Boost.System define keeps this fixture dependent on Boost headers rather than a separately linked `libboost_system` binary.
+
+## Retained local run
+
+Before upload, the fixture was compiled with GCC 14.2.0 and libcurl 8.10.1 in the available Linux execution container. It produced:
+
+```text
+one-shot: completed=0 timed_out=1 reads=1 body='hello '
+rearm: completed=1 timed_out=0 reads=2 result=No error body='hello world!'
+curl multi-socket Asio re-arm discriminator: PASS
+```
+
+The branch workflow recompiles the repository copy independently on GitHub Actions.
 
 ## Boundary
 
