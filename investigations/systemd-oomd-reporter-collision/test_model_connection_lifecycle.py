@@ -8,7 +8,7 @@ from model_connection_lifecycle import (
     ReporterProtocolError,
     StaleReporterGeneration,
 )
-from model_policy import Authority, EqualAuthorityConflict, Policy, ReporterKind
+from model_policy import Authority, Policy, ReporterKind
 
 
 PATH = "/user.slice/user-4711.slice/user@4711.service"
@@ -16,7 +16,6 @@ OTHER_PATH = "/user.slice/user-4711.slice/session-1.scope"
 PRESSURE = "ManagedOOMMemoryPressure"
 SYSTEM = Authority(ReporterKind.SYSTEM_MANAGER, 0)
 USER = Authority(ReporterKind.USER_MANAGER, 4711)
-OTHER_USER = Authority(ReporterKind.USER_MANAGER, 4712)
 SYSTEM_POLICY = Policy("kill", limit=5000, duration_usec=30_000_000)
 USER_POLICY = Policy("kill", limit=7000, duration_usec=5_000_000)
 OTHER_POLICY = Policy("kill", limit=6000, duration_usec=10_000_000)
@@ -103,19 +102,17 @@ class ConnectionLifecycleTest(unittest.TestCase):
         model = ConnectionPolicyModel()
         model.connect(USER, "old")
         model.replace_snapshot(USER, "old", [(PRESSURE, PATH, USER_POLICY)])
-
-        model.connect(OTHER_USER, "other")
-        model.replace_snapshot(OTHER_USER, "other", [(PRESSURE, PATH, OTHER_POLICY)])
-
         model.connect(USER, "new")
-        with self.assertRaises(EqualAuthorityConflict):
-            model.replace_snapshot(USER, "new", [(PRESSURE, PATH, SYSTEM_POLICY)])
+
+        # The candidate snapshot removes old authority state before applying
+        # entries. A later validation failure must discard that candidate and
+        # leave the old initialized generation byte-for-byte effective.
+        with self.assertRaises(ValueError):
+            model.replace_snapshot(USER, "new", [(PRESSURE, "relative/path", OTHER_POLICY)])
 
         self.assertEqual(model.current_link(USER), "old")
-        self.assertEqual(
-            model.policy.contributors(PRESSURE, PATH),
-            [(USER, USER_POLICY), (OTHER_USER, OTHER_POLICY)],
-        )
+        self.assertEqual(model.policy.contributors(PRESSURE, PATH), [(USER, USER_POLICY)])
+        self.assertEqual(self.effective(model).policy, USER_POLICY)
 
     def test_first_call_must_be_snapshot_and_snapshot_happens_once(self) -> None:
         model = ConnectionPolicyModel()
