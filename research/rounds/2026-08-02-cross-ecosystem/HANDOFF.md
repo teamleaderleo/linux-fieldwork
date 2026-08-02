@@ -1,7 +1,7 @@
 # Handoff — cross-ecosystem candidate round
 
 Handoff date: 2026-08-02  
-State: `ACTIVE — TWO CONTROLLED RUNS QUEUED`  
+State: `ACTIVE — UV SOURCE HOLD; CONTROLLED RUNS QUEUED`  
 External contact authorized: `false`  
 External contact made: `none`
 
@@ -11,8 +11,6 @@ External contact made: `none`
 repository: teamleaderleo/linux-fieldwork
 branch: investigation/cross-ecosystem-round-2026-08-02
 branch base: 6cc74d846c50b9bbb88247e8a128b67e8c174c1e
-complete branch head immediately before this handoff commit:
-c93519914cafd17b2f3b35e16e6f791ac9e7f10a
 ```
 
 ## Active owned candidate — UV
@@ -20,16 +18,27 @@ c93519914cafd17b2f3b35e16e6f791ac9e7f10a
 ```text
 repository: teamleaderleo/uv
 base: 1da26a68629be6ae5fd7f924a7d49ff54763a7df
-branch: fieldwork/uv-lock-requirements-diagnostic
-head: a67f97bec7782c6f60aceefb2a9bcd7045582015
-internal draft PR: #12
-CI run: 30752526287
-state: queued
+source branch: fieldwork/uv-lock-requirements-diagnostic
+source head: ba55497fe83ea9bb07c04452f8ba190fa4440a05
+internal source PR: #12
+source state: HOLD / REPAIR
+
+current-source execution PR: #15
+focused run: 30754710006 — queued at last check
+ordinary CI: 30754710091 — queued at last check
+
+parse-first experiment PR: #13
+experiment head: f0673123cbabe859c12fe6baacc1fff872060f17
+focused run: 30755038821 — queued at last check
 ```
 
-The candidate recognizes existing exact `uv.lock` and script locks paired with a valid PEP 723 sibling, while preserving arbitrary `.lock` requirements files. It uses no lockfile-content guessing.
+The current source models exact `uv.lock` and native `<script>.lock` producer names without reading lock contents. It repairs Unix non-UTF-8 path handling and uses producer-backed tests.
 
-First incomplete step: classify run `30752526287` and repair only the first owning layer.
+Review found a stronger false-positive boundary: because recognition runs before requirements parsing, a valid `action.py.lock` requirements file is rejected whenever neighboring `action.py` is valid PEP 723. Source PR #12 now records the defect and supersedes its earlier acceptance.
+
+PR #13 encodes a parse-first alternative with a provenance-carrying requirements source variant. It adds controls for the valid same-name collision, missing paths, and constraint routing. The constructor is also used by requirements-syntax exclusion files; constraints and overrides remain separate.
+
+First incomplete step: read run `30755038821` by first failing step, then run `30754710006`. If the experiment passes, revise source #12 and create a clean exact-source rerun. No result is claimed from queued state.
 
 Workspace:
 
@@ -96,16 +105,21 @@ investigations/systemd-bind-path-whitespace-overlap/
 - UV #15996: active PR #19388 covers the lock paths and Android.
 - libarchive: completed controlled evidence; active canonical overlap remains.
 
+## Separate UV follow-up
+
+Issue `astral-sh/uv#16209` remains a strong separate owned unit. BusyBox disagrees with the `realpath --` form in relocatable console and activation scripts. Preserve historical symlink behavior and test spaces, relative invocation, moved environments, symlinks, and leading-dash paths.
+
 ## Resume order
 
-1. UV CI result and exact candidate repair.
-2. WGPU neutral capability matrix and stale/narrow decision.
-3. systemd active-PR compatibility execution.
-4. Continue broad screening only after those exact run results are retained; prefer a new owned source candidate over another overlap review.
+1. UV parse-first experiment result and source repair.
+2. UV current-source run for comparative evidence.
+3. WGPU neutral capability matrix and stale/narrow decision.
+4. systemd active-PR compatibility execution.
+5. Start the separate UV BusyBox unit only after the diagnostic source state is explicit.
 
 ## Cleanup state
 
-No local repository checkout survived. The downloaded WGPU artifact was inspected in an ephemeral container directory. Controlled CI owns build products and temporary fixture cleanup. No credential, package installation, service, mount, device, or canonical upstream state was created.
+No local repository checkout survived; the runtime could not resolve `github.com`. Controlled CI owns build products and temporary fixture cleanup. No credential, package installation, service, mount, device, or canonical upstream state was created.
 
 ## Publication boundary
 
