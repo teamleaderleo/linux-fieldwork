@@ -6,7 +6,7 @@
 - State: `EXECUTING`
 - Linux Fieldwork branch: `investigation/kmod-modprobe-options-config-path`
 - Linux Fieldwork base: `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Exact execution-carrier head before this handoff update: `2ec0759b45e0eedb6c1e6cb119f378c87347eb3a`
+- Exact execution-carrier head before this handoff update: `fdd6d81a930d4ebafba81eb8d37bf1b3f31341c4`
 - Internal draft PR: #412
 - External-contact state: unauthorized; none made
 
@@ -57,7 +57,7 @@ unprivileged result SHA-256: 759550141d24d03543d0686b235e82b0aab8015181b50bddb16
 
 ## Exact-master execution carrier
 
-Workflow run `30759595582` was queued at the latest observation for head `2ec0759b45e0eedb6c1e6cb119f378c87347eb3a`.
+Workflow run `30759618540` was queued at the latest observation for head `fdd6d81a930d4ebafba81eb8d37bf1b3f31341c4`.
 
 The workflow:
 
@@ -80,7 +80,7 @@ The exact-master workflow will determine whether the same behavior is executable
 
 ## First incomplete step
 
-Read workflow `30759595582` when terminal.
+Read workflow `30759618540` when terminal.
 
 - If both compiler jobs reproduce the loss without sanitizer findings, retain job/artifact identities and move to a native `testsuite/test-modprobe.c` regression plus candidate comparison.
 - If setup/build fails, repair only the dependency or workflow owner and rerun unchanged product logic.
