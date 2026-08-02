@@ -1,79 +1,68 @@
 # Handoff — WGPU/Naga f16 bitcast investigation
 
 Handoff date: 2026-08-02  
-State: `ACTIVE — CURRENT CAPABILITY RERUN QUEUED`  
+State: `RETIRED — CURRENT NAGA ACCEPTS BOTH DIRECTIONS`  
 External contact authorized: `false`  
 External contact made: `none`
 
-## Exact stopping point
+## Final controlled identity
 
 ```text
 controlled repo: teamleaderleo/wgpu
 base branch: trunk
 base commit: 2eddc8c7b2fedd4267f5004745a8bc42974e17a0
 probe branch: fieldwork/naga-f16-bitcast-probe
-current probe head: b39e1822d3317e1b2ab41108211adf048314fa7d
+probe head: b39e1822d3317e1b2ab41108211adf048314fa7d
 internal draft PR: #4
-current focused run: 30752907389
-current run state: queued
+focused run: 30752907389
+focused job: 91509997426
+conclusion: success
+artifact: 8835144866
+artifact digest: sha256:b507a9437f6f67de315317c79f4301b830388afd0072d66fcc5431a5615c8778
 ```
 
-## First run and classification
+## Final result
 
-Initial probe head:
+The exact receipt records:
 
 ```text
-91c59563534f6f239e6b35ce216ff5fca570e299
-run: 30752645663
-job: 91509299657
-conclusion: failure
-artifact: 8834957333
-artifact digest: sha256:aa8fb7e33a743b70026e709f8ed2167ba20351eba0ee1035435e73fe6d6c8da9
+scalar-control   0   accepted
+vec-to-scalar    0   accepted
+scalar-to-vec    0   accepted
 ```
 
-Setup, Rust toolchain, cache, shell syntax, and locked `naga-cli` build all passed. The normal repository Shaders workflow also passed.
+All three stdout files contain `Validation successful`. All three stderr files are empty.
 
-The focused job failed because the probe encoded the canonical issue's January behavior as an expected failure. The artifact proved current Naga now accepts the originally reported direction:
+The canonical issue's originally reported direction and its reverse both work on the tested current source. No Naga product implementation is selected or needed for this issue.
+
+## Retained identities
 
 ```text
-scalar-control   status 0   accepted
-vec-to-scalar    status 0   accepted
+runner checkout head: 825261dada66abdca4aafbc978b806a06c01cafc
+naga-cli blob: 5d5383b217f3dd4574e34b0ae735ccbda5dd55ed
+validator blob: 18188200e38db828e247299317fd6dc70a5a5649
+IR blob: e30c9f1bc5d38e59d7c3883f4962c263e65b24a0
+naga binary SHA-256: 9206fc6b43f4dcd9681ec34b055c26f86a35cf46989b6bf43335b0c53755326c
+stdout SHA-256: 090e6f3602fcf35219e94c59dad7da0af1b4b0d1f0b44dbef3b37637b5129023
+empty stderr SHA-256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 ```
 
-Both stdout files contained `Validation successful`; stderr was empty. The script stopped before executing `u32 → vec2<f16>` because its stale expectation required the second case to fail.
+Ordinary fork workflows Shaders, Publish, Lazy, Docs, cargo-generate, CTS, and CI also passed on the probe head.
 
-Owner: probe classifier / stale issue assumption, not repository source or build.
+## Earlier red run
 
-## Repair
+Run `30752645663` failed because the probe assumed the issue's historical rejection was still current. It proved `vec2<f16> → u32` was accepted and stopped before the reverse case. The neutral matrix repaired the classifier, not Naga.
 
-Commit `b39e1822d3317e1b2ab41108211adf048314fa7d` converts the script into a neutral capability matrix:
+## Disposition
 
-- all three cases execute before classification;
-- scalar control must succeed;
-- f16 cases are recorded as `accepted`, `unable-to-cast`, or `unexpected-failure`;
-- only an unexpected failure makes the probe red;
-- exact outputs and identities remain retained.
+- internal investigation: retired;
+- source patch: none;
+- next technical step: none;
+- useful retained result: current negative capability evidence;
+- canonical upstream contact: still unauthorized and absent.
 
-## First incomplete step
-
-Read focused run `30752907389` and retain its artifact. The decisive unknown is the reverse direction:
-
-```text
-u32 → vec2<f16>
-```
-
-If both f16 directions are accepted, retire canonical issue #8896 as stale in the internal record and keep the controlled branch as closeout evidence. If only the reverse direction fails, narrow the investigation to that exact asymmetry before any implementation work.
-
-## Next safe actions
-
-1. retain run `30752907389` logs and artifact ID/digest;
-2. record all three statuses and diagnostics;
-3. compare current behavior with the exact canonical issue reproducer;
-4. locate the source transition only after the current capability is known;
-5. close the internal fork PR if the issue is fully stale;
-6. otherwise map only the still-failing direction;
-7. keep canonical upstream contact at zero until explicit authorization.
+The internal WGPU evidence PR may be closed after this Fieldwork receipt is durable. Do not create an upstream comment merely to close the stale issue without explicit authorization.
 
 ## Cleanup state
 
-The first runner completed and uploaded its partial artifact. The probe temporary directory was removed through its trap. No GPU, driver, device, credential, or persistent external state was used.
+The workflow completed, uploaded its receipt, and removed temporary shader fixtures. No GPU, driver, service, credential, device, or persistent external state remains.
