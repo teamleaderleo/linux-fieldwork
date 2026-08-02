@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - "investigations/systemd-oomd-reporter-collision/model_policy.py"
-      - "investigations/systemd-oomd-reporter-collision/test_model_policy.py"
+      - "investigations/systemd-oomd-reporter-collision/test_model_*.py"
       - ".github/workflows/systemd-oomd-policy-model.yml"
   workflow_dispatch:
 
@@ -28,12 +28,12 @@ jobs:
       - name: Compile executable specification
         run: |
           set -euo pipefail
-          python3 -m py_compile model_policy.py test_model_policy.py
+          python3 -m py_compile model_policy.py test_model_*.py
 
-      - name: Run lifecycle and authority matrix
+      - name: Run lifecycle, authority, and atomicity matrix
         run: |
           set -euo pipefail
-          python3 -m unittest -v test_model_policy.py
+          python3 -m unittest discover -v -p 'test_model_*.py'
 
       - name: Reject uncommitted generated state
         working-directory: .
