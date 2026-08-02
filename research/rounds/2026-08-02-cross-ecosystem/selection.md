@@ -6,103 +6,178 @@ Move beyond the saturated mmdebstrap lane and identify concrete, bounded contrib
 
 External contact authorized: `false`.
 
-## Promoted investigations
+## Current portfolio
 
 ### UV: recognize UV lockfiles passed through requirements-syntax file lanes
 
-- Canonical issue: `astral-sh/uv#16192`.
-- Controlled fork: `teamleaderleo/uv`.
-- Source branch: `fieldwork/uv-lock-requirements-diagnostic`.
-- Current source head: `ba55497fe83ea9bb07c04452f8ba190fa4440a05`.
-- Internal draft source PR: `teamleaderleo/uv#12`.
-- Exact base: `1da26a68629be6ae5fd7f924a7d49ff54763a7df`.
-- Current canonical head checked: `79bbface771210df216b738e9bdc7df95e5a9e6b`.
-- Current-source execution PR: `teamleaderleo/uv#15`; focused run `30754710006`, queued at the last check.
-- Parse-first experiment PR: `teamleaderleo/uv#13`; focused run `30755038821`, queued at the last check.
+State: `HOLD — PRE-PARSE DESIGN HAS A REAL FALSE POSITIVE`.
 
-The current source correctly models UV's producer names with native path operations:
+```text
+canonical issue: astral-sh/uv#16192
+controlled fork: teamleaderleo/uv
+source PR: #12
+base: 1da26a68629be6ae5fd7f924a7d49ff54763a7df
+source head: ba55497fe83ea9bb07c04452f8ba190fa4440a05
+parse-first experiment PR: #13
+experiment head: f0673123cbabe859c12fe6baacc1fff872060f17
+```
 
-- project lockfiles at exact `uv.lock`;
-- script locks at `<complete-native-script-filename>.lock` when the exact sibling parses as PEP 723;
+The source correctly models UV's producer names through native path operations:
+
+- exact project lock `uv.lock`;
+- script lock `<complete-native-script-filename>.lock` when the exact sibling parses as PEP 723;
 - non-UTF-8 Unix filenames remain representable;
-- no lockfile-content guessing is introduced.
+- lockfile contents are not guessed.
 
-Review found a deeper collision: detection occurs before requirements parsing. A valid requirements file named `action.py.lock` is rejected whenever a neighboring `action.py` is a valid PEP 723 script. Possible producer naming is weaker evidence than a successful parse.
+Review found a stronger collision: detection occurs before requirements parsing. A valid requirements file named `action.py.lock` is rejected whenever neighboring `action.py` is valid PEP 723. Possible producer naming is weaker evidence than a successful requirements parse.
 
-Source PR #12 is therefore held. PR #13 applies a runner-local parse-first design with a provenance-carrying requirements source variant. It preserves valid same-name requirements files, missing-path ownership, native filenames, and distinct constraint/override errors. The constructor is also used by requirements-syntax exclusion files, so the accurate scope is broader than the literal `-r` flag.
+Execution results so far do not validate either source design:
 
-The previous upstream attempt `astral-sh/uv#16282` guessed from TOML substrings and was rejected. This work continues to avoid content sniffing.
+- clean source carrier run `30754710006` reached rustfmt and failed only formatting, but that source is already semantically superseded by the collision;
+- parse-first experiment run `30755038821` failed before compilation because its runner-local textual patch no longer matched the repaired source; its fallback formatting step also lacked the `rustfmt` component.
+
+These are carrier results, not UV product failures. The next valid work is a clean parse-first source transformation against the exact current head, followed by formatting, affected-crate compilation, and focused producer-backed tests.
 
 Workspace: `investigations/uv-lock-requirements-diagnostic/`.
 
-### WGPU/Naga: current `vec2<f16> ↔ u32` bitcast capability
+### WGPU/Naga: `vec2<f16> ↔ u32` bitcast capability
 
-- Canonical issue: `gfx-rs/wgpu#8896`.
-- Controlled fork: `teamleaderleo/wgpu`.
-- Evidence branch: `fieldwork/naga-f16-bitcast-probe`.
-- Current evidence head: `b39e1822d3317e1b2ab41108211adf048314fa7d`.
-- Internal draft PR: `teamleaderleo/wgpu#4`.
-- Exact base: `2eddc8c7b2fedd4267f5004745a8bc42974e17a0`.
-- Current focused run: `30752907389`, queued at the stopping point.
+State: `RETIRED — CURRENT NAGA ACCEPTS BOTH DIRECTIONS`.
 
-The first run, `30752645663`, disproved the stale baseline assumption: current Naga accepted both the scalar control and the originally reported `vec2<f16> → u32` direction. The job failed only because the probe expected the old `Unable to cast` result and stopped before the reverse direction. Artifact `8834957333`, digest `sha256:aa8fb7e33a743b70026e709f8ed2167ba20351eba0ee1035435e73fe6d6c8da9`, retained the exact statuses and outputs.
+```text
+canonical issue: gfx-rs/wgpu#8896
+controlled fork: teamleaderleo/wgpu
+evidence head: b39e1822d3317e1b2ab41108211adf048314fa7d
+focused run: 30752907389
+focused job: 91509997426
+artifact: 8835144866
+artifact digest: sha256:b507a9437f6f67de315317c79f4301b830388afd0072d66fcc5431a5615c8778
+```
 
-The repaired probe is a neutral three-case capability matrix. The investigation will become either a stale-issue closeout or a narrowly restated reverse-direction defect.
+The neutral capability matrix accepted:
+
+```text
+scalar f32 → u32
+vec2<f16> → u32
+u32 → vec2<f16>
+```
+
+All three returned status zero and `Validation successful`; all stderr files were empty. Ordinary WGPU workflows Shaders, Publish, Lazy, Docs, cargo-generate, CTS, and CI also passed.
+
+The first red run belonged to a stale expected-failure classifier, not Naga. The internal fork PR was closed without merge after the exact receipt and handoff were retained.
 
 Workspace: `investigations/wgpu-naga-f16-bitcast/`.
 
+### jq: destructuring path context
+
+State: `ACTIVE — FOUR-VARIANT SOURCE MATRIX QUEUED`.
+
+```text
+canonical issue: jqlang/jq#3128
+canonical source: 603db3f57741d217ba651e61086b550a72148b83
+src/compile.c blob: 80b723c119b45f99c5e847c2a463568eb730f498
+closed prior attempt: jqlang/jq#3384
+open equivalent PR: none found
+controlled workflow run: 30759608059
+```
+
+The minimal issue is not a one-line fix. Closed PR #3384 removed the error but still produced incorrect paths and was abandoned after stack/path interactions surfaced.
+
+The controlled matrix compares:
+
+1. current baseline;
+2. the closed PR's source logic;
+3. the issue draft with `SUBEXP_END` before `POP`;
+4. the unresolved inverse order, `POP` before `SUBEXP_END`.
+
+Every row builds exact jq source, runs seventeen object/array/alternation/backtracking controls, retains bytecode disassembly, executes Valgrind discriminators, and runs complete `make check`.
+
+The first workflow definition failed to register because top-level concurrency referenced the job matrix. That carrier bug was fixed at `32570b31838f9f9d8a494e435a43b5f59de7cde6`; run `30759608059` is the first valid named matrix. No jq product result is claimed yet.
+
+Workspace: `investigations/jq-destructure-path-context/`.
+
 ### systemd: repeated whitespace in bind-path directives
 
-- Canonical issue: `systemd/systemd#43214`.
-- Active equivalent implementation: `systemd/systemd#43217`.
-- Active PR head checked: `d32993d1f67ec1b42719c89eeda9425042df57ce`.
-- Controlled fork: `teamleaderleo/systemd`.
-- Controlled source work: none.
+State: `ACTIVE OVERLAP REVIEW — BASE/PR SOURCE COMPARISON QUEUED`.
 
-Debian 13's installed systemd 257 reproduced empty-path warnings when `BindPaths=` or `BindReadOnlyPaths=` contained repeated inter-entry spaces or line-continuation indentation. The parser must preserve empty colon fields for `source::options`, but should not interpret repeated whitespace between entries as empty paths.
+```text
+canonical issue: systemd/systemd#43214
+active PR: systemd/systemd#43217
+canonical base: 63e35ca3f99566095c84248e9eb41a3a6b32f2eb
+active PR head: d32993d1f67ec1b42719c89eeda9425042df57ce
+controlled workflow run: 30759608071
+```
 
-The active upstream PR rewrites more than the minimal whitespace boundary: parser representation, execution-context serialization/deserialization, and tests. This lane is retained as an overlap review rather than a competing source patch. Useful follow-up is to run distinguishing compatibility controls against the active PR.
+Debian 13 systemd 257 reproduced empty-path warnings from repeated spaces and continuation indentation.
+
+Documentation review corrected an earlier Fieldwork assumption. The documented grammar is:
+
+```text
+source[:destination[:rbind|norbind]]
+```
+
+and options must be omitted when destination is omitted. `source::norbind` is invalid, not compatibility syntax.
+
+The corrected fixture now separates documented valid tuples, repeated/mixed whitespace, quoting, escaped colons, markers and reset behavior from documented invalid omitted-destination, extra-field and invalid-option controls.
+
+Run `30759608071` builds `systemd-analyze` from both canonical base and exact active PR head, then retains every parser result. Serialization/deserialization remains a separate required gate because the PR changes those paths too.
 
 Workspace: `investigations/systemd-bind-path-whitespace-overlap/`.
 
-## Screened but not promoted to source work
+## Screened overlap and negative results
 
-### OpenTelemetry JS issue #6967
+### OpenTelemetry JS #6967
 
-The HTTP instrumentation crash is current and high-value, but canonical PR `open-telemetry/opentelemetry-js#6969` already owns the fix. Its scope includes non-string host candidates, cross-realm URL classification, non-string method/path handling, and a safety wrapper around attribute computation. Retain as a review target; do not duplicate the implementation.
+Current and high-value, but canonical PR #6969 already owns a broader fix: non-string host candidates, cross-realm URL classification, method/path guards, and a safety wrapper around attribute computation. Review target only.
 
-### ripgrep issue #3222
+### ripgrep #3222
 
-The dash-leading compressed-filename bug is real, but active PR `BurntSushi/ripgrep#3224` already adds per-tool `--` boundaries and discusses the compatibility tradeoff with path prefixing. A later duplicate PR also exists. Retain as overlap, not a new patch.
+Real dash-leading compressed-filename bug, but canonical PR #3224 and a duplicate already exist. No new patch.
 
-### Workerd issue #176
+### sharkdp/bat
 
-The 2022 request to cache GitHub Actions setup is obsolete against current `teamleaderleo/workerd`: `.github/workflows/_bazel.yml` already uses GitHub's cache action, Cloudflare's remote Bazel cache, bounded content-derived keys, and cache trimming. Retain as a stale-ticket cleanup observation; no code patch.
+Recent obvious defects already have active fixes:
+
+- log-syntax catastrophic performance #3866 → PR #3876;
+- huge line-range panic #3845 → multiple active PRs;
+- width-one wide-character panic #3844 → active PRs;
+- cache help exit behavior #3798 → active PRs.
+
+No competing patch selected.
+
+### sharkdp/fd
+
+Recent candidates also have current owners:
+
+- native-Windows glob separator bug #2067 → PR #2074;
+- date parsing/message issue #2053 → PR #2088.
+
+No competing patch selected.
+
+### Workerd #176
+
+The 2022 cache request is obsolete: current workflow already uses GitHub cache, Cloudflare remote Bazel cache, bounded content-derived keys, and trimming.
 
 ### Execa
 
-The apparent open option-interaction bugs were stale search results and are closed on current upstream. The iterator-helper documentation request depends on JavaScript async iterator helper availability that is not present across Execa's supported Node range. No current patch selected.
+Search surfaced stale closed bugs. The async iterator documentation request is not portable across the supported Node range.
 
 ### UV file-lock `EINTR`
 
-Canonical issue `astral-sh/uv#15996` is valid, but active PR `astral-sh/uv#19388` already covers the lock paths and Android. Retain as overlap, not a duplicate implementation.
+Issue #15996 is valid, but active PR #19388 already covers the lock paths and Android.
 
 ### libarchive
 
-The controlled non-seekable 7-Zip evidence is already complete and active upstream PR `libarchive/libarchive#3070` remains open. No competing implementation.
-
-## Additional UV opportunity
-
-`astral-sh/uv#16209` is a separate high-value Linux portability unit. BusyBox rejects the `realpath --` form embedded in relocatable console scripts and activation scripts. Historical code shows `realpath` was introduced to preserve symlinked entrypoints, so the test matrix must cover symlinks, spaces, relative invocation, moved environments, and leading-dash paths. Keep it separate from the lockfile diagnostic.
+Controlled non-seekable 7-Zip evidence is complete and active canonical PR #3070 remains open.
 
 ## Decision
 
-Continue the owned UV carrier, but keep source acceptance strict. This round currently contains:
+Continue broad discovery, but promotion remains strict. The round now has:
 
-1. one UV source candidate held after a meaningful false-positive discovery, with a scoped replacement design encoded in controlled CI;
-2. one executable WGPU capability investigation already yielding a stale-issue signal;
-3. one systemd overlap review with a durable reproducer;
-4. current overlap or stale-ticket findings in OpenTelemetry, ripgrep, Workerd, Execa, UV locking, and libarchive;
-5. a separate promising UV BusyBox portability unit for the next owned investigation.
+1. one UV source idea held after a real false-positive discovery;
+2. one WGPU issue retired with exact successful negative evidence;
+3. one unclaimed jq compiler investigation with a distinguishing four-layout matrix;
+4. one systemd overlap review with corrected documented grammar and source comparison;
+5. multiple overlap/stale findings that prevented duplicate work.
 
 No canonical upstream issue, pull request, comment, review, email, or patch submission was created.
