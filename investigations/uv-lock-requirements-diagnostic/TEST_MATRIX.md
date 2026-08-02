@@ -11,7 +11,8 @@ The matrix separates file identity, parser outcome, and caller lane. A filename 
 | Ordinary sibling | Empty `action.py.lock`; `action.py` is ordinary Python | `-r` | Success | Sibling is not a UV script-lock producer |
 | Same-name collision | Empty `action.py.lock`; `action.py` is valid PEP 723 | `-r` | Success | Parse success outranks possible producer naming; this distinguishes parse-first from pre-detection |
 | Missing project lock | No `uv.lock` file | `-r` | Existing `File not found` error | Diagnostic must not hide missing-path ownership |
-| Script lock as constraint | Generated `action.py.lock` | `-c` | Existing requirement parser error | The requested issue and wording concern requirements input, not constraints |
+| Script lock as exclusion list | Generated `action.py.lock` | `--exclude` / requirements-syntax file lane | UV-lock format diagnostic after parse failure | `from_requirements_txt` is reused for exclusion files; current source and experiment share this scope |
+| Script lock as constraint | Generated `action.py.lock` | `-c` | Existing requirement parser error | Constraints use a distinct constructor and wording |
 | Script lock as override | Generated `action.py.lock` | override file | Existing parser behavior | Shared parser must retain caller provenance |
 | Invalid arbitrary collision | Invalid `action.py.lock`; valid PEP 723 sibling | `-r` | UV-lock hint is acceptable bounded ambiguity | File already failed requirements parsing; exact provenance is unavailable without content sniffing or metadata |
 | Nested include | Top-level requirements contains `-r action.py.lock` | nested `-r` | Deferred | Current top-level source provenance does not identify the included path |
@@ -36,7 +37,7 @@ The matrix separates file identity, parser outcome, and caller lane. A filename 
 ## Assumptions being tested
 
 - A valid requirements parse is stronger evidence than a filename collision.
-- The special diagnostic belongs only to explicit requirements-file inputs.
+- The special diagnostic belongs to requirements-syntax file lanes created by `from_requirements_txt`; this includes ordinary requirements and exclusion lists, while constraints and overrides retain separate constructors.
 - UV's script lock naming must be modeled with native path types, not UTF-8 conversion.
 - Lockfile-content substring detection is too broad.
 - Missing paths remain owned by the existing missing-file diagnostic.
