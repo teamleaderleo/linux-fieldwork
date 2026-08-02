@@ -12,7 +12,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from model_policy import Authority, Policy, PolicyModel
+from model_policy import Authority, ContributionKey, Policy, PolicyModel
 
 
 class ReporterProtocolError(RuntimeError):
@@ -61,7 +61,10 @@ class ConnectionPolicyModel:
         """Atomically replace all contributions for one authority.
 
         The first method call on a link is a complete snapshot. An empty list is
-        therefore meaningful and clears prior-generation contributions.
+        therefore meaningful and clears prior-generation contributions. The
+        reducer compares the *final* staged snapshot against the old effective
+        state, so an identical reconnect snapshot preserves effective epochs and
+        runtime timing state.
         """
         session = self._require_link(authority, link)
         if link in session.initialized_links:
@@ -73,18 +76,30 @@ class ConnectionPolicyModel:
             key = (property_name, path)
             if key in seen:
                 raise ReporterProtocolError(f"duplicate snapshot key: {key!r}")
+            if not property_name or not path.startswith("/"):
+                raise ValueError("snapshot entries require a property and normalized absolute path")
             seen.add(key)
 
         candidate = copy.deepcopy(self.policy)
-        affected_existing = [
-            key
+        affected = {
+            (key.property, key.path)
             for key in candidate.contributions
             if key.authority == authority
-        ]
-        for key in affected_existing:
-            candidate.update(authority, key.property, key.path, None)
+        }
+        affected.update(seen)
+
+        candidate.contributions = {
+            key: policy
+            for key, policy in candidate.contributions.items()
+            if key.authority != authority
+        }
         for property_name, path, policy in staged_entries:
-            candidate.update(authority, property_name, path, policy)
+            candidate.contributions[
+                ContributionKey(authority, property_name, path)
+            ] = policy
+
+        for property_name, path in sorted(affected):
+            candidate._recompute(property_name, path)
 
         self.policy = candidate
         session.initialized_links.add(link)
@@ -113,12 +128,18 @@ class ConnectionPolicyModel:
 
         if current:
             candidate = copy.deepcopy(self.policy)
-            for key in [
-                key
+            affected = {
+                (key.property, key.path)
                 for key in candidate.contributions
                 if key.authority == authority
-            ]:
-                candidate.update(authority, key.property, key.path, None)
+            }
+            candidate.contributions = {
+                key: policy
+                for key, policy in candidate.contributions.items()
+                if key.authority != authority
+            }
+            for property_name, path in sorted(affected):
+                candidate._recompute(property_name, path)
             candidate.disconnect(authority, link)
             self.policy = candidate
             session.current_link = None
