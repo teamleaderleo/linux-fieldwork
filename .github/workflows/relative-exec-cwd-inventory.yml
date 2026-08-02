@@ -32,6 +32,7 @@ jobs:
             tools tests scripts investigations programmes upstream \
             > evidence/findings.json
           python3 - evidence/findings.json "$GITHUB_STEP_SUMMARY" <<'PY'
+          import html
           import json
           import pathlib
           import sys
@@ -67,13 +68,14 @@ jobs:
                   "scanner or evidence schema fails.\n\n"
               )
               if findings:
-                  stream.write("```text\n")
+                  stream.write("<pre>\n")
                   for item in findings:
-                      stream.write(
+                      rendered = (
                           f"{item['path']}:{item['line']}: {item['program']!r} "
-                          f"with cwd {item['cwd']!r}\n"
+                          f"with cwd {item['cwd']!r}"
                       )
-                  stream.write("```\n")
+                      stream.write(html.escape(rendered) + "\n")
+                  stream.write("</pre>\n")
           print(f"relative executable / cwd findings: {len(findings)}")
           PY
 
