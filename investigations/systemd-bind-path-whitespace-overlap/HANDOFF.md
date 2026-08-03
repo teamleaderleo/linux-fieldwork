@@ -1,7 +1,7 @@
 # Handoff — systemd bind-path whitespace overlap
 
 Handoff date: 2026-08-03  
-State: `ACTIVE — REPAIRED BASE/PR SOURCE COMPARISON QUEUED`  
+State: `ACTIVE — PARSER COMPARISON COMPLETE; SERIALIZATION ROUNDTRIP QUEUED`  
 External contact authorized: `false`  
 External contact made: `none`
 
@@ -12,110 +12,139 @@ canonical issue: systemd/systemd#43214
 active canonical PR: systemd/systemd#43217
 canonical base: 63e35ca3f99566095c84248e9eb41a3a6b32f2eb
 active PR head: d32993d1f67ec1b42719c89eeda9425042df57ce
-controlled product branch: none
-Linux Fieldwork workflow: .github/workflows/systemd-bind-path-source-compare.yml
 ```
 
-## Demonstrated mechanism
-
-Repeated whitespace is interpreted through the same no-coalescing separator treatment used for colon fields. Whitespace separates complete bind tuples; colon separates fields inside a tuple. Repeated whitespace must coalesce without changing colon-field parsing.
-
-Installed Debian 13 systemd 257 reproduced empty-path warnings for repeated spaces and line-continuation indentation.
-
-## Corrected grammar finding
-
-`systemd.exec` documents:
+Documented grammar:
 
 ```text
 source[:destination[:rbind|norbind]]
 ```
 
-and requires the option string to be omitted when destination is omitted. Therefore `source::norbind` is invalid syntax, not compatibility behavior. The fixture tests this as a negative control.
+If destination is omitted, the option must also be omitted. `source::norbind` is a negative control, not preserved syntax.
 
-## First source-comparison run
+## Superseded harness run
 
 ```text
 run: 30759715925
-canonical-base job: 91527946682
-active-PR job: 91527946711
+canonical job: 91527946682
+active PR job: 91527946711
 ```
 
-Both jobs checked out and verified the intended exact source. Both failed before compilation for the same carrier-owned reason:
+Both exact sources were checked out, but neither configured because the workflow omitted the Meson source directory. Retained artifacts:
 
 ```text
-ERROR: Neither source directory 'systemd/build' nor build directory None contain a build file meson.build.
-```
-
-The workflow invoked:
-
-```text
-meson setup systemd/build ...
-```
-
-from the parent checkout directory. Meson therefore interpreted `systemd/build` as a source directory. The correct invocation names both directories:
-
-```text
-meson setup systemd/build systemd ...
-```
-
-No parser, serialization, or product result was executed in run `30759715925`.
-
-Retained artifacts:
-
-```text
-canonical base
-  artifact: 8838880432
+canonical: 8838880432
   digest: sha256:65b940618c63baefaf6dde22a95febb2f47ce6cea5d6ddef82b0f90417864797
-  load-fragment blob: bf17e2df46f018934346a991617f69b30ca7a892
-  execute-serialize blob: 5503925226e238bc039346bf1055a744367c7a0c
-  test-execute blob: 1c7c8c8d6f9becca5c927feac427bb88040fa847
-active PR
-  artifact: 8839366457
+active PR: 8839366457
   digest: sha256:fba8903937e894d5356c0f88eb4a7551f2372f2e49f19d557d46c0ba2a331155
-  load-fragment blob: cced46d969833bd05c914c99959caab3cb02b542
-  execute-serialize blob: c7f84b4c16cc2773cfe69aa9f1a5cc14a5c810b8
-  test-execute blob: aba862ed8d744afc47f76deb69a2a011ca73085b
 ```
 
-## Repaired carrier
+No product result is taken from that run.
 
-Linux Fieldwork commit `8a909171aac4944e27ae257af1fba6aaae21bdad` changes only the Meson source/build-directory ownership. The exact source matrix, fixture, artifact boundary, and comparison logic remain unchanged.
-
-## Durable fixture
+## Completed parser comparison
 
 ```text
-investigations/systemd-bind-path-whitespace-overlap/reproduce.sh
+Linux Fieldwork run: 30795425735
+carrier branch: repair/systemd-bind-path-source-compare
+carrier head: ad93e4a627b3ba96ebc770c04819a8fb5e1ab808
 ```
 
-It executes cases independently and retains per-case status, stdout, stderr, and hashes for:
+Canonical base:
 
-- repeated, tab/mixed, and continuation whitespace;
-- ordinary one-space syntax;
-- source-only, source/destination, and full triples;
-- quoted spaces and escaped colons;
-- ignore-missing marker;
-- reset assignment;
-- omitted destination with options;
-- too many fields;
-- invalid option.
+```text
+job: 91627787064
+conclusion: success
+artifact: 8849252039
+digest: sha256:cfeb0a0eb01f74caa5d95d364717264715d36e91720619de17b358f020b4764d
+```
+
+Active PR:
+
+```text
+job: 91627787134
+conclusion: success
+artifact: 8851890190
+digest: sha256:2588659118757e774e59df61117ab7933f5f86a26224497ca35e463e2f750141
+```
+
+Both rows passed carrier contract, exact checkout, dependency setup, Meson configuration, focused `systemd-analyze` build, corrected grammar matrix, source-native inventory, and artifact upload.
+
+Classification:
+
+- canonical base warns on empty paths created by continued indentation, repeated spaces, and mixed tab/space separators;
+- active PR accepts those forms cleanly;
+- ordinary one-space syntax remains clean;
+- quoted spaces and escaped colons remain accepted;
+- source-only, source/destination, full options, ignore-missing, and reset controls remain on their expected paths;
+- invalid options remain rejected;
+- omitted destination with option remains invalid;
+- too many fields receive a specific `Too many parameters in BindPaths=` diagnostic.
+
+This supports active PR #43217 for the tested parser grammar. It does not establish serialization safety.
+
+## Current serialization carrier
+
+```text
+controlled repository: teamleaderleo/systemd
+branch: fieldwork/43217-bind-serialize-roundtrip
+head: d137ab24b2fc4b5371a804e38a1b5e67fc251ace
+internal draft PR: teamleaderleo/systemd#8
+workflow: Fieldwork bind mount serialization roundtrip
+run: 30849764916
+state at handoff: queued
+```
+
+The branch commits two test-infrastructure files and no product source. The workflow checks out both exact source states and injects a source-native core test into the disposable tree.
+
+The test creates six ordered bind mounts covering:
+
+```text
+writable/read-only
+rbind/norbind
+ignore-missing
+spaces
+literal colons
+quotes
+backslashes
+identical source/destination
+```
+
+For each variant it:
+
+1. serializes a complete invocation to an in-memory stream;
+2. deserializes into a fresh context;
+3. compares source, destination, read-only, recursive, and ignore-missing for every mount;
+4. serializes the restored context again;
+5. requires byte-identical output;
+6. executes under Valgrind;
+7. retains serialized stdout, stderr, source patch, build logs, source blobs, and binary digest.
+
+Self-review removed an invalid empty-stderr gate. systemd's test framework may emit diagnostics on successful runs; exit status, exact field comparison, deterministic reserialization, and Valgrind are the gates.
+
+Other fork workflows registered on the same head include Build test, Unit tests, CIFuzz, ClusterFuzzLite, mkosi, lint, and differential ShellCheck. Do not infer their status without re-querying.
 
 ## First incomplete step
 
-Resolve the first completed systemd comparison run at or after Linux Fieldwork commit `8a909171...` and classify in this order:
+Read run `30849764916` in this order:
 
-1. dependency/configure/build ownership;
-2. analyzer identity and digest;
-3. every valid and invalid parser case;
-4. whether PR #43217 removes only repeated-whitespace empty-path warnings;
-5. quoted-space and escaped-colon compatibility;
-6. source-native tests covering execution-context serialization and deserialization.
+1. source checkout and two-file carrier fence;
+2. Meson injection/target ownership;
+3. compile errors in the new core test, if any;
+4. first direct round-trip assertion failure;
+5. first Valgrind error;
+6. compare canonical and PR serialized wire text only after both field round-trips are classified.
 
-Do not infer serialization safety from `systemd-analyze verify`. After parser comparison, run the narrowest exact source-native round-trip test that reaches the changed serialization code.
+Possible interpretations:
+
+- **both pass:** new format is a deterministic compatible canonicalization over tested fields; compare wire changes and proceed to complete PR test review;
+- **base fails, PR passes:** identify which escaping shape the PR newly repairs;
+- **base passes, PR fails:** isolate first field loss or parser mismatch before approving the broad change;
+- **both fail at build:** repair only test-carrier integration, not product assumptions.
 
 ## Publication boundary
 
-No canonical comment or review is authorized. Retain findings internally until the user explicitly approves public communication.
+No canonical systemd comment, review, reaction, email, or pull request is authorized. Retain results internally.
 
 ## Cleanup state
 
-No local systemd checkout or build survives. Hosted jobs use disposable runners and bounded artifacts. No service, mount, namespace, credential, or canonical repository state is changed.
+All source changes and builds are confined to disposable hosted runners. No service, mount, namespace, device, credential, or canonical repository state is changed.
