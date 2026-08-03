@@ -26,10 +26,13 @@ Owner direction on `2026-08-03`: Debian and mmdebstrap work is parked. Open Debi
 6. **BuildKit go-archive implied-parent compatibility** — [PR #416](https://github.com/teamleaderleo/linux-fieldwork/pull/416)  
    Compare exact released dependency states and repaired current main before any integration claim.
 
-7. **DuckDB persisted wrong-result evidence** — [PR #334](https://github.com/teamleaderleo/linux-fieldwork/pull/334)  
+7. **util-linux cpuset parse ownership** — retained packet [PR #404](https://github.com/teamleaderleo/linux-fieldwork/pull/404)  
+   Keep the demonstrated double-free repair and native regression as upstream-system evidence; stop the Debian stable-update composition lane.
+
+8. **DuckDB persisted wrong-result evidence** — [PR #334](https://github.com/teamleaderleo/linux-fieldwork/pull/334)  
    High-consequence secondary ART false-negative record awaiting eligible independent review.
 
-8. **Repository execution and evidence integrity** — [PR #418](https://github.com/teamleaderleo/linux-fieldwork/pull/418) and [PR #328](https://github.com/teamleaderleo/linux-fieldwork/pull/328)  
+9. **Repository execution and evidence integrity** — [PR #418](https://github.com/teamleaderleo/linux-fieldwork/pull/418) and [PR #328](https://github.com/teamleaderleo/linux-fieldwork/pull/328)  
    Relative-executable/cwd inventory coverage and fenced-example parser repair.
 
 ## Secondary bounded lanes
