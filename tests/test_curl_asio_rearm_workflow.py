@@ -26,6 +26,13 @@ class CurlAsioRearmWorkflowTests(unittest.TestCase):
         self.assertIn('"$runtime/fixture"', self.workflow)
         self.assertNotIn("fixture.cpp -o fixture", self.workflow)
 
+    def test_contract_validation_does_not_dirty_the_checkout(self) -> None:
+        self.assertIn(
+            "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v "
+            "tests.test_curl_asio_rearm_workflow",
+            self.workflow,
+        )
+
     def test_two_runs_must_match_and_preserve_expected_semantics(self) -> None:
         self.assertIn('for attempt in 1 2; do', self.workflow)
         self.assertIn('cmp "$evidence/run-1.txt" "$evidence/run-2.txt"', self.workflow)
