@@ -132,13 +132,20 @@ jobs:
               )
 
           no_space, spaced = data["cases"]
-          assert no_space["direct"]["marker_count"] == 1
-          assert no_space["nested"]["marker_count"] == 1
-          assert spaced["direct"]["marker_count"] == 1
-          assert spaced["nested"]["marker_count"] == 0
-          assert spaced["outer"]["status"] == 0
-          assert spaced["nested"]["nested_status"] == 0
-          assert data["quoted_env_control"]["marker_count"] == 1
+          checks = (
+              ("no-space direct marker count", no_space["direct"]["marker_count"], 1),
+              ("no-space nested marker count", no_space["nested"]["marker_count"], 1),
+              ("spaced direct marker count", spaced["direct"]["marker_count"], 1),
+              ("spaced nested marker count", spaced["nested"]["marker_count"], 0),
+              ("spaced outer status", spaced["outer"]["status"], 0),
+              ("spaced nested status", spaced["nested"]["nested_status"], 0),
+              ("quoted environment control marker count", data["quoted_env_control"]["marker_count"], 1),
+          )
+          for label, observed, expected in checks:
+              if observed != expected:
+                  raise SystemExit(
+                      f"{label}: expected {expected!r}, observed {observed!r}"
+                  )
           PY
 
           sha256sum \
