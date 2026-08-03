@@ -12,8 +12,8 @@ class KmodModprobeConfigPathWorkflowTests(unittest.TestCase):
 
     def test_pins_exact_public_and_characterization_sources(self) -> None:
         self.assertIn("5086df53090b2fe9fa1c31351c05a78a12a4ba71", self.text)
-        self.assertIn("f5406e1c15772bb306b9f2760cce44b2b6e9256f", self.text)
-        self.assertNotIn("2e52d25e54a94fb531fd442079c7cf686f3e910b", self.text)
+        self.assertIn("84ba8ae9db4f455965efa22afdd5cb177781106b", self.text)
+        self.assertNotIn("f5406e1c15772bb306b9f2760cce44b2b6e9256f", self.text)
 
     def test_disables_only_unavailable_optional_mbedtls_backend(self) -> None:
         self.assertNotIn("libmbedtls-dev", self.text)
