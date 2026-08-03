@@ -1,0 +1,70 @@
+name: Verify coreutils cp sparse 12648
+
+on:
+  push:
+    branches:
+      - investigate/coreutils-cp-sparse-early-eof-12648
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out controlled coreutils candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: teamleaderleo/coreutils
+          ref: fieldwork/cp-sparse-early-eof-12648
+          path: coreutils
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+          components: clippy,rustfmt
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          workspaces: coreutils
+
+      - name: Record exact staged identity
+        working-directory: coreutils
+        run: |
+          git rev-parse HEAD
+          git rev-parse HEAD:.fieldwork/apply-cp-sparse-early-eof.py
+          git rev-parse HEAD:.github/workflows/fieldwork-cp-sparse-early-eof.yml
+
+      - name: Apply and format candidate
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          python3 .fieldwork/apply-cp-sparse-early-eof.py
+          cargo fmt --all
+          test "$(git diff --name-only | sort)" = 'src/uu/cp/src/platform/linux.rs'
+          cargo fmt --all -- --check
+          git diff --check
+
+      - name: Test deterministic early EOF transition
+        working-directory: coreutils
+        run: cargo test -p uu_cp sparse_copy_data_truncates_destination_on_early_eof --lib
+
+      - name: Run cp integration module
+        working-directory: coreutils
+        run: cargo test --features cp --no-default-features --test tests test_cp
+
+      - name: Run focused clippy
+        working-directory: coreutils
+        run: cargo clippy --features cp --no-default-features --all-targets -- -D warnings
+
+      - name: Record candidate diff
+        if: always()
+        working-directory: coreutils
+        run: |
+          git diff --stat
+          git diff -- src/uu/cp/src/platform/linux.rs
