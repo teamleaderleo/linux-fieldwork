@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/kmod-modprobe-config-path.yml"
       - "investigations/kmod-modprobe-options-config-path/**"
+      - "tests/test_kmod_modprobe_config_workflow.py"
   workflow_dispatch:
 
 permissions:
@@ -30,6 +31,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Validate workflow contract
+        run: |
+          python3 -m unittest -v tests.test_kmod_modprobe_config_workflow
+
       - name: Check out exact kmod master snapshot
         uses: actions/checkout@v4
         with:
@@ -46,7 +51,6 @@ jobs:
             clang \
             gcc \
             liblzma-dev \
-            libmbedtls-dev \
             libssl-dev \
             libzstd-dev \
             meson \
@@ -55,14 +59,24 @@ jobs:
             python3 \
             zlib1g-dev
 
-      - name: Verify exact source identity
+      - name: Verify exact source and toolchain identity
+        env:
+          CC: ${{ matrix.compiler }}
         run: |
           set -euxo pipefail
+          out="kmod-receipt-${{ matrix.compiler }}"
+          mkdir -p "$out"
           test "$(git -C kmod rev-parse HEAD)" = "5086df53090b2fe9fa1c31351c05a78a12a4ba71"
-          git -C kmod status --short --untracked-files=no | tee source-status.txt
-          test ! -s source-status.txt
-          git -C kmod rev-parse HEAD > source-head.txt
-          git -C kmod rev-parse HEAD:tools/modprobe.c > source-modprobe-blob.txt
+          git -C kmod status --short --untracked-files=no | tee "$out/source-status.txt"
+          test ! -s "$out/source-status.txt"
+          git -C kmod rev-parse HEAD > "$out/source-head.txt"
+          git -C kmod rev-parse HEAD:tools/modprobe.c > "$out/source-modprobe-blob.txt"
+          {
+            "$CC" --version | head -n1
+            meson --version
+            ninja --version
+            pkg-config --modversion openssl
+          } > "$out/toolchain.txt"
 
       - name: Configure and build with sanitizers
         env:
@@ -70,15 +84,20 @@ jobs:
         run: |
           set -euxo pipefail
           build="build-${{ matrix.compiler }}"
+          out="kmod-receipt-${{ matrix.compiler }}"
           meson setup "kmod/$build" kmod \
             --buildtype=debug \
             -Db_sanitize=address,undefined \
             -Dbuild-tests=false \
             -Ddocs=false \
-            -Dmanpages=false
-          meson compile -C "kmod/$build"
+            -Dmanpages=false \
+            -Dmbedtls=disabled \
+            -Dopenssl=enabled \
+            > "$out/meson-setup.log" 2>&1
+          meson compile -C "kmod/$build" \
+            > "$out/build.log" 2>&1
           test -x "kmod/$build/modprobe"
-          "kmod/$build/modprobe" --version
+          "kmod/$build/modprobe" --version | tee "$out/modprobe-version.txt"
 
       - name: Run exact discriminator twice
         env:
@@ -88,7 +107,6 @@ jobs:
           set -euxo pipefail
           build="$PWD/kmod/build-${{ matrix.compiler }}"
           out="$PWD/kmod-receipt-${{ matrix.compiler }}"
-          mkdir -p "$out"
           export PATH="$build:$PATH"
           test "$(command -v modprobe)" = "$build/modprobe"
 
@@ -128,25 +146,23 @@ jobs:
             "$out/first.json" \
             "$out/rerun.json" \
             > "$out/sha256.txt"
-          cp source-head.txt source-modprobe-blob.txt source-status.txt "$out/"
-          "$build/modprobe" --version > "$out/modprobe-version.txt"
           uname -srmo > "$out/uname.txt"
 
       - name: Verify cleanup and source tree
         if: always()
         run: |
           set -euxo pipefail
+          out="kmod-receipt-${{ matrix.compiler }}"
+          mkdir -p "$out"
           test -z "$(find /tmp -maxdepth 1 -type d -name 'lf-kmod-modprobe-options-*' -print -quit)"
-          git -C kmod status --short --untracked-files=no | tee final-source-status.txt
-          test ! -s final-source-status.txt
+          git -C kmod status --short --untracked-files=no | tee "$out/final-source-status.txt"
+          test ! -s "$out/final-source-status.txt"
 
       - name: Upload exact receipts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: kmod-modprobe-config-${{ matrix.compiler }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            kmod-receipt-${{ matrix.compiler }}/
-            final-source-status.txt
+          path: kmod-receipt-${{ matrix.compiler }}/
           if-no-files-found: error
           retention-days: 30
