@@ -20,12 +20,16 @@ permissions:
 
 jobs:
   discriminator:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
-      - name: Check out fieldwork branch
+      - name: Check out proposed repository state
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          clean: true
 
       - name: Install compiler and headers
         run: |
@@ -36,25 +40,100 @@ jobs:
             libcurl4-openssl-dev \
             pkg-config
 
-      - name: Build fixture
-        working-directory: experiments/curl-asio-multi-socket-rearm
+      - name: Capture environment and build outside checkout
+        shell: bash
         run: |
           set -euxo pipefail
+          source_file="$GITHUB_WORKSPACE/experiments/curl-asio-multi-socket-rearm/fixture.cpp"
+          build_dir="$RUNNER_TEMP/curl-asio-rearm-build"
+          artifact_dir="$RUNNER_TEMP/curl-asio-rearm-artifact"
+
+          rm -rf "$build_dir" "$artifact_dir"
+          mkdir -p "$build_dir" "$artifact_dir"
+
+          {
+            printf 'workflow_run_id=%s\n' "$GITHUB_RUN_ID"
+            printf 'workflow_run_attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
+            printf 'commit=%s\n' "$GITHUB_SHA"
+            printf 'runner_image=%s\n' "${ImageOS:-unknown}"
+            printf 'runner_image_version=%s\n' "${ImageVersion:-unknown}"
+            uname -a
+            g++ --version | head -n 1
+            printf 'libcurl_pkg_config=%s\n' "$(pkg-config --modversion libcurl)"
+            dpkg-query -W -f='${Package}=${Version}\n' \
+              g++ libboost-dev libcurl4-openssl-dev pkg-config
+            grep '^#define BOOST_LIB_VERSION ' /usr/include/boost/version.hpp
+            sha256sum "$source_file"
+          } >"$artifact_dir/environment.txt"
+
           g++ -std=c++20 -O2 -Wall -Wextra -Werror \
             -DBOOST_ERROR_CODE_HEADER_ONLY \
-            fixture.cpp -o fixture \
+            "$source_file" -o "$build_dir/fixture" \
             $(pkg-config --cflags --libs libcurl) -lpthread
+          sha256sum "$build_dir/fixture" >>"$artifact_dir/environment.txt"
 
-      - name: Run discriminator
-        working-directory: experiments/curl-asio-multi-socket-rearm
+          printf 'BUILD_DIR=%s\n' "$build_dir" >>"$GITHUB_ENV"
+          printf 'ARTIFACT_DIR=%s\n' "$artifact_dir" >>"$GITHUB_ENV"
+
+      - name: Run discriminator twice and compare receipts
+        shell: bash
         run: |
-          set -o pipefail
-          timeout 10s ./fixture | tee receipt.txt
+          set -euxo pipefail
+          timeout 10s "$BUILD_DIR/fixture" | tee "$ARTIFACT_DIR/run-1.txt"
+          timeout 10s "$BUILD_DIR/fixture" | tee "$ARTIFACT_DIR/run-2.txt"
 
-      - name: Publish receipt
-        if: always()
+          if ! cmp -s "$ARTIFACT_DIR/run-1.txt" "$ARTIFACT_DIR/run-2.txt"; then
+            diff -u "$ARTIFACT_DIR/run-1.txt" "$ARTIFACT_DIR/run-2.txt" || true
+            exit 1
+          fi
+
+          cp "$ARTIFACT_DIR/run-1.txt" "$ARTIFACT_DIR/receipt.txt"
+
+      - name: Verify clean checkout and remove build staging
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -x "$BUILD_DIR/fixture"
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
+
+          rm -rf "$BUILD_DIR"
+          test ! -e "$BUILD_DIR"
+
+          {
+            echo 'checkout_clean=pass'
+            echo 'build_staging_removed=pass'
+            echo 'double_run_receipts_identical=pass'
+          } >"$ARTIFACT_DIR/cleanup.txt"
+
+          (
+            cd "$ARTIFACT_DIR"
+            sha256sum environment.txt run-1.txt run-2.txt receipt.txt cleanup.txt >SHA256SUMS
+          )
+
+      - name: Publish exact hosted receipt
         uses: actions/upload-artifact@v4
         with:
           name: curl-asio-multi-socket-rearm-receipt
-          path: experiments/curl-asio-multi-socket-rearm/receipt.txt
-          if-no-files-found: warn
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prove post-upload cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          build_dir="${BUILD_DIR:-$RUNNER_TEMP/curl-asio-rearm-build}"
+          artifact_dir="${ARTIFACT_DIR:-$RUNNER_TEMP/curl-asio-rearm-artifact}"
+          rm -rf "$build_dir" "$artifact_dir"
+          test ! -e "$build_dir"
+          test ! -e "$artifact_dir"
+          test -z "$(git status --porcelain)"
+          {
+            echo '### curl Asio discriminator cleanup'
+            echo
+            echo '- build staging removed: pass'
+            echo '- artifact staging removed after upload: pass'
+            echo '- checkout clean: pass'
+          } >>"$GITHUB_STEP_SUMMARY"
