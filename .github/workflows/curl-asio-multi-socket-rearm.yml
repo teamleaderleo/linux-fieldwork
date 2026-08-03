@@ -6,12 +6,15 @@ on:
       - research/foundational-systems-deep-dive-2026-08-03
     paths:
       - experiments/curl-asio-multi-socket-rearm/**
+      - tests/test_curl_asio_rearm_workflow.py
       - .github/workflows/curl-asio-multi-socket-rearm.yml
   pull_request:
     branches:
       - main
+      - research/foundational-systems-deep-dive-2026-08-03
     paths:
       - experiments/curl-asio-multi-socket-rearm/**
+      - tests/test_curl_asio_rearm_workflow.py
       - .github/workflows/curl-asio-multi-socket-rearm.yml
   workflow_dispatch:
 
@@ -20,12 +23,31 @@ permissions:
 
 jobs:
   discriminator:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
       - name: Check out fieldwork branch
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow contract
+        run: |
+          python3 -m unittest -v tests.test_curl_asio_rearm_workflow
+
+      - name: Prepare disposable runtime and evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="${RUNNER_TEMP}/curl-asio-rearm"
+          evidence="${GITHUB_WORKSPACE}/evidence/curl-asio-rearm"
+          rm -rf "$runtime" "$evidence"
+          mkdir -p "$runtime" "$evidence"
+          {
+            printf 'carrier_head=%s\n' "$GITHUB_SHA"
+            sha256sum experiments/curl-asio-multi-socket-rearm/fixture.cpp
+          } >"$evidence/source-identity.txt"
 
       - name: Install compiler and headers
         run: |
@@ -36,25 +58,64 @@ jobs:
             libcurl4-openssl-dev \
             pkg-config
 
-      - name: Build fixture
-        working-directory: experiments/curl-asio-multi-socket-rearm
+      - name: Build fixture and record tool identities
+        shell: bash
         run: |
-          set -euxo pipefail
+          set -euo pipefail
+          runtime="${RUNNER_TEMP}/curl-asio-rearm"
+          evidence="${GITHUB_WORKSPACE}/evidence/curl-asio-rearm"
+          {
+            printf 'runner_os=%s\n' "$RUNNER_OS"
+            printf 'runner_arch=%s\n' "$RUNNER_ARCH"
+            printf 'image_os=%s\n' "${ImageOS:-unknown}"
+            printf 'image_version=%s\n' "${ImageVersion:-unknown}"
+            g++ --version | head -n1
+            printf 'libcurl=%s\n' "$(pkg-config --modversion libcurl)"
+            grep '^#define BOOST_LIB_VERSION ' /usr/include/boost/version.hpp
+          } >"$evidence/tool-identity.txt"
           g++ -std=c++20 -O2 -Wall -Wextra -Werror \
             -DBOOST_ERROR_CODE_HEADER_ONLY \
-            fixture.cpp -o fixture \
-            $(pkg-config --cflags --libs libcurl) -lpthread
+            experiments/curl-asio-multi-socket-rearm/fixture.cpp \
+            -o "$runtime/fixture" \
+            $(pkg-config --cflags --libs libcurl) -lpthread \
+            >"$evidence/build.log" 2>&1
+          sha256sum "$runtime/fixture" >"$evidence/fixture-sha256.txt"
 
-      - name: Run discriminator
-        working-directory: experiments/curl-asio-multi-socket-rearm
+      - name: Run stable discriminator twice
+        shell: bash
         run: |
-          set -o pipefail
-          timeout 10s ./fixture | tee receipt.txt
+          set -euo pipefail
+          runtime="${RUNNER_TEMP}/curl-asio-rearm"
+          evidence="${GITHUB_WORKSPACE}/evidence/curl-asio-rearm"
+          cat >"$evidence/expected.txt" <<'EOF'
+          one-shot: completed=0 timed_out=1 reads=1 body='hello '
+          rearm: completed=1 timed_out=0 reads=2 result=No error body='hello world!'
+          curl multi-socket Asio re-arm discriminator: PASS
+          EOF
+          for attempt in 1 2; do
+            timeout 10s "$runtime/fixture" >"$evidence/run-${attempt}.txt"
+            cmp "$evidence/expected.txt" "$evidence/run-${attempt}.txt"
+          done
+          cmp "$evidence/run-1.txt" "$evidence/run-2.txt"
+          cat "$evidence/expected.txt"
 
-      - name: Publish receipt
+      - name: Publish exact receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: curl-asio-multi-socket-rearm-receipt
-          path: experiments/curl-asio-multi-socket-rearm/receipt.txt
-          if-no-files-found: warn
+          name: curl-asio-multi-socket-rearm-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/curl-asio-rearm/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify cleanup and source state
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="${RUNNER_TEMP}/curl-asio-rearm"
+          evidence="${GITHUB_WORKSPACE}/evidence/curl-asio-rearm"
+          rm -rf "$runtime" "$evidence"
+          test ! -e "$runtime"
+          test ! -e "$evidence"
+          test -z "$(git status --short)"
