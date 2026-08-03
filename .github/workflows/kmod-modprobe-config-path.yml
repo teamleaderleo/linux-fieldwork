@@ -46,7 +46,6 @@ jobs:
             clang \
             gcc \
             liblzma-dev \
-            libmbedtls-dev \
             libssl-dev \
             libzstd-dev \
             meson \
@@ -75,7 +74,8 @@ jobs:
             -Db_sanitize=address,undefined \
             -Dbuild-tests=false \
             -Ddocs=false \
-            -Dmanpages=false
+            -Dmanpages=false \
+            -Dmbedtls=disabled
           meson compile -C "kmod/$build"
           test -x "kmod/$build/modprobe"
           "kmod/$build/modprobe" --version
