@@ -12,9 +12,9 @@ of masked and read-only paths. Add focused positive and negative controls.
 
 This is a retained candidate patch. It has not been submitted upstream.
 ---
- libcontainer/configs/validate/mountns_restrictions_test.go | 43 +++++++++++++++++++++
+ libcontainer/configs/validate/mountns_restrictions_test.go | 45 +++++++++++++++++++++
  libcontainer/configs/validate/validator.go                 |  3 ++
- 2 files changed, 46 insertions(+)
+ 2 files changed, 48 insertions(+)
  create mode 100644 libcontainer/configs/validate/mountns_restrictions_test.go
 
 diff --git a/libcontainer/configs/validate/validator.go b/libcontainer/configs/validate/validator.go
@@ -36,7 +36,7 @@ new file mode 100644
 index 00000000..00000000
 --- /dev/null
 +++ b/libcontainer/configs/validate/mountns_restrictions_test.go
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,45 @@
 +package validate
 +
 +import (
