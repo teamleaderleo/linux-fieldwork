@@ -3,31 +3,29 @@
 ## State
 
 - Investigation: kmod nested `modprobe` configuration identity
-- State: `HOLD — exact source reproduced; final native characterization queued; candidate compatibility review open`
+- Disposition: `HOLD — exact source reproduced; final native characterization queued; candidate compatibility review open`
 - Linux Fieldwork branch: `investigation/kmod-modprobe-options-config-path`
 - Linux Fieldwork base: `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Exact Linux Fieldwork technical head before this handoff commit: `8bbb2c076ae3a1668adb3a08a272b1b8ad27125f`
+- Exact Linux Fieldwork head before this handoff commit: `c939f86078925315c55050dff124fe3728f834c1`
 - Internal Linux Fieldwork draft PR: `teamleaderleo/linux-fieldwork#412`
 - Owned kmod fork: `teamleaderleo/kmod`
-- Native characterization PR: `teamleaderleo/kmod#1`
-- Native characterization head: `84ba8ae9db4f455965efa22afdd5cb177781106b`
-- Candidate repair PR: `teamleaderleo/kmod#2`
-- Candidate carrier head: `3f07a0ecc3ee7ad7895c635f66b2dd97219d232f`
+- Native characterization PR/head: `teamleaderleo/kmod#1@84ba8ae9db4f455965efa22afdd5cb177781106b`
+- Candidate validation PR/head: `teamleaderleo/kmod#2@cdc366bfaf8bcd1a9c5903f090f1d529e36782c4`
 - Formal review submissions on PRs #412, #1, and #2: none
 - External-contact state: unauthorized; none made
 
-## Exact source identities and overlap
+## Exact source and overlap
 
-- canonical repository: `https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git`;
-- source-reading mirror: `kmod-project/kmod`;
-- exact public/fork base and current master observed 2026-08-04: `5086df53090b2fe9fa1c31351c05a78a12a4ba71`;
-- relevant source: `tools/modprobe.c`;
-- relevant functions: `env_modprobe_options_append()` and `prepend_options_from_env()`;
-- intent/documentation commit: `42d60a3267162a36ec6b6b39a7b91e5078b90979`;
-- fresh open issue/PR searches found no matching recursive `-C` whitespace-path implementation;
-- upstream PR #139 concerns secure environment access generally and is not a duplicate.
+- Canonical repository: `https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git`
+- Source-reading mirror: `kmod-project/kmod`
+- Exact public/fork base and current master observed 2026-08-04: `5086df53090b2fe9fa1c31351c05a78a12a4ba71`
+- Relevant source: `tools/modprobe.c`
+- Relevant functions: `env_modprobe_options_append()` and `prepend_options_from_env()`
+- Intent/documentation commit: `42d60a3267162a36ec6b6b39a7b91e5078b90979`
+- Fresh open issue/PR searches found no matching recursive `-C` whitespace-path implementation.
+- Upstream PR #139 concerns secure environment access generally and is not a duplicate.
 
-Repeat source freshness and overlap immediately before any authorized public action.
+Repeat source freshness, contribution policy, and overlap immediately before any authorized public action.
 
 ## Demonstrated package behavior
 
@@ -46,7 +44,17 @@ spaced configuration path:
   MODPROBE_OPTIONS=-C $TMP/space/conf dir
 ```
 
-A manually quoted spaced path is a passing control. Leading/repeated spaces, tabs, and unmatched quotes silently lose the selected configuration while status remains 0. Root and EUID 65534 agree. No real module insertion or removal occurs.
+The parent accepts and uses the requested configuration. For an `install` command, current kmod flattens `-C` and the raw pathname into `MODPROBE_OPTIONS`; the nested process reparses a changed argument vector, can use another configuration, and still returns success.
+
+Controls:
+
+- manually quoted spaced path: selected configuration preserved;
+- leading/repeated spaces: selected configuration lost while status remains 0;
+- tab separator: selected configuration lost while status remains 0;
+- unmatched quote: selected configuration lost while status remains 0;
+- EUID 0 and EUID 65534 agree;
+- immediate normalized rerun is byte-identical;
+- no real module insertion or removal occurs.
 
 Retained package identities:
 
@@ -63,31 +71,38 @@ Linux Fieldwork run `30847812068` reproduced exact public source under GCC and C
 
 ### GCC
 
-- job: `91800328201`;
-- artifact: `8869400073`, `kmod-modprobe-config-gcc-30847812068-1`;
-- artifact digest: `sha256:46a343b8c91f3695d5c5be2de6a53415e26a3a19b53d0048ddff6fee7f22108c`;
-- built `modprobe` SHA-256: `24c2090c2ab3b1a30144ced511e7c539aff70be9f0d0cdf54df93822795060d9`;
-- first/rerun result SHA-256: `02be6e9a9fc623e79502145cbf10bc7db5018b2a1d31f7c8037ab6d0e47d7ac8` for both.
+- Job: `91800328201`
+- Artifact: `8869400073`, `kmod-modprobe-config-gcc-30847812068-1`
+- Artifact digest: `sha256:46a343b8c91f3695d5c5be2de6a53415e26a3a19b53d0048ddff6fee7f22108c`
+- Built `modprobe` SHA-256: `24c2090c2ab3b1a30144ced511e7c539aff70be9f0d0cdf54df93822795060d9`
+- First/rerun result SHA-256: `02be6e9a9fc623e79502145cbf10bc7db5018b2a1d31f7c8037ab6d0e47d7ac8` for both
 
 ### Clang
 
-- job: `91800328204`;
-- artifact: `8869400168`, `kmod-modprobe-config-clang-30847812068-1`;
-- artifact digest: `sha256:9415ea4d8456a25ce7e061f96c5c598de30961edbaa8f5ed9f0d401d07672242`;
-- built `modprobe` SHA-256: `abeaea0326b0bbcbc9804c67c5ddf0c00c31574111fad15d122de3e4dcf0f8bb`;
-- first/rerun result SHA-256: `1e5c6bf102f03d8159d8bf1273a829d3f0d62bc0c9794f5016ce2242dfc110e4` for both.
+- Job: `91800328204`
+- Artifact: `8869400168`, `kmod-modprobe-config-clang-30847812068-1`
+- Artifact digest: `sha256:9415ea4d8456a25ce7e061f96c5c598de30961edbaa8f5ed9f0d401d07672242`
+- Built `modprobe` SHA-256: `abeaea0326b0bbcbc9804c67c5ddf0c00c31574111fad15d122de3e4dcf0f8bb`
+- First/rerun result SHA-256: `1e5c6bf102f03d8159d8bf1273a829d3f0d62bc0c9794f5016ce2242dfc110e4` for both
 
-Both report `kmod version 34` with `+ZSTD +XZ +ZLIB +OPENSSL -MBEDTLS`. Both observed the same no-space pass, spaced-path loss, quoted pass, and parser-control losses. Both source trees and cleanup receipts were clean. No sanitizer finding occurred.
+Both binaries report:
+
+```text
+kmod version 34
++ZSTD +XZ +ZLIB +OPENSSL -MBEDTLS
+```
+
+Both toolchains observed the same no-space pass, spaced-path loss, quoted pass, and parser-control losses. Both source trees and cleanup receipts were clean. No sanitizer finding occurred.
 
 ## Native characterization
 
 The owned characterization remains exactly five test/fixture files and no product source:
 
-- `testsuite/meson.build`;
-- `testsuite/test-modprobe-options.c`;
-- `testsuite/rootfs-pristine/test-modprobe/install-cmd-loop/correct-config-path.txt`;
-- `testsuite/rootfs-pristine/test-modprobe/install-cmd-loop/etc/modprobe-config/recursive.conf`;
-- `testsuite/rootfs-pristine/test-modprobe/install-cmd-loop/etc/modprobe config/recursive.conf`.
+- `testsuite/meson.build`
+- `testsuite/test-modprobe-options.c`
+- `testsuite/rootfs-pristine/test-modprobe/install-cmd-loop/correct-config-path.txt`
+- `testsuite/rootfs-pristine/test-modprobe/install-cmd-loop/etc/modprobe-config/recursive.conf`
+- `testsuite/rootfs-pristine/test-modprobe/install-cmd-loop/etc/modprobe config/recursive.conf`
 
 Current fixture:
 
@@ -100,66 +115,99 @@ The outer carrier `mod-loop-b` is dependency-free. Both tests use the fake `init
 
 Expected unfixed result under each compiler:
 
-- `PASSED: modprobe_options_config_path_control`;
-- `FAILED: modprobe_options_config_path_space`;
-- no other `FAILED:` line;
-- no dirty-root or loaded-module residue;
-- clean source tree and retained artifact.
+- `PASSED: modprobe_options_config_path_control`
+- `FAILED: modprobe_options_config_path_space`
+- no other `FAILED:` line
+- no dirty-root or loaded-module residue
+- clean source tree and retained artifact
 
 ### Native generation history
 
-1. The first generation omitted `TC_INIT_MODULE_RETCODES`; both cases reached the host syscall and failed with `EPERM`.
-2. Head `2e52d25...` added the fake syscall field but used outer `mod-loop-a`, whose dependency loaded `mod-loop-b` before the recursive hook. Linux Fieldwork's focused shared-root gate exposed dirty state. Standard kmod run `30847595787` still completed repository setup/build and retained one focused test-binary failure; it is historical evidence, not the final independent fixture.
-3. Head `f5406e1...` removed dependency state. Run `30848493313`, Clang job `91802512593`, reached the intended product split: the spaced case failed through missing recursive alias resolution and the control returned success, but the expected receipt used input spelling `mod-loop-a` while kmod prints canonical `mod_loop_a`.
+1. Initial generation omitted `TC_INIT_MODULE_RETCODES`; both cases reached the host syscall and failed with `EPERM`.
+2. Head `2e52d25...` added fake insertion but used outer `mod-loop-a`, whose dependency loaded `mod-loop-b` before the recursive hook. Linux Fieldwork's focused shared-root gate exposed dirty state. Standard kmod run `30847595787` still completed repository setup/build and retained a focused test-binary failure; it is historical, not the final independent fixture.
+3. Head `f5406e1...` removed dependency state. Run `30848493313`, Clang job `91802512593`, reached the intended split, but the expected receipt used input spelling `mod-loop-a` while kmod prints `mod_loop_a`.
 4. Current head `84ba8ae...` changes only that expected output line.
 
-Runs registered for Linux technical head `8bbb2c...`:
+Prior Linux runs `30849170891` and `30849170909` were queued on technical head `8bbb2c...` and superseded by later documentation synchronization.
 
-- dedicated kmod matrix `30849170891`;
-- Linux Fieldwork CI `30849170909`.
+Successor runs registered on Linux head `c939f860...`:
 
-Both were queued at the latest observation. This handoff-only commit will supersede them under branch concurrency while retaining the same workflow and source pins. Read the successor runs, not the cancelled queue entries.
+- Dedicated kmod matrix: `30850150937`
+- Linux Fieldwork CI: `30850149774`
 
-## Candidate carrier and source design
+Both were queued at the latest observation. This handoff-only commit will create another successor while preserving the same exact workflow and native source pins. Read the newest run IDs associated with the final branch head; do not treat cancellation or queue state as product evidence.
 
-Candidate PR `teamleaderleo/kmod#2` is an internal draft. Carrier head `3f07a0ecc3ee7ad7895c635f66b2dd97219d232f` temporarily contains:
+## Candidate v1 carrier
 
-- `.github/modprobe-options.patch`;
-- `.github/modprobe-options-empty-argument.patch`;
-- `.github/modprobe-options-append-errors.patch`;
-- `.github/workflows/bootstrap-modprobe-options.yml`.
+Candidate PR `teamleaderleo/kmod#2` is an internal draft at carrier head `cdc366bfaf8bcd1a9c5903f090f1d529e36782c4`.
 
-The one-shot workflow applies all patches with `git apply --check`, removes every carrier file including itself, checks formatting, builds and tests under GCC and Clang, and commits the real source/test diff only after every step succeeds on a non-PR event.
+Temporary carrier files:
 
-Candidate mechanism:
+- `.github/modprobe-options.patch`
+- `.github/modprobe-options-empty-argument.patch`
+- `.github/modprobe-options-append-errors.patch`
+- `.github/workflows/bootstrap-modprobe-options.yml`
 
-- generated values escape C whitespace, backslash, single quote, and double quote;
-- an empty argument is encoded as `''`;
-- allocation arithmetic is checked;
-- append failures stop option processing;
-- parser accepts repeated whitespace, quoted segments, and backslash escapes outside quotes;
-- parser preserves empty quoted arguments;
-- unmatched quotes and a trailing escape fail closed.
+The workflow is validation-only:
 
-Native candidate coverage includes a recursive spaced configuration path, repeated `-C` with an empty argument, quote forms, backslash-escaped whitespace, repeated spaces/tabs, malformed quoting, and fake module insertion.
+- `contents: read`
+- checkout credentials are not persisted
+- exact base ancestry is required
+- all patches use `git apply --check`
+- carrier files are removed only in the runner
+- the materialized net diff is compared against exact base `5086df...`
+- only four product/test paths are allowed
+- clang-format, GCC build/tests, and Clang build/tests run
+- the runner restores the carrier branch state
+- no commit or push step exists
 
-A separate byte-level model of the proposed writer/parser round-tripped the empty string, all six C whitespace bytes, quotes, backslashes, every non-NUL byte value, and 10,000 random byte strings. This is supporting evidence only; compiled C and target-native execution remain authoritative.
+Exact read-only PR validation:
 
-### Candidate carrier history
+- Run: `30850452134`
+- Status at latest observation: queued
 
-Earlier focused runs failed only in setup before source execution:
+Ordinary carrier-head workflows were also queued. A green validation result is execution evidence only and cannot clear source-review blockers.
 
-1. package installation lacked elevation;
-2. `mbedx509` headers were absent;
-3. Ubuntu 24.04 supplied Mbed TLS 2.28 while current kmod requires 3.6.
+## Candidate v1 mechanism
 
-The carrier now disables only the unrelated Mbed TLS backend, matching an existing kmod Ubuntu configuration. Complete review also corrected the candidate fixture's output from `mod-loop-a` to canonical `mod_loop_a` at carrier head `3f07a0e...`.
+Generated recursive values:
 
-Current bootstrap run `30849580121`, job `91806061935`, and ordinary carrier-head workflows were queued at the latest observation. A queued run is not a product result.
+- escape C whitespace, backslash, single quote, and double quote
+- encode an empty argument as `''`
+- use checked allocation arithmetic
+- stop option processing if allocation or `setenv()` prevents complete propagation
 
-## Candidate review blocker — raw backslash compatibility
+Parser behavior:
 
-The byte model proves generated values round-trip under the new grammar; it does not prove compatibility for existing values parsed by current kmod.
+- accept repeated whitespace
+- accept single-quoted and double-quoted segments
+- accept backslash escapes outside quotes
+- preserve empty quoted arguments
+- reject unmatched quotes and trailing escapes
+
+Native candidate coverage includes:
+
+- recursive `-C` with a spaced path
+- repeated `-C` with an empty second value
+- single-quoted and double-quoted forms
+- backslash-escaped whitespace
+- repeated spaces and tabs
+- unterminated quote and trailing-backslash failures
+- fake module insertion only
+
+A separate byte-level model of the proposed writer/parser round-tripped:
+
+- empty string
+- all six C whitespace bytes
+- single quote, double quote, and backslash
+- every non-NUL byte value
+- 10,000 random byte strings
+
+The model establishes writer/parser agreement for generated values. Compiled C and target-native tests remain authoritative.
+
+## Candidate review blocker — legacy raw backslashes
+
+The candidate gives every unquoted backslash escape semantics. Current kmod preserves a raw backslash literally in existing `MODPROBE_OPTIONS` values.
 
 A compiled direct comparison of the exact current and candidate parser bodies produced:
 
@@ -181,55 +229,66 @@ current:   [-C] [/foo\'bar]
 candidate: [-C] [/foo'bar]
 ```
 
-The candidate gives every unquoted backslash escape semantics. Current kmod preserves it literally. This changes existing/private `MODPROBE_OPTIONS` values and contradicts the earlier boundary that legacy strings remain unchanged.
+Candidate PR #2 comment `5171318344` records this finding.
 
-Before selecting this source, choose explicitly among:
+Before selecting source, choose explicitly among:
 
 1. preserve a backslash literally unless it precedes a byte the writer actually escapes, and define trailing-backslash behavior separately;
 2. move internally generated `-C` arguments to an unambiguous private transport without redefining the legacy parser;
 3. explicitly accept and document the compatibility break, add reversing native controls, and obtain maintainer direction.
 
-Candidate PR #2 comment `5171318344` records this finding. A green bootstrap does not clear it.
+A green validation run does not clear this blocker.
 
-## Candidate workflow review blocker
+## Adjacent recursive-growth boundary
 
-The temporary workflow grants `contents: write` on `pull_request`, although PR runs hard-checkout the owned branch and skip the commit step. Remove the PR trigger or split read-only and write jobs before retaining the workflow. The final materialized source commit must contain no bootstrap workflow or patch carrier.
+Options parsed from `MODPROBE_OPTIONS` are appended back into the same variable while the nested invocation processes them. Across dependency-free recursive levels, the inherited list doubles.
 
-## Separate adjacent question — recursive growth
+For one 15-byte encoded pair (`-C /config\\ dir`):
 
-Options parsed from `MODPROBE_OPTIONS` are appended back into the same variable while processing the nested invocation. Across multiple recursive levels this can duplicate the propagated option list and grow it rapidly. This predates the candidate and is not needed to explain the one-level pathname split, but it directly affects claims of complete recursive transport.
+```text
+level  1:        2 tokens,       15 bytes
+level  2:        4 tokens,       31 bytes
+level  3:        8 tokens,       63 bytes
+level  8:      256 tokens,    2,047 bytes
+level 10:    1,024 tokens,    8,191 bytes
+level 16:   65,536 tokens,  524,287 bytes
+level 18:  262,144 tokens, 2,097,151 bytes
+```
 
-A successor probe should measure exact argv and environment growth over at least three dependency-free recursive levels, repeated `-C` ordering, and the point at which behavior changes. Keep it separate only if it does not invalidate the selected repair's stated scope.
+Candidate PR #2 comment `5171358526` records the exact recurrence.
+
+This predates candidate v1 and does not explain the demonstrated one-level pathname split. It does limit broad claims about complete recursive transport. A separate native successor should measure at least three dependency-free levels, repeated `-C` ordering, exact environment growth, and termination behavior.
 
 ## Stop rule
 
 Do not call a repair ready until one exact final source head satisfies all of the following:
 
-1. exact base and source identity retained;
-2. losing baseline and final independent native characterization retained;
-3. all temporary patch carriers apply without fuzz and disappear from the final commit;
-4. final diff contains only intended product/test files;
-5. clang-format passes;
-6. sanitizer-enabled GCC build and native suite pass;
-7. sanitizer-enabled Clang build and native suite pass;
-8. standard final-head CI is inspected;
-9. cleanup and immediate rerun evidence retained;
-10. malformed, empty, repeated-option, pathname-byte, and legacy-backslash boundaries reviewed;
-11. recursive option growth explicitly bounded;
-12. formal review status recorded honestly;
-13. overlap refreshed immediately before any authorized publication decision.
+1. exact public base and source identity retained;
+2. losing package and exact-source evidence retained;
+3. final independent native characterization retained under GCC and Clang;
+4. temporary carrier patches and workflow absent from the final source commit;
+5. final net diff limited to intended product/test files;
+6. clang-format passes;
+7. sanitizer-enabled GCC build and native suite pass;
+8. sanitizer-enabled Clang build and native suite pass;
+9. standard final-head CI is inspected;
+10. cleanup and immediate rerun evidence retained;
+11. malformed, empty, repeated-option, pathname-byte, and legacy-backslash boundaries reviewed;
+12. recursive-growth scope explicitly bounded;
+13. formal review state recorded honestly;
+14. overlap and policy refreshed immediately before any authorized publication decision.
 
 ## First incomplete step
 
-1. read the successor Linux Fieldwork runs created by this handoff commit;
-2. require repository CI success and the exact native pass/fail split under both compilers;
-3. read candidate bootstrap `30849580121` if it starts, but classify any green result as execution evidence only;
-4. resolve the raw-backslash compatibility policy before materializing or selecting candidate source;
-5. repair the temporary workflow's PR write-permission boundary;
-6. keep final source, candidate experiment, native characterization, and recursive-growth successor as distinct identities;
-7. update PRs #412, #1, and #2 with terminal receipts and exact heads.
+1. Read the newest Linux Fieldwork successor runs after this handoff commit.
+2. Require repository CI success and the exact native pass/fail split under both compilers.
+3. Read candidate validation `30850452134` if terminal; classify it as execution evidence only.
+4. Resolve the legacy raw-backslash policy before modifying or materializing candidate source.
+5. Keep package reproduction, exact-source reproduction, native characterization, candidate experiment, and recursive-growth successor as separate identities.
+6. Update PRs #412, #1, and #2 with terminal receipts and final exact heads.
+7. Do not contact upstream without explicit authorization.
 
-If a job fails before its discriminator, repair only that carrier owner and rerun unchanged product logic.
+If any job fails before its discriminator, repair only that carrier owner and rerun unchanged product logic.
 
 ## Cleanup
 
