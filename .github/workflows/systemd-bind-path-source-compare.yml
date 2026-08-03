@@ -81,7 +81,7 @@ jobs:
             ninja --version
             cc --version | head -n1
           } >"artifacts/$VARIANT/source-identity.txt"
-          meson setup systemd/build \
+          meson setup systemd/build systemd \
             --buildtype=debugoptimized \
             --auto-features=disabled \
             -Dmode=developer \
