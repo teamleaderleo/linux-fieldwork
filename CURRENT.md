@@ -53,6 +53,13 @@ This is a dated routing snapshot. It does not erase branches or evidence and gra
 - matrix compares v0.2.0, v0.2.1, v0.3.0, and repaired current go-archive main for directory entries whose parent is implied;
 - use the exact terminal matrix result before making any BuildKit integration claim.
 
+### util-linux cpuset parse ownership
+
+- historical packet [#404](https://github.com/teamleaderleo/linux-fieldwork/pull/404);
+- installed util-linux 2.41-5 reproducibly aborts in text and JSON modes on malformed CPU-online input because the output cpuset can be freed twice;
+- canonical source repair applies cleanly, the exact actual-binary baseline/candidate matrix passed, and controlled fork head `95ebc67e521195741040ffebb58756b259fb69b2` passed the focused native regression;
+- Debian stable-update composition is cancelled; retain the upstream util-linux source result independently and require fresh current-source review before any future proposal.
+
 ### DuckDB secondary ART persisted wrong result
 
 - carrier [#334](https://github.com/teamleaderleo/linux-fieldwork/pull/334);
@@ -101,11 +108,11 @@ A project is not retired merely because Debian was used as a control environment
 
 The following families should leave active owner routing while remaining preserved:
 
-- mmdebstrap packet and tarfilter units, including open PRs #399, #400, #402, #405, #408, #410, and #415;
+- mmdebstrap packet and tarfilter units, including PRs #399, #400, #402, #405, #408, #410, and #415, closed without merge on 2026-08-03;
 - chrootless package and directory-mtime execution/evidence stacks, including #361, #366, #381, #383, #388, #389, #390, #391, #394, #395, and #396;
 - older LF-02 chrootless host-integration stacks, including #21, #22, #99, and #104;
 - tarfilter dependency and harness repair stacks, including #248, #289, #301, and #310;
-- the old broad last-mile push [#194](https://github.com/teamleaderleo/linux-fieldwork/issues/194).
+- the old broad last-mile push [#194](https://github.com/teamleaderleo/linux-fieldwork/issues/194), closed `not planned`.
 
 This list is routing guidance, not evidence deletion. A branch may remain open temporarily while its closing note or successor map is synchronized.
 
@@ -116,9 +123,10 @@ This list is routing guidance, not evidence deletion. A branch may remain open t
 3. Move the kmod whitespace reproduction into exact upstream-native tests.
 4. Build the real ext4/udev lifecycle discriminator after the passing lock-domain control.
 5. Interpret the jq/systemd and go-archive matrices at their exact heads.
-6. Obtain independent review for the DuckDB ART wrong-result record and the carrier-state parser repair.
-7. Close or park Debian/mmdebstrap-only carriers without running new package work.
-8. Keep all upstream contact separately unauthorized unless the owner grants exact authority for one interaction.
+6. Preserve the util-linux source result outside its retired Debian package wrapper.
+7. Obtain independent review for the DuckDB ART wrong-result record and the carrier-state parser repair.
+8. Close or park remaining Debian/mmdebstrap-only carriers without running new package work.
+9. Keep all upstream contact separately unauthorized unless the owner grants exact authority for one interaction.
 
 ## Reopening rule
 
