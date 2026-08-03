@@ -6,21 +6,21 @@
 - State: `EXECUTING`
 - Linux Fieldwork branch: `investigation/kmod-modprobe-options-config-path`
 - Linux Fieldwork base: `6cc74d846c50b9bbb88247e8a128b67e8c174c1e`
-- Exact workflow head before this handoff update: `f7fc35ba32718a289546c8621e38abfbd62daa8a`
+- Exact technical head before this handoff update: `f4d082e77db4f840444d6cafde3cf3846f559f1d`
 - Internal Linux Fieldwork draft PR: `teamleaderleo/linux-fieldwork#412`
 - Owned kmod fork: `teamleaderleo/kmod`
 - Native characterization PR: `teamleaderleo/kmod#1`
-- Characterization branch/head: `test/modprobe-options-config-path@d59bf6473c8619fb695a51e2c2e69cdec20b31e7`
+- Characterization branch/head: `test/modprobe-options-config-path@2e52d25e54a94fb531fd442079c7cf686f3e910b`
 - Reserved clean repair branch: `fix/modprobe-options-config-path@5086df53090b2fe9fa1c31351c05a78a12a4ba71`
+- Formal review submissions on PRs #412 and #1: none
 - External-contact state: unauthorized; none made
 
 ## Current upstream and fork identity
 
 - canonical repository: `https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git`;
 - source-reading mirror: `kmod-project/kmod`;
-- mirror `master` rechecked 2026-08-03: `5086df53090b2fe9fa1c31351c05a78a12a4ba71`;
-- owned-fork `master`: the same commit;
-- owned-fork reserved repair branch: the same commit, with no source changes;
+- exact public/fork base: `5086df53090b2fe9fa1c31351c05a78a12a4ba71`;
+- owned-fork reserved repair branch is still identical to that base;
 - relevant source: `tools/modprobe.c`;
 - relevant functions: `env_modprobe_options_append()` and `prepend_options_from_env()`;
 - intent/documentation commit: `42d60a3267162a36ec6b6b39a7b91e5078b90979`.
@@ -53,67 +53,72 @@ immediate rerun SHA-256: c6ffd6ac62937b2ceb78786fe3b7610b5125f91db356f1f747c69fe
 unprivileged result SHA-256: 759550141d24d03543d0686b235e82b0aab8015181b50bddb169e9d297acd9cf
 ```
 
-## Exact-master carrier repair
+## Hosted execution through run 30802150246
 
-Run `30759642216` verified exact source identity in both compiler jobs, then failed before compiling kmod because Ubuntu 24.04 provides Mbed TLS 2.28.8 while this kmod revision requires `mbedx509 >= 3.6.0` when that optional backend is enabled.
+Repository CI `30802150076` passed at head `73338e82046f7eefb0b9a13f7cfe8e88ba2c82f7`.
 
-That is carrier configuration, not product evidence. The workflow now:
+Dedicated run `30802150246` produced four distinct outcomes:
 
-- omits the unavailable Mbed TLS development package;
-- passes `-Dmbedtls=disabled`;
-- leaves OpenSSL, zstd, xz, and zlib enabled;
-- builds exact upstream source with GCC and Clang under ASan/UBSan;
-- runs the unchanged package discriminator twice;
-- requires byte-identical normalized results, cleanup, and an unchanged source tree.
+1. **Exact master / GCC: success.** Exact public source built under ASan/UBSan, the unchanged package-style discriminator ran twice, normalized outputs matched byte-for-byte, the no-space case retained the selected configuration, and the spaced case lost it while both parent and child returned success.
+2. **Exact master / Clang: harness failure after a successful build.** The executable could not start because `libclang_rt.asan-x86_64.so` was not on the runtime search path.
+3. **Native characterization / GCC: harness failure.** Both paired tests attempted real module insertion and failed with `Operation not permitted` because the new test omitted `TC_INIT_MODULE_RETCODES`.
+4. **Native characterization / Clang: the same native-test ownership defect, with Clang sanitizer handling also still requiring an explicit runtime contract.**
 
-Runs `30801421368` and `30801555550` were superseded by later branch updates under branch-scoped concurrency. A cancelled run is not evidence.
+No failed job above refutes the package result or the successful exact-master GCC reproduction.
 
-## Native characterization carrier
+## Repairs now committed
 
-The owned fork previously contained no PR and no source change. The new draft PR `teamleaderleo/kmod#1` adds a five-file, product-source-free native characterization:
+### Owned native characterization
 
-- `testsuite/test-modprobe-options.c`;
-- `testsuite/meson.build` registration;
-- a no-space control configuration at `/etc/modprobe-config`;
-- an otherwise identical spaced configuration at `/etc/modprobe config`;
-- shared expected output `mod-loop-b`.
+Head `2e52d25e54a94fb531fd442079c7cf686f3e910b` adds only:
 
-Both configurations define:
+```c
+[TC_INIT_MODULE_RETCODES] = "",
+```
+
+to both paired tests. This matches kmod's existing `modprobe_install_cmd_loop` fixture and routes insertion through the suite's fake syscall layer. The source fence remains five test/fixture files and no product source.
+
+### Linux Fieldwork execution carrier
+
+Head `f4d082e77db4f840444d6cafde3cf3846f559f1d`:
+
+- pins native characterization head `2e52d25...`;
+- installs `libclang-rt-18-dev` for both matrices;
+- uses `-Db_lundef=false` only for Clang sanitizer builds;
+- exports Clang's resource-directory runtime path for direct exact-master execution;
+- passes exact compiler identity into the native sanitizer wrapper;
+- retains `-Dmbedtls=disabled` while OpenSSL, zstd, xz, and zlib remain enabled;
+- adds `tests/test_kmod_modprobe_config_path_workflow.py` to lock exact source pins, optional-feature selection, Clang runtime handling, and the expected native pass/fail split.
+
+Fresh runs:
+
+- dedicated kmod workflow `30847691878`;
+- Linux Fieldwork CI `30847692052`.
+
+They were queued/in progress at the latest observation and are not yet product evidence.
+
+## Native characterization contract
+
+The paired fake-root fixture defines:
 
 ```text
 alias lf_recursive_config_alias mod-loop-b
 install mod-loop-a $MODPROBE --show-alias lf_recursive_config_alias
 ```
 
-The test requires:
+Expected unfixed result:
 
-```text
-modprobe -C /etc/modprobe-config mod-loop-a
-```
-
-to pass, and the otherwise identical quoted spaced-path invocation to produce the same result. On the unfixed base, the expected discriminator is:
-
-- `modprobe_options_config_path_control`: pass;
-- `modprobe_options_config_path_space`: fail.
-
-Complete diff review found and repaired one test-only issue before execution: the standalone test now includes `<stdlib.h>` for the suite's `EXIT_*` macro path. Product source remains unchanged.
-
-## Final hosted gate at the handoff boundary
-
-The Linux Fieldwork workflow now contains two independent GCC/Clang matrices:
-
-1. exact upstream source, package-style discriminator, ASan/UBSan;
-2. exact characterization head `d59bf647...`, native fake-root test, ASan/UBSan.
-
-The native job verifies the five-file fence and no `tools/` changes, then requires exactly one passing control and exactly one losing spaced-path test. It rejects unrelated native failures and uploads exact source, binary, log, status, and digest receipts.
-
-This handoff update itself triggers the final exact-head workflow generation. No queued, pending, cancelled, or uninspected run is treated as a result.
+- `modprobe_options_config_path_control`: `PASSED`;
+- `modprobe_options_config_path_space`: `FAILED`;
+- no other native test failure;
+- no real module insertion;
+- no `tools/` or library diff.
 
 ## Overlap review
 
 No matching open upstream issue or pull request was found for recursive `-C`, `MODPROBE_OPTIONS` pathname identity, or whitespace-bearing configuration paths. Upstream PR #139 discusses secure environment access generally, but it is not an implementation or duplicate of this defect.
 
-Searches can miss differently worded or unindexed work. Repeat overlap review immediately before any public action.
+Repeat overlap review immediately before any authorized public action.
 
 ## Candidate boundary
 
@@ -125,15 +130,17 @@ Compare at least:
 2. a separate internal configuration-path transport that leaves legacy parsing unchanged;
 3. a bounded parser rewrite with explicit compatibility tests.
 
-A selected candidate must preserve no-space behavior, arbitrary non-NUL pathname bytes representable in the environment, repeated `-C` order, `-s`/`-q`/`-v` propagation, two recursive levels, malformed-data failure, and no module insertion in the focused tests.
+A selected candidate must preserve no-space behavior, pathname identity, repeated `-C` order, `-s`/`-q`/`-v` propagation, two recursive levels, malformed-data failure, and no real module insertion in focused tests.
 
 ## First incomplete step
 
-1. fetch workflow runs associated with the final handoff commit;
-2. inspect every exact-master and native-characterization job and artifact;
-3. if both compiler matrices show the expected product split without sanitizer findings, retain exact receipts and begin the transport-candidate matrix on separate experimental branches;
-4. keep `fix/modprobe-options-config-path` clean until one complete design wins;
-5. if a job fails before the discriminator, repair only its carrier owner and rerun unchanged product logic.
+1. inspect all jobs and artifacts from `30847691878` and repository CI `30847692052`;
+2. require both exact-master compiler jobs to reproduce the package split without sanitizer findings;
+3. require both native jobs to show exactly one passing no-space control and one losing spaced-path discriminator;
+4. retain exact binary, log, source, artifact, and digest identities;
+5. only then begin separate transport-candidate experiments while keeping `fix/modprobe-options-config-path` clean.
+
+If a job still fails before its discriminator, repair only that carrier owner and rerun unchanged product logic.
 
 ## Cleanup
 
