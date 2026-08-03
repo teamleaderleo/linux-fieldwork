@@ -7,10 +7,12 @@ on:
     paths:
       - .github/workflows/systemd-bind-path-source-compare.yml
       - investigations/systemd-bind-path-whitespace-overlap/**
+      - tests/test_systemd_bind_path_source_compare_workflow.py
   pull_request:
     paths:
       - .github/workflows/systemd-bind-path-source-compare.yml
       - investigations/systemd-bind-path-whitespace-overlap/**
+      - tests/test_systemd_bind_path_source_compare_workflow.py
   workflow_dispatch:
 
 permissions:
@@ -42,6 +44,12 @@ jobs:
           persist-credentials: false
           path: fieldwork
 
+      - name: Validate carrier workflow contract
+        working-directory: fieldwork
+        run: |
+          python3 -m unittest -v \
+            tests.test_systemd_bind_path_source_compare_workflow
+
       - name: Check out exact systemd source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
@@ -70,6 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C systemd rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -f systemd/meson.build
           mkdir -p "artifacts/$VARIANT"
           {
             echo "variant=$VARIANT"
