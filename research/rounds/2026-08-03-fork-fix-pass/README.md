@@ -109,7 +109,7 @@ Final product proof still requires a bootable image/kernel, virtiofsd, ordinary-
 Upstream PR head reviewed: `cffa2735739f023e1982d7a4e0d0f33a93ddcf6c`  
 Controlled fork: `teamleaderleo/libarchive`  
 Review-test head: `0ff721a7d96274f08a43ff5d080448c8b6a6152a`  
-Fork draft PR: #6  
+Fork draft PR: #4  
 Workflow run to interpret: `30795921904`
 
 ### Review concern
@@ -135,7 +135,7 @@ At the last review query, there were no human review submissions or new discussi
 - BuildKit fork PR #1;
 - util-linux fork PRs #2 and #3;
 - systemd fork PR #5;
-- libarchive fork PR #6;
+- libarchive fork PR #4;
 - upstream libarchive PR #3334.
 
 Refresh this list before interpreting CI or making any public-contact decision.
