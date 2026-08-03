@@ -81,14 +81,14 @@ Two `setpath` rows from the comparison are excluded because the supplement accid
 repository: teamleaderleo/jq
 base branch: fieldwork/3128-destructure-index-path
 branch: experiment/3128-single-binding-scope
-head: 37cd514ad0b40ba857168966af80854453e42da5
+head: 32a2d3fcbb374e74ea7545462848005ecb7be90a
 internal draft PR: teamleaderleo/jq#4
-focused run: 30852982042 — queued at last check
+focused run: 30853405404 — queued at last check
 ordinary workflows:
-  CI: 30852981456
-  Oniguruma: 30852981509
-  Valgrind: 30852981523
-  Decnum: 30852981574
+  CI: 30853405244
+  Oniguruma: 30853405626
+  Valgrind: 30853405101
+  Decnum: 30853405331
 ```
 
 The successor keeps the same narrow runtime opcode but scopes it in the compiler:
@@ -100,17 +100,21 @@ The successor keeps the same narrow runtime opcode but scopes it in the compiler
 5. alternative branches are scoped independently;
 6. dynamic key-expression indexes remain ordinary.
 
-The workflow first builds exact canonical jq and records status/stdout/stderr for 24 multi-binding programs. After applying the candidate, it requires:
+The workflow first builds exact canonical jq and records status/stdout/stderr for 26 canonical-preservation programs. The expanded matrix includes sibling object/array bindings, repeated binding sites, dynamic-key expressions with local bindings, alternatives, backtracking, `reduce`, `foreach`, and valid `setpath` consumers.
 
-- the original single-binding contract to pass;
-- every multi-binding result to remain byte-identical to canonical jq;
+After applying the candidate, it requires:
+
+- the original single-binding contract plus a dynamic-key single-binding control and nested alternative to pass;
+- every canonical-preservation result to remain byte-identical to canonical jq;
 - special opcode present in single-binding disassembly and absent from sibling disassembly;
 - Valgrind for both scopes;
 - complete `make check`.
 
+The baseline build records canonical behavior before any patch. Because runner Autotools can rewrite tracked generated files, the workflow then resets tracked files to exact HEAD, re-verifies all pinned product blobs, and only then applies and fences the three-file candidate.
+
 ## Decision boundary
 
-A clean source candidate may be promoted only if run `30852982042` passes every gate and complete review confirms that binding-count scoping does not misclassify dynamic-key or repeated-binding patterns. Otherwise retain the exact first divergence and revise the compiler boundary rather than weakening canonical-preservation tests.
+A clean source candidate may be promoted only if run `30853405404` passes every gate and complete review confirms that binding-count recursion does not misclassify additional dynamic-key or repeated-binding forms. Otherwise retain the exact first divergence and revise the compiler boundary rather than weakening canonical-preservation tests.
 
 ## Publication and cleanup boundary
 
