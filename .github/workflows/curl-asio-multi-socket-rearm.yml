@@ -34,7 +34,7 @@ jobs:
 
       - name: Validate workflow contract
         run: |
-          python3 -m unittest -v tests.test_curl_asio_rearm_workflow
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v tests.test_curl_asio_rearm_workflow
 
       - name: Prepare disposable runtime and evidence
         shell: bash
