@@ -1,0 +1,81 @@
+name: Verify coreutils install 12926
+
+on:
+  push:
+    branches:
+      - investigate/coreutils-install-just-created-12926
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out controlled coreutils candidate
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: teamleaderleo/coreutils
+          ref: fieldwork/install-refuse-just-created-overwrite-12926
+          path: coreutils
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: clippy,rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: coreutils
+
+      - name: Record exact source identity
+        working-directory: coreutils
+        run: |
+          git rev-parse HEAD
+          git rev-parse HEAD:src/uu/install/src/install.rs
+          git rev-parse HEAD:tests/by-util/test_install.rs
+          git rev-parse HEAD:.fieldwork/refine-install-12926.patch
+
+      - name: Check and apply refinement
+        working-directory: coreutils
+        run: |
+          git apply --check .fieldwork/refine-install-12926.patch
+          git apply .fieldwork/refine-install-12926.patch
+          git diff --check
+
+      - name: Check formatting
+        working-directory: coreutils
+        run: cargo fmt --all -- --check
+
+      - name: Run ownership boundary tests
+        working-directory: coreutils
+        run: |
+          set -e
+          for test_name in \
+            test_install_refuses_to_overwrite_just_created_destination \
+            test_install_refusal_preserves_original_simple_backup \
+            test_install_numbered_backups_allow_repeated_destination \
+            test_install_compare_noop_does_not_reserve_destination \
+            test_install_missing_source_does_not_reserve_destination \
+            test_install_copy_error_does_not_reserve_destination \
+            test_install_post_copy_chown_failure_reserves_destination \
+            test_install_strip_failure_releases_destination
+          do
+            cargo test --features install --no-default-features "$test_name"
+          done
+
+      - name: Run install test module
+        working-directory: coreutils
+        run: cargo test --features install --no-default-features --test tests test_install
+
+      - name: Run focused clippy
+        working-directory: coreutils
+        run: cargo clippy --features install --no-default-features --all-targets -- -D warnings
+
+      - name: Record patched diff
+        working-directory: coreutils
+        run: |
+          git diff --stat
+          git diff -- src/uu/install/src/install.rs tests/by-util/test_install.rs
