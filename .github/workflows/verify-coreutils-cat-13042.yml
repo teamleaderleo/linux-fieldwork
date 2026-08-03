@@ -1,0 +1,77 @@
+name: Verify coreutils cat 13042
+
+on:
+  push:
+    branches:
+      - investigate/coreutils-cat-fd-classification-13042
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out controlled coreutils candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: teamleaderleo/coreutils
+          ref: fieldwork/cat-fd-classification-toctou-13042-v2
+          path: coreutils
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+          components: clippy,rustfmt
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          workspaces: coreutils
+
+      - name: Record exact staged identity
+        working-directory: coreutils
+        run: |
+          git rev-parse HEAD
+          git rev-parse HEAD:.fieldwork/apply-cat-fd-classification.py
+          git rev-parse HEAD:.github/workflows/fieldwork-cat-fd-classification.yml
+
+      - name: Apply and format candidate
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          python3 .fieldwork/apply-cat-fd-classification.py
+          cargo fmt --all
+          test "$(git diff --name-only | sort)" = $'src/uu/cat/src/cat.rs\ntests/by-util/test_cat.rs'
+          cargo fmt --all -- --check
+          git diff --check
+
+      - name: Test descriptor-bound classification
+        working-directory: coreutils
+        run: cargo test -p uu_cat opened_input_classification_survives_path_replacement --lib
+
+      - name: Test preserved diagnostics
+        working-directory: coreutils
+        run: |
+          cargo test --features cat --no-default-features test_socket_reports_open_error
+          cargo test --features cat --no-default-features test_symlink_loop_reports_open_error
+          cargo test --features cat --no-default-features test_directory
+
+      - name: Run cat integration module
+        working-directory: coreutils
+        run: cargo test --features cat --no-default-features --test tests test_cat
+
+      - name: Run focused clippy
+        working-directory: coreutils
+        run: cargo clippy --features cat --no-default-features --all-targets -- -D warnings
+
+      - name: Record candidate diff
+        if: always()
+        working-directory: coreutils
+        run: |
+          git diff --stat
+          git diff -- src/uu/cat/src/cat.rs tests/by-util/test_cat.rs
