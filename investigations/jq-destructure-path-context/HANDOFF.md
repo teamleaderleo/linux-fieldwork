@@ -1,101 +1,140 @@
 # Handoff — jq destructuring path context
 
-Handoff date: 2026-08-02  
-State: `ACTIVE — CONTROLLED FOUR-VARIANT MATRIX QUEUED`  
+Handoff date: 2026-08-03  
+State: `ACTIVE — INDEX_DESTRUCTURE GREEN; MULTI-BINDING COMPARISON QUEUED`  
 External contact authorized: `false`  
 External contact made: `none`
 
-## Exact source
+## Exact canonical source
 
 ```text
 canonical repository: jqlang/jq
 canonical branch: master
 canonical commit: 603db3f57741d217ba651e61086b550a72148b83
 src/compile.c blob: 80b723c119b45f99c5e847c2a463568eb730f498
+src/execute.c blob: ced1298764478d565fe9615f83b67171b2f70d53
+src/opcode_list.h blob: 85a8a5805f178819158c7a7b285a9c6abf18da0a
 tests/jq.test blob: 929c7217999f392d1ac536a39bc2c81456e2e6db
-canonical issue: #3128
-open equivalent PR: none found
-closed prior attempt: #3384
+canonical issue: jqlang/jq#3128
+open equivalent canonical PR: none found
+closed prior attempt: jqlang/jq#3384
 ```
 
-## Linux Fieldwork carrier
+## Completed Linux Fieldwork matrix
 
 ```text
 repository: teamleaderleo/linux-fieldwork
 branch: investigation/cross-ecosystem-round-2026-08-02
 workflow: .github/workflows/jq-destructure-path-context.yml
-registered run: 30759608059
-state at handoff update: queued
-workspace: investigations/jq-destructure-path-context/
+run: 30759715899
 ```
 
-Creation and carrier-repair commits:
-
-```text
-ffa9307948585b7ea3786dbc24ea53db794eca7a — exact variant patcher
-2876c92faf0d03d8dc521ecd10b1e6cf27842d26 — semantic/bytecode probe
-de1787dd7c550185bf52e1a95e263c114a18695b — initial workflow
-bfe281587523f0a2e446d12cec2c519c3b613069 — investigation record
-688eacbf2e0cfb2b968e7878ef13734ee83175f8 — initial handoff
-32570b31838f9f9d8a494e435a43b5f59de7cde6 — fix invalid top-level matrix concurrency context
-```
-
-The initial workflow did not register because top-level concurrency referenced `matrix.variant`, which is unavailable outside the job matrix. Commit `32570b3...` changed the workflow-level key to the branch ref. GitHub then registered the named matrix run. No jq result exists from the invalid carrier.
-
-## Matrix
+All four rows checked out exact source, built, ran the semantic/disassembly probe, ran Valgrind, uploaded evidence, and ran complete `make check`.
 
 ```text
 baseline
+  job: 91527946570
+  artifact: 8839004841
+  digest: sha256:0aeaa6ef5fc2d589b8443f2ff3806285bcc4bc8ac692768d7dff4f180a49eba0
+  result: issue reproduced; full suite passes
+
 closed-pr-3384
+  job: 91527946593
+  artifact: 8838998184
+  digest: sha256:fdd831eb6eae95b9a10a250c382278a02c03f352b834e0384bac06c861a583f0
+  result: simple output repaired; nested/array bindings become null; alternation and suite fail
+
 issue-end-pop
+  job: 91527946594
+  artifact: 8839387816
+  digest: sha256:e4c9b6007ad4f3685e5ae692ddf9008976af16f15a9c8b90d52aa0a2d2653e7e
+  result: bindings survive; all matcher paths become []; suite fails
+
 issue-pop-end
+  job: 91527946545
+  artifact: 8839419621
+  digest: sha256:8f1f3258f701791d48f4c31127c04872716f9aadbd0b4f862dcfca8cdbc9c768
+  result: stack assertions and status 134 aborts; suite fails
 ```
 
-Every row verifies exact source identities, applies only `src/compile.c` logic, builds jq with builtin Oniguruma, runs seventeen semantic cases, retains disassembly, executes Valgrind discriminators, and runs complete `make check`.
+Do not retry additional `SUBEXP_BEGIN`/`SUBEXP_END`/`POP` permutations. The matrix proves that `subexp_nest` suppresses both root validation and path recording, while the desired behavior needs to suppress only the mismatched-root check.
 
-## Required classification order
+## Leading controlled candidate
 
-1. Confirm all four jobs checked out `603db3f...` and matched both pinned blobs.
-2. Separate setup/build failures from compiler-semantic failures.
-3. Require baseline to reproduce the original constant-object error while ordinary path/binding controls pass.
-4. Compare exact issue outputs for the three candidate layouts.
-5. Reject a layout that merely exits zero but returns the wrong path.
-6. Compare nested object/array path components.
-7. Compare first/fallback alternation matcher outputs.
-8. Check backtracking outputs for missing, duplicated, or corrupted values.
-9. Require Valgrind gates to pass.
-10. Require complete `make check` to pass before selecting a candidate.
-11. Review bytecode to explain the winning/losing difference rather than choosing by output alone.
+```text
+controlled repository: teamleaderleo/jq
+branch: fieldwork/3128-destructure-index-path
+head: d28a5898a470fa3ddd56fb4aa58dca23454d6e79
+internal draft PR: #1
+focused workflow: Fieldwork jq destructure path candidate
+run: 30799807411
+job: 91641544586
+conclusion: success
+artifact: 8853313029
+digest: sha256:6f5a898b7350cc136f103b90eceac963ae0f5989578f68c464f64da9cc328d16
+```
 
-## First incomplete step
+Ordinary exact-head workflows:
 
-Read every matrix job in run `30759608059`. Retain artifact IDs and digests. Do not infer a candidate from job color alone.
+```text
+CI:         30799807372 — success
+Decnum:     30799807121 — success
+Oniguruma:  30799807421 — success
+Valgrind:   30799807190 — success
+```
 
-## Selection rule
+The branch commits carrier files only. The disposable product patch adds `INDEX_DESTRUCTURE` and emits it only for object and array destructuring matchers. It bypasses `path_intact()` for that index operation but keeps ordinary `path_append()` and `value_at_path` advancement. Exact issue, nested/array, alternation, backtracking, bound traversal, invalid-result, ordinary binding/path, `setpath`, Valgrind, and complete-suite gates passed.
 
-A source layout is selectable only if it:
+## Superseded self-review branch
 
-- fixes both exact issue forms;
-- preserves matcher-derived path components;
-- handles non-alternating and alternating matchers;
-- preserves ordinary binding/path controls;
-- survives backtracking;
-- has no Valgrind errors or gated leaks;
-- passes jq's complete suite;
-- changes only the three intended compiler assembly points.
+```text
+teamleaderleo/jq#2
+branch: experiment/3128-destructure-path-rebase
+head: 0ae49de7b14142b6ca63830a16a638792c428ddb
+state: closed without merge and without product result
+```
 
-If no layout satisfies the full matrix, retain the result and map the runtime `SUBEXP_*`/path stack semantics before writing a fifth candidate.
+It proposed a broader matcher-level `value_at_path` save/restore scope. It was closed after review showed #1 had already executed a narrower, green design. Do not reopen it unless the dedicated index operation is disproved and the exact reason requires broader state ownership.
 
-## Evidence boundary
+## Current first incomplete step
 
-No jq product result has been executed yet from this workspace. Static source and prior-PR review justify the matrix, not a fix claim.
+```text
+controlled repository: teamleaderleo/jq
+branch: research/3128-destructure-path-semantics
+head: ad2be4dabe0e27f31fb1ef9b45a5093cb77a0e31
+internal draft PR: #3
+comparison run: 30849176240
+state at this handoff: queued
+pinned comparator: itchyny/gojq@2e210b5c28122b106d4cd1fade3ac9dad0482026
+```
 
-The local container could not resolve `github.com`; all source execution belongs to the hosted workflow.
+When run `30849176240` completes:
+
+1. verify the exact jq candidate contract reran successfully;
+2. retain artifact ID/digest and exact jq/gojq binary identities;
+3. classify sibling object and array patterns separately from nested patterns;
+4. inspect body uses of first binding, second binding, comma/backtracking, and traversal through the second binding;
+5. inspect `reduce` and `foreach` results;
+6. inspect both `setpath` observations;
+7. treat gojq as an independent comparator, not an automatic oracle;
+8. determine whether `INDEX_DESTRUCTURE` constructs artificial nested paths from sibling indexes;
+9. promote no product source until that rule is explicit.
+
+The branch also triggers the existing candidate, CI, Decnum, Oniguruma, and Valgrind workflows. Their current queued run IDs are:
+
+```text
+candidate:  30849175954
+CI:         30849176092
+comparison: 30849176240
+Decnum:     30849176195
+Valgrind:   30849176294
+Oniguruma:  30849176393
+```
 
 ## Publication boundary
 
-No canonical jq issue comment, pull request, review, email, or maintainer contact is authorized or made. Keep all communication internal until explicit authorization.
+No canonical jq issue comment, pull request, review, reaction, email, or maintainer contact is authorized or made.
 
 ## Cleanup state
 
-No local checkout survived the failed clone attempt. Hosted jobs use disposable checkouts and upload bounded artifacts. No service, mount, device, package state, or credential is retained locally.
+All builds and source patches are confined to disposable hosted runners. No local checkout or external state is retained.
