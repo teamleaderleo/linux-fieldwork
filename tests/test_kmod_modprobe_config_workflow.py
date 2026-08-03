@@ -54,7 +54,13 @@ class KmodModprobeConfigWorkflowTests(unittest.TestCase):
             2,
         )
         self.assertIn('cmp "$out/first.json" "$out/rerun.json"', self.workflow)
-        self.assertIn('spaced["nested"]["marker_count"] == 0', self.workflow)
+        self.assertIn('("spaced nested marker count", spaced["nested"]["marker_count"], 0)', self.workflow)
+
+    def test_result_verifier_uses_explicit_failures(self) -> None:
+        self.assertNotIn("          assert ", self.workflow)
+        self.assertIn("for label, observed, expected in checks:", self.workflow)
+        self.assertIn("raise SystemExit(", self.workflow)
+        self.assertIn("expected {expected!r}, observed {observed!r}", self.workflow)
 
 
 if __name__ == "__main__":
