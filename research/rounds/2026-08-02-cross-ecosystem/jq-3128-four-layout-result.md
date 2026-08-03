@@ -1,17 +1,24 @@
-# jq #3128 four-layout result
+# jq #3128 four-layout and dedicated-index result
 
 Date: 2026-08-03  
-State: `COMPLETE NEGATIVE MATRIX — DEDICATED INDEX EXPERIMENT ACTIVE`  
+State: `FOUR-LAYOUT MATRIX COMPLETE; DEDICATED INDEX GREEN; MULTI-BINDING REVIEW ACTIVE`  
 External contact authorized: `false`  
 External contact made: `none`
 
-## Exact run
+## Exact canonical source
+
+```text
+jqlang/jq@603db3f57741d217ba651e61086b550a72148b83
+src/compile.c:      80b723c119b45f99c5e847c2a463568eb730f498
+src/execute.c:      ced1298764478d565fe9615f83b67171b2f70d53
+src/opcode_list.h:  85a8a5805f178819158c7a7b285a9c6abf18da0a
+tests/jq.test:      929c7217999f392d1ac536a39bc2c81456e2e6db
+```
+
+## Four-layout run
 
 ```text
 Linux Fieldwork run: 30759715899
-source: jqlang/jq@603db3f57741d217ba651e61086b550a72148b83
-src/compile.c blob: 80b723c119b45f99c5e847c2a463568eb730f498
-tests/jq.test blob: 929c7217999f392d1ac536a39bc2c81456e2e6db
 ```
 
 Artifacts:
@@ -35,74 +42,125 @@ issue-pop-end
   digest: sha256:8f1f3258f701791d48f4c31127c04872716f9aadbd0b4f862dcfca8cdbc9c768
 ```
 
-## Classification
-
 ### Canonical baseline
 
-The baseline passes complete `make check` and reproduces the issue. A destructuring matcher succeeds only when the value being destructured remains identical to `value_at_path`. Constant object and array expressions therefore fail the path-integrity check, while the dot/null control succeeds.
+The baseline passes complete `make check` and reproduces the issue. Constant values on the left of a destructuring `as` do not match the current `value_at_path`, so the first matcher index raises the path-integrity error. The dot/null control happens to remain path-compatible.
 
 ### Closed PR #3384 layout
 
-This layout wraps the destructured expression in an additional subexpression and appends `POP` after matcher execution.
-
-It repairs the simple constant object, nested object, and array shapes, but it is not viable:
+The closed PR's layout repairs simple object, nested, and array outputs, but it is not viable:
 
 - alternation still raises invalid-path errors;
-- ordinary nested and array destructuring bindings become `null` instead of `1`;
+- ordinary nested and array bindings become `null` instead of `1`;
 - complete `make check` fails.
 
-The extra `POP` discards data needed by ordinary matcher/body execution. The layout is mechanically close to the report but semantically wrong.
+The layout discards or reorders data needed by normal matcher/body execution. Its apparently correct simple outputs are not sufficient evidence.
 
 ### Delayed `SUBEXP_END`, then `POP`
 
-This layout runs matchers while `subexp_nest` remains nonzero. Every matcher path becomes the empty path `[]`, including nested and array cases. Ordinary bindings survive, but complete `make check` fails.
-
-This proves that existing subexpression state suppresses both path validation and path component recording; it cannot represent the desired third behavior.
+Running the matcher while `subexp_nest` remains nonzero preserves bindings but suppresses all matcher path components. Object, nested, and array paths become `[]`; complete `make check` fails.
 
 ### `POP`, then delayed `SUBEXP_END`
 
-This layout is unsafe. Every destructuring/path case aborts with status 134. Observed assertions include:
+This ordering violates the data-stack contract and aborts with status 134. Observed assertions include:
 
 ```text
 src/execute.c:981: jq_next: Assertion `jq->stk_top == frame_current(jq)->retdata' failed.
 src/execute.c:176: stack_pop: Assertion `jv_is_valid(val)' failed.
 ```
 
-Six of nine jq test groups fail. The original Valgrind gate only treated statuses 97 and 124 as failures, so its green step was a false negative for ordinary abort status 134. No memory-safety claim is retained from that gate.
+Six of nine jq test groups fail. The first Valgrind classifier did not treat ordinary abort 134 as a memory gate failure, so no memory-safety inference is taken from that step.
 
 ## Runtime finding
 
-`subexp_nest` has two coupled effects:
+`subexp_nest` couples two behaviors:
 
-1. `path_intact()` stops requiring the indexed value to equal `value_at_path`;
+1. `path_intact()` stops requiring the indexed container to equal `value_at_path`;
 2. `path_append()` stops recording the key/index and stops advancing `value_at_path`.
 
-Destructuring inside `path()` needs a distinct operation:
+Destructuring inside `path()` needs a third index behavior:
 
-- index the separately produced value for binding;
-- do not require that value to equal the current path root;
-- record the matcher component;
-- do not replace `value_at_path`, because the expression to the right of `as` still receives the original input.
+- index a separately produced matcher container without the ordinary mismatched-root rejection;
+- still append the matcher key/index;
+- still advance `value_at_path` to the matched value, so later traversal through a bound value works;
+- retain the normal final-result integrity check.
 
-Moving `SUBEXP_BEGIN`, `SUBEXP_END`, and `POP` cannot express that contract without losing paths or corrupting the stack.
+Existing `SUBEXP_BEGIN`, `SUBEXP_END`, and `POP` arrangements cannot express that split.
 
-## Controlled fork experiment
+## Dedicated index experiment
 
 ```text
 repository: teamleaderleo/jq
 branch: fieldwork/3128-destructure-index-path
-head: 2b1f443fffbb1e629cc53ebef8884fcaa81a5a02
+head: d28a5898a470fa3ddd56fb4aa58dca23454d6e79
 internal draft PR: teamleaderleo/jq#1
-focused run: 30799146702 — queued at record creation
-ordinary runs: CI 30799146647; oniguruma 30799146694; decnum 30799146753; valgrind 30799146918
 ```
 
-The branch commits test infrastructure only. Its disposable runner patch introduces `INDEX_DESTRUCTURE`, emitted only by object and array destructuring matchers. The semantic matrix includes null and non-null roots, nested and array matchers, alternation, backtracking, ordinary bindings, plain paths, and a `setpath` consumer. Product source is not committed unless this experiment passes its focused gate, jq's complete suite, and ordinary workflows.
+The branch commits four carrier files and no jq product source. Its disposable patch adds `INDEX_DESTRUCTURE` to `src/opcode_list.h`, emits it from object and array destructuring matchers in `src/compile.c`, and handles it alongside `INDEX` in `src/execute.c`. The only semantic difference from `INDEX` is that the initial `path_intact()` container-equality check is skipped.
 
-## First incomplete step
+Focused receipt:
 
-Classify focused run `30799146702` by the first failing step. If the semantic probe passes, retain the exact patch, disassembly, source hashes, artifact digest, full-suite status, and ordinary workflow results. If it fails, use the first incorrect case to decide whether matcher components should preserve or transform `value_at_path`; do not return to blind `SUBEXP` permutations.
+```text
+run: 30799807411
+job: 91641544586
+conclusion: success
+artifact: 8853313029
+artifact digest: sha256:6f5a898b7350cc136f103b90eceac963ae0f5989578f68c464f64da9cc328d16
+```
+
+Passed:
+
+- exact issue forms;
+- nested object and array matchers;
+- object, array, and scalar alternatives;
+- source backtracking;
+- traversal through a bound value;
+- expected-invalid non-null final-result controls;
+- ordinary bindings and paths;
+- `setpath` from the returned path;
+- Valgrind;
+- complete `make check`.
+
+Ordinary exact-head workflows also passed:
+
+```text
+CI          30799807372
+Decnum      30799807121
+Oniguruma   30799807421
+Valgrind    30799807190
+```
+
+The exact disposable product diff changes only:
+
+```text
+src/compile.c
+src/execute.c
+src/opcode_list.h
+```
+
+## Self-review and remaining boundary
+
+A broader matcher-level path-rebase experiment was opened as `teamleaderleo/jq#2`, then closed without merge or product result after review showed that the dedicated index operation was narrower and already fully executed.
+
+The green candidate is not yet promoted because multi-binding patterns remain under-specified. Object and array destructuring can bind siblings while jq paths are linear. The existing focused matrix primarily uses one binding per successful branch.
+
+Current supplement:
+
+```text
+repository: teamleaderleo/jq
+branch: research/3128-destructure-path-semantics
+head: ad2be4dabe0e27f31fb1ef9b45a5093cb77a0e31
+internal draft PR: teamleaderleo/jq#3
+comparison run: 30849176240 — queued at last check
+pinned comparator: itchyny/gojq@2e210b5c28122b106d4cd1fade3ac9dad0482026
+```
+
+It compares sibling object/array bindings, renamed/reversed patterns, nested siblings, source-path exclusion, second-binding traversal, alternatives, backtracking, `reduce`, `foreach`, and `setpath` round-trips. gojq is an independent comparator, not automatically a normative oracle.
+
+## Promotion rule
+
+Promote a clean product source branch only after the multi-binding result establishes a coherent rule and the candidate does not manufacture artificial nested paths from sibling matcher indexes. If that gate fails, retain the exact divergence and change the compiler/runtime design rather than weakening the test.
 
 ## Publication boundary
 
-No canonical jq issue comment, pull request, review, reaction, or maintainer contact is authorized or made.
+No canonical jq issue comment, pull request, review, reaction, email, or maintainer contact is authorized or made.
