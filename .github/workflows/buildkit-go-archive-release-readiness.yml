@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/buildkit-go-archive-release-readiness.yml"
       - "investigations/buildkit-go-archive-release-readiness/**"
+      - "tests/test_buildkit_go_archive_matrix_workflow.py"
   workflow_dispatch:
 
 permissions:
@@ -13,31 +14,43 @@ permissions:
 jobs:
   implied-parent:
     name: implied-parent (${{ matrix.label }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      GOTOOLCHAIN: local
     strategy:
       fail-fast: false
       matrix:
         include:
           - label: v0.2.0
             ref: v0.2.0
-            go-version: "1.23.x"
+            go-version: "1.23.12"
+            go-directive: "1.23.0"
             expect: pass
           - label: v0.2.1
             ref: v0.2.1
-            go-version: "1.23.x"
+            go-version: "1.25.12"
+            go-directive: "1.25"
             expect: fail
           - label: v0.3.0
             ref: v0.3.0
-            go-version: "1.25.x"
+            go-version: "1.25.12"
+            go-directive: "1.25"
             expect: fail
           - label: current-main
             ref: 9e6d2c7c969f4871fe6ded98ae0e28963fde311f
-            go-version: "1.25.x"
+            go-version: "1.25.12"
+            go-directive: "1.25"
             expect: pass
 
     steps:
       - name: Check out Linux Fieldwork
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate matrix workflow contract
+        run: |
+          python3 -m unittest -v tests.test_buildkit_go_archive_matrix_workflow
 
       - name: Check out go-archive candidate
         uses: actions/checkout@v4
@@ -45,6 +58,7 @@ jobs:
           repository: moby/go-archive
           ref: ${{ matrix.ref }}
           path: go-archive
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -52,11 +66,20 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache: false
 
-      - name: Record exact identities
+      - name: Record and verify exact identities
+        env:
+          EXPECTED_GO_VERSION: ${{ matrix.go-version }}
+          EXPECTED_GO_DIRECTIVE: ${{ matrix.go-directive }}
         shell: bash
         run: |
           set -euxo pipefail
+          test "$(go env GOVERSION)" = "go${EXPECTED_GO_VERSION}"
+          test "$(go env GOTOOLCHAIN)" = local
+          module_go=$(awk '$1 == "go" { print $2; exit }' go-archive/go.mod)
+          test "$module_go" = "$EXPECTED_GO_DIRECTIVE"
           go version
+          go env GOVERSION GOTOOLCHAIN
+          printf 'module_go=%s\n' "$module_go"
           uname -a
           git -C go-archive rev-parse HEAD
           git -C go-archive status --short
@@ -64,6 +87,7 @@ jobs:
       - name: Run implied-parent discriminator
         env:
           EXPECT_IMPLIED_PARENT: ${{ matrix.expect }}
+          EXPECTED_GO_VERSION: ${{ matrix.go-version }}
         shell: bash
         run: |
           set -euxo pipefail
@@ -74,6 +98,8 @@ jobs:
           cd "$probe_dir"
           go mod edit -replace "github.com/moby/go-archive=${GITHUB_WORKSPACE}/go-archive"
           go mod tidy
+          test "$(go env GOVERSION)" = "go${EXPECTED_GO_VERSION}"
+          test "$(go env GOTOOLCHAIN)" = local
           go test -count=1 -v ./...
 
       - name: Verify disposable state
