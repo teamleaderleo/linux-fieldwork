@@ -1,0 +1,86 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Linux Fieldwork <fieldwork@example.invalid>
+Date: Mon, 3 Aug 2026 00:00:00 +0000
+Subject: [PATCH] libct: reject readonly rootfs without private mount namespace
+
+A read-only root filesystem is implemented by remounting the container root.
+Without a private mount namespace, that mount operation occurs in the shared
+mount namespace and cannot provide an isolated container-only guarantee.
+
+Reject the configuration during validation, matching the existing treatment
+of masked and read-only paths. Add focused positive and negative controls.
+
+This is a retained candidate patch. It has not been submitted upstream.
+---
+ libcontainer/configs/validate/mountns_restrictions_test.go | 43 +++++++++++++++++++++
+ libcontainer/configs/validate/validator.go                 |  3 ++
+ 2 files changed, 46 insertions(+)
+ create mode 100644 libcontainer/configs/validate/mountns_restrictions_test.go
+
+diff --git a/libcontainer/configs/validate/validator.go b/libcontainer/configs/validate/validator.go
+index 251900cb..00000000 100644
+--- a/libcontainer/configs/validate/validator.go
++++ b/libcontainer/configs/validate/validator.go
+@@ -130,6 +130,9 @@ func uts(config *configs.Config) error {
+ }
+ 
+ func security(config *configs.Config) error {
++	if config.Readonlyfs && !config.Namespaces.Contains(configs.NEWNS) {
++		return errors.New("unable to make rootfs read-only without a private MNT namespace")
++	}
+ 	// restrict sys without mount namespace
+ 	if (len(config.MaskPaths) > 0 || len(config.ReadonlyPaths) > 0) &&
+ 		!config.Namespaces.Contains(configs.NEWNS) {
+diff --git a/libcontainer/configs/validate/mountns_restrictions_test.go b/libcontainer/configs/validate/mountns_restrictions_test.go
+new file mode 100644
+index 00000000..00000000
+--- /dev/null
++++ b/libcontainer/configs/validate/mountns_restrictions_test.go
+@@ -0,0 +1,43 @@
++package validate
++
++import (
++	"testing"
++
++	"github.com/opencontainers/runc/libcontainer/configs"
++)
++
++func TestValidateReadonlyfsMountNamespaceBoundary(t *testing.T) {
++	tests := []struct {
++		name       string
++		namespaces configs.Namespaces
++		wantErr    bool
++	}{
++		{
++			name:    "shared mount namespace",
++			wantErr: true,
++		},
++		{
++			name: "private mount namespace",
++			namespaces: configs.Namespaces{
++				{Type: configs.NEWNS},
++			},
++			wantErr: false,
++		},
++	}
++
++	for _, test := range tests {
++		t.Run(test.name, func(t *testing.T) {
++			config := &configs.Config{
++				Rootfs:     "/var",
++				Readonlyfs: true,
++				Namespaces: test.namespaces,
++			}
++
++			err := Validate(config)
++			if test.wantErr && err == nil {
++				t.Fatal("expected validation error, got nil")
++			}
++			if !test.wantErr && err != nil {
++				t.Fatalf("expected validation to succeed, got %v", err)
++			}
++		})
++	}
++}
+-- 
+2.50.1
