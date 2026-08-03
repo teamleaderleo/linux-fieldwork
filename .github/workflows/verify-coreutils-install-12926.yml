@@ -13,49 +13,51 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Check out controlled coreutils candidate
-        uses: actions/checkout@v7.0.1
+      - name: Check out exact controlled coreutils candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: teamleaderleo/coreutils
-          ref: fieldwork/install-refuse-just-created-overwrite-12926
+          ref: 2b1d87f06c0cff40a9002c3d2243f8a12248f787
           path: coreutils
           fetch-depth: 1
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
         with:
           toolchain: stable
           components: clippy,rustfmt
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           workspaces: coreutils
 
       - name: Record exact source identity
         working-directory: coreutils
         run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 2b1d87f06c0cff40a9002c3d2243f8a12248f787
           git rev-parse HEAD
           git rev-parse HEAD:src/uu/install/src/install.rs
           git rev-parse HEAD:tests/by-util/test_install.rs
           git rev-parse HEAD:.fieldwork/refine-install-12926.patch
 
-      - name: Check and apply refinement
+      - name: Apply and format refinement
         working-directory: coreutils
         run: |
+          set -euo pipefail
           git apply --check .fieldwork/refine-install-12926.patch
           git apply .fieldwork/refine-install-12926.patch
+          cargo fmt --all
+          test "$(git diff --name-only | sort)" = $'src/uu/install/src/install.rs\ntests/by-util/test_install.rs'
+          cargo fmt --all -- --check
           git diff --check
-
-      - name: Check formatting
-        working-directory: coreutils
-        run: cargo fmt --all -- --check
 
       - name: Run ownership boundary tests
         working-directory: coreutils
         run: |
-          set -e
+          set -euo pipefail
           for test_name in \
             test_install_refuses_to_overwrite_just_created_destination \
             test_install_refusal_preserves_original_simple_backup \
@@ -78,6 +80,7 @@ jobs:
         run: cargo clippy --features install --no-default-features --all-targets -- -D warnings
 
       - name: Record patched diff
+        if: always()
         working-directory: coreutils
         run: |
           git diff --stat
