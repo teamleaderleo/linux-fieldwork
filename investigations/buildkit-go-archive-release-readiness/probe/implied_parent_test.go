@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	archive "github.com/moby/go-archive"
+	"github.com/moby/sys/user"
 )
 
 const expectedContent = "implied-parent-ok\n"
@@ -50,13 +51,23 @@ func archiveBytes(t *testing.T, explicitParent bool) []byte {
 	return buf.Bytes()
 }
 
+func runnerIdentityMapping() user.IdentityMapping {
+	return user.IdentityMapping{
+		UIDMaps: []user.IDMap{{ID: 0, ParentID: int64(os.Getuid()), Count: 1}},
+		GIDMaps: []user.IDMap{{ID: 0, ParentID: int64(os.Getgid()), Count: 1}},
+	}
+}
+
 func runUntar(t *testing.T, explicitParent bool) (string, error) {
 	t.Helper()
 	dest := t.TempDir()
 	err := archive.Untar(
 		bytes.NewReader(archiveBytes(t, explicitParent)),
 		dest,
-		&archive.TarOptions{NoLchown: true},
+		&archive.TarOptions{
+			NoLchown: true,
+			IDMap:    runnerIdentityMapping(),
+		},
 	)
 	if err != nil {
 		return "", err
