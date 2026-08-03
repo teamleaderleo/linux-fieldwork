@@ -1,21 +1,9 @@
 # jq destructuring path context
 
-State: `ACTIVE — DEDICATED INDEX CANDIDATE GREEN; MULTI-BINDING REVIEW QUEUED`  
+State: `ACTIVE — BROAD INDEX CANDIDATE HELD; SINGLE-BINDING SUCCESSOR QUEUED`  
 Canonical issue: `jqlang/jq#3128`  
 External contact authorized: `false`  
 External contact made: `none`
-
-## Question
-
-How should destructuring matchers participate in `path(...)` when the value on the left of `as` is produced separately from the current path root?
-
-The required behavior is narrower than a general subexpression:
-
-- evaluate the value being destructured without adding its traversal to the path;
-- allow object and array matcher indexes to become path components;
-- preserve normal path advancement through a bound value;
-- retain the final-result integrity check;
-- preserve ordinary destructuring, alternation, backtracking, assignments, and memory invariants.
 
 ## Exact canonical source
 
@@ -29,117 +17,101 @@ src/opcode_list.h blob: 85a8a5805f178819158c7a7b285a9c6abf18da0a
 tests/jq.test blob: 929c7217999f392d1ac536a39bc2c81456e2e6db
 ```
 
-No open canonical pull request was found. Closed PR `jqlang/jq#3384` attempted an instruction-layout repair and was withdrawn after incorrect results.
+No open canonical equivalent PR was found. Closed PR `jqlang/jq#3384` was withdrawn after incorrect results.
 
-## Completed four-layout matrix
+## Completed instruction-layout matrix
 
-Linux Fieldwork run `30759715899` executed exact canonical source under four compiler layouts:
+Linux Fieldwork run `30759715899` proved that rearranging existing `SUBEXP_BEGIN`, `SUBEXP_END`, and `POP` operations cannot express the required behavior:
 
-```text
-baseline          job 91527946570  artifact 8839004841
-closed-pr-3384    job 91527946593  artifact 8838998184
-issue-end-pop     job 91527946594  artifact 8839387816
-issue-pop-end     job 91527946545  artifact 8839419621
-```
+- canonical source reproduces the constant-value path error and passes the full suite;
+- the closed PR layout repairs simple output but breaks nested/array bindings and alternatives;
+- delaying `SUBEXP_END` preserves bindings but erases all matcher path components;
+- moving `POP` first corrupts stack state and aborts.
 
-GitHub artifact digests:
+Exact jobs, artifacts, and digests remain in `jq-3128-four-layout-result.md` and this workspace's handoff.
 
-```text
-baseline          sha256:0aeaa6ef5fc2d589b8443f2ff3806285bcc4bc8ac692768d7dff4f180a49eba0
-closed-pr-3384    sha256:fdd831eb6eae95b9a10a250c382278a02c03f352b834e0384bac06c861a583f0
-issue-end-pop     sha256:e4c9b6007ad4f3685e5ae692ddf9008976af16f15a9c8b90d52aa0a2d2653e7e
-issue-pop-end     sha256:8f1f3258f701791d48f4c31127c04872716f9aadbd0b4f862dcfca8cdbc9c768
-```
-
-Classification:
-
-- **baseline:** reproduces the constant-value invalid-path error and passes complete `make check`;
-- **closed PR #3384:** simple paths appear repaired, but nested and array bindings become `null`, alternation fails, and the full suite fails;
-- **delayed `SUBEXP_END`, then `POP`:** bindings survive, but every matcher path is suppressed to `[]`; full suite fails;
-- **`POP`, then delayed `SUBEXP_END`:** corrupts stack shape and aborts with assertions; full suite fails.
-
-`subexp_nest` couples two behaviors that this problem needs to separate: it disables the mismatched-root check and also disables path recording/value advancement. Moving existing `SUBEXP_*` and `POP` operations cannot express the required semantics.
-
-Complete interpretation: `research/rounds/2026-08-02-cross-ecosystem/jq-3128-four-layout-result.md`.
-
-## Green controlled candidate
-
-Controlled fork:
+## First dedicated index candidate — green but over-broad
 
 ```text
 repository: teamleaderleo/jq
 branch: fieldwork/3128-destructure-index-path
 head: d28a5898a470fa3ddd56fb4aa58dca23454d6e79
 internal draft PR: teamleaderleo/jq#1
-```
-
-The branch commits test infrastructure only. Its disposable runner patch introduces `INDEX_DESTRUCTURE`, emitted only by object and array destructuring matchers. The opcode skips only `path_intact()`'s requirement that the matcher container equal the current `value_at_path`; it retains ordinary `path_append()` behavior, including advancement to the bound value for later traversal.
-
-Focused result:
-
-```text
-run: 30799807411
+focused run: 30799807411
 job: 91641544586
-conclusion: success
 artifact: 8853313029
-artifact digest: sha256:6f5a898b7350cc136f103b90eceac963ae0f5989578f68c464f64da9cc328d16
+digest: sha256:6f5a898b7350cc136f103b90eceac963ae0f5989578f68c464f64da9cc328d16
 ```
 
-Passed gates:
+The disposable three-file patch introduced `INDEX_DESTRUCTURE`, which skips only the ordinary requirement that the matcher container equal current `value_at_path`; normal path recording and bound-value advancement remain in place.
 
-- exact issue forms;
-- nested object and array matchers;
-- object, array, and scalar `?//` alternatives;
-- source backtracking;
-- traversal through bound values;
-- expected-invalid non-null final-result controls;
-- ordinary object, nested, and array bindings;
-- ordinary paths;
-- `setpath` consumer;
-- Valgrind;
-- complete `make check`.
+The exact issue, nested/array, alternatives, backtracking, bound traversal, invalid-result controls, ordinary bindings/paths, `setpath`, Valgrind, complete `make check`, and ordinary fork workflows all passed.
 
-Ordinary fork workflows on exact head all passed:
+## Completed multi-binding review
+
+Execution-only supplement `teamleaderleo/jq#3` completed and was closed without merge after evidence transfer:
 
 ```text
-CI          30799807372
-Decnum      30799807121
-Oniguruma   30799807421
-Valgrind    30799807190
+run: 30849176240
+job: 91804761928
+artifact: 8871057969
+digest: sha256:81ccf773c5f339e9b8670af139151e50bfbfbe029dd570d7e8faba3512287274
+pinned comparator: itchyny/gojq@2e210b5c28122b106d4cd1fade3ac9dad0482026
 ```
 
-The exact disposable product diff changes three files:
+The broad candidate is not promotable. Sibling matchers each index the same retained container, but every `INDEX_DESTRUCTURE` advanced one linear path from the prior sibling. This manufactured order-dependent paths such as:
 
 ```text
-src/compile.c
-src/execute.c
-src/opcode_list.h
+{} as {$a,$b} | .                    -> ["a","b"]
+{x:{a:1,b:2}} as {x:{$a,$b}} | $b   -> ["x","a","b"]
+[10,20] as [$a,$b] | $a              -> [1,0]
 ```
 
-No clean product source branch is promoted yet.
+Other sibling/body combinations fail final path integrity depending on which binding is returned. That is not a coherent multi-binding contract.
 
-## Self-review and residual semantic gate
+Pinned gojq generally suppresses matcher-path construction and therefore differs even on the issue's single-binding expectation. It was an independent comparator, not a normative oracle.
 
-A later, broader matcher-path-rebase experiment was opened as `teamleaderleo/jq#2`, then closed without merge or result after review showed that #1 was narrower and already green. No duplicate candidate remains active.
+Two `setpath` rows from the comparison are excluded because the supplement accidentally used the wrong arity; both implementations correctly rejected them during compilation.
 
-The leading candidate still needs one semantic review before promotion: destructuring patterns can bind sibling fields or array elements while jq paths are linear. A green single-binding matrix does not by itself define how patterns such as `{$a,$b}` should interact with `path`, bound-variable traversal, `reduce`, `foreach`, or `setpath`.
+`teamleaderleo/jq#1` is now explicitly `HOLD / REPAIR`.
 
-Execution-only supplement:
+## Current single-binding successor
 
 ```text
 repository: teamleaderleo/jq
-branch: research/3128-destructure-path-semantics
-head: ad2be4dabe0e27f31fb1ef9b45a5093cb77a0e31
-internal draft PR: teamleaderleo/jq#3
-focused comparison run: 30849176240 — queued at last check
+base branch: fieldwork/3128-destructure-index-path
+branch: experiment/3128-single-binding-scope
+head: 37cd514ad0b40ba857168966af80854453e42da5
+internal draft PR: teamleaderleo/jq#4
+focused run: 30852982042 — queued at last check
+ordinary workflows:
+  CI: 30852981456
+  Oniguruma: 30852981509
+  Valgrind: 30852981523
+  Decnum: 30852981574
 ```
 
-The supplement reruns the green candidate contract and compares candidate behavior with pinned `itchyny/gojq@2e210b5c28122b106d4cd1fade3ac9dad0482026` across sibling object/array patterns, renamed and reversed bindings, nested siblings, source-path exclusion, second-sibling traversal, alternatives, backtracking, `reduce`, `foreach`, and assignment round-trips. gojq is retained as an independent comparator, not treated automatically as the normative jq contract.
+The successor keeps the same narrow runtime opcode but scopes it in the compiler:
+
+1. matcher builders tag only their own generated indexes;
+2. each complete alternative counts unbound `STOREV`/`STOREVN` instructions;
+3. exactly one binding retains `INDEX_DESTRUCTURE`;
+4. zero or multiple bindings restore the matcher indexes to canonical `INDEX`;
+5. alternative branches are scoped independently;
+6. dynamic key-expression indexes remain ordinary.
+
+The workflow first builds exact canonical jq and records status/stdout/stderr for 24 multi-binding programs. After applying the candidate, it requires:
+
+- the original single-binding contract to pass;
+- every multi-binding result to remain byte-identical to canonical jq;
+- special opcode present in single-binding disassembly and absent from sibling disassembly;
+- Valgrind for both scopes;
+- complete `make check`.
 
 ## Decision boundary
 
-Promote a clean source candidate only if the multi-binding review establishes a coherent path rule and does not expose artificial sibling-to-nested path construction. If a divergence appears, retain exact candidate and comparator outputs and map the compiler/runtime ownership before changing the opcode.
+A clean source candidate may be promoted only if run `30852982042` passes every gate and complete review confirms that binding-count scoping does not misclassify dynamic-key or repeated-binding patterns. Otherwise retain the exact first divergence and revise the compiler boundary rather than weakening canonical-preservation tests.
 
-## Cleanup and publication boundary
+## Publication and cleanup boundary
 
-All execution uses disposable hosted runners. No local checkout, service, device, mount, credential, or canonical repository state is retained. No canonical jq comment, pull request, review, reaction, email, or maintainer contact is authorized or made.
+All source transformations execute in disposable controlled-fork runners. No canonical issue comment, pull request, review, reaction, email, or maintainer contact is authorized or made.
