@@ -1,6 +1,6 @@
 # systemd bind-path whitespace overlap review
 
-State: `ACTIVE OVERLAP REVIEW — CORRECTED GRAMMAR MATRIX`  
+State: `HARNESS REPAIR — FRESH SOURCE COMPARISON PENDING`  
 Canonical issue: `systemd/systemd#43214`  
 Active implementation: `systemd/systemd#43217`  
 External contact authorized: `false`  
@@ -95,12 +95,50 @@ The script runs every case independently and retains:
 
 ## Source comparison plan
 
-A controlled workflow should build and compare:
+The controlled workflow builds and compares:
 
 1. canonical base `63e35ca3...`;
 2. exact PR head `d32993d...`.
 
 The first stage is parser evidence through the built `systemd-analyze verify`. Serialization/deserialization needs a source-native test or a narrowly extracted existing test target; parser success alone is not sufficient to approve the broad PR.
+
+## First hosted comparison: harness-owned red
+
+Workflow run `30759715925` reached exact source checkout and dependency installation for both variants, then failed both jobs in the identical Meson configure step before compilation or parser execution.
+
+Retained artifacts:
+
+```text
+canonical base:
+  artifact 8838880432
+  sha256:65b940618c63baefaf6dde22a95febb2f47ce6cea5d6ddef82b0f90417864797
+active PR:
+  artifact 8839366457
+  sha256:fba8903937e894d5356c0f88eb4a7551f2372f2e49f19d557d46c0ba2a331155
+```
+
+Both `meson-setup.log` files contain:
+
+```text
+ERROR: Neither source directory 'systemd/build' nor build directory None contain a build file meson.build.
+```
+
+The workflow ran from the Linux Fieldwork workspace root and used:
+
+```text
+meson setup systemd/build
+```
+
+Without an explicit source argument, Meson treated the workspace root as the source tree. The exact systemd source is in `systemd/`, so neither variant reached a product-relevant test.
+
+The bounded repair is:
+
+```text
+test -f systemd/meson.build
+meson setup systemd/build systemd
+```
+
+A focused workflow-contract regression rejects the old one-argument setup while preserving the exact source SHAs, read-only permissions, credential-free checkouts, and always-uploaded failure evidence.
 
 ## Current interpretation
 
@@ -109,8 +147,8 @@ The defect is real and shared. The parser needs two levels of tokenization:
 1. coalesced shell-like whitespace between complete tuples;
 2. non-coalesced colon fields inside each tuple.
 
-The active PR follows that general shape. The remaining review question is whether its quoting, malformed-field, and serialized-state behavior exactly preserve documented semantics.
+The active PR follows that general shape. The first hosted red run did not test this claim; it was a source-directory error in the comparison harness. The remaining review question is whether the active implementation's quoting, malformed-field, and serialized-state behavior exactly preserve documented semantics.
 
 ## Next step
 
-Execute the corrected fixture against base and PR builds, retain artifacts, then inspect or run the source-native serialization tests. Do not post findings upstream without explicit authorization.
+Run the repaired exact-source comparison. On green configuration/build, classify every corrected grammar case for base versus PR and then inspect or execute the source-native serialization tests. On red, retain the first failing log and classify it before changing product assumptions. Do not post findings upstream without explicit authorization.
