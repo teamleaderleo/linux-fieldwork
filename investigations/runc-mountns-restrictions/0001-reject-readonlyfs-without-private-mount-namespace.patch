@@ -3,9 +3,9 @@ From: Linux Fieldwork <fieldwork@example.invalid>
 Date: Mon, 3 Aug 2026 00:00:00 +0000
 Subject: [PATCH] libct: reject readonly rootfs without private mount namespace
 
-A read-only root filesystem is implemented by remounting the container root.
-Without a private mount namespace, that mount operation occurs in the shared
-mount namespace and cannot provide an isolated container-only guarantee.
+The standard init path only calls finalizeRootfs when a mount namespace is
+configured. As a result, Readonlyfs is accepted without NEWNS but the rootfs
+read-only remount is skipped, silently leaving the root writable.
 
 Reject the configuration during validation, matching the existing treatment
 of masked and read-only paths. Add focused positive and negative controls.
