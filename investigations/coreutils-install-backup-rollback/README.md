@@ -2,123 +2,110 @@
 
 ## TL;DR
 
-When uutils `install` is asked to make a backup, it renames the existing destination before copying. If `copy_file()` then fails, current source returns without restoring the renamed destination. GNU `install` 9.7 rolls that transaction back: it removes any partial destination, restores the original path, and removes the transient backup.
+GNU `install` 9.7 restores an existing destination when backup mode renamed it aside and the replacement data copy fails. Current uutils source does not.
 
-A controlled candidate is staged on `teamleaderleo/coreutils` and deliberately excludes later strip, ownership, permissions, timestamps, SELinux, and verbose-output failures. Those happen after the data copy completes and have different GNU cleanup behavior.
+A staged semantic candidate reproduces GNU's rollback matrix, but self-review found that its cleanup resolves the destination pathname after failure and could delete a replacement inserted by another actor. Source promotion is therefore disabled. A promotable repair must retain the created destination identity—preferably its open file descriptor—and restore only when the pathname still names that same object.
 
 ## Explain like I'm five
 
-Before replacing `dest/file`, backup mode moves the old file out of the way. If reading the new source breaks, the old file should be moved back. uutils currently leaves the old file under a backup name and may leave a broken new file at `dest/file`.
+The old file is moved aside before the new one is copied. If the new copy breaks, the old file should go back.
+
+But the repair must also check that the broken file it removes is still the file this command created. A stranger could have put a different file at the same name meanwhile.
 
 ## Why care
 
-The destination can stop containing its original bytes after a failed install. In a multi-source command, a later source can also overwrite the simple backup that held the original destination, losing the only intact copy.
+Without rollback, a failed install can strand the original under a backup name and leave a partial destination. A naïve rollback can be worse: it can remove or overwrite an unrelated replacement that appeared after the failure.
 
 ## Current state
 
-- State: `EXECUTING`
+- State: `HOLD`
 - Canonical source base: `uutils/coreutils@a73055191b6d8f144c96bd487c90ae270f30c7a3`
 - Controlled branch: `teamleaderleo/coreutils:fieldwork/install-restore-backup-on-copy-error`
-- Controlled staged head: `41c7b608f715e8ac4552fd825dd569d4c15f6e33`
+- Controlled held head: `9779591587e4e476d303a3d94f9aa80f86d81195`
 - Controlled draft PR: `teamleaderleo/coreutils#3`
 - Clean comparison base: `teamleaderleo/coreutils:base/canonical-main-20260803`
-- Hosted gate: coreutils run `30799467577`, queued at this checkpoint
-- First incomplete step: execute the fail-closed transformer, focused tests, complete install test module, formatting, and clippy
-- Cleanup state: source branch contains a temporary transformer and workflow; a green push gate must remove both and produce a source/test-only head
-- Next safe action: inspect the first completed workflow step and repair its actual owner
-- External-contact state: no canonical-upstream issue, PR, comment, review, email, or patch submission authorized or made
-
-## Intent and precedent
-
-`perform_backup()` currently renames the destination to a backup path. `copy()` then calls `copy_file()` and propagates any error directly. There is no visible rollback between those operations.
-
-GNU behavior separates two phases:
-
-- data-copy failure: restore the pre-copy destination;
-- post-copy finalization failure such as strip: do not restore it.
-
-This is separate from just-created destination ownership in issue #12926. A failed data copy must not reserve the destination name. The correct repair is rollback, followed by normal processing of later operands.
+- Source promotion: disabled
+- Next safe action: design rollback around the created destination handle or exact file identity, preferably with the fd-bound install work in upstream PR `#12063`
+- External-contact state: no canonical-upstream interaction authorized or made
 
 ## Question
 
-When backup mode has already renamed an existing destination and `copy_file()` fails, should uutils restore the destination and remove the transient backup before returning the copy error?
+How should uutils restore a pre-copy backup after data-copy failure without deleting a pathname replacement that no longer belongs to the failed copy attempt?
 
-## Source
+## GNU behavior receipt
 
-- Project: uutils/coreutils
-- Base commit: `a73055191b6d8f144c96bd487c90ae270f30c7a3`
-- Staged head: `41c7b608f715e8ac4552fd825dd569d4c15f6e33`
-- Candidate source commit: pending hosted promotion
-- Controlled repository: `teamleaderleo/coreutils`
-- Imported source tree: none; exact Git identities are the source boundary
+Using a source symlink to `/proc/self/mem` for deterministic `EIO`:
 
-## Environment
+- no backup: partial destination remains;
+- simple/existing/numbered: original destination restored; transient backup removed;
+- seeded existing: older numbered backup preserved; transient next backup removed;
+- multi-source simple: later source installs and its backup contains the original destination;
+- strip/finalization failure: no rollback.
 
-- GNU reference: `/usr/bin/install`, GNU coreutils 9.7
-- Reference fixtures: disposable local Linux temporary directories
-- Deterministic source error: symlink to `/proc/self/mem`, producing `EIO`
-- Hosted candidate environment: GitHub Actions `ubuntu-latest`
-- Candidate toolchain: stable Rust with rustfmt and clippy
+See [`GNU_BEHAVIOR_RECEIPT.md`](GNU_BEHAVIOR_RECEIPT.md) for the exact matrix.
 
-## Baseline behavior
+## Baseline operation
 
 Current source performs:
 
-1. rename destination to backup path;
-2. call `copy_file()`;
-3. return its error directly.
-
-A read failure can therefore leave a partial destination and the original at the backup path. A later simple-backup operation can rename the partial destination over that backup.
-
-## Candidate
-
-Add `restore_backup_after_copy_failure()` and invoke it only when:
-
-- `perform_backup()` returned a distinct backup path; and
-- `copy_file()` returned an error.
-
-The helper removes any partial destination and renames the backup to the original path. If restoration succeeds, return the original copy error. If restoration fails, report the copy error and return a distinct restoration error.
-
-The candidate skips a nominal backup path equal to the destination, preserving the existing empty-suffix behavior for the separate shared backup-suffix fix.
-
-## Reproduction
-
-See [`GNU_BEHAVIOR_RECEIPT.md`](GNU_BEHAVIOR_RECEIPT.md).
-
-Representative command:
-
-```sh
-ln -s /proc/self/mem source/file
-printf original > dest/file
-install --backup=simple source/file dest/file
+```text
+rename old destination to backup
+copy new source to destination
+return copy error directly
 ```
 
-GNU exits 1 for the read error, leaves `dest/file` containing `original`, and leaves no `dest/file~`.
+The missing semantic transition is:
 
-## Results
+```text
+copy fails before commitment
+remove only the partial destination created by this attempt
+rename backup back to destination
+```
 
-The candidate is staged by `.fieldwork/apply-install-backup-rollback.py`. It uses exact single-occurrence replacements so source drift fails before compilation.
+## Held candidate
 
-Focused candidate tests cover:
+The staged transformer adds:
 
-- simple, existing, and numbered backup restoration;
-- multi-source simple mode retaining the original backup for a later successful source;
-- seeded existing mode preserving an older numbered backup and removing the transient new backup.
+- `RestoreBackupFailed` diagnostics;
+- `restore_backup_after_copy_failure()`;
+- focused simple/existing/numbered/seeded/multi-source tests.
 
-No candidate test result is claimed until hosted execution completes.
+Its behavior is useful evidence, and the read-only workflow may still compile and run it. It may not promote source.
 
-## Interpretation
+## Self-review failure
 
-The backup rename and data copy form one recoverable transaction. Finalization begins only after `copy_file()` succeeds, so finalization cleanup must remain outside this rollback.
+The helper currently does:
+
+```text
+remove_file(destination pathname)
+rename(backup pathname, destination pathname)
+```
+
+Between the failed copy and cleanup, the pathname can be removed and replaced. The helper has no descriptor or inode/device identity for the partial file, so it cannot prove that the entry it removes belongs to this operation.
+
+This is especially inappropriate while `install` already has active work to keep copy and finalization bound to the created file descriptor.
+
+## Required design boundary
+
+A promotable implementation should:
+
+1. retain the destination handle when creation succeeds, including when the subsequent data transfer fails;
+2. record or derive its stable file identity;
+3. before unlinking, verify that the destination pathname still resolves to that object;
+4. refuse destructive cleanup on mismatch;
+5. restore the backup only after safe removal or verified absence;
+6. keep data-copy rollback separate from strip and later finalization failures.
+
+A custom error carrying the open destination handle, or integration with fd-returning copy/finalization work, is preferable to another path metadata check.
 
 ## Evidence boundary
 
-The candidate has not received a green executable receipt. Restore-failure diagnostics, ENOSPC write failures, dangling-symlink destinations, non-Linux platforms, SELinux, and empty backup suffixes are not independently demonstrated. The GNU evidence uses a source-side `EIO` fixture.
+The GNU semantics are established for the recorded Linux fixture. No safe source implementation is complete. The held transformer does not establish race-safe cleanup, non-Linux behavior, or integration with fd-bound finalization.
 
 ## Next step
 
-Inspect run `30799467577`. On green promotion, verify temporary files were removed, inspect the final source/test/locale diff, compare against current canonical main, update this record with exact blobs and job receipts, and retain the draft without canonical-upstream contact.
+Keep the source draft on hold. Review the current state of upstream PR `#12063` and restack the transaction model only when the created file identity can remain available through a failed copy. Add a deterministic pathname-replacement negative control before permitting source promotion.
 
 ## Authority
 
-No canonical-upstream interaction has been authorized or made. Draft `teamleaderleo/coreutils#3` exists only in the controlled fork.
+No canonical-upstream issue comment, pull request, review, email, patch submission, or other contact has been authorized or made.
