@@ -1,0 +1,92 @@
+name: Research carrier static gates
+
+on:
+  push:
+    branches:
+      - research/foundational-systems-deep-dive-2026-08-03
+    paths:
+      - .github/workflows/research-carrier-static.yml
+      - investigations/systemd-vmspawn-unmapped-bind-userns/**
+      - investigations/buildkit-unused-context-lazy-load/**
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/research-carrier-static.yml
+      - investigations/systemd-vmspawn-unmapped-bind-userns/**
+      - investigations/buildkit-unused-context-lazy-load/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  systemd-vmspawn-test-static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out exact systemd test carrier
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/systemd
+          ref: 8a2d77b08f511d30a9cb81c9f2c147dfd5aa638b
+          fetch-depth: 0
+          persist-credentials: false
+          path: systemd
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+
+      - name: Validate exact diff and shell test
+        working-directory: systemd
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(git rev-parse HEAD)" = 8a2d77b08f511d30a9cb81c9f2c147dfd5aa638b
+          git merge-base --is-ancestor ac33190d1f66e870d511827cbed3ebeee2d704c2 HEAD
+          git diff --check ac33190d1f66e870d511827cbed3ebeee2d704c2 HEAD
+          bash -n test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
+          shellcheck \
+            -x \
+            -P test/units \
+            test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
+          test -z "$(git status --porcelain)"
+
+  buildkit-context-test-compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out exact BuildKit test carrier
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/buildkit
+          ref: 67c480358d6f5d1fd2e3d41bb3fd460e3957210e
+          fetch-depth: 0
+          persist-credentials: false
+          path: buildkit
+
+      - name: Set up repository Go version
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: buildkit/go.mod
+          cache: false
+
+      - name: Validate exact diff, formatting, and package compile
+        working-directory: buildkit
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(git rev-parse HEAD)" = 67c480358d6f5d1fd2e3d41bb3fd460e3957210e
+          git merge-base --is-ancestor 275d6864ff0ce91a06225af5f5b012887bd257cf HEAD
+          git diff --check 275d6864ff0ce91a06225af5f5b012887bd257cf HEAD
+
+          changed=frontend/dockerfile/dockerfile_context_access_test.go
+          gofmt -d "$changed" | tee /tmp/gofmt.diff
+          test ! -s /tmp/gofmt.diff
+
+          go test -mod=vendor ./frontend/dockerfile -run '^$'
+          test -z "$(git status --porcelain)"
