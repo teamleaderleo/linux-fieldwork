@@ -1,0 +1,52 @@
+From: Linux Fieldwork <fieldwork@example.invalid>
+Subject: [PATCH] vmspawn: skip namespace entry when no user namespace exists
+
+For ordinary bind mounts, start_virtiofsd() can be called with both source and
+target UIDs invalid. In that case no user namespace is allocated, but the child
+still calls namespace_enter() with userns_fd == -EBADF. An unprivileged caller
+then receives the helper's synthetic EPERM before virtiofsd can start.
+
+Only enter a user namespace when one was actually allocated. The translated
+and foreign-UID paths keep their existing namespace transition and subsequent
+mount-namespace setup.
+
+This candidate is retained against canonical systemd commit
+1652be7df88d358c1e215c7de5431505348e5ab3. It is not an upstream submission.
+---
+ src/vmspawn/vmspawn.c | 22 ++++++++++++----------
+ 1 file changed, 12 insertions(+), 10 deletions(-)
+
+diff --git a/src/vmspawn/vmspawn.c b/src/vmspawn/vmspawn.c
+--- a/src/vmspawn/vmspawn.c
++++ b/src/vmspawn/vmspawn.c
+@@ -1,17 +1,19 @@
+         if (r < 0)
+                 return r;
+         if (r == 0) {
+                 /* Child */
+ 
+-                r = namespace_enter(
+-                                /* pidns_fd= */ -EBADF,
+-                                /* mntns_fd= */ -EBADF,
+-                                /* netns_fd= */ -EBADF,
+-                                userns_fd,
+-                                /* root_fd= */ -EBADF);
+-                if (r < 0) {
+-                        log_error_errno(r, "Failed to enter user namespace for virtiofsd: %m");
+-                        _exit(EXIT_FAILURE);
++                if (userns_fd >= 0) {
++                        r = namespace_enter(
++                                        /* pidns_fd= */ -EBADF,
++                                        /* mntns_fd= */ -EBADF,
++                                        /* netns_fd= */ -EBADF,
++                                        userns_fd,
++                                        /* root_fd= */ -EBADF);
++                        if (r < 0) {
++                                log_error_errno(r, "Failed to enter user namespace for virtiofsd: %m");
++                                _exit(EXIT_FAILURE);
++                        }
+                 }
+ 
+                 if (userns_fd >= 0 && unshare(CLONE_NEWNS) < 0) {
+-- 
+2.51.0
