@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: teamleaderleo/systemd
-          ref: 8a2d77b08f511d30a9cb81c9f2c147dfd5aa638b
+          ref: 1908a586bb098f1951ef445a40962d05c95013ef
           fetch-depth: 0
           persist-credentials: false
           path: systemd
@@ -45,9 +45,9 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          test "$(git rev-parse HEAD)" = 8a2d77b08f511d30a9cb81c9f2c147dfd5aa638b
-          git merge-base --is-ancestor ac33190d1f66e870d511827cbed3ebeee2d704c2 HEAD
-          git diff --check ac33190d1f66e870d511827cbed3ebeee2d704c2 HEAD
+          test "$(git rev-parse HEAD)" = 1908a586bb098f1951ef445a40962d05c95013ef
+          git merge-base --is-ancestor 1652be7df88d358c1e215c7de5431505348e5ab3 HEAD
+          git diff --check 1652be7df88d358c1e215c7de5431505348e5ab3 HEAD
           bash -n test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
           shellcheck \
             -x \
@@ -64,7 +64,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: teamleaderleo/buildkit
-          ref: 67c480358d6f5d1fd2e3d41bb3fd460e3957210e
+          ref: 4024335d0e905d1206786644d8f363336d4678ec
           fetch-depth: 0
           persist-credentials: false
           path: buildkit
@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          test "$(git rev-parse HEAD)" = 67c480358d6f5d1fd2e3d41bb3fd460e3957210e
+          test "$(git rev-parse HEAD)" = 4024335d0e905d1206786644d8f363336d4678ec
           git merge-base --is-ancestor 275d6864ff0ce91a06225af5f5b012887bd257cf HEAD
           git diff --check 275d6864ff0ce91a06225af5f5b012887bd257cf HEAD
 
