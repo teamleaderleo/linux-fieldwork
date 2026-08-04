@@ -11,17 +11,21 @@ on:
 permissions:
   contents: read
 
+env:
+  HELD_COREUTILS_SHA: 9779591587e4e476d303a3d94f9aa80f86d81195
+
 jobs:
-  verify:
+  verify-held-semantic-model:
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
-      - name: Check out controlled coreutils candidate
+      - name: Check out exact held coreutils candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: teamleaderleo/coreutils
-          ref: fieldwork/install-restore-backup-on-copy-error
+          ref: ${{ env.HELD_COREUTILS_SHA }}
           path: coreutils
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
@@ -33,14 +37,15 @@ jobs:
         with:
           workspaces: coreutils
 
-      - name: Record exact staged identity
+      - name: Record exact held identity
         working-directory: coreutils
         run: |
-          git rev-parse HEAD
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HELD_COREUTILS_SHA"
           git rev-parse HEAD:.fieldwork/apply-install-backup-rollback.py
           git rev-parse HEAD:.github/workflows/fieldwork-install-backup-rollback.yml
 
-      - name: Apply and format candidate
+      - name: Apply and format held candidate
         working-directory: coreutils
         run: |
           set -euo pipefail
@@ -53,6 +58,7 @@ jobs:
       - name: Run focused rollback tests
         working-directory: coreutils
         run: |
+          set -euo pipefail
           cargo test --features install --no-default-features test_install_restores_destination_after_copy_error_with_backup
           cargo test --features install --no-default-features test_install_copy_error_rollback_preserves_original_backup_for_later_source
           cargo test --features install --no-default-features test_install_copy_error_rollback_preserves_existing_numbered_backup
@@ -65,9 +71,19 @@ jobs:
         working-directory: coreutils
         run: cargo clippy --features install --no-default-features --all-targets -- -D warnings
 
-      - name: Record candidate diff
+      - name: Record held candidate diff
         if: always()
         working-directory: coreutils
         run: |
           git diff --stat
           git diff -- src/uu/install/src/install.rs src/uu/install/locales/en-US.ftl src/uu/install/locales/fr-FR.ftl tests/by-util/test_install.rs
+
+      - name: Enforce source promotion hold
+        if: always()
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HELD_COREUTILS_SHA"
+          test -e .fieldwork/apply-install-backup-rollback.py
+          test -e .github/workflows/fieldwork-install-backup-rollback.yml
+          echo "FIELDWORK_ROLLBACK_SOURCE_PROMOTION=disabled"
