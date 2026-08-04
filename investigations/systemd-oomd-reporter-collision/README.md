@@ -1,226 +1,195 @@
 # systemd-oomd reporter collision across user-manager reload
 
-Tracking: issue #140, upstream systemd issue #43174, and issue #194 follow-on work.
+Tracking: Linux Fieldwork issue `#140`, Linux Fieldwork PR `#245`, and upstream report `systemd/systemd#43174`.  
+Current review: `INDEPENDENT-REVIEW-2026-08-04.md`  
+External contact: `false`
 
-## TL;DR
+## Current status
 
-A continuously running `user@<uid>.service` can disappear from systemd-oomd's monitored set after that user's manager executes `daemon-reload`.
+`CURRENT-MAIN DEFECT REPRODUCED — REPORTER-AWARE REDUCER PROVEN AS A BOUNDED SLICE — INTEGRATION VALIDATION ACTIVE`
 
-Current systemd source supports a precise mechanism:
+This README supersedes the earlier pre-VM status. The historical source-only investigation remains in Git history and in the retained verifier/design documents.
 
-1. PID 1 reports `user@<uid>.service` with `ManagedOOMMemoryPressure=kill`;
-2. the user manager's root `-.slice` names the same kernel cgroup path;
-3. unit reload republishes the user manager root with its default `auto` policy;
-4. oomd stores one context per **path**, not one subscription per reporter;
-5. an `auto` message removes that path, including PID 1's stronger registration;
-6. PID 1 sees no unit transition and therefore does not send a replacement `kill` update.
+The unrelated closed Linux Fieldwork issue `#194` concerns a socat tap/bridge relay. It is not a systemd follow-on and is not part of this investigation.
 
-This is a source-supported mechanism and a strong match for the public reproducer. It is not yet a current-main VM execution result.
+## What is broken
 
-## Explain like I'm five
+A continuously running `user@<uid>.service` can disappear from systemd-oomd's monitored set after the nested user manager executes `daemon-reload`.
 
-Imagine a coat-check room with one hook labelled:
+The service does not restart and its configured policy does not change. The monitored registration is removed because two reporters describe the same kernel cgroup path while current oomd state retains only one effective record per property/path.
 
-```text
-/user.slice/user-1000.slice/user@1000.service
-```
+## Plain-language model
 
-Two clerks use the same hook:
-
-- the building clerk, PID 1, hangs a red card saying **protect this group**;
-- the user's clerk later reloads its notebook and says **I have no special instruction for my root group**.
-
-The coat-check system remembers only the hook label. It does not remember which clerk attached which card.
-
-So the second clerk's “nothing special” message removes the first clerk's protection card.
-
-The service never stopped. The cgroup never vanished. The protection record was simply overwritten by a different reporter that happened to use the same pathname.
-
-## Why care
-
-This is not merely a stale display entry. `user@<uid>.service` is the monitored ancestor that makes ordinary user services eligible for memory-pressure action when those descendants use the default `ManagedOOMMemoryPressure=auto` behavior.
-
-After the collision:
-
-- `systemd-oomd.service` remains active;
-- its bus and sockets remain healthy;
-- `oomctl` may still show user scopes;
-- the affected `user@<uid>.service` continues running;
-- its unit property still says `kill`;
-- but the ancestor is absent from oomd's monitored map.
-
-That is a dangerous failure shape because the guardrail looks healthy while silently losing coverage.
-
-## Demonstrated source chain
-
-Pinned systemd revision:
+Two clerks use the same coat-check hook:
 
 ```text
-6d7a2ec6ba21184cac1cfd39fe50d0def23220f2
+/user.slice/user-4711.slice/user@4711.service
 ```
 
-### 1. The user manager discovers its own cgroup root
+- PID 1 attaches a card saying `ManagedOOMMemoryPressure=kill`, limit 50%.
+- The user manager's root `-.slice` names the same cgroup and later reports its own default `auto` state.
+- oomd remembers the hook, not which clerk contributed each card.
+- The user's `auto` removes the shared record, including PID 1's still-live contribution.
 
-`src/core/cgroup.c` initializes `m->cgroup_root` using the current manager process:
+The service and cgroup remain alive. The protection record disappears.
 
-```c
-r = cg_pid_get_path(0, &m->cgroup_root);
-```
-
-For the user manager, that is the cgroup in which `user@<uid>.service` placed it.
-
-### 2. The user manager root slice reuses that exact path
-
-The root `-.slice` does not create a child path:
-
-```c
-if (unit_has_name(u, SPECIAL_ROOT_SLICE))
-        p = strdup(u->manager->cgroup_root);
-```
-
-Therefore the user manager's `-.slice` and PID 1's `user@<uid>.service` can describe the same kernel cgroup through different unit identities.
-
-### 3. The default ManagedOOM mode is `auto`
-
-A fresh cgroup context initializes both ManagedOOM modes to `MANAGED_OOM_AUTO`.
-
-### 4. Unit loading publishes ManagedOOM state
-
-At the end of unit load, `src/core/unit.c` calls:
-
-```c
-(void) manager_varlink_send_managed_oom_update(u);
-```
-
-The same send path is also used for relevant active-state transitions.
-
-### 5. User-manager updates include `auto`
-
-`src/core/varlink.c` builds all ManagedOOM property entries for an update. In user mode it sends them directly to oomd using `ReportManagedOOMCGroups`.
-
-The initial user-manager connection filters for explicitly enabled policies, but ordinary per-unit updates do not apply that initial-call filter. An active root slice with the default policy can therefore publish `auto` for the shared path.
-
-### 6. Oomd deletes by path, without reporter identity
-
-`src/oom/oomd-manager.c` chooses a monitored hashmap by property. For `auto`, it performs:
-
-```c
-hashmap_remove(monitor_hm, empty_to_root(message.path))
-```
-
-`OomdCGroupContext` stores the path and effective thresholds, but not the reporting manager or connection. The hashmap contract is explicitly path to context.
-
-The peer UID is used to validate whether a non-root sender owns the cgroup. It is not retained as subscription identity.
-
-## Inference
-
-The source facts above support this sequence:
+## Independently reproduced baseline
 
 ```text
-PID 1:          path P → kill, limit 50%
-user manager:   reloads root -.slice
-user manager:   path P → auto
-systemd-oomd:   remove path P
-PID 1:          no service state/property transition
-result:         path P remains unmonitored
+run:       30693755971
+job:       91352945746
+artifact:  8817102322
+outcome:   reproduced
+sha256:    c5257b5e3f230722d50f4f2f8a5a98ff94fc2fdc2644deecd4e9de5cd07c5aa9
 ```
 
-This inference explains all important observations in upstream issue #43174:
-
-- only the PID-1 registration is lost;
-- the service remains active and never restarts;
-- the cgroup path still exists;
-- user-manager-owned child scopes continue to register;
-- restarting oomd restores the PID-1 snapshot until the next user reload;
-- no disconnect or cgroup-deletion error is required.
-
-## Was this intentional?
-
-The individual behaviors are intentional:
-
-- PID 1 reports system-unit ManagedOOM policy;
-- user managers may report cgroups they own;
-- `auto` means stop monitoring that unit/property;
-- hashmap lookup by cgroup path is efficient because oomd ultimately acts on cgroups.
-
-The accidental design assumption is that one cgroup path has one authoritative reporter. The user-manager root violates that assumption: two managers attach different unit identities and policies to the same kernel object.
-
-## Retained regression
-
-`0001-test-preserve-system-registration-across-user-reload.patch` adds a focused case to `test/units/TEST-55-OOMD.sh`:
-
-1. configure `user@.service` with memory-pressure `kill` and a 50% limit;
-2. start a lingering test user's manager;
-3. wait until the exact `user@<uid>.service` cgroup appears in `oomctl`;
-4. record its active timestamp;
-5. execute `systemctl --machine testuser@.host --user daemon-reload`;
-6. check the exact cgroup remains monitored after 1, 5, and 10 seconds;
-7. prove `ActiveEnterTimestampMonotonic` is unchanged, `NRestarts=0`, and the system-unit property remains `kill`.
-
-The time-separated checks reject both immediate loss and a false transient recovery. The identity controls prove that a service restart did not merely repopulate oomd.
-
-## Fix designs
-
-### A. Track subscriptions per reporter, then derive effective policy
-
-Preferred architectural direction.
-
-Store contributions separately, for example by:
+Stable controls:
 
 ```text
-(property, cgroup path, reporter identity)
+ActiveEnterTimestampMonotonic 6615081 -> 6615081
+NRestarts                    0 -> 0
+ManagedOOMMemoryPressure     kill -> kill
 ```
 
-Then calculate one effective monitored context for the cgroup. An `auto` update removes only that reporter's contribution.
+Observed receive order:
 
-The reporter identity needs to survive reconnection and distinguish at least PID 1 from each user manager. A raw connection pointer alone is not a durable policy identity.
+```text
+9.527279  PID 1: pressure=kill, limit=50%
+9.552473  user manager: pressure=auto
+10.524699 exact target path absent
+```
 
-Open policy questions remain:
+The user-manager withdrawal arrived 25.194 ms after PID 1's registration.
 
-- when two reporters request different pressure limits, should oomd choose the stricter, the more authoritative, or reject ambiguity;
-- whether PID 1 should always outrank a user manager for the user-manager root;
-- how to remove a reporter's subscriptions on disconnect without deleting another reporter's contribution;
-- how dump output should expose overlapping sources.
+Retained evidence:
 
-### B. Give PID 1 precedence for an identical path
+```text
+artifacts/2026-08-01-current-main-vm-baseline.md
+artifacts/2026-08-01-current-main-vm-receipt.json
+artifacts/2026-08-01-current-main-causal-trace.txt
+```
 
-A narrower correction could refuse a non-root `auto` unsubscribe when a root reporter still requests `kill` for the same path.
+## Root cause
 
-This likely fixes the reported case, but it embeds precedence rules into the receive path and still needs source tracking to know whether root currently contributes policy.
+Current receive processing chooses a monitored map by property and updates/removes by cgroup path. Peer credentials validate whether a sender may report the cgroup, but reporter identity is not retained as policy ownership.
 
-### C. Suppress user-root `auto` publication
+The user manager's root `-.slice` and PID 1's `user@<uid>.service` can resolve to the same kernel cgroup. A later `auto` update therefore removes the path-level record rather than only the sending reporter's contribution.
 
-The user manager could avoid publishing default `auto` for its root `-.slice`.
+## Selected architecture
 
-This is small, but it treats one collision symptom rather than the shared-path subscription model. It may also prevent a user manager from legitimately withdrawing a policy that it previously supplied for its root.
+Store contributions by:
 
-### D. Re-send PID 1 policy after every user reload
+```text
+(reporter authority, property, cgroup path)
+```
 
-Not a sound boundary. PID 1 does not necessarily know that a nested user manager reloaded, and periodic reassertion would turn deterministic ownership into a race.
+where authority is:
 
-## Current recommended direction
+```text
+(SYSTEM_MANAGER | USER_MANAGER, uid)
+```
 
-First land the regression and demonstrate it on current systemd main. Then implement source-aware subscriptions with an explicit effective-policy rule. A narrow PID-1 precedence patch is acceptable only if the project deliberately chooses that policy and tests conflicting limits, disconnects, resubscription, and root/user `auto` transitions.
+Derive the existing monitored maps as effective runtime state.
 
-## Evidence boundary
+Required rules:
 
-`verify_source.py` proves that the exact pinned source contains every link required by the collision mechanism and emits a machine-readable record. The focused workflow also proves that the regression patch applies cleanly and leaves the complete OOMD integration test as valid shell.
+- `auto` withdraws only the sending authority's contribution;
+- system-manager policy has precedence while present;
+- one complete pressure tuple or rules list wins;
+- fields and rules from different reporters are never mixed;
+- system withdrawal reveals an already-live user fallback;
+- initial connection messages are complete authoritative snapshots, including empty state;
+- stale connection generations cannot update or withdraw current policy;
+- current disconnect/stream termination withdraws only that authority;
+- failed validation/allocation is atomic;
+- identical effective snapshots preserve timing state.
 
-Those checks do **not** execute systemd, Varlink, cgroup v2, pressure stall information, a user manager, or oomd. A disposable VM run of the patched `TEST-55-OOMD.sh` remains required before calling the runtime defect reproduced on current main.
+Detailed contracts:
 
-The upstream issue reports runtime reproductions on systemd 261 and 259. Linux Fieldwork has not independently reproduced those machines in this branch.
+```text
+DESIGN.md
+IMPLEMENTATION.md
+CONNECTION-LIFECYCLE.md
+PROTOTYPE-AUDIT.md
+```
+
+## Controlled executable lanes
+
+### Baseline and reporter trace — `teamleaderleo/systemd#1`
+
+Evidence-only reproduction and receive-boundary attribution. No product source correction is claimed in that lane.
+
+### Integration prototype — `teamleaderleo/systemd#2`
+
+The generated first slice separates system and user contributions and derives effective state with whole-tuple system precedence.
+
+Previous run `30755664280` proved exact checkout, fail-closed injection, atomicity markers, a clean generated diff, and `systemd-oomd` compilation with `--werror`. It stopped before unit/VM verdict because the workflow ran `test-oomd-util` without building that executable.
+
+The workflow was repaired at:
+
+```text
+head: fea4fe7f2c09ca2e33a2870fa7425e87d81a42ac
+run:  30914358330
+```
+
+That exact-head run is the current integration gate. No unit or VM pass is claimed until its retained result is inspected.
+
+### Standalone policy reducer — `teamleaderleo/systemd#3`
+
+Last proven exact reducer head:
+
+```text
+head:      d9b5cd00c0899bacd9637fcc466ac01a9b841bca
+run:       30913524283
+artifact:  8894149501
+digest:    sha256:db18d59e172da1b3d537cbd055685b4b5191d1f48607a845374edae29b52f5bc
+build:     564/564
+focused:   1/1 passed
+```
+
+Independent review found and repaired:
+
+- insertion-order defeat of higher-ranked system policy;
+- invalid `FOREACH_ARRAY(candidate + keep, ...)` macro usage;
+- acceptance of malformed authorities/property values;
+- a later incomplete Meson lifecycle target that referenced two nonexistent source files.
+
+The dangling target was removed at current repair head:
+
+```text
+731d633b05d29158ebcb78f59f42d943fab3930f
+```
+
+The green receipt belongs to `d9b5cd0…`; the repair head requires its own exact-head run.
+
+Detailed reducer record:
+
+```text
+C-REDUCER.md
+```
+
+## Executable specifications
+
+Python models and tests cover policy reduction, atomicity, connection generations, authoritative empty snapshots, stale disconnect isolation, current disconnect withdrawal, PID 1 stream loss, fallback, and timing-epoch preservation:
+
+```text
+model_policy.py
+model_connection_lifecycle.py
+test_model_policy.py
+test_model_atomicity.py
+test_model_connection_lifecycle.py
+test_model_snapshot_epochs.py
+```
 
 ## Disposition
 
-`SOURCE MECHANISM CONFIRMED — HOLD FOR CURRENT-MAIN VM REGRESSION AND PRODUCT DESIGN`.
-
-Human decisions:
-
-1. accept or reject source-aware per-reporter subscriptions as the product direction;
-2. define effective policy when reporters overlap;
-3. authorize a current-main VM build and test slice;
-4. separately authorize any upstream comment or pull request.
+- Baseline defect: **reproduced and causally attributed**.
+- Reporter-aware model: **selected and executable**.
+- Standalone reducer: **bounded green at exact head `d9b5cd0…`; current repair head pending exact validation**.
+- Integration prototype: **corrected exact-head validation active**.
+- Submission candidate: **not ready**.
+- Upstream contact: **none**.
 
 ## Authority
 
-Internal Linux Fieldwork research only. Public source and issue reading are authorized. No systemd issue comment, pull request, review, patch submission, email, or other external contact is included or authorized.
+All writes, reviews, and execution are confined to `teamleaderleo/linux-fieldwork` and `teamleaderleo/systemd`. No issue comment, pull request, review, reaction, patch submission, email, or other action has been made in `systemd/systemd`.
