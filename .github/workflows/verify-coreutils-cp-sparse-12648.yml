@@ -15,7 +15,7 @@ jobs:
   verify:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out controlled coreutils candidate
+      - name: Check out controlled source-only candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: teamleaderleo/coreutils
@@ -33,20 +33,18 @@ jobs:
         with:
           workspaces: coreutils
 
-      - name: Record exact staged identity
-        working-directory: coreutils
-        run: |
-          git rev-parse HEAD
-          git rev-parse HEAD:.fieldwork/apply-cp-sparse-early-eof.py
-          git rev-parse HEAD:.github/workflows/fieldwork-cp-sparse-early-eof.yml
-
-      - name: Apply and format candidate
+      - name: Record exact source identity
         working-directory: coreutils
         run: |
           set -euo pipefail
-          python3 .fieldwork/apply-cp-sparse-early-eof.py
-          cargo fmt --all
-          test "$(git diff --name-only | sort)" = 'src/uu/cp/src/platform/linux.rs'
+          git rev-parse HEAD
+          git rev-parse HEAD:src/uu/cp/src/platform/linux.rs
+          test ! -e .fieldwork/apply-cp-sparse-early-eof.py
+          test ! -e .github/workflows/fieldwork-cp-sparse-early-eof.yml
+
+      - name: Check formatting and diff hygiene
+        working-directory: coreutils
+        run: |
           cargo fmt --all -- --check
           git diff --check
 
@@ -61,10 +59,3 @@ jobs:
       - name: Run focused clippy
         working-directory: coreutils
         run: cargo clippy --features cp --no-default-features --all-targets -- -D warnings
-
-      - name: Record candidate diff
-        if: always()
-        working-directory: coreutils
-        run: |
-          git diff --stat
-          git diff -- src/uu/cp/src/platform/linux.rs
