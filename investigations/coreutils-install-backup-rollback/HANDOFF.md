@@ -2,103 +2,121 @@
 
 ## State
 
-`EXECUTING` — separate candidate staged on canonical `a730551…`; hosted gate queued; no candidate execution result yet.
+`REPAIR DESIGN — HELD SEMANTIC MODEL GREEN / SOURCE PROMOTION DISABLED`
 
 ## Exact identities
 
-- Canonical source base: `uutils/coreutils@a73055191b6d8f144c96bd487c90ae270f30c7a3`
+- Historical canonical base: `uutils/coreutils@a73055191b6d8f144c96bd487c90ae270f30c7a3`
+- Active fd-bound source reference: `uutils/coreutils#12063@eb0d2a0d7627cb563bc24dd4982cb45207810105`
 - Controlled repository: `teamleaderleo/coreutils`
 - Clean comparison base branch: `base/canonical-main-20260803`
-- Candidate branch: `fieldwork/install-restore-backup-on-copy-error`
-- Candidate staged head: `41c7b608f715e8ac4552fd825dd569d4c15f6e33`
-- Candidate draft PR: `teamleaderleo/coreutils#3`
+- Held branch: `fieldwork/install-restore-backup-on-copy-error`
+- Held head: `9779591587e4e476d303a3d94f9aa80f86d81195`
+- Controlled draft PR: `teamleaderleo/coreutils#3`
 - Linux Fieldwork branch: `investigate/coreutils-install-backup-rollback`
-- Linux Fieldwork draft PR: `teamleaderleo/linux-fieldwork#431`
+- Linux Fieldwork PR: `teamleaderleo/linux-fieldwork#431`
 
-The controlled fork's default `main` is older. PR #3 was deliberately retargeted to `base/canonical-main-20260803` so its comparison excludes unrelated canonical commits.
+## Executed held-model gate
 
-## Current gate
+Coreutils workflow run `30852946251`, job `91817127160`: success.
 
-- Coreutils workflow: `Fieldwork install backup rollback`
-- Run: `30799467577`
-- Job: `91640455224`
-- Last observed state: `queued`
+Passed:
 
-Do not claim the candidate transformation, tests, formatting, full install module, or clippy passed until this job completes.
+- fail-closed path-based candidate transformation;
+- repository rustfmt;
+- simple, existing, numbered, seeded, and multi-source rollback controls;
+- complete `install` test module;
+- focused clippy;
+- full held-candidate diff recording;
+- explicit source-promotion hold.
 
-## Candidate files before promotion
+This is target-executed evidence for the single-actor behavior model. It is not a promotable source receipt.
 
-- `.fieldwork/apply-install-backup-rollback.py`
-- `.github/workflows/fieldwork-install-backup-rollback.yml`
+## Review blocker
 
-The transformer performs exact single-occurrence replacements and exits if source layout differs. A green push gate should apply it, commit source/test/locale changes, remove both temporary files, and push a source-only head.
+The held candidate removes `destination` by pathname after copy failure and then renames the backup into that pathname.
 
-## Intended source change
+A concurrent actor can replace the path between failure and cleanup. The candidate could delete that replacement and overwrite a name it no longer owns.
 
-- Add `InstallError::RestoreBackupFailed` and English/French messages.
-- Add `restore_backup_after_copy_failure()`.
-- After `perform_backup()`, catch `copy_file()` failure.
-- When a distinct backup path exists, remove any partial destination and rename the backup to the original path.
-- Return the original copy error after successful restoration.
-- If restoration fails, print the original copy error and return the restoration error.
-- Do not restore after strip or other finalization failures.
-- Do not handle the empty-suffix same-path case; that remains with the shared backup-suffix fix.
+A metadata identity check followed by pathname unlink remains vulnerable to change between the check and unlink. Do not repair this by adding another check-then-act sequence.
 
-## Focused tests staged
+## Selected transaction
 
-1. restore destination and remove transient backup under simple mode
-2. same under existing mode
-3. same under numbered mode
-4. multi-source simple mode preserves the original backup for the later successful source
-5. seeded existing mode preserves the old numbered backup and removes the transient new backup
-6. complete install integration module
-7. formatting and focused clippy
+See `RACE_SAFE_DESIGN.md`.
 
-## GNU 9.7 reference boundary
+For a distinct backup transaction:
 
-Using `source/file -> /proc/self/mem`:
+1. move original final entry to backup;
+2. create an exclusive operation-owned named staging file in the destination directory;
+3. copy into staging and retain its open handle;
+4. publish staging to final with atomic no-clobber semantics only after complete data copy;
+5. on copy failure, delete only staging and restore backup to final with atomic no-clobber semantics;
+6. retain the published staging handle for fd-bound finalization;
+7. never unlink an occupied final pathname as rollback cleanup.
 
-- no backup: partial destination remains
-- simple/existing/numbered: original destination restored; transient backup removed
-- seeded existing: original restored; older numbered backup preserved; transient next backup removed
-- preexisting simple backup: current destination restored; older backup entry removed
-- multi-source simple: later source installs; backup contains original destination
-- failing strip: no rollback; original remains at backup name and destination is removed
+Same-directory hard-link publication followed by private-name unlink is the portable model for regular files. `renameat_with(NOREPLACE)` may be used only where its support is explicit.
 
-See `GNU_BEHAVIOR_RECEIPT.md` for the exact matrix and limits.
+## Conflict policy
 
-## Review state
+When another entry owns the final pathname:
 
-At last refresh:
+- leave that entry untouched;
+- leave the original at the backup path;
+- remove only the operation-owned staging name;
+- return a publication or restoration conflict.
 
-- `teamleaderleo/coreutils#3`: no comments, no submitted reviews, no requested reviewers
-- `teamleaderleo/linux-fieldwork#431`: no comments, no submitted reviews
+Preserving both independently owned entries takes precedence over silently reproducing single-actor GNU output during a race.
 
-No matching open issue or PR was found with the searched rollback wording. This is not authority to contact upstream.
+## Executable model
+
+`tests/test_coreutils_install_backup_rollback_model.py` retains five controls:
+
+- successful no-clobber restoration;
+- restoration conflict preserves concurrent replacement and original backup;
+- successful staged publication preserves open-handle inode identity;
+- publication conflict preserves concurrent replacement;
+- low-level no-clobber conflict preserves both names.
+
+Linux Fieldwork CI is the execution gate for this model. It remains model evidence only.
+
+## Relationship to fd-bound install work
+
+The active upstream proposal returns the created `File`, finalizes through that handle, and checks final-path identity before reporting success.
+
+The next candidate must be applied on top of one exact fd-bound source head. It should alter only the backup-mode data-copy transaction and pass the published file handle into the existing finalizer.
+
+Do not duplicate or supersede the broader fd-bound finalization work in this lane.
+
+## Required next carrier
+
+A read-only carrier should:
+
+1. check out exact fd-bound source `eb0d2a0d...` or its reviewed successor;
+2. apply a fail-closed staging transaction;
+3. add `tempfile` to `uu_install` only if the selected implementation uses it;
+4. add deterministic concurrent replacement controls;
+5. run the existing rollback matrix;
+6. run relevant fd-bound swap controls from PR #12063;
+7. run complete `install` tests, formatting, clippy, and locale checks;
+8. retain the full patched diff and exact source identity;
+9. perform no source promotion.
+
+## Durable files
+
+- `README.md` — current result and evidence boundary
+- `GNU_BEHAVIOR_RECEIPT.md` — GNU 9.7 single-actor matrix
+- `RACE_SAFE_DESIGN.md` — selected no-clobber transaction
+- `tests/test_coreutils_install_backup_rollback_model.py` — filesystem reversal model
+- controlled PR #3 — held target-executed semantic candidate
 
 ## First incomplete step
 
-Inspect run `30799467577` when it leaves queued state.
+Inspect Linux Fieldwork CI for the new filesystem model and design record.
 
-If failure occurs:
-
-1. fetch exact steps/logs;
-2. classify transformer-anchor failure separately from Rust compile/test/lint failure;
-3. repair only the first owner;
-4. preserve the GNU behavior matrix unchanged.
-
-If green promotion occurs:
-
-1. refresh candidate head;
-2. confirm temporary transformer/workflow were deleted;
-3. list and inspect every final changed file;
-4. verify PR #3 remains clean against the canonical-base branch;
-5. compare with current canonical main and restack if required;
-6. update README/HANDOFF with exact run, job, source commit, blobs, and final evidence boundary;
-7. keep drafts and make no canonical-upstream contact without explicit authorization.
+Then prepare the guarded fd-bound carrier. If an implementation cannot provide deterministic no-clobber conflict behavior, keep the lane held rather than reverting to path-based deletion.
 
 ## Authority
 
 Canonical-upstream contact: `false`.
 
-No upstream issue, PR, comment, review, email, or patch submission was authorized or made.
+No upstream issue, pull request, comment, review, reaction, email, release, deployment, or patch submission was authorized or made.
