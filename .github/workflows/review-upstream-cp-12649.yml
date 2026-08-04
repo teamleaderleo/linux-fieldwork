@@ -1,0 +1,54 @@
+name: Review upstream cp 12649
+
+on:
+  push:
+    branches:
+      - investigate/coreutils-cp-sparse-early-eof-12648
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact upstream PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: uutils/coreutils
+          ref: 02579fe9aa8329e85a6d06038e16fda5687d7c22
+          path: coreutils
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          workspaces: coreutils
+
+      - name: Build cp
+        working-directory: coreutils
+        run: cargo build -p uu_cp --bin cp
+
+      - name: Confirm early EOF leaves the stale pre-sized destination
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          truncate -s 64G "$work/src"
+          (sleep 0.05; truncate -s 0 "$work/src") &
+          truncator=$!
+          timeout 30 ./target/debug/cp --reflink=never --sparse=always "$work/src" "$work/dst"
+          wait "$truncator"
+          src_size=$(stat -c %s "$work/src")
+          dst_size=$(stat -c %s "$work/dst")
+          printf 'source-size=%s\ndestination-size=%s\n' "$src_size" "$dst_size"
+          test "$src_size" -eq 0
+          test "$dst_size" -eq 68719476736
