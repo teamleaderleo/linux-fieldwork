@@ -15,7 +15,7 @@ jobs:
   verify:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out controlled coreutils candidate
+      - name: Check out controlled source-only candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: teamleaderleo/coreutils
@@ -33,20 +33,18 @@ jobs:
         with:
           workspaces: coreutils
 
-      - name: Record exact staged identity
-        working-directory: coreutils
-        run: |
-          git rev-parse HEAD
-          git rev-parse HEAD:.fieldwork/apply-cat-fd-classification.py
-          git rev-parse HEAD:.github/workflows/fieldwork-cat-fd-classification.yml
-
-      - name: Apply and format candidate
+      - name: Record exact source identity
         working-directory: coreutils
         run: |
           set -euo pipefail
-          python3 .fieldwork/apply-cat-fd-classification.py
-          cargo fmt --all
-          test "$(git diff --name-only | sort)" = $'src/uu/cat/src/cat.rs\ntests/by-util/test_cat.rs'
+          git rev-parse HEAD
+          git rev-parse HEAD:src/uu/cat/src/cat.rs
+          test ! -e .fieldwork/apply-cat-fd-classification.py
+          test ! -e .github/workflows/fieldwork-cat-fd-classification.yml
+
+      - name: Check formatting and diff hygiene
+        working-directory: coreutils
+        run: |
           cargo fmt --all -- --check
           git diff --check
 
@@ -57,8 +55,8 @@ jobs:
       - name: Test preserved diagnostics
         working-directory: coreutils
         run: |
-          cargo test --features cat --no-default-features test_socket_reports_open_error
-          cargo test --features cat --no-default-features test_symlink_loop_reports_open_error
+          cargo test --features cat --no-default-features test_domain_socket
+          cargo test --features cat --no-default-features test_error_loop
           cargo test --features cat --no-default-features test_directory
 
       - name: Run cat integration module
@@ -68,10 +66,3 @@ jobs:
       - name: Run focused clippy
         working-directory: coreutils
         run: cargo clippy --features cat --no-default-features --all-targets -- -D warnings
-
-      - name: Record candidate diff
-        if: always()
-        working-directory: coreutils
-        run: |
-          git diff --stat
-          git diff -- src/uu/cat/src/cat.rs tests/by-util/test_cat.rs
