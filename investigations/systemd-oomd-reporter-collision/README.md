@@ -1,12 +1,12 @@
 # systemd-oomd reporter collision across user-manager reload
 
 Tracking: Linux Fieldwork issue `#140`, Linux Fieldwork PR `#245`, and upstream report `systemd/systemd#43174`.  
-Current review: `INDEPENDENT-REVIEW-2026-08-04.md`  
+Current review: `INDEPENDENT-REVIEW-2026-08-05.md`  
 External contact: `false`
 
 ## Current status
 
-`CURRENT-MAIN DEFECT REPRODUCED — POLICY AND REPORTER-LIFECYCLE MODELS EXACT-HEAD GREEN — LIVE INTEGRATION VALIDATION ACTIVE`
+`CURRENT-MAIN DEFECT REPRODUCED — LIVE BOUNDED CORRECTION GREEN — POLICY/LIFECYCLE/REGISTRY MODELS EXACT-HEAD GREEN — NATIVE MANAGER INTEGRATION NEXT`
 
 The unrelated closed Linux Fieldwork issue `#194` concerns a socat tap/bridge relay. It is not a systemd follow-on.
 
@@ -111,6 +111,7 @@ CONNECTION-LIFECYCLE.md
 PROTOTYPE-AUDIT.md
 C-REDUCER.md
 INDEPENDENT-REVIEW-2026-08-04.md
+INDEPENDENT-REVIEW-2026-08-05.md
 ```
 
 ## Controlled executable lanes
@@ -119,20 +120,34 @@ INDEPENDENT-REVIEW-2026-08-04.md
 
 Evidence-only reproduction and receive-boundary attribution. No product correction is claimed in that lane.
 
-### Integration prototype — `teamleaderleo/systemd#2`
+### Live integration prototype — `teamleaderleo/systemd#2`
 
-The generated first slice separates system and user contributions and derives effective state with whole-tuple system precedence.
-
-Run `30755664280` proved exact checkout, fail-closed injection, atomicity markers, a clean generated diff, and `systemd-oomd` compilation with `--werror`. It stopped before unit/VM verdict because the workflow ran `test-oomd-util` without building that executable.
-
-The harness was repaired at:
+Authoritative exact-head result:
 
 ```text
-head: fea4fe7f2c09ca2e33a2870fa7425e87d81a42ac
-run:  30914358330
+head:            2f04a87e25df0d56f01cab5de8c99472806929a7
+run:             30916547610
+artifact:        8895926721
+artifact digest: sha256:66ac9ee7c797dd776bb85c8705e93b4343deb8823b6bf6094ced10a6106c39d6
+build:           557/557
+unit:            test-oomd-util 1/1 passed
+integration:     TEST-55-OOMD 1/1 passed in 35.59s
+outcome:         fixed
+identity:        direct-controlled-fork-head
 ```
 
-That run has already compiled `systemd-oomd` and `test-oomd-util` and passed the existing focused unit test. At this checkpoint it is still building the integration image; the two live VM cases remain unproven until their retained artifact is inspected.
+Guest evidence contains:
+
+```text
+FIELDWORK_OOMD_SOURCE_PRECEDENCE=PASSED
+FIELDWORK_OOMD_REPORTER_COLLISION=NOT_REPRODUCED
+```
+
+This bounded generated slice proved reload preservation, system-over-user precedence, live fallback after system withdrawal, and final removal after user withdrawal.
+
+The predecessor run `30914358330` produced the same guest-success markers but failed after guest completion because `TEST_RUNNER` was unset. Head `2f04a87e…` repaired the postprocessing contract and produced the authoritative green receipt.
+
+This lane remains deliberately incomplete: it does not provide live per-link generations, authoritative snapshots on the wire, disconnect/PID 1 stream withdrawal, cgroup cleanup, or source diagnostics.
 
 ### Policy reducer and reporter lifecycle — `teamleaderleo/systemd#3`
 
@@ -154,17 +169,42 @@ test-oomd-policy
 test-oomd-reporter-lifecycle
 ```
 
-Independent review found and repaired:
-
-- insertion-order defeat of higher-ranked system policy;
-- invalid snapshot array-macro use;
-- acceptance of malformed authorities/property values;
-- an incomplete lifecycle target referencing nonexistent files;
-- missing Meson wiring after the lifecycle sources were added.
+Independent review found and repaired insertion-order precedence, invalid array iteration, malformed typed values, dangling lifecycle targets, missing Meson wiring, and stale exact-head attribution.
 
 The receipt records `manager_integration=false`. This proves the policy and generation models, not live Varlink or manager behavior.
 
-The lifecycle model retains old active policy while a replacement connection is pending. Live integration therefore depends on an authoritative first snapshot—including empty state—or another bounded handshake mechanism.
+### Transactional reporter registry — `teamleaderleo/systemd#9`
+
+This stacked draft composes the reducer and lifecycle components behind one synchronous registry API.
+
+```text
+base:      linux-fieldwork/oomd-policy-reducer@76749bfd3dda498c15a88c4e572340d8ade3e82b
+head:      f9bcf18a8ffc6946736791f59c15c35835eba01a
+run:       30918135713
+artifact:  8896332176
+digest:    sha256:fcd64484c5fd50cfdc8c25bea506ca3364fbc75564c93b2e0b9dd567e6136e0c
+build:     566/566
+focused:   test-oomd-reporter-registry 1/1 passed
+identity:  direct-controlled-fork-head
+```
+
+It stages policy replacement or withdrawal in a cloned store, commits lifecycle state only after policy work succeeds, and publishes the candidate store only when the full operation succeeds.
+
+Independent review is positive for the declared single-threaded model boundary. The validate-then-commit pairing relies on serialized registry ownership: no second actor may mutate lifecycle state between validation and commit. Live integration must enforce that event-loop invariant or replace the split calls with a version-checked/atomic transaction primitive.
+
+The receipt records `manager_integration=false` and `external_contact=false`.
+
+## Wire-protocol boundary
+
+Current user-manager reconnect reporting uses `allow_empty=false`. A manager with no explicit policies sends no reconnect message, so the server cannot distinguish an authoritative empty snapshot from an uninitialized connection generation.
+
+The next live lane needs an explicit authoritative snapshot operation that can carry:
+
+```text
+cgroups: []
+```
+
+Incremental updates should remain separate and accepted only from the initialized active generation.
 
 ## Executable specifications
 
@@ -183,10 +223,16 @@ test_model_snapshot_epochs.py
 
 - Baseline defect: **reproduced and causally attributed**.
 - Reporter-aware architecture: **selected and executable**.
+- Live bounded source-precedence correction: **exact-head green at `2f04a87e…`**.
 - Policy reducer and reporter lifecycle models: **exact-head green at `76749bfd…`**.
-- Live integration prototype: **unit gate passed; VM gate still active**.
+- Transactional reporter registry: **exact-head green at `f9bcf18a…`**.
+- Native manager/Varlink integration: **not implemented**.
 - Submission candidate: **not ready**.
 - Upstream contact: **none**.
+
+## Next engineering move
+
+Open a native manager/Varlink integration lane rather than expanding the temporary six-map injector indefinitely. It must include authoritative empty snapshots, per-link generations, serialized or version-checked transactions, current disconnect and PID 1 stream-loss withdrawal, reconnect promotion after successful replacement, cgroup cleanup, timer preservation, and source diagnostics.
 
 ## Authority
 
