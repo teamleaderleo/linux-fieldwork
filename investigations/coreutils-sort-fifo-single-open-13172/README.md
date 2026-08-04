@@ -1,133 +1,132 @@
-# uutils `sort`: a FIFO must not be opened by a disposable preflight pass
+# uutils `sort`: preserve one stream session without losing preflight
 
 ## TL;DR
 
-The named-FIFO hang is not an unterminated-line parsing defect. `sort` first opens every named input to validate it, drops those handles, and later reopens the inputs for real sorting. For a FIFO, that first open is the reader session the writer connects to. Its unread bytes are discarded when the temporary handle closes, and the real pass blocks waiting for another writer.
+The named-FIFO hang is not an unterminated-line parser bug. `sort` opens each named input for validation, drops the handle, and later opens it again for real sorting. For a FIFO, the first open owns the writer session; dropping it discards unread bytes and the real pass waits for another writer.
 
-The controlled candidate retains preflight for ordinary inputs so missing-file errors still appear before any stream wait, but skips FIFO preflight on Unix and opens each FIFO only for actual consumption.
+A first controlled candidate skipped preflight when pathname metadata identified a FIFO. That fixes the headline behavior but is now **held**: pathname metadata is not the right owner for descriptor lifetime and can race with replacement.
+
+The stronger design must open nonblocking, classify seekability from the opened handle, retain only non-seekable readers, clear nonblocking mode before consumption, and close/reopen ordinary files.
 
 ## Explain like I'm five
 
-A writer brings one envelope to a pipe. `sort` sends a fake reader to the pipe first, accepts the envelope, throws it away unopened, and leaves. Then the real reader arrives and waits forever for a second envelope.
+A writer brings one envelope to a pipe. `sort` sends a temporary reader first, accepts the envelope, throws it away, and leaves. The real reader then waits forever.
 
-The repair removes only the fake FIFO reader. Ordinary files still get checked in advance.
+The correct reader should be opened once and kept. But ordinary books should still be checked and closed so `sort` does not run out of file handles.
 
 ## Why care
 
-A normal one-writer FIFO session can hang indefinitely and lose the data already delivered. This affects named-pipe workflows even though the same unterminated input works correctly over stdin.
+The current behavior loses a real writer session and can hang indefinitely. A careless repair can introduce two other regressions:
+
+- block on an early FIFO before discovering a later missing file;
+- retain every ordinary input descriptor and reach `EMFILE` on large argument lists.
 
 ## Current state
 
-- State: `EXECUTING`
-- Canonical source base: `uutils/coreutils@89bdbb86627670afb6794f762bed5bd94372f331`
-- Controlled source branch: `teamleaderleo/coreutils:fieldwork/sort-fifo-single-open-13172`
-- Controlled staged head: `2f3d1d56a0f5a242bad0bc32fadc905617f1e592`
+- State: `HOLD / REDESIGN`
+- Issue: `uutils/coreutils#13172`
+- Canonical source base originally inspected: `89bdbb86627670afb6794f762bed5bd94372f331`
+- Current fork main: `21d4e9635b07a04f262cd8a5386f2987bca6cfef`
+- Controlled held branch: `teamleaderleo/coreutils:fieldwork/sort-fifo-single-open-13172`
 - Controlled draft PR: `teamleaderleo/coreutils#6`
-- First incomplete step: inspect the focused hosted workflow
-- Cleanup state: transformer and workflow remain until green promotion
-- Next safe action: classify the first failed step or review the source-only promoted head
+- Canonical overlapping PR: `uutils/coreutils#13494`
+- Source promotion: disabled
 - External-contact state: no canonical-upstream contact authorized or made
 
-## Intent and history
-
-Current source deliberately validates every input, closes it, and reopens later, with a comment that this prevents exhausting file descriptors. That policy is reasonable for ordinary files but assumes opening is observational and repeatable.
-
-FIFO opening is neither. A blocking read-only open synchronizes with a writer, and the resulting handle owns that writer session. Dropping it without reading is observable data loss.
-
-## Question
-
-Can `sort` preserve early diagnostics for ordinary inputs while ensuring each named FIFO is opened only by the pass that will consume it?
-
-## Source
-
-- Project: uutils/coreutils
-- Issue: `#13172`
-- Resolved canonical commit: `89bdbb86627670afb6794f762bed5bd94372f331`
-- Controlled comparison base: `teamleaderleo/coreutils:base/canonical-main-20260804c`
-- Controlled candidate: `fieldwork/sort-fifo-single-open-13172`
-- Candidate source commit: pending promotion
-- Imported source: none; exact Git identities are the source boundary
-
-## Baseline path
-
-In `uumain()`:
+## Baseline operation
 
 ```text
-for each named input:
-    open(input)
+for every named input:
+    open input
     drop handle
 
-exec():
-    map open(input) again
+later:
+    open input again
     read and sort
 ```
 
-For a FIFO:
-
-```text
-preflight open blocks until writer
-writer writes and closes
-preflight handle drops unread bytes
-real open blocks waiting for another writer
-```
+For a FIFO, opening is a synchronization and consumption boundary, not a harmless availability check.
 
 ## GNU 9.7 behavior receipt
 
 Black-box probes establish:
 
-- one FIFO writer sending `hello` without a newline produces `hello\n` and exits successfully;
+- one FIFO writer sending `hello` without a newline produces `hello\n`;
 - regular file plus FIFO is sorted together;
-- two FIFO operands are consumed with one writer session each;
-- a missing ordinary operand is reported before waiting on a FIFO, even when the FIFO is listed first.
+- two FIFO operands use one writer session each;
+- normal and merge modes report a later missing ordinary input before waiting on a FIFO, even when the FIFO is listed first;
+- check mode rejects extra operands before input consumption.
 
-The last result means deleting all preflight opens would be an incomplete compatibility repair.
+Deleting preflight entirely is therefore not compatible.
 
-## Candidate
+## First candidate and why it is held
 
-Add `should_preflight_input(path)`:
+The staged candidate uses `metadata(path).file_type().is_fifo()` to skip the disposable open only for FIFOs.
 
-- stdin remains preflightable;
-- on non-Unix, behavior is unchanged;
-- on Unix, `metadata()` identifies a FIFO, including a symlink resolving to a FIFO;
-- only FIFOs skip the availability-open loop;
-- missing paths still enter the existing open path and preserve the missing-file diagnostic;
-- the actual sorting, merge, and check readers remain unchanged.
+Focused tests cover the headline FIFO case and missing-file ordering. However:
 
-## Tests
+- the path can change between metadata and the real open;
+- file type is inferred from a pathname rather than behavior of the opened object;
+- non-FIFO non-seekable inputs remain outside the model;
+- symlink and replacement behavior depends on two separate path resolutions.
 
-### FIFO session test
+The workflow is read-only and cannot promote this implementation.
 
-1. Create a FIFO.
-2. Spawn one writer thread.
-3. Write `hello` without a newline and close.
-4. Run `sort` with a five-second harness timeout.
-5. Require successful `hello\n` output.
+## Review of canonical PR #13494
 
-### Preflight-order test
+That PR moves toward handle-based detection by seeking the opened reader and retaining non-seekable handles. This is directionally better than path metadata.
 
-1. Create a FIFO but no writer.
-2. Invoke `sort FIFO missing` with a two-second harness timeout.
-3. Require the missing-file diagnostic and exit code 2.
+The reviewed revision still raises two concrete concerns:
 
-This test proves ordinary preflight remains ahead of FIFO consumption regardless of argument order.
+1. **Error ordering:** it disables ordinary preflight in normal and merge paths, so `sort FIFO missing` appears to wait for the FIFO rather than report the missing operand first.
+2. **Descriptor budget:** it retains every opened ordinary input, potentially undoing the original reason for close-and-reopen and reaching `EMFILE` under a low descriptor limit.
 
-## Results
+Read-only exact-head workflows were added to test both claims rather than relying solely on diff inspection.
 
-The candidate is staged behind a fail-closed exact transformer and a two-file fence. No product result is claimed until the hosted gate completes.
+## Stronger candidate direction
 
-## Interpretation
+### Preparation phase
 
-The operation owner is the FIFO reader session, not merely the pathname. Availability checking is safe only when opening and dropping a handle has no externally visible consumption or synchronization effect.
+For every named Unix input:
 
-The minimal fix does not redesign the input iterator. It exempts the one file type for which the existing validation strategy destroys the real read session.
+1. open with `O_NONBLOCK` so a FIFO without a writer does not stall validation;
+2. attempt a descriptor operation such as `seek(Current(0))` to determine seekability;
+3. if seekable, close the descriptor and retain the pathname for later reopen;
+4. if non-seekable (`ESPIPE`), retain that exact descriptor;
+5. clear `O_NONBLOCK` on retained streams before the read phase;
+6. propagate all ordinary open errors before reading any stream.
 
-## Evidence boundary
+### Execution phase
 
-The candidate currently targets Unix FIFO semantics. Windows named pipes are outside this change. Devices and sockets retain existing preflight behavior. The integration test uses real FIFO synchronization and a bounded timeout; it does not rely on a sleep to make the writer race the reader.
+Carry a prepared-input abstraction through:
 
-## Next step
+- normal external sort;
+- merge mode;
+- check mode.
 
-Inspect the focused gate. If green, verify promotion leaves only `src/uu/sort/src/sort.rs` and `tests/by-util/test_sort.rs`, review every changed line, compare against current canonical main, and update this record with exact blobs and receipts.
+A prepared input is either:
+
+- a pathname that can be safely reopened; or
+- an already-open non-seekable reader that must be consumed exactly once.
+
+### Platform precedent
+
+`sync` already uses nonblocking open followed by flag reset, giving an in-tree precedent for avoiding blocking during setup without leaving the descriptor nonblocking for the operation itself.
+
+## Required tests
+
+1. one-writer unterminated FIFO in normal mode;
+2. the same in merge mode;
+3. two independent FIFOs;
+4. FIFO first plus missing ordinary file in normal and merge modes;
+5. many regular inputs under low `RLIMIT_NOFILE` still succeed;
+6. symlink resolving to FIFO consumes one retained descriptor;
+7. path replacement after preparation does not redirect a retained stream;
+8. complete sort integration module, rustfmt, and clippy.
+
+## Stop signal
+
+Do not promote a source patch until normal, merge, and check paths share the prepared-reader abstraction and both error-ordering and descriptor-budget controls pass.
 
 ## Authority
 
