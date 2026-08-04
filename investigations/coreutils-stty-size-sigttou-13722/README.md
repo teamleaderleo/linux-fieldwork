@@ -21,7 +21,7 @@ The failure is a silent stopped process, not an ordinary command error. A parent
 - State: `EXECUTING`
 - Canonical source base: `uutils/coreutils@21d4e9635b07a04f262cd8a5386f2987bca6cfef`
 - Controlled branch: `teamleaderleo/coreutils:fieldwork/stty-size-read-only-13722`
-- Current staged head: `0427b83706d33838388e90f862dd7cbc735de73e`
+- Current staged head: `d182649a1928e1501bf230d6ba14928352dcd1a0`
 - Controlled draft PR: `teamleaderleo/coreutils#7`
 - Matching canonical PR found: none at the recorded search boundary
 - Source promotion: pending hosted verification
@@ -52,6 +52,7 @@ The action loop is unchanged. Only the final terminal-state write is guarded. Th
 
 ### Unit boundary
 
+- an empty parsed action set, as produced by control-only operands, does not require `tcsetattr`;
 - `size` alone does not require `tcsetattr`;
 - a real special setting does;
 - `size` mixed with a real setting does.
@@ -67,9 +68,12 @@ The same harness was exercised locally against the host kernel and GNU coreutils
 ```text
 negative control: stopped:22
 GNU stty size:    exit:0
+GNU stty drain:  exit:0
+GNU size drain:  exit:0
+GNU -echo size:  stopped:22
 ```
 
-This proves that the test setup actually enforces job control rather than passing because the shell or runner ignored SIGTTOU.
+This proves that the test setup actually enforces job control and maps the print/control/mutation boundary.
 
 ### General regression checks
 
