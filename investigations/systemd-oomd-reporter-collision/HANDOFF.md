@@ -1,7 +1,7 @@
 # Handoff — systemd-oomd reporter ownership
 
 Updated: `2026-08-04`  
-State: `ACTIVE — DEFECT REPRODUCED; REDUCER BOUNDED-GREEN; INTEGRATION EXACT-HEAD GATE ACTIVE`  
+State: `ACTIVE — DEFECT REPRODUCED; POLICY/LIFECYCLE MODELS EXACT-HEAD GREEN; LIVE INTEGRATION VM GATE ACTIVE`  
 Linux Fieldwork issue: `#140`  
 Linux Fieldwork PR: `#245`  
 Independent review: `INDEPENDENT-REVIEW-2026-08-04.md`  
@@ -11,7 +11,7 @@ External contact: `false`
 
 Use Linux Fieldwork for narrative, evidence, design contracts, review checkpoints, and handoff. Use `teamleaderleo/systemd` for executable controlled-fork experiments.
 
-Do not use Linux Fieldwork issue `#194` for this work. It is a closed socat tap/bridge relay item and is unrelated to systemd.
+Do not use Linux Fieldwork issue `#194`; it is a closed socat tap/bridge relay item unrelated to systemd.
 
 ## Proven baseline
 
@@ -71,6 +71,8 @@ DESIGN.md
 IMPLEMENTATION.md
 CONNECTION-LIFECYCLE.md
 PROTOTYPE-AUDIT.md
+C-REDUCER.md
+INDEPENDENT-REVIEW-2026-08-04.md
 ```
 
 ## Lane 1 — baseline and attribution
@@ -79,13 +81,13 @@ Controlled PR: `teamleaderleo/systemd#1`
 
 Use this lane only for reproduction and reporter attribution. Do not add product behavior there.
 
-## Lane 2 — integration prototype
+## Lane 2 — live integration prototype
 
 Controlled PR: `teamleaderleo/systemd#2`  
 Branch: `linux-fieldwork/oomd-reporter-source-precedence`  
-Current head at this handoff: `fea4fe7f2c09ca2e33a2870fa7425e87d81a42ac`
+Current exact head: `fea4fe7f2c09ca2e33a2870fa7425e87d81a42ac`
 
-Previous run `30755664280` proved:
+Run `30755664280` proved:
 
 - direct controlled-fork head identity;
 - fail-closed source/test injection;
@@ -93,7 +95,7 @@ Previous run `30755664280` proved:
 - clean generated diff;
 - `systemd-oomd` compilation with `--werror`.
 
-It did not prove the unit or VM cases. The workflow attempted `meson test --no-rebuild test-oomd-util` without first building `test-oomd-util`, so the unit step failed as a harness defect and VM steps were skipped.
+It did not prove unit or VM behavior because the workflow attempted `meson test --no-rebuild test-oomd-util` without first building the test executable.
 
 Repair commit:
 
@@ -105,83 +107,91 @@ ci: build oomd unit test before no-rebuild execution
 Current focused run:
 
 ```text
-30914358330 — in progress at this handoff snapshot
+30914358330
 ```
 
-Inspect, in order:
+Already passed at this handoff snapshot:
 
-1. exact-head identity;
-2. product/test injection;
-3. `git diff --check` and atomicity markers;
-4. `systemd-oomd` and `test-oomd-util` compile;
-5. existing focused unit test;
-6. integration image build;
-7. reload-preservation VM case;
-8. 50%-system versus 70%-user precedence/fallback case;
-9. receipt, generated product diff, and guest journal.
+- exact direct-head checkout;
+- fail-closed product/test injection;
+- atomicity markers;
+- clean generated diff;
+- Meson configure;
+- `systemd-oomd` and `test-oomd-util` compilation;
+- existing focused `test-oomd-util` execution.
 
-Do not call the integration slice green unless all required stages ran and the retained evidence matches `fea4fe7…`.
+Still active:
 
-## Lane 3 — standalone reducer
+- integration image build;
+- reload-preservation VM case;
+- 50%-system versus 70%-user precedence/fallback VM case;
+- retained receipt, generated product diff, and guest journal.
+
+Do not call the live integration slice green unless the required VM stages run and the retained evidence matches `fea4fe7…`.
+
+## Lane 3 — policy reducer and reporter lifecycle
 
 Controlled PR: `teamleaderleo/systemd#3`  
 Branch: `linux-fieldwork/oomd-policy-reducer`
 
-Last proven exact reducer result:
+Current authoritative exact-head result:
 
 ```text
-head:      d9b5cd00c0899bacd9637fcc466ac01a9b841bca
-run:       30913524283
-artifact:  8894149501
-digest:    sha256:db18d59e172da1b3d537cbd055685b4b5191d1f48607a845374edae29b52f5bc
-build:     564/564
-focused:   1/1 passed
+head:      76749bfd3dda498c15a88c4e572340d8ade3e82b
+run:       30915443613
+artifact:  8894962609
+digest:    sha256:a9e87098bcd7c9ef5ad154e2e884150233ed0cb09a53c203b378a1dc28db5f37
+build:     567/567
+focused:   2/2 passed
+identity:  direct-controlled-fork-head
 ```
 
-Independent review repairs already present in that reducer lineage:
+Focused targets:
+
+```text
+test-oomd-policy
+test-oomd-reporter-lifecycle
+```
+
+The receipt records:
+
+```text
+policy=typed-array copy-and-swap reducer
+lifecycle=two-phase generation-safe reporter transitions
+manager_integration=false
+external_contact=false
+```
+
+Independent review repairs in this lineage:
 
 - highest-rank ambiguity no longer depends on insertion order;
 - invalid array-macro iteration replaced by indexed duplicate detection;
-- invalid authorities and property/value mismatches rejected;
-- malformed incremental/snapshot rejection proven atomic.
+- invalid authorities and property/value mismatches rejected atomically;
+- dangling lifecycle references to nonexistent files removed;
+- lifecycle source and focused test properly wired into Meson once the files existed;
+- older green receipts kept tied to their exact tested commits.
 
-A later incomplete commit at `fb8fcebb…` referenced two nonexistent lifecycle source files and broke the branch. The dangling target was removed at:
+The lifecycle model retains old active policy while a replacement connection is pending. Live integration therefore requires an authoritative first snapshot—including empty state—or another bounded handshake mechanism.
 
-```text
-731d633b05d29158ebcb78f59f42d943fab3930f
-```
-
-Current repair run:
-
-```text
-30914688124 — queued at this handoff snapshot
-```
-
-The older green receipt proves `d9b5cd0…`, not `731d633…`. Inspect the new exact-head receipt before updating the bounded-green head.
-
-Detailed record:
-
-```text
-C-REDUCER.md
-```
+This lane is green only as a model layer. It does not yet modify live manager or Varlink behavior.
 
 ## Immediate next actions
 
 1. Finish and inspect integration run `30914358330`.
-2. Finish and inspect reducer repair run `30914688124`.
-3. Update exact heads/runs/artifact digests in README, C-REDUCER, PR #245, and the two controlled-fork PR descriptions.
-4. If integration is green, begin a separate generation/snapshot integration lane rather than expanding the temporary six-map prototype.
-5. Test authoritative empty snapshots, stale generations, current disconnect, PID 1 stream termination/reconnect, cgroup disappearance, and source diagnostics.
+2. Download and inspect its receipt, generated product diff, unit log, VM journal, and both testcase outcomes.
+3. If live integration is green, open a separate generation/snapshot integration lane rather than expanding the temporary six-map prototype.
+4. Integrate authoritative empty snapshots, stale-generation rejection, current disconnect, PID 1 stream termination/reconnect, cgroup disappearance cleanup, and source diagnostics.
+5. Keep exact-head attribution after every branch movement.
 6. Keep all writes internal until upstream contact is separately authorized.
 
 ## Review guard
 
-Internal review may find and repair defects. It must still preserve exact attribution:
+Internal reviewers may find and repair defects. They must still preserve evidence discipline:
 
 - a green result belongs only to the tested commit;
-- a self-authored review is not upstream acceptance;
+- internal self-review is not upstream acceptance;
 - queued/skipped stages are not passes;
-- harness failures are not product failures, but they still block the missing product verdict;
+- harness failures are not product failures, but they still block the missing verdict;
 - branch movement after a receipt requires a new exact-head gate.
 
 ## Authority
