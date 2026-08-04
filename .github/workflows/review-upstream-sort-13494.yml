@@ -36,20 +36,25 @@ jobs:
         working-directory: coreutils
         run: cargo build -p uu_sort --bin sort
 
-      - name: Confirm FIFO-first input blocks before a later missing-file error
+      - name: Confirm normal and merge modes block before a later missing-file error
         working-directory: coreutils
         run: |
           set -euo pipefail
           work=$(mktemp -d)
           trap 'rm -rf "$work"' EXIT
-          mkfifo "$work/input.fifo"
-          set +e
-          timeout 2 ./target/debug/sort "$work/input.fifo" "$work/missing" >"$work/out" 2>"$work/err"
-          status=$?
-          set -e
-          printf 'status=%s\nstderr=%s\n' "$status" "$(cat "$work/err")"
-          test "$status" -eq 124
-          test ! -s "$work/err"
+          for mode in normal merge; do
+            rm -f "$work/input.fifo"
+            mkfifo "$work/input.fifo"
+            args=()
+            if [ "$mode" = merge ]; then args=(-m); fi
+            set +e
+            timeout 2 ./target/debug/sort "${args[@]}" "$work/input.fifo" "$work/missing" >"$work/$mode.out" 2>"$work/$mode.err"
+            status=$?
+            set -e
+            printf '%s status=%s stderr=%s\n' "$mode" "$status" "$(cat "$work/$mode.err")"
+            test "$status" -eq 124
+            test ! -s "$work/$mode.err"
+          done
 
       - name: Confirm retaining every ordinary input can exhaust the descriptor budget
         working-directory: coreutils
