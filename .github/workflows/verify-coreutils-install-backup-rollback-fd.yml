@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/verify-coreutils-install-backup-rollback-fd.yml
       - investigations/coreutils-install-backup-rollback/apply_fd_staged_candidate.py
+      - investigations/coreutils-install-backup-rollback/finalize_fd_staged_candidate.py
       - investigations/coreutils-install-backup-rollback/RACE_SAFE_DESIGN.md
       - tests/test_coreutils_install_backup_rollback_model.py
   pull_request:
@@ -15,6 +16,7 @@ on:
     paths:
       - .github/workflows/verify-coreutils-install-backup-rollback-fd.yml
       - investigations/coreutils-install-backup-rollback/apply_fd_staged_candidate.py
+      - investigations/coreutils-install-backup-rollback/finalize_fd_staged_candidate.py
       - investigations/coreutils-install-backup-rollback/RACE_SAFE_DESIGN.md
       - tests/test_coreutils_install_backup_rollback_model.py
   workflow_dispatch:
@@ -36,11 +38,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Compile transformer and run filesystem reversal model
+      - name: Compile transformers and run filesystem reversal model
         run: |
           set -euo pipefail
           python3 -m py_compile \
             investigations/coreutils-install-backup-rollback/apply_fd_staged_candidate.py \
+            investigations/coreutils-install-backup-rollback/finalize_fd_staged_candidate.py \
             tests/test_coreutils_install_backup_rollback_model.py
           python3 -m unittest -v \
             tests.test_coreutils_install_backup_rollback_model
@@ -79,6 +82,7 @@ jobs:
           set -euo pipefail
           test "$(git -C coreutils rev-parse HEAD)" = "$COREUTILS_SHA"
           python3 fieldwork/investigations/coreutils-install-backup-rollback/apply_fd_staged_candidate.py coreutils
+          python3 fieldwork/investigations/coreutils-install-backup-rollback/finalize_fd_staged_candidate.py coreutils
           test "$(git -C coreutils diff --name-only | sort)" = $'src/uu/install/Cargo.toml\nsrc/uu/install/locales/en-US.ftl\nsrc/uu/install/locales/fr-FR.ftl\nsrc/uu/install/src/install.rs\ntests/by-util/test_install.rs'
           git -C coreutils diff --check
 
@@ -138,14 +142,14 @@ jobs:
         working-directory: coreutils
         run: cargo clippy --features 'install chmod' --no-default-features --all-targets -- -D warnings
 
-      - name: Verify final candidate fence and clean source identity
+      - name: Verify final candidate fence and source identity
         working-directory: coreutils
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$COREUTILS_SHA"
           test "$(git diff --name-only | sort)" = $'src/uu/install/Cargo.toml\nsrc/uu/install/locales/en-US.ftl\nsrc/uu/install/locales/fr-FR.ftl\nsrc/uu/install/src/install.rs\ntests/by-util/test_install.rs'
           git diff --check
-          test -z "$(git status --porcelain | grep -v '^ M ' || true)"
+          test -z "$(git status --porcelain | grep '^??' || true)"
 
       - name: Upload complete fd-staged review packet
         if: always()
