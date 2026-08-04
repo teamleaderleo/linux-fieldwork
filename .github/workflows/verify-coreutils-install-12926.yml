@@ -14,14 +14,15 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
       - name: Check out exact controlled coreutils candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: teamleaderleo/coreutils
-          ref: 2b1d87f06c0cff40a9002c3d2243f8a12248f787
+          ref: b6f6e76138b27fd7a221a551aa6261752d513f19
           path: coreutils
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
@@ -33,26 +34,24 @@ jobs:
         with:
           workspaces: coreutils
 
-      - name: Record exact source identity
+      - name: Verify exact source-only fence
         working-directory: coreutils
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 2b1d87f06c0cff40a9002c3d2243f8a12248f787
-          git rev-parse HEAD
+          test "$(git rev-parse HEAD)" = b6f6e76138b27fd7a221a551aa6261752d513f19
+          test "$(git diff --name-only b13ee7a8319f439cb9a1ba550e98de665f9c4bb1..HEAD | sort)" = $'src/uu/install/locales/en-US.ftl\nsrc/uu/install/locales/fr-FR.ftl\nsrc/uu/install/src/install.rs\ntests/by-util/test_install.rs'
+          test ! -e .fieldwork/refine-install-12926.patch
+          test ! -e .github/workflows/fieldwork-refine-install-12926.yml
+          git diff --check b13ee7a8319f439cb9a1ba550e98de665f9c4bb1..HEAD
+          test -z "$(git status --porcelain)"
           git rev-parse HEAD:src/uu/install/src/install.rs
+          git rev-parse HEAD:src/uu/install/locales/en-US.ftl
+          git rev-parse HEAD:src/uu/install/locales/fr-FR.ftl
           git rev-parse HEAD:tests/by-util/test_install.rs
-          git rev-parse HEAD:.fieldwork/refine-install-12926.patch
 
-      - name: Apply and format refinement
+      - name: Check formatting
         working-directory: coreutils
-        run: |
-          set -euo pipefail
-          git apply --check .fieldwork/refine-install-12926.patch
-          git apply .fieldwork/refine-install-12926.patch
-          cargo fmt --all
-          test "$(git diff --name-only | sort)" = $'src/uu/install/src/install.rs\ntests/by-util/test_install.rs'
-          cargo fmt --all -- --check
-          git diff --check
+        run: cargo fmt --all -- --check
 
       - name: Run ownership boundary tests
         working-directory: coreutils
@@ -79,9 +78,10 @@ jobs:
         working-directory: coreutils
         run: cargo clippy --features install --no-default-features --all-targets -- -D warnings
 
-      - name: Record patched diff
-        if: always()
+      - name: Verify final identity and clean tree
         working-directory: coreutils
         run: |
-          git diff --stat
-          git diff -- src/uu/install/src/install.rs tests/by-util/test_install.rs
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = b6f6e76138b27fd7a221a551aa6261752d513f19
+          git diff --check
+          test -z "$(git status --porcelain)"
