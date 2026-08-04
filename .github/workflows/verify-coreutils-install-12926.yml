@@ -16,11 +16,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - name: Check out exact controlled coreutils candidate
+      - name: Check out exact current-main restack
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: teamleaderleo/coreutils
-          ref: b6f6e76138b27fd7a221a551aa6261752d513f19
+          ref: 7381139f88f90676bb083ab524f0d4036388249f
           path: coreutils
           fetch-depth: 0
           persist-credentials: false
@@ -38,11 +38,9 @@ jobs:
         working-directory: coreutils
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = b6f6e76138b27fd7a221a551aa6261752d513f19
-          test "$(git diff --name-only b13ee7a8319f439cb9a1ba550e98de665f9c4bb1..HEAD | sort)" = $'src/uu/install/locales/en-US.ftl\nsrc/uu/install/locales/fr-FR.ftl\nsrc/uu/install/src/install.rs\ntests/by-util/test_install.rs'
-          test ! -e .fieldwork/refine-install-12926.patch
-          test ! -e .github/workflows/fieldwork-refine-install-12926.yml
-          git diff --check b13ee7a8319f439cb9a1ba550e98de665f9c4bb1..HEAD
+          test "$(git rev-parse HEAD)" = 7381139f88f90676bb083ab524f0d4036388249f
+          test "$(git diff --name-only 21d4e9635b07a04f262cd8a5386f2987bca6cfef..HEAD | sort)" = $'src/uu/install/locales/en-US.ftl\nsrc/uu/install/locales/fr-FR.ftl\nsrc/uu/install/src/install.rs\ntests/by-util/test_install.rs'
+          git diff --check 21d4e9635b07a04f262cd8a5386f2987bca6cfef..HEAD
           test -z "$(git status --porcelain)"
           git rev-parse HEAD:src/uu/install/src/install.rs
           git rev-parse HEAD:src/uu/install/locales/en-US.ftl
@@ -82,6 +80,6 @@ jobs:
         working-directory: coreutils
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = b6f6e76138b27fd7a221a551aa6261752d513f19
+          test "$(git rev-parse HEAD)" = 7381139f88f90676bb083ab524f0d4036388249f
           git diff --check
           test -z "$(git status --porcelain)"
