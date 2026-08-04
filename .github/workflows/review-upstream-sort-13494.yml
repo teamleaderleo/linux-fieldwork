@@ -1,0 +1,70 @@
+name: Review upstream sort 13494
+
+on:
+  push:
+    branches:
+      - investigate/coreutils-sort-fifo-single-open-13172
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact upstream PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: uutils/coreutils
+          ref: 88c1a2dbc7783590c215049be9b8a4aece6b493f
+          path: coreutils
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          workspaces: coreutils
+
+      - name: Build sort
+        working-directory: coreutils
+        run: cargo build -p uu_sort --bin sort
+
+      - name: Confirm FIFO-first input blocks before a later missing-file error
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          mkfifo "$work/input.fifo"
+          set +e
+          timeout 2 ./target/debug/sort "$work/input.fifo" "$work/missing" >"$work/out" 2>"$work/err"
+          status=$?
+          set -e
+          printf 'status=%s\nstderr=%s\n' "$status" "$(cat "$work/err")"
+          test "$status" -eq 124
+          test ! -s "$work/err"
+
+      - name: Confirm retaining every ordinary input can exhaust the descriptor budget
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          for i in $(seq 1 64); do printf '%s\n' "$i" >"$work/file-$i"; done
+          set +e
+          (
+            ulimit -n 32
+            ./target/debug/sort "$work"/file-* >/dev/null 2>"$work/err"
+          )
+          status=$?
+          set -e
+          printf 'status=%s\nstderr=%s\n' "$status" "$(cat "$work/err")"
+          test "$status" -ne 0
+          grep -q 'Too many open files' "$work/err"
