@@ -3,19 +3,22 @@
 ## State
 
 - Investigation: recursive `modprobe` configuration identity
-- Disposition: `HOLD — baseline/native proof complete; v1/v2 blocked; provenance-aware v3 executing`
+- Disposition: `HOLD — baseline complete; v1/v2 blocked; strict provenance rejected; fallback and empty-env repair executing`
 - Linux Fieldwork branch: `investigation/kmod-modprobe-options-config-path`
-- Linux Fieldwork head before this commit: `ddc75ad71720d0112471cba5bd8da2fcaae33cdd`
+- Linux Fieldwork head before this update: `0265af65b377a0a48b2b3e05054df076e9098dda`
 - Linux Fieldwork draft PR: `teamleaderleo/linux-fieldwork#412`
 - Exact public/fork kmod base: `5086df53090b2fe9fa1c31351c05a78a12a4ba71`
+- Base `tools/modprobe.c` blob: `413960cae0f39945a3f2d6509dc4a8c262ae2609`
 - Native characterization: `teamleaderleo/kmod#1@84ba8ae9db4f455965efa22afdd5cb177781106b`
-- Candidate v1: `teamleaderleo/kmod#2` — held for raw-backslash compatibility and recursive growth
-- Candidate v2: `teamleaderleo/kmod#3` — held because rebuilding only `-C/-s/-q/-v` drops inherited private options such as `-d`
-- Provenance-aware v3: `teamleaderleo/kmod#4@677468029ddc0a718824060f1b1e083a2518d41b`
+- Candidate v1: `teamleaderleo/kmod#2@8ce150bbff70d0801347170741703ed22ed7ea1f` — held
+- Narrow exact-record v2: `teamleaderleo/kmod#3@c9b83dc0fa8aa7376560204e9bb5640b43323751` — held
+- Strict provenance: `teamleaderleo/kmod#4@bac99e066b029373599dc20df4c8feb470e4e2f6` — rejected by reversing control
+- Provenance fallback: `teamleaderleo/kmod#5@8c961c96e3092435fdbab232a907b477c10f74dd` — executing
+- Empty-environment allocation repair: `teamleaderleo/kmod#6@02c84e20299f134dfffba99c9dee4efca5311bb2` — executing
 - Formal reviews: none
 - External contact: unauthorized; none made
 
-## Closed evidence
+## Closed baseline evidence
 
 Exact current source and the target-native losing regression are complete under GCC and Clang sanitizers.
 
@@ -34,143 +37,162 @@ PASSED: modprobe_options_config_path_control
 
 No unrelated failure, dirty fake-root state, loaded-module residue, or sanitizer finding occurred.
 
-## Why v1 and v2 remain blocked
+## Candidate progression
 
-### V1
+### V1 — parser rewrite held
 
-V1 changes existing raw-backslash parsing:
+V1 changes existing raw-backslash parsing and does not bound inherited-option duplication. Its carrier finally parses and materializes correctly, but a green run cannot select it.
+
+Current read-only validation:
 
 ```text
--C /foo\bar
-current:   /foo\bar
-v1:        /foobar
+head: 8ce150bbff70d0801347170741703ed22ed7ea1f
+run: 30956120441
+job: 92149449308
+latest observation: queued
 ```
 
-It also does not bound inherited-option duplication across recursive levels.
+### Narrow V2 — generated subset held
 
-### V2
+V2 preserves the legacy parser and carries a length-delimited exact record, but rebuilds only `-C/-s/-q/-v`.
 
-V2 keeps the legacy parser unchanged and carries a separate exact record, but it rebuilds only `-C/-s/-q/-v`.
+A reversing inherited-`-d` control proved current kmod preserves additional private options across recursion while v2 drops them. The design is therefore not recursively equivalent.
 
-A safe reversing control used inherited `MODPROBE_OPTIONS=-d $TMP/root` and a nested `--show-depends` lookup. Current kmod preserved `-d` and found the custom module root; v2 dropped `-d`, searched the host module directory, and failed. Candidate v2 is therefore not recursively equivalent.
+Its carrier was repaired to pin seven source fragments separately instead of trusting a stale aggregate hash.
 
-## Provenance-aware v3 mechanism
+```text
+head: c9b83dc0fa8aa7376560204e9bb5640b43323751
+run: 30957132015
+GCC job: 92152714899
+Clang job: 92152714803
+latest observation: queued
+```
 
-V3 separates recursive state into:
+### Strict provenance — mechanism useful, policy rejected
 
-1. an inherited private-string base preserved byte-for-byte;
-2. a versioned, length-delimited exact record for generated recursive arguments;
+Strict provenance separates:
+
+1. an inherited private-string base;
+2. an exact generated suffix;
 3. a base-length field identifying the inherited prefix in the compatibility mirror.
 
-Each invocation parses the inherited base with the unchanged legacy parser, decodes the prior generated exact suffix separately, derives newly selected CLI `-C/-s/-q/-v` options, and republishes the fixed base plus the generated suffix once.
+It preserves inherited `-d`, attached and clustered options, repeated `-C`, spaced recursive identity, and stable three-level state under local GCC/Clang ASan/UBSan builds.
 
-New children use the exact generated suffix and ignore the generated mirror. Old children receive the unchanged base plus a representable generated mirror. Unrepresentable new-to-old handoffs receive an explicit sentinel and fail visibly.
+A reversing control then showed that current kmod permits an install script to mutate `MODPROBE_OPTIONS` by appending `-q`. Strict provenance treats the changed mirror as corruption and fails. That is a compatibility-policy regression, so PR #4 is retained as history but is not selected.
 
-Exact records accept only deliberately generated recursive options. Empty generated state is authoritative. Malformed and positional records fail closed.
+### Provenance fallback — current transport experiment
 
-## Exact v3 carrier
+PR #5 tests a bounded fallback only after exact/base metadata has decoded successfully:
 
-Owned-fork draft PR: `teamleaderleo/kmod#4`
+- compare actual `MODPROBE_OPTIONS` with the expected base-plus-generated mirror;
+- when an install script changed the mirror, rebase the actual legacy string as the inherited base;
+- clear the generated exact suffix;
+- parse the rebased base with the unchanged legacy parser;
+- continue to reject malformed exact records, malformed base metadata, and positional exact records;
+- publish the rebased base once so later recursion does not duplicate it.
 
-Branch/head at creation:
+The mutation fixture deliberately uses a path without whitespace. This separates install-script mutation compatibility from the existing legacy grammar defect for quoted spaced paths followed by appended options.
 
-```text
-experiment/modprobe-exact-option-provenance
-677468029ddc0a718824060f1b1e083a2518d41b
-```
+Local complete multicall GCC 14.2 and Clang 17 ASan/UBSan builds passed:
 
-Carrier files only:
-
-- `.github/modprobe-exact-option-provenance.patch.gz.b64`
-- `.github/test-modprobe-option-provenance.py`
-- `.github/workflows/validate-exact-option-provenance.yml`
-
-Product source is not committed.
-
-Exact identities:
-
-```text
-base tools/modprobe.c blob:
-413960cae0f39945a3f2d6509dc4a8c262ae2609
-
-reconstructed patch SHA-256:
-caed53a3a7f5dc57f2d4114da21a623dfd9ea1343881bdced3617adf30ecee32
-
-compressed patch SHA-256:
-ae01646901a5bc8305a4869446344022e21be420414ab6074fa1e2a7a5be75bd
-```
-
-The materialized source/test patch has an exact 28-file fence covering `tools/modprobe.c`, `testsuite/test-modprobe.c`, `scripts/setup-rootfs.sh`, policy fixtures, three-level recursion fixtures, and inherited-`-d` fixtures.
-
-## Local compiled v3 evidence
-
-The exact patch was applied to the archived exact base and assembled into complete multicall kmod binaries under GCC 14.2 and Clang 17 with ASan/UBSan.
-
-Both toolchains passed:
-
-- no-space and spaced direct/nested configuration identity;
+- spaced recursive `-C` through three dependency-free levels;
 - inherited base plus exact generated suffix;
-- authoritative empty generated suffix;
-- malformed and positional exact-record rejection;
-- unchanged raw-backslash fallback;
-- inherited `-d` reaching a nested `--show-depends` child;
-- attached short `-C/path`;
-- attached long `--config=path`;
-- options after a non-option;
-- clustered `-qv`;
-- repeated `-C` ordering;
-- stable inherited-base, exact-record, and mirror lengths through three real recursive levels;
+- inherited `-d` nested lookup;
+- install-script mutation by appending `-q`;
+- attached short/long `-C`, options after a non-option, clustered `-qv`, and repeated `-C` order;
+- stable three-level inherited/exact/mirror state;
 - representable new-parent/old-child recursion;
-- visible failure for an unrepresentable new-parent/old-child pathname;
-- expected unrecoverable old-parent/new-child pathname loss.
+- visible failure for unrepresentable new-parent/old-child values;
+- expected unrecoverable old-parent/new-child direction.
 
-No real module insertion/removal or sanitizer finding occurred in the safe matrices.
-
-Exact local v3 binary hashes:
+Exact local fallback binary hashes:
 
 ```text
-GCC:
-6c9bd47452df9d293a17a66b72e7944eabe7d8bf2d0a6590357babf62ed454a9
-
-Clang:
-9a6e5ca79e5aad031595fba863aa17b8ccabfdffaded39ed74658c6d61d9ca7f
+GCC:   c80dfb4b86236869e4ebb77d8053c746d7d11c92fbbb31ebd5722a26aee831bc
+Clang: eb6b00a5599d3244558bc0b2301d73396453d78763493aa24a44ad5d89d6d800
 ```
 
-The supplemental CLI/mixed-version discriminator passed both binaries. Compiler-specific source-line numbers in one old-child diagnostic are the only textual difference after normalizing paths and binary names.
-
-## Separate exact-current memory finding
-
-Exact current source has a separate one-byte heap write beyond its allocation when `MODPROBE_OPTIONS` is explicitly set to an empty string, including `modprobe --version`.
-
-GCC and Clang ASan both reproduce it. V3 treats an explicitly empty inherited base as zero arguments and adds a native regression, but this memory finding must remain separately identifiable from the recursive pathname policy. No exploitability or security-severity claim is made.
-
-## Hosted state
-
-PR #4 is open, draft, and mergeable.
-
-Registered validation run for head `677468029ddc0a718824060f1b1e083a2518d41b`:
+The first hosted fallback run failed before source execution because the workflow pinned stale decoded-gzip and reconstructed-patch hashes. The committed base64 carrier was stable. The workflow now pins that committed carrier and records derived hashes after decoding.
 
 ```text
-Validate exact option provenance: 30938595336
+head: 8c961c96e3092435fdbab232a907b477c10f74dd
+run: 30957536612
+GCC job: 92153958486
+Clang job: 92153958380
+latest observation: queued
 ```
 
-At the latest observation the GCC and Clang jobs were queued. The workflow is read-only, verifies exact ancestry and patch hashes, applies the patch only in the runner, runs the focused native suite twice plus the complete suite, executes the supplemental discriminator, restores the carrier tree, and uploads receipts.
+This remains an experiment. A green run establishes mechanics, not maintainer policy or mixed-version equivalence.
 
-Queued or cancelled work is not product evidence.
+## Separate empty `MODPROBE_OPTIONS` allocation defect
 
-## Stop rule
+Exact current `prepend_options_from_env()` allocates:
 
-Do not select or publish a repair until:
+```c
+sizeof(char *) * (argc + space_count + 3 + envlen)
+```
 
-1. the provenance workflow is terminal under GCC and Clang;
-2. its exact patch and 28-file fence are retained;
-3. focused reruns and the complete native suite pass without sanitizer findings;
-4. the empty-environment regression is classified separately;
-5. mixed-version limitations are documented honestly;
+and places the copied string after `argc + space_count + 3` pointers. When `envlen == 0`, no byte remains for the terminating NUL, but `memcpy(str, env, envlen + 1)` writes one byte.
+
+A standalone transcription of the exact function produced:
+
+```text
+AddressSanitizer: heap-buffer-overflow
+WRITE of size 1
+```
+
+under GCC 14.2 and Clang 17. The ordinary Debian `kmod 34.2` binary still exited successfully, so this is a source-level memory-correctness finding, not a demonstrated crash, exploit, or security-severity result.
+
+No matching open upstream issue or pull request was found.
+
+PR #6 isolates a minimal behavior-preserving repair:
+
+- calculate pointer storage and string storage independently;
+- use checked addition and multiplication;
+- allocate `envlen + 1` bytes for the copied string;
+- retain the current parser and raw-backslash behavior unchanged;
+- add a native `MODPROBE_OPTIONS=""` test using `modprobe --version`, without module syscalls.
+
+Local GCC/Clang ASan/UBSan controls passed for empty input, raw-backslash input, and ordinary `-q -v` input.
+
+```text
+patch SHA-256: 0a36ad1a5c72fa44aa2fa7acd642586a36e2df8a0f30c01b947400631a15ad15
+head: 02c84e20299f134dfffba99c9dee4efca5311bb2
+run: 30957800012
+GCC job: 92154784159
+Clang job: 92154784197
+latest observation: queued
+```
+
+The hosted gate requires the exact unmodified baseline to lose under ASan before the candidate is applied, then requires the direct control, formatting, focused native test, complete suite, cleanup, and retained receipts.
+
+## Kernel source-tree boundary
+
+The Linux kernel source repository contains the kernel itself: architecture code, drivers, memory management, filesystems, networking, scheduler and other core kernel code, security hooks, the block layer, IPC, sound, virtualization, headers, build tooling, documentation, and in-tree tests/tools.
+
+`kmod` is not part of that tree. It is a separate userspace project that provides `modprobe`, `depmod`, `insmod`, `rmmod`, `lsmod`, and `libkmod`. Other adjacent projects such as systemd, glibc, iproute2, util-linux, bash, coreutils, and package managers are also separate userspace projects.
+
+## Current stop rule
+
+Do not select or publish a recursive transport repair until:
+
+1. the fallback workflow is terminal under GCC and Clang;
+2. focused reruns and the complete suite pass without sanitizer findings;
+3. exact carrier and materialized source/test identities are retained;
+4. install-script mutation behavior is compared with exact current source;
+5. mixed-version limitations are stated explicitly;
 6. temporary carriers are absent from one exact final source diff;
 7. standard final-head CI is inspected;
 8. overlap, contribution policy, and review state are refreshed immediately before any authorized publication decision.
 
-## First incomplete step
+Treat the empty-environment allocation repair separately. It can be reviewed on its own two-file fence and does not require resolution of the recursive transport policy.
 
-Inspect run `30938595336` and classify the first failing owner if red. If green, retain exact artifacts and compare the hosted supplemental result with the local GCC/Clang receipts. Do not materialize product source or contact upstream without explicit authorization.
+## First incomplete steps
+
+1. Inspect fallback run `30957536612`.
+2. Inspect empty-environment run `30957800012`.
+3. Inspect the held v1/v2 runs only as execution evidence, not source-selection gates.
+4. If the empty-environment repair passes, retain its exact baseline/candidate artifacts and assess it independently.
+5. If the fallback passes, compare hosted receipts with the local GCC/Clang evidence before considering any final source branch.
+
+No public kmod-project interaction is authorized or performed.
