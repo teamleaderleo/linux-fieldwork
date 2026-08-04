@@ -1,10 +1,10 @@
 # Handoff — systemd-oomd reporter ownership
 
-Updated: `2026-08-04`  
-State: `ACTIVE — DEFECT REPRODUCED; POLICY/LIFECYCLE MODELS EXACT-HEAD GREEN; LIVE INTEGRATION VM GATE ACTIVE`  
+Updated: `2026-08-05`  
+State: `ACTIVE — DEFECT REPRODUCED; LIVE BOUNDED CORRECTION GREEN; POLICY/LIFECYCLE/REGISTRY MODELS GREEN; NATIVE MANAGER INTEGRATION NEXT`  
 Linux Fieldwork issue: `#140`  
 Linux Fieldwork PR: `#245`  
-Independent review: `INDEPENDENT-REVIEW-2026-08-04.md`  
+Independent review: `INDEPENDENT-REVIEW-2026-08-05.md`  
 External contact: `false`
 
 ## Durable home
@@ -31,14 +31,6 @@ Controls remained stable:
 ActiveEnterTimestampMonotonic 6615081 -> 6615081
 NRestarts                    0 -> 0
 ManagedOOMMemoryPressure     kill -> kill
-```
-
-Receive order:
-
-```text
-9.527279  PID 1 pressure=kill
-9.552473  user manager pressure=auto
-10.524699 exact path absent
 ```
 
 Root cause: current oomd state is keyed by property/path and does not retain reporter ownership. One manager's withdrawal removes another manager's still-live contribution.
@@ -73,6 +65,7 @@ CONNECTION-LIFECYCLE.md
 PROTOTYPE-AUDIT.md
 C-REDUCER.md
 INDEPENDENT-REVIEW-2026-08-04.md
+INDEPENDENT-REVIEW-2026-08-05.md
 ```
 
 ## Lane 1 — baseline and attribution
@@ -81,60 +74,49 @@ Controlled PR: `teamleaderleo/systemd#1`
 
 Use this lane only for reproduction and reporter attribution. Do not add product behavior there.
 
-## Lane 2 — live integration prototype
+## Lane 2 — live generated source-precedence prototype
 
 Controlled PR: `teamleaderleo/systemd#2`  
-Branch: `linux-fieldwork/oomd-reporter-source-precedence`  
-Current exact head: `fea4fe7f2c09ca2e33a2870fa7425e87d81a42ac`
+Branch: `linux-fieldwork/oomd-reporter-source-precedence`
 
-Run `30755664280` proved:
-
-- direct controlled-fork head identity;
-- fail-closed source/test injection;
-- atomicity markers;
-- clean generated diff;
-- `systemd-oomd` compilation with `--werror`.
-
-It did not prove unit or VM behavior because the workflow attempted `meson test --no-rebuild test-oomd-util` without first building the test executable.
-
-Repair commit:
+Authoritative exact-head result:
 
 ```text
-fea4fe7f2c09ca2e33a2870fa7425e87d81a42ac
-ci: build oomd unit test before no-rebuild execution
+head:            2f04a87e25df0d56f01cab5de8c99472806929a7
+run:             30916547610
+artifact:        8895926721
+artifact digest: sha256:66ac9ee7c797dd776bb85c8705e93b4343deb8823b6bf6094ced10a6106c39d6
+build:           557/557
+unit:            test-oomd-util 1/1 passed
+integration:     TEST-55-OOMD 1/1 passed in 35.59s
+test exit:       0
+outcome:         fixed
+identity:        direct-controlled-fork-head
 ```
 
-Current focused run:
+Guest markers:
 
 ```text
-30914358330
+FIELDWORK_OOMD_SOURCE_PRECEDENCE=PASSED
+FIELDWORK_OOMD_REPORTER_COLLISION=NOT_REPRODUCED
 ```
 
-Already passed at this handoff snapshot:
+Proven in the bounded VM slice:
 
-- exact direct-head checkout;
-- fail-closed product/test injection;
-- atomicity markers;
-- clean generated diff;
-- Meson configure;
-- `systemd-oomd` and `test-oomd-util` compilation;
-- existing focused `test-oomd-util` execution.
+- reload preserves PID 1's live 50% contribution;
+- system 50% wins over conflicting user 70%;
+- system withdrawal reveals the existing user 70% contribution;
+- user withdrawal removes the effective path;
+- service identity/property controls remain stable.
 
-Still active:
+The predecessor run `30914358330` reached the same successful guest verdict but failed during postprocessing because `TEST_RUNNER` was unset. Head `2f04a87e…` repaired that harness contract.
 
-- integration image build;
-- reload-preservation VM case;
-- 50%-system versus 70%-user precedence/fallback VM case;
-- retained receipt, generated product diff, and guest journal.
-
-Do not call the live integration slice green unless the required VM stages run and the retained evidence matches `fea4fe7…`.
+Do not promote this temporary generated six-map implementation as the final architecture. It lacks live per-link generations, authoritative wire snapshots, disconnect/PID 1 stream ownership, cgroup cleanup, and diagnostics.
 
 ## Lane 3 — policy reducer and reporter lifecycle
 
 Controlled PR: `teamleaderleo/systemd#3`  
 Branch: `linux-fieldwork/oomd-policy-reducer`
-
-Current authoritative exact-head result:
 
 ```text
 head:      76749bfd3dda498c15a88c4e572340d8ade3e82b
@@ -153,46 +135,73 @@ test-oomd-policy
 test-oomd-reporter-lifecycle
 ```
 
-The receipt records:
-
-```text
-policy=typed-array copy-and-swap reducer
-lifecycle=two-phase generation-safe reporter transitions
-manager_integration=false
-external_contact=false
-```
-
-Independent review repairs in this lineage:
-
-- highest-rank ambiguity no longer depends on insertion order;
-- invalid array-macro iteration replaced by indexed duplicate detection;
-- invalid authorities and property/value mismatches rejected atomically;
-- dangling lifecycle references to nonexistent files removed;
-- lifecycle source and focused test properly wired into Meson once the files existed;
-- older green receipts kept tied to their exact tested commits.
+This is green only as a model layer. The receipt records `manager_integration=false`.
 
 The lifecycle model retains old active policy while a replacement connection is pending. Live integration therefore requires an authoritative first snapshot—including empty state—or another bounded handshake mechanism.
 
-This lane is green only as a model layer. It does not yet modify live manager or Varlink behavior.
+## Lane 4 — transactional reporter registry
+
+Controlled stacked PR: `teamleaderleo/systemd#9`  
+Branch: `linux-fieldwork/oomd-reporter-registry`  
+Base: `linux-fieldwork/oomd-policy-reducer@76749bfd3dda498c15a88c4e572340d8ade3e82b`
+
+```text
+head:      f9bcf18a8ffc6946736791f59c15c35835eba01a
+run:       30918135713
+artifact:  8896332176
+digest:    sha256:fcd64484c5fd50cfdc8c25bea506ca3364fbc75564c93b2e0b9dd567e6136e0c
+build:     566/566
+focused:   test-oomd-reporter-registry 1/1 passed
+identity:  direct-controlled-fork-head
+```
+
+The registry encapsulates policy and lifecycle state. Snapshot replacement and disconnect stage policy changes in a clone, commit lifecycle state only after policy work succeeds, and publish the candidate policy store only when the complete operation succeeds.
+
+Independent review verdict: positive for the declared synchronous single-threaded boundary.
+
+Important integration invariant: the validate-then-commit lifecycle pairing asserts that lifecycle state cannot change between validation and commit. Live manager integration must enforce single-event-loop serialized ownership with no re-entrant mutation, or replace the split calls with a version-checked/atomic transaction token.
+
+The registry receipt records `manager_integration=false` and `external_contact=false`.
+
+## Wire gap to close
+
+Current user-manager reconnect reporting uses `allow_empty=false`. With no explicit policies it sends no reconnect report, so the server cannot distinguish:
+
+```text
+authoritative empty snapshot
+```
+
+from:
+
+```text
+generation not initialized
+```
+
+The next live lane needs an explicit authoritative snapshot operation that accepts `cgroups: []`. Incremental updates should be accepted only from the active initialized generation.
 
 ## Immediate next actions
 
-1. Finish and inspect integration run `30914358330`.
-2. Download and inspect its receipt, generated product diff, unit log, VM journal, and both testcase outcomes.
-3. If live integration is green, open a separate generation/snapshot integration lane rather than expanding the temporary six-map prototype.
-4. Integrate authoritative empty snapshots, stale-generation rejection, current disconnect, PID 1 stream termination/reconnect, cgroup disappearance cleanup, and source diagnostics.
-5. Keep exact-head attribution after every branch movement.
-6. Keep all writes internal until upstream contact is separately authorized.
+1. Open a native manager/Varlink integration lane based on the registry contract, not by indefinitely expanding the temporary six-map injector.
+2. Add an authoritative first-snapshot wire operation, including empty state.
+3. Bind each live Varlink link to `(authority, generation)`.
+4. Enforce serialized or version-checked registry transactions.
+5. Accept incrementals only from the active initialized generation.
+6. Withdraw current policy on current disconnect and PID 1 subscription loss; ignore stale teardown.
+7. Promote reconnect only after complete policy replacement succeeds.
+8. Add cgroup-disappearance cleanup, timing preservation, and contributor diagnostics.
+9. Keep exact-head attribution after every branch movement.
+10. Keep all writes internal until upstream contact is separately authorized.
 
 ## Review guard
 
-Internal reviewers may find and repair defects. They must still preserve evidence discipline:
+Internal reviewers may find and repair defects. They must preserve evidence discipline:
 
 - a green result belongs only to the tested commit;
 - internal self-review is not upstream acceptance;
 - queued/skipped stages are not passes;
-- harness failures are not product failures, but they still block the missing verdict;
-- branch movement after a receipt requires a new exact-head gate.
+- harness failures are not product failures, but they still block a missing verdict;
+- branch movement after a receipt requires a new exact-head gate;
+- model-layer success is not live manager integration.
 
 ## Authority
 
