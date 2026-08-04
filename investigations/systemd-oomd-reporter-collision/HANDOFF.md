@@ -1,27 +1,31 @@
 # Handoff — systemd-oomd reporter ownership
 
-Updated: `2026-08-02`  
-State: `ACTIVE — DEFECT REPRODUCED; ATOMIC PRODUCT SLICE AND SNAPSHOT LIFECYCLE UNDER VALIDATION`  
+Updated: `2026-08-04`  
+State: `ACTIVE — DEFECT REPRODUCED; REDUCER BOUNDED-GREEN; INTEGRATION EXACT-HEAD GATE ACTIVE`  
 Linux Fieldwork issue: `#140`  
 Linux Fieldwork PR: `#245`  
-Controlled evidence PR: `teamleaderleo/systemd#1`  
-Controlled product PR: `teamleaderleo/systemd#2`  
+Independent review: `INDEPENDENT-REVIEW-2026-08-04.md`  
 External contact: `false`
 
-## Confirmed current-main defect
+## Durable home
 
-The reporter collision is independently reproduced in systemd's own `TEST-55-OOMD` VM environment.
+Use Linux Fieldwork for narrative, evidence, design contracts, review checkpoints, and handoff. Use `teamleaderleo/systemd` for executable controlled-fork experiments.
+
+Do not use Linux Fieldwork issue `#194` for this work. It is a closed socat tap/bridge relay item and is unrelated to systemd.
+
+## Proven baseline
 
 ```text
 run:       30693755971
-attempt:   1
+job:       91352945746
 artifact:  8817102322
 outcome:   reproduced
+sha256:    c5257b5e3f230722d50f4f2f8a5a98ff94fc2fdc2644deecd4e9de5cd07c5aa9
 ```
 
-The exact `user@4711.service` path existed before reload with a 50% pressure limit and disappeared by +1 second.
+The exact `user@4711.service` registration existed with a 50% pressure limit, then disappeared after the user manager reported `auto` for the same kernel cgroup path.
 
-Stable controls:
+Controls remained stable:
 
 ```text
 ActiveEnterTimestampMonotonic 6615081 -> 6615081
@@ -29,242 +33,157 @@ NRestarts                    0 -> 0
 ManagedOOMMemoryPressure     kill -> kill
 ```
 
-Proven receive order:
+Receive order:
 
 ```text
-9.527279  oomd receives PID 1 ManagedOOMMemoryPressure=kill
-9.552473  oomd receives user-manager ManagedOOMMemoryPressure=auto
-10.524699 +1s target path is absent
+9.527279  PID 1 pressure=kill
+9.552473  user manager pressure=auto
+10.524699 exact path absent
 ```
 
-The user-manager `auto` reaches the receive path `25.194 ms` after PID 1's `kill` and removes the whole property/path entry because current state does not retain reporter ownership.
+Root cause: current oomd state is keyed by property/path and does not retain reporter ownership. One manager's withdrawal removes another manager's still-live contribution.
 
-Retained evidence:
-
-- `artifacts/2026-08-01-current-main-vm-baseline.md`
-- `artifacts/2026-08-01-current-main-vm-receipt.json`
-- `artifacts/2026-08-01-current-main-causal-trace.txt`
-
-Raw artifact ZIP:
+## Architecture contract
 
 ```text
-sha256:c5257b5e3f230722d50f4f2f8a5a98ff94fc2fdc2644deecd4e9de5cd07c5aa9
+authority        = (SYSTEM_MANAGER | USER_MANAGER, uid)
+contribution key = (authority, property, cgroup path)
+effective key    = (property, cgroup path)
 ```
 
-The first successful baseline used GitHub's synthetic PR merge checkout. Its base product source was canonical:
+Rules:
+
+- sender-specific withdrawal;
+- system-manager precedence while present;
+- complete tuple/list selection;
+- lower-ranked fallback on higher-ranked withdrawal;
+- authoritative complete first snapshot, including empty;
+- monotonic connection generations;
+- stale update/disconnect isolation;
+- current disconnect/stream withdrawal;
+- atomic validation/allocation failure;
+- identical effective state preserves timing epochs.
+
+Read:
 
 ```text
-systemd/main@6a863b4dc31adc49fdfdd5deba32ed1b115adda3
-```
-
-and the head contribution contained evidence tooling only. Treat that baseline as merge-derived but product-source exact.
-
-## Evidence lane — reporter identity
-
-Controlled branch:
-
-```text
-teamleaderleo/systemd:linux-fieldwork/oomd-reporter-collision-current-main
-head: 5ea426a1a68488d661ce913670d254dc72020819
-```
-
-Temporary receive-boundary instrumentation records:
-
-```text
-reporter channel
-peer UID and PID
-property and mode
-path
-limit and duration
-```
-
-The workflow verifies direct branch-head checkout and requires both:
-
-```text
-system-manager uid=0 pid=1 pressure=kill
-user-manager uid=4711 pressure=auto
-```
-
-for the exact shared path.
-
-Current trace run:
-
-```text
-30754855305 — queued at this handoff update
-```
-
-This lane remains evidence-only; no product fix is selected or committed there.
-
-## Product lane — source precedence first slice
-
-Controlled branch:
-
-```text
-teamleaderleo/systemd:linux-fieldwork/oomd-reporter-source-precedence
-head: 338411d7924a9e9dae78eefff2ededd06858660a
-PR:   teamleaderleo/systemd#2
-```
-
-The disposable injector adds six source-class contribution maps:
-
-```text
-SYSTEM_MANAGER × {swap, memory pressure, rules}
-USER_MANAGER   × {swap, memory pressure, rules}
-```
-
-The existing monitored maps remain derived effective runtime state.
-
-First-slice rules:
-
-- `auto` removes only the sending source contribution;
-- system-manager policy has precedence while present;
-- one complete pressure tuple or rules list wins;
-- system withdrawal reveals an already-live user contribution;
-- hidden lower-authority no-op updates do not reset pressure timing;
-- dropped OOMRules timers are cleaned only when rules leave the effective list.
-
-Authoritative direct-head product run:
-
-```text
-30755664280 — queued
-```
-
-The workflow now:
-
-- checks out and verifies the exact controlled-fork head;
-- applies fail-closed source transformations;
-- requires atomicity markers in generated C;
-- runs `git diff --check`;
-- compiles `systemd-oomd` with `--werror`;
-- runs existing `test-oomd-util`;
-- runs the reported reload regression;
-- runs 50%-system versus 70%-user precedence and fallback transitions;
-- retains product diff, build logs, VM journal, and a schema-3 direct-head receipt.
-
-Runs `30755078046` and `30755298324` are stale for product conclusions because they predate atomicity or direct-head receipt fixes.
-
-## Prototype atomicity audit
-
-The initial product generator mutated a source contribution before fallible effective-state recomputation. An OOMRules allocation failure could leave source and effective maps divergent.
-
-Head `338411d7...` includes transactional hardening:
-
-- `auto` stages effective reduction with the sender ignored, then removes source state only after success;
-- existing pressure/rules tuples are snapshotted and restored on failure;
-- newly inserted contributions are removed on failure;
-- effective rule lists are allocated before effective-context mutation;
-- `-ENOMEM` rolls back and propagates.
-
-Detailed audit:
-
-```text
+DESIGN.md
+IMPLEMENTATION.md
+CONNECTION-LIFECYCLE.md
 PROTOTYPE-AUDIT.md
 ```
 
-## Executable policy specifications
+## Lane 1 — baseline and attribution
 
-Owned Python specifications now cover both reduction and connection lifecycle:
+Controlled PR: `teamleaderleo/systemd#1`
 
-```text
-model_policy.py
-model_connection_lifecycle.py
-test_model_policy.py
-test_model_atomicity.py
-test_model_connection_lifecycle.py
-```
+Use this lane only for reproduction and reporter attribution. Do not add product behavior there.
 
-Reduction coverage includes:
+## Lane 2 — integration prototype
 
-- system/user precedence;
-- complete-tuple selection;
-- source-specific withdrawal;
-- rules-list ownership;
-- cgroup disappearance;
-- deterministic diagnostics;
-- no-op epoch preservation;
-- equal-rank conflict rejection;
-- atomic update rollback.
+Controlled PR: `teamleaderleo/systemd#2`  
+Branch: `linux-fieldwork/oomd-reporter-source-precedence`  
+Current head at this handoff: `fea4fe7f2c09ca2e33a2870fa7425e87d81a42ac`
 
-Connection coverage includes:
+Previous run `30755664280` proved:
 
-- authoritative empty reconnect snapshots;
-- stale-generation update rejection;
-- stale disconnect isolation;
-- current-generation disconnect withdrawal;
-- pending disconnect isolation;
-- complete snapshot replacement;
-- snapshot rollback;
-- PID 1 termination fallback;
-- PID 1 empty reconnect snapshot;
-- monotonic session generations.
+- direct controlled-fork head identity;
+- fail-closed source/test injection;
+- atomicity markers;
+- clean generated diff;
+- `systemd-oomd` compilation with `--werror`.
 
-Current fast model gate before this handoff commit:
+It did not prove the unit or VM cases. The workflow attempted `meson test --no-rebuild test-oomd-util` without first building `test-oomd-util`, so the unit step failed as a harness defect and VM steps were skipped.
+
+Repair commit:
 
 ```text
-30755606362 — queued
+fea4fe7f2c09ca2e33a2870fa7425e87d81a42ac
+ci: build oomd unit test before no-rebuild execution
 ```
 
-This handoff update will trigger a replacement branch-head run; use the newest run attached to the resulting head.
-
-## Refined connection lifecycle
-
-The earlier “withdraw on last live link” rule is superseded.
-
-Current user-manager code calls the initial builder with `allow_empty=false`; a restarted manager with no explicit policies sends no initial message. Retaining old authority state while any newer link exists can therefore leave stale policy indefinitely.
-
-The required lifecycle is an authoritative first-message snapshot per connection generation:
-
-1. user manager always sends an initial call, including `cgroups: []`;
-2. server connect callback creates a pending generation without changing policy;
-3. first method call replaces the complete authority snapshot atomically;
-4. the new initialized generation becomes current and older links become stale;
-5. stale-link updates are ignored;
-6. stale/pending disconnects do not change policy;
-7. current-generation disconnect withdraws authority contributions immediately;
-8. PID 1's first subscription reply is treated as a complete system snapshot;
-9. PID 1 stream termination withdraws system contributions and reveals user fallback;
-10. reconnect snapshots restore authority without reactivating stale generations.
-
-Detailed contract:
+Current focused run:
 
 ```text
-CONNECTION-LIFECYCLE.md
+30914358330 — in progress at this handoff snapshot
 ```
 
-## C implementation map
+Inspect, in order:
 
-`IMPLEMENTATION.md` defines:
+1. exact-head identity;
+2. product/test injection;
+3. `git diff --check` and atomicity markers;
+4. `systemd-oomd` and `test-oomd-util` compile;
+5. existing focused unit test;
+6. integration image build;
+7. reload-preservation VM case;
+8. 50%-system versus 70%-user precedence/fallback case;
+9. receipt, generated product diff, and guest journal.
 
-- separate `oomd-policy.[ch]` reducer;
-- typed authority, contribution, and effective keys;
-- atomic snapshot and incremental update APIs;
-- manager connect/disconnect integration;
-- effective-map transition and timer rules;
-- deterministic source diagnostics;
-- focused C unit-test matrix;
-- multi-commit review series.
+Do not call the integration slice green unless all required stages ran and the retained evidence matches `fea4fe7…`.
 
-The current generated first slice intentionally uses full `OomdCGroupContext` values and source-class maps. It is a validation vehicle, not the final data model.
+## Lane 3 — standalone reducer
 
-## Public overlap
+Controlled PR: `teamleaderleo/systemd#3`  
+Branch: `linux-fieldwork/oomd-policy-reducer`
 
-As checked on `2026-08-02`, `systemd/systemd#43174` remains open, unassigned, and has zero comments. No competing patch or maintainer direction was found.
+Last proven exact reducer result:
 
-No upstream interaction occurred.
+```text
+head:      d9b5cd00c0899bacd9637fcc466ac01a9b841bca
+run:       30913524283
+artifact:  8894149501
+digest:    sha256:db18d59e172da1b3d537cbd055685b4b5191d1f48607a845374edae29b52f5bc
+build:     564/564
+focused:   1/1 passed
+```
 
-## First incomplete steps
+Independent review repairs already present in that reducer lineage:
 
-1. Retrieve and inspect the newest executable-model run on the current Linux Fieldwork head.
-2. Retrieve reporter trace run `30754855305` and retain its exact artifact.
-3. Retrieve direct-head product run `30755664280`; inspect compile, existing unit test, both VM transitions, generated diff, and receipt.
-4. If the first product slice is green, begin the dedicated reducer/session implementation rather than expanding six temporary source maps.
-5. Add runtime probes for empty user snapshots, reconnect overlap, stale updates, current disconnect, and PID 1 stream loss/reconnect.
-6. Keep all work in controlled repositories until separate upstream authorization is explicit.
+- highest-rank ambiguity no longer depends on insertion order;
+- invalid array-macro iteration replaced by indexed duplicate detection;
+- invalid authorities and property/value mismatches rejected;
+- malformed incremental/snapshot rejection proven atomic.
 
-## Scope guard
+A later incomplete commit at `fb8fcebb…` referenced two nonexistent lifecycle source files and broke the branch. The dangling target was removed at:
 
-Keep this lane on ManagedOOM reporter ownership, snapshot lifecycle, effective-policy reduction, and diagnostics. Do not mix in pressure calculation, victim selection, prekill hooks, generic Varlink refactors, or unrelated cgroup cleanup.
+```text
+731d633b05d29158ebcb78f59f42d943fab3930f
+```
+
+Current repair run:
+
+```text
+30914688124 — queued at this handoff snapshot
+```
+
+The older green receipt proves `d9b5cd0…`, not `731d633…`. Inspect the new exact-head receipt before updating the bounded-green head.
+
+Detailed record:
+
+```text
+C-REDUCER.md
+```
+
+## Immediate next actions
+
+1. Finish and inspect integration run `30914358330`.
+2. Finish and inspect reducer repair run `30914688124`.
+3. Update exact heads/runs/artifact digests in README, C-REDUCER, PR #245, and the two controlled-fork PR descriptions.
+4. If integration is green, begin a separate generation/snapshot integration lane rather than expanding the temporary six-map prototype.
+5. Test authoritative empty snapshots, stale generations, current disconnect, PID 1 stream termination/reconnect, cgroup disappearance, and source diagnostics.
+6. Keep all writes internal until upstream contact is separately authorized.
+
+## Review guard
+
+Internal review may find and repair defects. It must still preserve exact attribution:
+
+- a green result belongs only to the tested commit;
+- a self-authored review is not upstream acceptance;
+- queued/skipped stages are not passes;
+- harness failures are not product failures, but they still block the missing product verdict;
+- branch movement after a receipt requires a new exact-head gate.
 
 ## Authority
 
-All writes and execution are confined to `teamleaderleo/linux-fieldwork` and `teamleaderleo/systemd`. No issue comment, pull request, review, reaction, patch submission, email, or other action was made in `systemd/systemd`.
+All writes and execution are confined to `teamleaderleo/linux-fieldwork` and `teamleaderleo/systemd`. No issue comment, pull request, review, reaction, patch submission, email, or other action has been made in `systemd/systemd`.
