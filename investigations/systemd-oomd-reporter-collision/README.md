@@ -6,17 +6,15 @@ External contact: `false`
 
 ## Current status
 
-`CURRENT-MAIN DEFECT REPRODUCED — REPORTER-AWARE REDUCER PROVEN AS A BOUNDED SLICE — INTEGRATION VALIDATION ACTIVE`
+`CURRENT-MAIN DEFECT REPRODUCED — POLICY AND REPORTER-LIFECYCLE MODELS EXACT-HEAD GREEN — LIVE INTEGRATION VALIDATION ACTIVE`
 
-This README supersedes the earlier pre-VM status. The historical source-only investigation remains in Git history and in the retained verifier/design documents.
-
-The unrelated closed Linux Fieldwork issue `#194` concerns a socat tap/bridge relay. It is not a systemd follow-on and is not part of this investigation.
+The unrelated closed Linux Fieldwork issue `#194` concerns a socat tap/bridge relay. It is not a systemd follow-on.
 
 ## What is broken
 
 A continuously running `user@<uid>.service` can disappear from systemd-oomd's monitored set after the nested user manager executes `daemon-reload`.
 
-The service does not restart and its configured policy does not change. The monitored registration is removed because two reporters describe the same kernel cgroup path while current oomd state retains only one effective record per property/path.
+The service does not restart and its configured policy does not change. The registration is removed because PID 1 and the user manager can describe the same kernel cgroup path while current oomd state retains one effective record per property/path rather than independent source contributions.
 
 ## Plain-language model
 
@@ -27,7 +25,7 @@ Two clerks use the same coat-check hook:
 ```
 
 - PID 1 attaches a card saying `ManagedOOMMemoryPressure=kill`, limit 50%.
-- The user manager's root `-.slice` names the same cgroup and later reports its own default `auto` state.
+- The user manager's root `-.slice` names the same cgroup and later reports its default `auto` state.
 - oomd remembers the hook, not which clerk contributed each card.
 - The user's `auto` removes the shared record, including PID 1's still-live contribution.
 
@@ -89,7 +87,7 @@ where authority is:
 (SYSTEM_MANAGER | USER_MANAGER, uid)
 ```
 
-Derive the existing monitored maps as effective runtime state.
+Derive existing monitored maps as effective runtime state.
 
 Required rules:
 
@@ -111,62 +109,62 @@ DESIGN.md
 IMPLEMENTATION.md
 CONNECTION-LIFECYCLE.md
 PROTOTYPE-AUDIT.md
+C-REDUCER.md
+INDEPENDENT-REVIEW-2026-08-04.md
 ```
 
 ## Controlled executable lanes
 
 ### Baseline and reporter trace — `teamleaderleo/systemd#1`
 
-Evidence-only reproduction and receive-boundary attribution. No product source correction is claimed in that lane.
+Evidence-only reproduction and receive-boundary attribution. No product correction is claimed in that lane.
 
 ### Integration prototype — `teamleaderleo/systemd#2`
 
 The generated first slice separates system and user contributions and derives effective state with whole-tuple system precedence.
 
-Previous run `30755664280` proved exact checkout, fail-closed injection, atomicity markers, a clean generated diff, and `systemd-oomd` compilation with `--werror`. It stopped before unit/VM verdict because the workflow ran `test-oomd-util` without building that executable.
+Run `30755664280` proved exact checkout, fail-closed injection, atomicity markers, a clean generated diff, and `systemd-oomd` compilation with `--werror`. It stopped before unit/VM verdict because the workflow ran `test-oomd-util` without building that executable.
 
-The workflow was repaired at:
+The harness was repaired at:
 
 ```text
 head: fea4fe7f2c09ca2e33a2870fa7425e87d81a42ac
 run:  30914358330
 ```
 
-That exact-head run is the current integration gate. No unit or VM pass is claimed until its retained result is inspected.
+That run has already compiled `systemd-oomd` and `test-oomd-util` and passed the existing focused unit test. At this checkpoint it is still building the integration image; the two live VM cases remain unproven until their retained artifact is inspected.
 
-### Standalone policy reducer — `teamleaderleo/systemd#3`
+### Policy reducer and reporter lifecycle — `teamleaderleo/systemd#3`
 
-Last proven exact reducer head:
+Current authoritative exact-head gate:
 
 ```text
-head:      d9b5cd00c0899bacd9637fcc466ac01a9b841bca
-run:       30913524283
-artifact:  8894149501
-digest:    sha256:db18d59e172da1b3d537cbd055685b4b5191d1f48607a845374edae29b52f5bc
-build:     564/564
-focused:   1/1 passed
+head:      76749bfd3dda498c15a88c4e572340d8ade3e82b
+run:       30915443613
+artifact:  8894962609
+digest:    sha256:a9e87098bcd7c9ef5ad154e2e884150233ed0cb09a53c203b378a1dc28db5f37
+build:     567/567
+focused:   2/2 passed
+```
+
+Focused targets:
+
+```text
+test-oomd-policy
+test-oomd-reporter-lifecycle
 ```
 
 Independent review found and repaired:
 
 - insertion-order defeat of higher-ranked system policy;
-- invalid `FOREACH_ARRAY(candidate + keep, ...)` macro usage;
+- invalid snapshot array-macro use;
 - acceptance of malformed authorities/property values;
-- a later incomplete Meson lifecycle target that referenced two nonexistent source files.
+- an incomplete lifecycle target referencing nonexistent files;
+- missing Meson wiring after the lifecycle sources were added.
 
-The dangling target was removed at current repair head:
+The receipt records `manager_integration=false`. This proves the policy and generation models, not live Varlink or manager behavior.
 
-```text
-731d633b05d29158ebcb78f59f42d943fab3930f
-```
-
-The green receipt belongs to `d9b5cd0…`; the repair head requires its own exact-head run.
-
-Detailed reducer record:
-
-```text
-C-REDUCER.md
-```
+The lifecycle model retains old active policy while a replacement connection is pending. Live integration therefore depends on an authoritative first snapshot—including empty state—or another bounded handshake mechanism.
 
 ## Executable specifications
 
@@ -184,12 +182,12 @@ test_model_snapshot_epochs.py
 ## Disposition
 
 - Baseline defect: **reproduced and causally attributed**.
-- Reporter-aware model: **selected and executable**.
-- Standalone reducer: **bounded green at exact head `d9b5cd0…`; current repair head pending exact validation**.
-- Integration prototype: **corrected exact-head validation active**.
+- Reporter-aware architecture: **selected and executable**.
+- Policy reducer and reporter lifecycle models: **exact-head green at `76749bfd…`**.
+- Live integration prototype: **unit gate passed; VM gate still active**.
 - Submission candidate: **not ready**.
 - Upstream contact: **none**.
 
 ## Authority
 
-All writes, reviews, and execution are confined to `teamleaderleo/linux-fieldwork` and `teamleaderleo/systemd`. No issue comment, pull request, review, reaction, patch submission, email, or other action has been made in `systemd/systemd`.
+All writes, reviews, and execution are confined to `teamleaderleo/linux-fieldwork` and `teamleaderleo/systemd`. Internal review is not upstream systemd approval. No issue comment, pull request, review, reaction, patch submission, email, or other action has been made in `systemd/systemd`.
