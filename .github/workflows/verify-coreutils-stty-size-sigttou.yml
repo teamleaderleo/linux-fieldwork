@@ -20,6 +20,7 @@ permissions:
 
 env:
   COREUTILS_SHA: acad83939b673294c33afe699b2427d6b37ee820
+  COREUTILS_BASE_SHA: 21d4e9635b07a04f262cd8a5386f2987bca6cfef
 
 jobs:
   stty-job-control:
@@ -55,8 +56,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$COREUTILS_SHA"
-          test "$(git diff --name-only HEAD^ HEAD)" = 'src/uu/stty/src/stty.rs'
-          git diff --check HEAD^
+          git merge-base --is-ancestor "$COREUTILS_BASE_SHA" HEAD
+          test "$(git diff --name-only "$COREUTILS_BASE_SHA" HEAD)" = 'src/uu/stty/src/stty.rs'
+          git diff --check "$COREUTILS_BASE_SHA" HEAD
           cargo fmt --all -- --check
 
       - name: Run state-boundary unit
@@ -179,7 +181,7 @@ jobs:
           set -euo pipefail
           {
             echo "source_head=$(git rev-parse HEAD)"
-            echo "source_parent=$(git rev-parse HEAD^)"
+            echo "source_base=$COREUTILS_BASE_SHA"
             echo "source_blob=$(git rev-parse HEAD:src/uu/stty/src/stty.rs)"
             rustc --version
             cargo --version
