@@ -4,11 +4,11 @@ Updated: 2026-08-06
 
 This is the live operational board for the strongest current investigations. It is intentionally short. Detailed evidence remains in the linked fork branches, internal pull requests, and Fieldwork issues.
 
-## Proven and packaging
+## Proven and ready
 
 ### Cloud Hypervisor — API shutdown lifecycle event gates
 
-**State:** runtime-proven; clean contribution commit is being materialized.
+**State:** runtime-proven; clean one-commit candidate ready in the fork.
 
 - Canonical issue: `cloud-hypervisor/cloud-hypervisor#8046`
 - Diagnostic branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/api-shutdown-events`
@@ -17,7 +17,6 @@ This is the live operational board for the strongest current investigations. It 
 - Runtime workflow/job: `30953976821` / `92176887306`
 - Runtime artifact: `8915262953`
 - Artifact digest: `sha256:eed3ebbca87dba9fa11801d12ea69a3cc57fa137f00a33dc4542dbbd9addec3b`
-- Current packaging run: `31046745930`
 
 All four real KVM selectors passed:
 
@@ -26,7 +25,9 @@ All four real KVM selectors passed:
 - D-Bus shutdown;
 - D-Bus delete/create/boot.
 
-The intended contribution is one signed-off commit changing only `cloud-hypervisor/tests/common/tests_wrappers.rs`. A CI-control bug previously limited clean materialization to push events even though the visible successful gate was attached to the internal PR. That condition is removed: the diagnostic workflow now always attempts to materialize the clean branch after its focused gate passes.
+The clean branch is exactly one commit ahead of canonical snapshot `ae04fa80b2e0e52b7a9f4b3fd4239698df586673`. It changes only `cloud-hypervisor/tests/common/tests_wrappers.rs`: 26 additions, 17 deletions. No workflow, handoff, or `linux-fieldwork/` files are present in that candidate diff.
+
+A CI-control bug previously limited clean materialization to push events even though the visible successful gate was attached to the internal PR. That condition is removed, and clean materialization has now completed.
 
 ## Active investigations
 
@@ -67,7 +68,7 @@ Baseline status:
 - repository CI run `31014818002`: success;
 - lint run `31014817568`: success;
 - focused run `31014817428` applied the deterministic test, passed scope checks, configured successfully, and built `libarchive_test` successfully;
-- the focused run then failed because it looked for the binary under `libarchive/test/`, while CMake linked it under `bin/`.
+- CMake linked the binary under `build/bin/`, but the focused workflow looked under `libarchive/test/`, so no behavioral assertion ran in that attempt.
 
 Candidate status:
 
