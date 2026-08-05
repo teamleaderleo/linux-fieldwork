@@ -1,0 +1,175 @@
+name: runc cgroups JSON compatibility probe
+
+on:
+  push:
+    branches:
+      - research/runc-cgroups-json-2026-08-05
+    paths:
+      - investigations/runc-cgroups-json/**
+      - .github/workflows/runc-cgroups-json.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - investigations/runc-cgroups-json/**
+      - .github/workflows/runc-cgroups-json.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out exact proposed state
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 1.25.x
+          cache: false
+
+      - name: Build exact dependency workspaces
+        shell: bash
+        run: |
+          set -euxo pipefail
+          source_dir="$GITHUB_WORKSPACE/investigations/runc-cgroups-json"
+          work_dir="$RUNNER_TEMP/runc-cgroups-json-work"
+          artifact_dir="$RUNNER_TEMP/runc-cgroups-json-artifact"
+          rm -rf "$work_dir" "$artifact_dir"
+          mkdir -p "$work_dir" "$artifact_dir"
+
+          for version in v0.0.6 v0.0.8; do
+            mkdir -p "$work_dir/$version"
+            cp "$source_dir/main.go" "$work_dir/$version/main.go"
+            cp "$source_dir/$version/go.mod" "$work_dir/$version/go.mod"
+            (
+              cd "$work_dir/$version"
+              go mod tidy
+              go test ./...
+              go vet ./...
+              go build -trimpath -o serializer .
+            )
+          done
+
+          printf 'WORK_DIR=%s\n' "$work_dir" >>"$GITHUB_ENV"
+          printf 'ARTIFACT_DIR=%s\n' "$artifact_dir" >>"$GITHUB_ENV"
+
+      - name: Execute native and cross-decode matrix
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          DEPENDENCY_LABEL=v0.0.6 "$WORK_DIR/v0.0.6/serializer" >"$ARTIFACT_DIR/v006-native.json"
+          DEPENDENCY_LABEL=v0.0.8 "$WORK_DIR/v0.0.8/serializer" >"$ARTIFACT_DIR/v008-native.json"
+
+          DEPENDENCY_LABEL=v0.0.6 "$WORK_DIR/v0.0.6/serializer" \
+            "$ARTIFACT_DIR/v008-native.json" >"$ARTIFACT_DIR/v006-decodes-v008.json"
+          DEPENDENCY_LABEL=v0.0.8 "$WORK_DIR/v0.0.8/serializer" \
+            "$ARTIFACT_DIR/v006-native.json" >"$ARTIFACT_DIR/v008-decodes-v006.json"
+
+          python3 - "$ARTIFACT_DIR" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          names = [
+              "v006-native",
+              "v008-native",
+              "v006-decodes-v008",
+              "v008-decodes-v006",
+          ]
+          reports = {name: json.loads((root / f"{name}.json").read_text()) for name in names}
+
+          for name, report in reports.items():
+              nonzero = report["encoded"]["nonzero-resources"]
+              if nonzero.get("name") != "probe":
+                  raise SystemExit(f"{name}: nonzero name was not preserved")
+              if nonzero.get("memory") != 1:
+                  raise SystemExit(f"{name}: nonzero memory was not preserved")
+              if nonzero.get("unified", {}).get("memory.high") != "1":
+                  raise SystemExit(f"{name}: nonzero unified value was not preserved")
+
+          samples = sorted(reports["v006-native"]["encoded"])
+          comparison = {
+              "native_json_equal": {},
+              "cross_decode_json_matches_target_native": {},
+              "shapes": {name: reports[name]["shapes"] for name in names},
+          }
+          for sample in samples:
+              comparison["native_json_equal"][sample] = (
+                  reports["v006-native"]["encoded"][sample]
+                  == reports["v008-native"]["encoded"][sample]
+              )
+              comparison["cross_decode_json_matches_target_native"][sample] = {
+                  "v006_decodes_v008": (
+                      reports["v006-decodes-v008"]["encoded"][sample]
+                      == reports["v006-native"]["encoded"][sample]
+                  ),
+                  "v008_decodes_v006": (
+                      reports["v008-decodes-v006"]["encoded"][sample]
+                      == reports["v008-native"]["encoded"][sample]
+                  ),
+              }
+
+          (root / "comparison.json").write_text(json.dumps(comparison, indent=2, sort_keys=True) + "\n")
+
+          lines = ["# cgroups JSON comparison", ""]
+          for sample in samples:
+              lines.append(f"## {sample}")
+              lines.append(f"- native JSON equal: `{comparison['native_json_equal'][sample]}`")
+              cross = comparison["cross_decode_json_matches_target_native"][sample]
+              lines.append(f"- v0.0.6 decoding v0.0.8 matches v0.0.6 native: `{cross['v006_decodes_v008']}`")
+              lines.append(f"- v0.0.8 decoding v0.0.6 matches v0.0.8 native: `{cross['v008_decodes_v006']}`")
+              lines.append("")
+          (root / "comparison.md").write_text("\n".join(lines))
+          print((root / "comparison.md").read_text())
+          PY
+
+      - name: Record identities and checksums
+        shell: bash
+        run: |
+          set -euxo pipefail
+          {
+            printf 'commit=%s\n' "$GITHUB_SHA"
+            printf 'run_id=%s\n' "$GITHUB_RUN_ID"
+            printf 'run_attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
+            uname -a
+            go version
+            sha256sum \
+              "$GITHUB_WORKSPACE/investigations/runc-cgroups-json/main.go" \
+              "$GITHUB_WORKSPACE/investigations/runc-cgroups-json/v0.0.6/go.mod" \
+              "$GITHUB_WORKSPACE/investigations/runc-cgroups-json/v0.0.8/go.mod"
+          } >"$ARTIFACT_DIR/environment.txt"
+          (
+            cd "$ARTIFACT_DIR"
+            sha256sum *.json *.md environment.txt >SHA256SUMS
+          )
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
+
+      - name: Publish exact comparison receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: runc-cgroups-json-comparison
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prove cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf \
+            "${WORK_DIR:-$RUNNER_TEMP/runc-cgroups-json-work}" \
+            "${ARTIFACT_DIR:-$RUNNER_TEMP/runc-cgroups-json-artifact}"
+          test -z "$(git status --porcelain)"
