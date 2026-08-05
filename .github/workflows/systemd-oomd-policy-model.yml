@@ -19,6 +19,8 @@ jobs:
   executable-specification:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      PYTHONPYCACHEPREFIX: ${{ runner.temp }}/fieldwork-systemd-oomd-pycache
     defaults:
       run:
         working-directory: investigations/systemd-oomd-reporter-collision
