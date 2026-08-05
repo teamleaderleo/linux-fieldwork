@@ -1,0 +1,197 @@
+name: Verify coreutils stty print-only job control
+
+on:
+  push:
+    branches:
+      - investigate/coreutils-stty-size-sigttou-13722
+    paths:
+      - .github/workflows/verify-coreutils-stty-size-sigttou.yml
+      - investigations/coreutils-stty-size-sigttou-13722/**
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/verify-coreutils-stty-size-sigttou.yml
+      - investigations/coreutils-stty-size-sigttou-13722/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COREUTILS_SHA: acad83939b673294c33afe699b2427d6b37ee820
+
+jobs:
+  stty-job-control:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out Linux Fieldwork carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact controlled source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: teamleaderleo/coreutils
+          ref: ${{ env.COREUTILS_SHA }}
+          path: coreutils
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+          components: clippy,rustfmt
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          workspaces: coreutils
+
+      - name: Verify exact one-file source candidate
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COREUTILS_SHA"
+          test "$(git diff --name-only HEAD^ HEAD)" = 'src/uu/stty/src/stty.rs'
+          git diff --check HEAD^
+          cargo fmt --all -- --check
+
+      - name: Run state-boundary unit
+        working-directory: coreutils
+        run: cargo test -p uu_stty print_only_actions_do_not_require_tcsetattr --lib
+
+      - name: Build stty
+        working-directory: coreutils
+        run: cargo build -p uu_stty --bin stty
+
+      - name: Prove background process-group behavior
+        working-directory: coreutils
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../artifacts/stty
+          python3 - <<'PY' | tee ../artifacts/stty/job-control.txt
+          import fcntl
+          import os
+          import pty
+          import signal
+          import sys
+          import termios
+          import time
+
+          def probe(argv):
+              master, slave = pty.openpty()
+              result_read, result_write = os.pipe()
+              supervisor = os.fork()
+              if supervisor == 0:
+                  os.close(result_read)
+                  os.close(master)
+                  os.setsid()
+                  fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+                  os.tcsetpgrp(slave, os.getpgrp())
+                  child = os.fork()
+                  if child == 0:
+                      os.setpgid(0, 0)
+                      for sig in (signal.SIGTTOU, signal.SIGTTIN, signal.SIGTSTP):
+                          signal.signal(sig, signal.SIG_DFL)
+                      os.dup2(slave, 0)
+                      os.dup2(slave, 1)
+                      os.dup2(slave, 2)
+                      if slave > 2:
+                          os.close(slave)
+                      os.execv(argv[0], argv)
+
+                  os.close(slave)
+                  deadline = time.monotonic() + 5
+                  result = "timeout"
+                  while time.monotonic() < deadline:
+                      pid, status = os.waitpid(child, os.WNOHANG | os.WUNTRACED)
+                      if pid:
+                          if os.WIFSTOPPED(status):
+                              result = f"stopped:{os.WSTOPSIG(status)}"
+                          elif os.WIFEXITED(status):
+                              result = f"exit:{os.WEXITSTATUS(status)}"
+                          elif os.WIFSIGNALED(status):
+                              result = f"signal:{os.WTERMSIG(status)}"
+                          break
+                      time.sleep(0.02)
+
+                  if result == "timeout" or result.startswith("stopped:"):
+                      try:
+                          os.kill(child, signal.SIGKILL)
+                          os.kill(child, signal.SIGCONT)
+                      except ProcessLookupError:
+                          pass
+                      try:
+                          os.waitpid(child, 0)
+                      except ChildProcessError:
+                          pass
+
+                  os.write(result_write, result.encode())
+                  os.close(result_write)
+                  os._exit(0)
+
+              os.close(result_write)
+              os.close(slave)
+              result = os.read(result_read, 128).decode()
+              os.close(result_read)
+              os.close(master)
+              os.waitpid(supervisor, 0)
+              return result
+
+          expected_stop = f"stopped:{signal.SIGTTOU}"
+          binary = os.path.abspath("target/debug/stty")
+          cases = {
+              "negative-control": ([
+                  sys.executable,
+                  "-c",
+                  "import termios; a=termios.tcgetattr(0); termios.tcsetattr(0, termios.TCSADRAIN, a)",
+              ], expected_stop),
+              "size": ([binary, "size"], "exit:0"),
+              "drain": ([binary, "drain"], "exit:0"),
+              "size-drain": ([binary, "size", "drain"], "exit:0"),
+              "mutation": ([binary, "-echo", "size"], expected_stop),
+          }
+          failed = []
+          for label, (argv, expected) in cases.items():
+              observed = probe(argv)
+              print(f"{label}={observed};expected={expected}")
+              if observed != expected:
+                  failed.append(f"{label}: observed {observed}, expected {expected}")
+          if failed:
+              raise SystemExit("; ".join(failed))
+          PY
+
+      - name: Run complete stty integration module
+        working-directory: coreutils
+        run: cargo test --features stty --no-default-features --test tests test_stty
+
+      - name: Run focused clippy
+        working-directory: coreutils
+        run: cargo clippy --features stty --no-default-features --all-targets -- -D warnings
+
+      - name: Record exact identities and cleanup
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          {
+            echo "source_head=$(git rev-parse HEAD)"
+            echo "source_parent=$(git rev-parse HEAD^)"
+            echo "source_blob=$(git rev-parse HEAD:src/uu/stty/src/stty.rs)"
+            rustc --version
+            cargo --version
+          } >../artifacts/stty/identity.txt
+          test "$(git rev-parse HEAD)" = "$COREUTILS_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Upload stty job-control receipt
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: coreutils-stty-job-control-${{ env.COREUTILS_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/stty/
+          if-no-files-found: error
+          retention-days: 30
