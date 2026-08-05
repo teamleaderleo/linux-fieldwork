@@ -24,6 +24,13 @@ class KmodModprobeConfigWorkflowTests(unittest.TestCase):
         ):
             self.assertEqual(event_block.count(path), 2)
 
+    def test_hosted_execution_is_bounded_and_deduplicated(self) -> None:
+        self.assertIn("runs-on: ubuntu-24.04", self.workflow)
+        self.assertNotIn("ubuntu-latest", self.workflow)
+        self.assertIn("timeout-minutes: 30", self.workflow)
+        self.assertIn("concurrency:", self.workflow)
+        self.assertIn("cancel-in-progress: true", self.workflow)
+
     def test_exact_source_and_compiler_matrix_remain(self) -> None:
         self.assertIn("5086df53090b2fe9fa1c31351c05a78a12a4ba71", self.workflow)
         self.assertIn("compiler: [gcc, clang]", self.workflow)
