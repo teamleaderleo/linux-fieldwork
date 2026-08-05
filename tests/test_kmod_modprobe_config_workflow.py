@@ -24,6 +24,15 @@ class KmodModprobeConfigWorkflowTests(unittest.TestCase):
         self.assertIn("libssl-dev", self.workflow)
         self.assertIn("-Dopenssl=enabled", self.workflow)
 
+    def test_clang_shared_sanitizer_runtime_is_resolved(self) -> None:
+        self.assertIn("libclang-rt-dev", self.workflow)
+        self.assertIn("--print-file-name=libclang_rt.asan-x86_64.so", self.workflow)
+        self.assertIn('test -f "$runtime_lib"', self.workflow)
+        self.assertIn('>> "$GITHUB_ENV"', self.workflow)
+        self.assertIn("sanitizer-runtime.txt", self.workflow)
+        self.assertIn("modprobe-ldd.txt", self.workflow)
+        self.assertIn("! grep -F 'not found'", self.workflow)
+
     def test_proposed_code_has_no_persisted_checkout_credentials(self) -> None:
         self.assertEqual(self.workflow.count("persist-credentials: false"), 2)
         permissions = self.workflow.split("jobs:", 1)[0]
@@ -36,8 +45,10 @@ class KmodModprobeConfigWorkflowTests(unittest.TestCase):
             "source-modprobe-blob.txt",
             "source-status.txt",
             "toolchain.txt",
+            "sanitizer-runtime.txt",
             "meson-setup.log",
             "build.log",
+            "modprobe-ldd.txt",
             "final-source-status.txt",
         ):
             self.assertIn(receipt, self.workflow)
