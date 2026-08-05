@@ -77,6 +77,25 @@ jobs:
         with:
           workspaces: coreutils
 
+      - name: Record inherited fd-strip baseline
+        working-directory: coreutils
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../artifacts/fd-staged
+          set +e
+          cargo test --features 'install chmod' --no-default-features \
+            --test tests test_install_and_strip \
+            2>&1 | tee ../artifacts/fd-staged/baseline-strip.log
+          baseline_status=${PIPESTATUS[0]}
+          set -e
+          test "$baseline_status" -ne 0
+          grep -F '/proc/self/fd/' ../artifacts/fd-staged/baseline-strip.log
+          grep -F 'could not create temporary file to hold stripped copy' \
+            ../artifacts/fd-staged/baseline-strip.log
+          printf 'baseline_status=%s\n' "$baseline_status" \
+            >../artifacts/fd-staged/baseline-strip-status.txt
+
       - name: Verify exact source and apply fail-closed candidate
         run: |
           set -euo pipefail
@@ -93,7 +112,6 @@ jobs:
           cargo fmt --all
           cargo fmt --all -- --check
           git diff --check
-          mkdir -p ../artifacts/fd-staged
           {
             echo "source_head=$(git rev-parse HEAD)"
             echo "source_base=$COREUTILS_BASE_SHA"
@@ -134,9 +152,31 @@ jobs:
             cargo test --features 'install chmod' --no-default-features "$test_name"
           done
 
-      - name: Run complete install test module
+      - name: Confirm inherited fd-strip failure remains isolated
         working-directory: coreutils
-        run: cargo test --features 'install chmod' --no-default-features --test tests test_install
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          cargo test --features 'install chmod' --no-default-features \
+            --test tests test_install_and_strip \
+            2>&1 | tee ../artifacts/fd-staged/candidate-strip.log
+          candidate_status=${PIPESTATUS[0]}
+          set -e
+          test "$candidate_status" -ne 0
+          grep -F '/proc/self/fd/' ../artifacts/fd-staged/candidate-strip.log
+          grep -F 'could not create temporary file to hold stripped copy' \
+            ../artifacts/fd-staged/candidate-strip.log
+          printf 'candidate_status=%s\n' "$candidate_status" \
+            >../artifacts/fd-staged/candidate-strip-status.txt
+
+      - name: Run complete install module outside inherited strip defect
+        working-directory: coreutils
+        run: |
+          cargo test --features 'install chmod' --no-default-features \
+            --test tests test_install -- \
+            --skip test_install::test_install_and_strip \
+            --skip test_install::test_install_and_strip_with_program
 
       - name: Run focused clippy
         working-directory: coreutils
@@ -157,5 +197,5 @@ jobs:
         with:
           name: coreutils-install-fd-staged-${{ env.COREUTILS_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/fd-staged/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
