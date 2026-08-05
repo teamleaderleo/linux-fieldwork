@@ -13,6 +13,17 @@ class KmodModprobeConfigWorkflowTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
 
+    def test_branch_push_and_pr_paths_are_both_covered(self) -> None:
+        event_block = self.workflow.split("permissions:", 1)[0]
+        self.assertIn("  push:", event_block)
+        self.assertIn("  pull_request:", event_block)
+        for path in (
+            ".github/workflows/kmod-modprobe-config-path.yml",
+            "investigations/kmod-modprobe-options-config-path/**",
+            "tests/test_kmod_modprobe_config_workflow.py",
+        ):
+            self.assertEqual(event_block.count(path), 2)
+
     def test_exact_source_and_compiler_matrix_remain(self) -> None:
         self.assertIn("5086df53090b2fe9fa1c31351c05a78a12a4ba71", self.workflow)
         self.assertIn("compiler: [gcc, clang]", self.workflow)
