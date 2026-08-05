@@ -1,20 +1,49 @@
 # BuildKit unused-context carrier status
 
+- State: `ACTIVE`
 - Controlled fork: `teamleaderleo/buildkit`
 - Test branch: `research/unused-context-lazy-load`
 - Test-only head: `4024335d0e905d1206786644d8f363336d4678ec`
-- Exact snapshot base: `linux-fieldwork/upstream-master-snapshot-2026-08-03`
 - Exact canonical base commit: `275d6864ff0ce91a06225af5f5b012887bd257cf`
 - Internal draft PR: `teamleaderleo/buildkit#2`
 - PR state at latest review: open, draft, mergeable
-- Product source changes: none
-- Local source-only receipt: exact test file produces an empty `gofmt -d`
-- Hosted static receipt: Linux Fieldwork run `31012029092`, job `92326394200`, success
-- Hosted static coverage: exact checkout identity, canonical-base ancestry, `git diff --check`, canonical formatting, vendored Dockerfile package compile, and clean checkout all passed
-- Hosted runtime receipt: pending
 - Submitted reviews/comments: none observed on controlled PR #2
-- Expected baseline: metadata-only subtest fails because the sentinel main context is accessed
-- Positive controls: local `COPY` and default-context bind mount must access the sentinel
-- External contact: none
+- Candidate source patch: `candidate-lazy-main-context.patch`
+- Canonical-project contact: none
 
-The exact repaired test carrier now compiles in the repository package and passes formatting and ancestry checks. This remains a compile-only receipt. The next technical gate is the focused Dockerfile integration execution that distinguishes the metadata-only baseline from the two used-context controls, followed by provenance-absence checking only after lazy transfer behavior is demonstrated.
+## Static carrier receipt
+
+Linux Fieldwork run `31012029092`, job `92326394200`, succeeded on the exact test carrier. Checkout identity, canonical-base ancestry, `git diff --check`, `gofmt`, vendored Dockerfile package compilation, and cleanup passed.
+
+## Live baseline receipt
+
+BuildKit frontend workflow run `30942870861` executed the focused test across the frontend backend matrix. The retained JUnit artifact `buildkit-frontend-containerd-test-reports.zip` (artifact ID `8914318532`) records the first named failure:
+
+```text
+TestIntegration/FrontendDockerfileSuite/TestContextAccess/metadata-only
+unexpected context access in metadata-only build: walk=1 open=0
+```
+
+The same metadata-only subtest failed across all frontend backends. Setup succeeded and the failure is inside the new test, so this is shared converter behavior rather than a backend-specific setup failure. The local `COPY` and default-context bind cases remain the positive controls that require main-context access.
+
+## Source owner
+
+At the exact canonical base, `dispatchStages()` calls `Client.DockerIgnorePatterns(ctx)` before any command-specific decision. Later, `finalizeResultImage()` calls `MainContext()` unconditionally. Local ADD/COPY and default-context run mounts already populate the aggregated `ctxPaths`; explicit context scanning is represented by `scanContext`.
+
+## Candidate
+
+The retained candidate:
+
+1. memoizes Docker ignore matcher construction and invokes it only from local ADD/COPY dispatch;
+2. materializes the main context only when `ctxPaths` is non-empty or context SBOM scanning is requested;
+3. leaves named/stage/remote sources outside the default-main-context gate.
+
+Linux Fieldwork run `31021699370` is the first exact-source apply, formatting, and package-compile gate for this candidate. It was queued when this record was written; queued is not a result.
+
+## Next technical action
+
+Classify run `31021699370`. Repair the first patch/apply/format/compile failure if present. After a green static candidate receipt, apply the candidate to a controlled BuildKit source branch and rerun the same frontend integration matrix. The unit remains `ACTIVE`; no human approval is needed for these internal technical steps.
+
+## Authority
+
+No canonical BuildKit issue comment, pull request, review, email, or other external contact is authorized or made.
