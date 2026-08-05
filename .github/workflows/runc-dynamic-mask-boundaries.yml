@@ -1,0 +1,187 @@
+name: runc dynamic mask boundary probe
+
+on:
+  push:
+    branches:
+      - research/runc-dynamic-mask-boundaries-2026-08-05
+    paths:
+      - investigations/runc-dynamic-mask-boundaries/**
+      - .github/workflows/runc-dynamic-mask-boundaries.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - investigations/runc-dynamic-mask-boundaries/**
+      - .github/workflows/runc-dynamic-mask-boundaries.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out exact proposed state
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          clean: true
+
+      - name: Set up declared Go toolchain
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: investigations/runc-dynamic-mask-boundaries/go.mod
+          cache: false
+
+      - name: Install syscall tracer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends strace
+
+      - name: Capture environment and build outside checkout
+        shell: bash
+        run: |
+          set -euxo pipefail
+          source_dir="$GITHUB_WORKSPACE/investigations/runc-dynamic-mask-boundaries"
+          build_dir="$RUNNER_TEMP/runc-dynamic-mask-build"
+          artifact_dir="$RUNNER_TEMP/runc-dynamic-mask-artifact"
+
+          rm -rf "$build_dir" "$artifact_dir"
+          mkdir -p "$build_dir" "$artifact_dir"
+
+          {
+            printf 'workflow_run_id=%s\n' "$GITHUB_RUN_ID"
+            printf 'workflow_run_attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
+            printf 'commit=%s\n' "$GITHUB_SHA"
+            printf 'runner_image=%s\n' "${ImageOS:-unknown}"
+            printf 'runner_image_version=%s\n' "${ImageVersion:-unknown}"
+            uname -a
+            printf 'long_bit=%s\n' "$(getconf LONG_BIT)"
+            go version
+            strace --version | head -n 1
+            sha256sum \
+              "$source_dir/go.mod" \
+              "$source_dir/go.sum" \
+              "$source_dir/main.go" \
+              "$source_dir/README.md"
+          } >"$artifact_dir/environment.txt"
+
+          (
+            cd "$source_dir"
+            go test ./...
+            go vet ./...
+            go build -trimpath -o "$build_dir/probe" .
+          )
+          sha256sum "$build_dir/probe" >>"$artifact_dir/environment.txt"
+
+          printf 'BUILD_DIR=%s\n' "$build_dir" >>"$GITHUB_ENV"
+          printf 'ARTIFACT_DIR=%s\n' "$artifact_dir" >>"$GITHUB_ENV"
+
+      - name: Execute constructor and syscall discriminators
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          "$BUILD_DIR/probe" constructor | tee "$ARTIFACT_DIR/constructor.txt"
+          strace -qq -f -e trace=set_mempolicy \
+            -o "$ARTIFACT_DIR/wrapper.strace" \
+            "$BUILD_DIR/probe" wrapper | tee "$ARTIFACT_DIR/wrapper.txt"
+          strace -qq -f -e trace=set_mempolicy \
+            -o "$ARTIFACT_DIR/raw.strace" \
+            "$BUILD_DIR/probe" raw | tee "$ARTIFACT_DIR/raw.txt"
+
+          grep -q 'exclusive_has_max=false' "$ARTIFACT_DIR/constructor.txt"
+          grep -q 'inclusive_has_max=true' "$ARTIFACT_DIR/constructor.txt"
+          grep -q 'set_mempolicy' "$ARTIFACT_DIR/wrapper.strace"
+          grep -q 'set_mempolicy' "$ARTIFACT_DIR/raw.strace"
+
+          python3 - "$ARTIFACT_DIR" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          artifact_dir = pathlib.Path(sys.argv[1])
+
+          def syscall_arg(path: pathlib.Path) -> int:
+              lines = [line for line in path.read_text().splitlines() if "set_mempolicy(" in line]
+              if not lines:
+                  raise SystemExit(f"no set_mempolicy call in {path}")
+              match = re.search(r",\s*(0x[0-9a-fA-F]+|[0-9]+)\)\s*=", lines[-1])
+              if match is None:
+                  raise SystemExit(f"could not parse maxnode from {lines[-1]!r}")
+              return int(match.group(1), 0)
+
+          wrapper_text = (artifact_dir / "wrapper.txt").read_text()
+          bits_match = re.search(r"word_bits=([0-9]+)", wrapper_text)
+          if bits_match is None:
+              raise SystemExit("wrapper output did not record word_bits")
+          word_bits = int(bits_match.group(1))
+
+          wrapper_arg = syscall_arg(artifact_dir / "wrapper.strace")
+          raw_arg = syscall_arg(artifact_dir / "raw.strace")
+          expected_wrapper = word_bits // 8
+          expected_raw = word_bits
+
+          if wrapper_arg != expected_wrapper:
+              raise SystemExit(
+                  f"wrapper maxnode changed: got {wrapper_arg}, expected byte count {expected_wrapper}"
+              )
+          if raw_arg != expected_raw:
+              raise SystemExit(
+                  f"raw maxnode changed: got {raw_arg}, expected bit count {expected_raw}"
+              )
+          if wrapper_arg == raw_arg:
+              raise SystemExit("wrapper and raw controls did not diverge")
+
+          receipt = (
+              f"word_bits={word_bits}\n"
+              f"wrapper_maxnode={wrapper_arg}\n"
+              f"raw_maxnode={raw_arg}\n"
+              "constructor_top_bit=confirmed\n"
+              "dynamic_mempolicy_unit_mismatch=confirmed\n"
+          )
+          (artifact_dir / "receipt.txt").write_text(receipt)
+          print(receipt, end="")
+          PY
+
+      - name: Verify clean checkout and checksum receipt
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
+          (
+            cd "$ARTIFACT_DIR"
+            sha256sum \
+              environment.txt \
+              constructor.txt \
+              wrapper.txt \
+              wrapper.strace \
+              raw.txt \
+              raw.strace \
+              receipt.txt >SHA256SUMS
+          )
+
+      - name: Publish exact hosted receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: runc-dynamic-mask-boundary-receipt
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prove post-upload cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          build_dir="${BUILD_DIR:-$RUNNER_TEMP/runc-dynamic-mask-build}"
+          artifact_dir="${ARTIFACT_DIR:-$RUNNER_TEMP/runc-dynamic-mask-artifact}"
+          rm -rf "$build_dir" "$artifact_dir"
+          test ! -e "$build_dir"
+          test ! -e "$artifact_dir"
+          test -z "$(git status --porcelain)"
