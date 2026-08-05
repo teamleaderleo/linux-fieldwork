@@ -6,6 +6,7 @@ This programme turns Linux package collections, runtimes, developer tools, found
 
 ## Current direction
 
+- **Submitted:** Nixpkgs gomarkdoc command-check restoration — [upstream pull request](https://redirect.github.com/NixOS/nixpkgs/pull/549377), issue #136, canonical Fieldwork issue `teamleaderleo/fieldwork#241`
 - **Investigating:** [LF-35 — package collection candidate harvesting](lanes/LF-35-package-collection-candidate-harvesting/brief.md)
 - **Investigating:** [LF-36 — downstream patch retirement and upstream transfer](lanes/LF-36-downstream-patch-retirement/brief.md)
 - **Inbox:** LF-37 — cross-distribution build portability
@@ -21,7 +22,7 @@ This programme turns Linux package collections, runtimes, developer tools, found
 
 ## First sequence
 
-1. Run the `gomarkdoc` test-restoration matrix in investigation #136: inherited `GOFLAGS`, working directory, subpackage selection, and pinned nixpkgs revisions.
+1. Monitor the submitted Nixpkgs gomarkdoc pull request through current-head CI and maintainer review. Keep the accepted Go 1.26 golden repair; do not reopen the rejected Go 1.25/fixture/`GOFLAGS` candidate as the current design.
 2. Select a leaf from the Homebrew unsolved-formula tracker with current logs and no active equivalent work.
 3. Run systemd-oomd investigation #140 in a cgroup-v2 VM and capture ManagedOOM Varlink notifications around a user-manager reload.
 4. Keep AAVMF behind aarch64 QEMU capability.
@@ -56,4 +57,4 @@ Promotion expires when a matching pull request, assignee, claim, or equivalent f
 
 ## Authority
 
-Programme mapping grants no upstream-contact authority.
+Programme mapping grants no upstream-contact authority. The linked gomarkdoc pull request was opened by the user; no additional Linux Fieldwork upstream interaction occurred.
