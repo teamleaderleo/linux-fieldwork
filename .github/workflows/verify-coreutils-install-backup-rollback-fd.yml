@@ -180,7 +180,7 @@ jobs:
 
       - name: Run focused clippy
         working-directory: coreutils
-        run: cargo clippy --features 'install chmod' --no-default-features --all-targets -- -D warnings
+        run: cargo clippy --features 'install chmod' --no-default-features --all-targets --no-deps -- -D warnings
 
       - name: Verify final candidate fence and source identity
         working-directory: coreutils
