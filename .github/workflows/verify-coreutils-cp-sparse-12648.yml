@@ -4,24 +4,38 @@ on:
   push:
     branches:
       - investigate/coreutils-cp-sparse-early-eof-12648
+    paths:
+      - .github/workflows/verify-coreutils-cp-sparse-12648.yml
+      - investigations/coreutils-cp-sparse-early-eof-12648/**
   pull_request:
     branches:
       - main
+    paths:
+      - .github/workflows/verify-coreutils-cp-sparse-12648.yml
+      - investigations/coreutils-cp-sparse-early-eof-12648/**
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  CURRENT_MAIN_SHA: 21d4e9635b07a04f262cd8a5386f2987bca6cfef
+  HISTORICAL_BASE_SHA: a0cb02453f314bdd3addda6f321f7e03adceb56b
+  CANDIDATE_SHA: 0d0a29b4bf47e4822ccf7a43d344b4525988e511
+  CANDIDATE_LINUX_BLOB: 04ff751b33c8b9f76afb56d2bb13fd674a19b488
+
 jobs:
-  verify:
+  verify-current-main:
     runs-on: ubuntu-24.04
+    timeout-minutes: 150
     steps:
-      - name: Check out controlled source-only candidate
+      - name: Check out exact current main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: teamleaderleo/coreutils
-          ref: fieldwork/cp-sparse-early-eof-12648
+          ref: ${{ env.CURRENT_MAIN_SHA }}
           path: coreutils
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
@@ -33,19 +47,30 @@ jobs:
         with:
           workspaces: coreutils
 
-      - name: Record exact source identity
+      - name: Synthesize exact intended current-main candidate
         working-directory: coreutils
+        shell: bash
         run: |
           set -euo pipefail
-          git rev-parse HEAD
-          git rev-parse HEAD:src/uu/cp/src/platform/linux.rs
-          test ! -e .fieldwork/apply-cp-sparse-early-eof.py
-          test ! -e .github/workflows/fieldwork-cp-sparse-early-eof.yml
+          test "$(git rev-parse HEAD)" = "$CURRENT_MAIN_SHA"
+          git fetch --no-tags origin \
+            "$HISTORICAL_BASE_SHA" \
+            "$CANDIDATE_SHA"
 
-      - name: Check formatting and diff hygiene
-        working-directory: coreutils
-        run: |
-          cargo fmt --all -- --check
+          # The Linux sparse-copy implementation was untouched by the
+          # intervening main commits. Start with the reviewed early-EOF blob,
+          # then apply the branch's fail-closed block-size refinement.
+          git diff --quiet "$HISTORICAL_BASE_SHA" "$CURRENT_MAIN_SHA" -- \
+            src/uu/cp/src/platform/linux.rs
+          git restore --source="$CANDIDATE_SHA" --worktree -- \
+            src/uu/cp/src/platform/linux.rs
+          test "$(git hash-object src/uu/cp/src/platform/linux.rs)" = \
+            "$CANDIDATE_LINUX_BLOB"
+          git show "$CANDIDATE_SHA":.fieldwork/refine-cp-block-size.py \
+            > "$RUNNER_TEMP/refine-cp-block-size.py"
+          python3 "$RUNNER_TEMP/refine-cp-block-size.py"
+          cargo fmt --all
+          test "$(git diff --name-only)" = 'src/uu/cp/src/platform/linux.rs'
           git diff --check
 
       - name: Test deterministic early EOF transition
@@ -59,3 +84,39 @@ jobs:
       - name: Run focused clippy
         working-directory: coreutils
         run: cargo clippy --features cp --no-default-features --all-targets -- -D warnings
+
+      - name: Record exact evidence and restore source
+        if: always()
+        working-directory: coreutils
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/coreutils-cp-evidence"
+          mkdir -p "$evidence"
+          {
+            echo "current_main=$CURRENT_MAIN_SHA"
+            echo "historical_base=$HISTORICAL_BASE_SHA"
+            echo "candidate_head=$CANDIDATE_SHA"
+            echo "candidate_pre_refinement_blob=$CANDIDATE_LINUX_BLOB"
+            echo "candidate_final_blob=$(git hash-object src/uu/cp/src/platform/linux.rs)"
+            echo "current_main_blob=$(git rev-parse "$CURRENT_MAIN_SHA":src/uu/cp/src/platform/linux.rs)"
+            echo "historical_base_blob=$(git rev-parse "$HISTORICAL_BASE_SHA":src/uu/cp/src/platform/linux.rs)"
+            rustc --version
+            cargo --version
+          } > "$evidence/identity.txt"
+          git diff --binary -- src/uu/cp/src/platform/linux.rs \
+            > "$evidence/current-main-candidate.patch"
+          cp "$RUNNER_TEMP/refine-cp-block-size.py" \
+            "$evidence/refine-cp-block-size.py"
+          git restore --source="$CURRENT_MAIN_SHA" --worktree -- \
+            src/uu/cp/src/platform/linux.rs
+          test -z "$(git status --porcelain)"
+
+      - name: Upload current-main cp receipt
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: coreutils-cp-current-main-${{ env.CANDIDATE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/coreutils-cp-evidence/
+          if-no-files-found: error
+          retention-days: 30
