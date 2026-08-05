@@ -2,12 +2,15 @@
 
 A GitHub-hosted workbench for investigating Linux and Debian projects from a phone-first workflow.
 
+> **Live status:** [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md) — proven results, active candidates, exact CI gates, and the next action for each current lane.
+
 ## In simple words
 
 Linux Fieldwork is a lab notebook and working copy for learning how Linux systems behave, mapping formal research directions, testing concrete questions, and preparing candidate fixes. Casual lessons belong in `notes/`. Formal possibilities live in `programmes/` and `research/`. Recurring upstream systems live in `targets/`. Repeatable technical claims belong in `investigations/`. Imported project trees live in `upstream/` with their source identity preserved.
 
 ## Enter here
 
+- [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md) — live operational board for proven and active work.
 - [`START_HERE.md`](START_HERE.md) — choose the right kind of work and record it consistently.
 - [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md) — lightweight ownership, dispatch, review, branching, and quiet external-reference guidance.
 - [`FIELD_GUIDE.md`](FIELD_GUIDE.md) — practical do, do-not, 🍩 donut, review, and investigation-selection lessons.
@@ -58,6 +61,7 @@ Negative results belong here too. A careful result that supports existing behavi
 
 ## Repository map
 
+- [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md) — live operational board.
 - [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md) — adaptable coordination and third-party GitHub backlink policy.
 - [`FIELD_GUIDE.md`](FIELD_GUIDE.md) — reusable review heuristics, common donuts, fruitful areas, and investigation-selection guidance.
 - [`programmes/registry.yml`](programmes/registry.yml) — canonical programme and lane inventory.
