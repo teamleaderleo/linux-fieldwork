@@ -25,7 +25,7 @@ That is not message atomicity. It can also expose a temporary effective winner a
 
 ## Selected contract
 
-The complete incoming array must first be parsed into typed update entries. Then one registry call applies the whole array:
+The complete incoming array must first be parsed into typed entries. Then one registry call applies the whole array:
 
 ```text
 wire array
@@ -41,37 +41,54 @@ The name `OomdPolicySnapshotEntry` is reused for the typed key/value representat
 - NULL `value` means withdraw that source contribution;
 - duplicate `(property, path)` keys in one message are rejected;
 - validation or allocation failure publishes nothing;
-- an empty update array is a no-op for an initialized active generation;
+- an empty update array is an allocation-free no-op for an initialized active generation;
 - pending or stale generations are rejected before policy mutation.
+
+Complete first snapshots now use the same prevalidation discipline. A malformed later entry cannot partially construct candidate state or promote the pending generation. The same pending link may submit a corrected snapshot afterward.
 
 ## Policy-store transaction
 
-The store validates every entry before constructing candidate state:
+Incremental and complete-snapshot paths validate every entry before constructing candidate state:
 
 - authority kind and UID;
 - property enum;
 - non-null absolute normalized path;
 - value shape for the property;
-- no duplicate property/path key in the array.
+- no duplicate property/path key in the array;
+- complete snapshots require a non-null value for every entry.
 
-It then builds one candidate contribution array:
+The incremental transaction then:
 
-1. copy existing contributions not replaced by this authority's update keys;
-2. append each non-withdrawal update;
-3. publish the candidate only after all copies succeed.
+1. copies existing contributions not replaced by this authority's update keys;
+2. appends each non-withdrawal update;
+3. publishes the candidate only after all copies succeed.
+
+Complete snapshot replacement validates first, copies contributions belonging to other authorities, appends the complete replacement, and promotes the lifecycle generation only after the policy replacement succeeds.
 
 The live store is untouched on any error.
+
+## Independent review repairs
+
+Review tightened several edge cases before the first receipt:
+
+- empty active-generation update arrays now return without allocating or copying state;
+- null paths are rejected consistently before path helpers are called;
+- duplicate scanning uses explicit indices rather than pointer-order reasoning;
+- complete snapshots are fully prevalidated before candidate construction;
+- a later null snapshot path is tested to leave the link pending and permit a corrected snapshot.
 
 ## Focused matrix
 
 Draft PR `teamleaderleo/systemd#24` adds `test-oomd-reporter-batch` covering:
 
 - multiple valid updates commit together;
-- a malformed later update rolls back an earlier valid update;
-- duplicate keys are rejected without state change;
+- a malformed later incremental update rolls back an earlier valid update;
+- duplicate update keys are rejected without state change;
 - multiple withdrawals commit together;
 - an empty active-generation update array is a no-op;
-- a null path is rejected without state change;
+- a null incremental path is rejected without state change;
+- a malformed later complete-snapshot path is rejected without promotion;
+- a corrected complete snapshot can subsequently promote the same pending session;
 - a pending generation cannot apply an incremental array.
 
 Its focused workflow also reruns the existing policy, lifecycle, registry, and link-adapter tests.
@@ -79,7 +96,7 @@ Its focused workflow also reruns the existing policy, lifecycle, registry, and l
 ## Current head and gate
 
 ```text
-head: 9dda25829ede2fa69c0899aa339273c520e00d59
+head: 15d98da67cbd33aa6895db1a31471fbc7fe875bb
 workflow: Fieldwork OOMD batch updates
 status: exact-head result pending at this checkpoint
 ```
