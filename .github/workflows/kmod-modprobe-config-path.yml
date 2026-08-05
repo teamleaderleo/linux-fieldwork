@@ -33,7 +33,7 @@ jobs:
 
       - name: Validate workflow contract
         run: |
-          python3 -m unittest -v tests.test_kmod_modprobe_config_workflow
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v tests.test_kmod_modprobe_config_workflow
 
       - name: Check out exact kmod master snapshot
         uses: actions/checkout@v4
@@ -50,6 +50,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             clang \
             gcc \
+            libclang-rt-dev \
             liblzma-dev \
             libssl-dev \
             libzstd-dev \
@@ -78,6 +79,22 @@ jobs:
             pkg-config --modversion openssl
           } > "$out/toolchain.txt"
 
+          if [[ "$CC" == clang* ]]; then
+            runtime_lib="$("$CC" --print-file-name=libclang_rt.asan-x86_64.so)"
+            test "$runtime_lib" != "libclang_rt.asan-x86_64.so"
+            test -f "$runtime_lib"
+            runtime_dir="$(dirname "$runtime_lib")"
+            {
+              printf 'asan_runtime=%s\n' "$runtime_lib"
+              sha256sum "$runtime_lib"
+            } > "$out/sanitizer-runtime.txt"
+            printf 'LD_LIBRARY_PATH=%s%s\n' \
+              "$runtime_dir" "${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+              >> "$GITHUB_ENV"
+          else
+            printf 'asan_runtime=compiler-default\n' > "$out/sanitizer-runtime.txt"
+          fi
+
       - name: Configure and build with sanitizers
         env:
           CC: ${{ matrix.compiler }}
@@ -97,6 +114,8 @@ jobs:
           meson compile -C "kmod/$build" \
             > "$out/build.log" 2>&1
           test -x "kmod/$build/modprobe"
+          ldd "kmod/$build/modprobe" | tee "$out/modprobe-ldd.txt"
+          ! grep -F 'not found' "$out/modprobe-ldd.txt"
           "kmod/$build/modprobe" --version | tee "$out/modprobe-version.txt"
 
       - name: Run exact discriminator twice
