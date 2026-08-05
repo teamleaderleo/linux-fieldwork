@@ -35,12 +35,14 @@ func nativeSamples() map[string]any {
 				HugetlbLimit: make([]*cgroups.HugepageLimit, 0),
 				Unified:     map[string]string{},
 			},
+		},
 		"nonzero-resources": &cgroups.Cgroup{
 			Name: "probe",
 			Resources: &cgroups.Resources{
-				Memory: 1,
+				Memory:  1,
 				Unified: map[string]string{"memory.high": "1"},
 			},
+		},
 		"empty-stats": &cgroups.Stats{},
 	}
 }
