@@ -4,24 +4,38 @@ on:
   push:
     branches:
       - investigate/coreutils-cat-fd-classification-13042
+    paths:
+      - .github/workflows/verify-coreutils-cat-13042.yml
+      - investigations/coreutils-cat-fd-classification-13042/**
   pull_request:
     branches:
       - main
+    paths:
+      - .github/workflows/verify-coreutils-cat-13042.yml
+      - investigations/coreutils-cat-fd-classification-13042/**
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  CURRENT_MAIN_SHA: 21d4e9635b07a04f262cd8a5386f2987bca6cfef
+  HISTORICAL_BASE_SHA: a0cb02453f314bdd3addda6f321f7e03adceb56b
+  CANDIDATE_SHA: b263c105895490ad7aa8fc6e43f25a4efa9a723a
+  CANDIDATE_CAT_BLOB: 6ebe5608e3567815580ef91bb4046bad901217ae
+
 jobs:
-  verify:
+  verify-current-main:
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
-      - name: Check out controlled source-only candidate
+      - name: Check out exact current main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: teamleaderleo/coreutils
-          ref: fieldwork/cat-fd-classification-toctou-13042-v2
+          ref: ${{ env.CURRENT_MAIN_SHA }}
           path: coreutils
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
@@ -33,20 +47,28 @@ jobs:
         with:
           workspaces: coreutils
 
-      - name: Record exact source identity
+      - name: Synthesize exact current-main candidate
         working-directory: coreutils
+        shell: bash
         run: |
           set -euo pipefail
-          git rev-parse HEAD
-          git rev-parse HEAD:src/uu/cat/src/cat.rs
-          test ! -e .fieldwork/apply-cat-fd-classification.py
-          test ! -e .github/workflows/fieldwork-cat-fd-classification.yml
+          test "$(git rev-parse HEAD)" = "$CURRENT_MAIN_SHA"
+          git fetch --no-tags origin \
+            "$HISTORICAL_BASE_SHA" \
+            "$CANDIDATE_SHA"
 
-      - name: Check formatting and diff hygiene
-        working-directory: coreutils
-        run: |
-          cargo fmt --all -- --check
+          # The reviewed source file was untouched by the intervening main
+          # commits, so transplanting the exact candidate blob is conflict-free.
+          git diff --quiet "$HISTORICAL_BASE_SHA" "$CURRENT_MAIN_SHA" -- \
+            src/uu/cat/src/cat.rs
+          git checkout "$CANDIDATE_SHA" -- src/uu/cat/src/cat.rs
+          test "$(git hash-object src/uu/cat/src/cat.rs)" = "$CANDIDATE_CAT_BLOB"
+          test "$(git diff --name-only)" = 'src/uu/cat/src/cat.rs'
           git diff --check
+
+      - name: Check formatting
+        working-directory: coreutils
+        run: cargo fmt --all -- --check
 
       - name: Test descriptor-bound classification
         working-directory: coreutils
@@ -66,3 +88,34 @@ jobs:
       - name: Run focused clippy
         working-directory: coreutils
         run: cargo clippy --features cat --no-default-features --all-targets -- -D warnings
+
+      - name: Record exact evidence and restore source
+        if: always()
+        working-directory: coreutils
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/coreutils-cat-evidence"
+          mkdir -p "$evidence"
+          {
+            echo "current_main=$CURRENT_MAIN_SHA"
+            echo "historical_base=$HISTORICAL_BASE_SHA"
+            echo "candidate_head=$CANDIDATE_SHA"
+            echo "candidate_blob=$(git hash-object src/uu/cat/src/cat.rs)"
+            echo "current_main_blob=$(git rev-parse "$CURRENT_MAIN_SHA":src/uu/cat/src/cat.rs)"
+            echo "historical_base_blob=$(git rev-parse "$HISTORICAL_BASE_SHA":src/uu/cat/src/cat.rs)"
+            rustc --version
+            cargo --version
+          } > "$evidence/identity.txt"
+          git diff --binary -- src/uu/cat/src/cat.rs > "$evidence/current-main-candidate.patch"
+          git restore --source="$CURRENT_MAIN_SHA" -- src/uu/cat/src/cat.rs
+          test -z "$(git status --porcelain)"
+
+      - name: Upload current-main cat receipt
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: coreutils-cat-current-main-${{ env.CANDIDATE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/coreutils-cat-evidence/
+          if-no-files-found: error
+          retention-days: 30
