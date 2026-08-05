@@ -61,7 +61,8 @@ jobs:
           # commits, so transplanting the exact candidate blob is conflict-free.
           git diff --quiet "$HISTORICAL_BASE_SHA" "$CURRENT_MAIN_SHA" -- \
             src/uu/cat/src/cat.rs
-          git checkout "$CANDIDATE_SHA" -- src/uu/cat/src/cat.rs
+          git restore --source="$CANDIDATE_SHA" --worktree -- \
+            src/uu/cat/src/cat.rs
           test "$(git hash-object src/uu/cat/src/cat.rs)" = "$CANDIDATE_CAT_BLOB"
           test "$(git diff --name-only)" = 'src/uu/cat/src/cat.rs'
           git diff --check
@@ -108,7 +109,8 @@ jobs:
             cargo --version
           } > "$evidence/identity.txt"
           git diff --binary -- src/uu/cat/src/cat.rs > "$evidence/current-main-candidate.patch"
-          git restore --source="$CURRENT_MAIN_SHA" -- src/uu/cat/src/cat.rs
+          git restore --source="$CURRENT_MAIN_SHA" --worktree -- \
+            src/uu/cat/src/cat.rs
           test -z "$(git status --porcelain)"
 
       - name: Upload current-main cat receipt
