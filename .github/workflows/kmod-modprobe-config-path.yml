@@ -1,6 +1,11 @@
 name: kmod recursive config identity
 
 on:
+  push:
+    paths:
+      - ".github/workflows/kmod-modprobe-config-path.yml"
+      - "investigations/kmod-modprobe-options-config-path/**"
+      - "tests/test_kmod_modprobe_config_workflow.py"
   pull_request:
     paths:
       - ".github/workflows/kmod-modprobe-config-path.yml"
