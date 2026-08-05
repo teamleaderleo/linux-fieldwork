@@ -60,6 +60,11 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Check out Linux Fieldwork candidate
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+
       - name: Check out exact BuildKit test carrier
         uses: actions/checkout@v4
         with:
@@ -75,7 +80,7 @@ jobs:
           go-version-file: buildkit/go.mod
           cache: false
 
-      - name: Validate exact diff, formatting, and package compile
+      - name: Validate exact test carrier and candidate source patch
         working-directory: buildkit
         shell: bash
         run: |
@@ -84,9 +89,20 @@ jobs:
           git merge-base --is-ancestor 275d6864ff0ce91a06225af5f5b012887bd257cf HEAD
           git diff --check 275d6864ff0ce91a06225af5f5b012887bd257cf HEAD
 
-          changed=frontend/dockerfile/dockerfile_context_access_test.go
-          gofmt -d "$changed" | tee /tmp/gofmt.diff
-          test ! -s /tmp/gofmt.diff
+          test_file=frontend/dockerfile/dockerfile_context_access_test.go
+          candidate_patch=../fieldwork/investigations/buildkit-unused-context-lazy-load/candidate-lazy-main-context.patch
 
+          gofmt -d "$test_file" | tee /tmp/test-gofmt.diff
+          test ! -s /tmp/test-gofmt.diff
           go test -mod=vendor ./frontend/dockerfile -run '^$'
+
+          git apply --check "$candidate_patch"
+          git apply "$candidate_patch"
+          git diff --check
+
+          gofmt -d frontend/dockerfile/dockerfile2llb/convert.go | tee /tmp/candidate-gofmt.diff
+          test ! -s /tmp/candidate-gofmt.diff
+          go test -mod=vendor ./frontend/dockerfile -run '^$'
+
+          git reset --hard HEAD
           test -z "$(git status --porcelain)"
