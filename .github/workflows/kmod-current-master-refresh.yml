@@ -1,0 +1,177 @@
+name: kmod current master refresh
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/kmod-current-master-refresh.yml"
+      - "investigations/kmod-modprobe-options-config-path/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kmod-current-master-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  current-master:
+    name: current master (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    env:
+      ASAN_OPTIONS: abort_on_error=1:detect_leaks=1:strict_string_checks=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+
+    steps:
+      - name: Check out Linux Fieldwork carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check out exact current kmod master
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: kmod-project/kmod
+          ref: f9fa9becf86956b9a84413a5bfa2e83dcff8370d
+          path: kmod-current
+          persist-credentials: false
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            gcc \
+            libclang-rt-18-dev \
+            liblzma-dev \
+            libssl-dev \
+            libzstd-dev \
+            meson \
+            ninja-build \
+            pkg-config \
+            python3 \
+            zlib1g-dev
+
+      - name: Verify exact current source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C kmod-current rev-parse HEAD)" = \
+            f9fa9becf86956b9a84413a5bfa2e83dcff8370d
+          test "$(git -C kmod-current rev-parse HEAD:tools/modprobe.c)" = \
+            c4b5021137a01529d75d9979e262308ce371bbae
+          git -C kmod-current status --short --untracked-files=no | \
+            tee current-source-status-before.txt
+          test ! -s current-source-status-before.txt
+          git -C kmod-current rev-parse HEAD > current-source-head.txt
+          git -C kmod-current rev-parse HEAD:tools/modprobe.c > \
+            current-source-modprobe-blob.txt
+
+      - name: Configure and build current master with sanitizers
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          compiler=${{ matrix.compiler }}
+          build=build-$compiler
+          extra=()
+          if [[ "$compiler" == clang ]]; then
+            extra+=("-Db_lundef=false")
+          fi
+          meson setup "kmod-current/$build" kmod-current \
+            --buildtype=debug \
+            -Db_sanitize=address,undefined \
+            -Dbuild-tests=false \
+            -Ddocs=false \
+            -Dmanpages=false \
+            -Dmbedtls=disabled \
+            "${extra[@]}"
+          meson compile -C "kmod-current/$build"
+          test -x "kmod-current/$build/modprobe"
+          if [[ "$compiler" == clang ]]; then
+            export LD_LIBRARY_PATH="$(clang -print-resource-dir)/lib/linux${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          fi
+          "kmod-current/$build/modprobe" --version
+
+      - name: Reproduce recursive configuration identity twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          compiler=${{ matrix.compiler }}
+          build="$PWD/kmod-current/build-$compiler"
+          out="$PWD/current-master-receipt-$compiler"
+          mkdir -p "$out"
+          export PATH="$build:$PATH"
+          if [[ "$compiler" == clang ]]; then
+            export LD_LIBRARY_PATH="$(clang -print-resource-dir)/lib/linux${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          fi
+          test "$(command -v modprobe)" = "$build/modprobe"
+          python3 investigations/kmod-modprobe-options-config-path/test_modprobe_options_config_path.py \
+            > "$out/recursive-first.json"
+          python3 investigations/kmod-modprobe-options-config-path/test_modprobe_options_config_path.py \
+            > "$out/recursive-rerun.json"
+          cmp "$out/recursive-first.json" "$out/recursive-rerun.json"
+          sha256sum "$out/recursive-first.json" "$out/recursive-rerun.json" > \
+            "$out/recursive-results.sha256"
+
+      - name: Reproduce explicit-empty allocation loss
+        shell: bash
+        run: |
+          set -euo pipefail
+          compiler=${{ matrix.compiler }}
+          build="$PWD/kmod-current/build-$compiler"
+          out="$PWD/current-master-receipt-$compiler"
+          if [[ "$compiler" == clang ]]; then
+            export LD_LIBRARY_PATH="$(clang -print-resource-dir)/lib/linux${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          fi
+          set +e
+          MODPROBE_OPTIONS='' "$build/modprobe" --version \
+            > "$out/empty-options.stdout" \
+            2> "$out/empty-options.stderr"
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$out/empty-options.status"
+          test "$status" -ne 0
+          grep -q 'AddressSanitizer: heap-buffer-overflow' \
+            "$out/empty-options.stderr"
+          grep -q 'WRITE of size 1' "$out/empty-options.stderr"
+
+      - name: Retain exact receipts and cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          compiler=${{ matrix.compiler }}
+          build="$PWD/kmod-current/build-$compiler"
+          out="$PWD/current-master-receipt-$compiler"
+          mkdir -p "$out"
+          cp current-source-head.txt \
+             current-source-modprobe-blob.txt \
+             current-source-status-before.txt \
+             "$out/" 2>/dev/null || true
+          if [[ -x "$build/modprobe" ]]; then
+            sha256sum "$build/modprobe" > "$out/modprobe.sha256"
+            "$build/modprobe" --version > "$out/modprobe-version.txt" 2>&1 || true
+          fi
+          uname -srmo > "$out/uname.txt"
+          test -z "$(find /tmp -maxdepth 1 -type d -name 'lf-kmod-modprobe-options-*' -print -quit)"
+          git -C kmod-current status --short --untracked-files=no | \
+            tee "$out/current-source-status-after.txt"
+          test ! -s "$out/current-source-status-after.txt"
+
+      - name: Upload exact current-master receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kmod-current-master-${{ matrix.compiler }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: current-master-receipt-${{ matrix.compiler }}/
+          if-no-files-found: error
+          retention-days: 30
