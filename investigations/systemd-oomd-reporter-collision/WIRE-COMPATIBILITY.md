@@ -2,9 +2,9 @@
 
 ## Status
 
-The policy reducer, lifecycle model, transactional registry, and bounded live source-precedence prototype are independently green in controlled `teamleaderleo/systemd` branches.
+The policy reducer, lifecycle model, transactional registry, bounded live source-precedence prototype, and standalone mixed-version wire model are independently green in controlled `teamleaderleo/systemd` branches.
 
-The current registry receipt is:
+Current registry receipt:
 
 ```text
 head:      247f546ae1a108df0d24ea1b74854b50539c05a4
@@ -14,7 +14,19 @@ digest:    sha256:bdfb0a47195b157ac1e8623f735a3d873b83095d2d4a99540c336b275a396e
 focused:   test-oomd-reporter-registry 1/1 passed
 ```
 
-The remaining wire problem is preserving correct initialization and disconnect behavior across both new and legacy user managers.
+Current wire-compatibility receipt:
+
+```text
+head:      bca6cedb1904aa1a9af56c2076bea6e156b04d26
+run:       30979635398
+artifact:  8919990350
+digest:    sha256:11981b8da73450f2e9680f14652746b8ba0b573bd38762dc38f78ad73e7ca55c
+compile:   cc -std=c11 -O2 -Wall -Wextra -Werror
+focused:   full compatibility model passed
+identity:  direct-controlled-fork-head
+```
+
+The remaining wire work is connecting these proven contracts to live user-manager and oomd Varlink paths.
 
 ## Existing method can carry an empty snapshot
 
@@ -68,49 +80,63 @@ When an active generation disconnects while a replacement generation is pending:
 
 The grace is compatibility behavior only. New clients should send their complete snapshot, including empty, immediately after connect.
 
-## Controlled model
-
-Draft PR: `teamleaderleo/systemd#20`
+## Controlled standalone model — `teamleaderleo/systemd#20`
 
 ```text
-branch: linux-fieldwork/oomd-wire-init-compat
-base:   linux-fieldwork/oomd-reporter-registry@247f546ae1a108df0d24ea1b74854b50539c05a4
-head:   bca6cedb1904aa1a9af56c2076bea6e156b04d26
-run:    30979635398
+branch:    linux-fieldwork/oomd-wire-init-compat
+base:      linux-fieldwork/oomd-reporter-registry@247f546ae1a108df0d24ea1b74854b50539c05a4
+head:      bca6cedb1904aa1a9af56c2076bea6e156b04d26
+run:       30979635398
+artifact:  8919990350
+digest:    sha256:11981b8da73450f2e9680f14652746b8ba0b573bd38762dc38f78ad73e7ca55c
+status:    success
+```
+
+Independent review found and repaired a grace-lifetime defect in the original model: `begin()` cleared grace whenever a newer pending generation replaced an older pending connection. The old timer then became stale while no timer belonged to the newer generation, allowing disconnected old policy to remain indefinitely. The repaired model re-keys grace to the newer pending generation and proves eventual withdrawal by the current timer.
+
+The focused matrix covers:
+
+- explicit empty and non-empty snapshots;
+- continuity after old disconnect;
+- first legacy non-empty promotion;
+- legacy-empty withdrawal after grace;
+- late legacy promotion after expiry;
+- stale timer rejection after promotion and replacement;
+- grace re-keying for a newer pending generation;
+- pending disconnect ordering;
+- stale disconnect isolation.
+
+## Sender validation lane — `teamleaderleo/systemd#21`
+
+```text
+branch: linux-fieldwork/oomd-empty-initial-report
+base:   linux-fieldwork/oomd-wire-init-compat@bca6cedb1904aa1a9af56c2076bea6e156b04d26
+head:   b896fdc1801718bf7b22703e48edc1853a54a134
+run:    30980196233
 status: queued
 ```
 
-The branch was restacked after the registry continuity test moved PR `#9`.
-
-Independent review found and repaired a grace-lifetime defect in the original model: `begin()` cleared grace whenever a newer pending generation replaced an older pending connection. The old timer then became stale while no timer belonged to the newer generation, allowing disconnected old policy to remain indefinitely. The repaired model re-keys grace to the newer pending generation and tests eventual withdrawal by the current timer.
-
-The standalone C model now covers eleven cases:
-
-- new explicit empty snapshot;
-- new non-empty replacement;
-- replacement after old disconnect without policy gap;
-- first legacy non-empty report promotion;
-- legacy-empty withdrawal after grace;
-- late legacy non-empty promotion after grace expiry;
-- stale grace after successful promotion;
-- stale old grace after a newer pending generation;
-- current grace withdrawal for that newer pending generation;
-- pending disconnect before and after old-active disconnect;
-- stale disconnect after promotion.
-
-Local review compilation used:
+This lane applies a fail-closed generated one-line change to the initial user-manager sender:
 
 ```text
-cc -std=c11 -O2 -Wall -Wextra -Werror
+allow_empty=false -> allow_empty=true
 ```
 
-and produced:
+It reuses the existing method, verifies an exact one-addition/one-deletion product diff, and compiles the `systemd` manager target with `--werror`. It does not claim receiver registry integration.
+
+## Registry grace transaction lane — `teamleaderleo/systemd#22`
 
 ```text
-FIELDWORK_OOMD_WIRE_INIT_COMPAT=PASSED
+branch: linux-fieldwork/oomd-registry-grace
+base:   linux-fieldwork/oomd-wire-init-compat@bca6cedb1904aa1a9af56c2076bea6e156b04d26
+head:   06f0add4bdb24c0185a091b0b4cf63aaad8266b5
+run:    30980672145
+status: queued
 ```
 
-The workflow keeps generated binary/evidence outside the checkout and verifies a clean worktree. The GitHub exact-head run remains required before this repaired head is promoted.
+This lane moves grace expiry into the actual `OomdReporterLifecycle` and `OomdReporterRegistry` components. The new transaction withdraws disconnected retained policy only for the matching current pending generation, leaves that pending session alive, ignores stale timers, and allows late snapshot promotion after expiry.
+
+It does not yet schedule a real event timer or connect registry operations to live Varlink callbacks.
 
 ## Integration requirements
 
@@ -119,7 +145,7 @@ A live implementation needs:
 1. initial user-manager send on the existing method with `allow_empty=true`;
 2. first-report versus incremental classification per link;
 3. legacy first-report detection on a pending link;
-4. per-link authority and generation userdata;
+4. per-link authority and generation identity;
 5. generation-keyed initialization timer;
 6. timer re-keying when a newer pending connection supersedes an older one;
 7. cancellation before publishing the promoted generation;
