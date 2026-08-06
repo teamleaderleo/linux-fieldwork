@@ -1,10 +1,10 @@
 # Current Fieldwork
 
-Updated: 2026-08-06
+Updated: 2026-08-07
 
-This is the live operational board for the strongest current investigations. It is intentionally short. Detailed evidence remains in the linked fork branches, internal pull requests, and Fieldwork issues.
+This is the live operational board for the strongest current investigations. Detailed evidence remains in the linked fork branches, internal pull requests, Fieldwork issues, and retained CI artifacts.
 
-## Proven and ready
+## Proven and ready for human review
 
 ### Cloud Hypervisor — API shutdown lifecycle event gates
 
@@ -15,90 +15,79 @@ This is the live operational board for the strongest current investigations. It 
 - Clean branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/api-shutdown-events-clean`
 - Internal evidence PR: `teamleaderleo/cloud-hypervisor#1`
 - Runtime workflow/job: `30953976821` / `92176887306`
+- Packaging workflow: `31046745930` — focused gate and clean materialization both succeeded
 - Runtime artifact: `8915262953`
 - Artifact digest: `sha256:eed3ebbca87dba9fa11801d12ea69a3cc57fa137f00a33dc4542dbbd9addec3b`
 
-All four real KVM selectors passed:
+All four real KVM selectors passed: HTTP shutdown, HTTP delete/create/boot, D-Bus shutdown, and D-Bus delete/create/boot.
 
-- HTTP shutdown;
-- HTTP delete/create/boot;
-- D-Bus shutdown;
-- D-Bus delete/create/boot.
+The clean branch is exactly one signed-off commit ahead of canonical snapshot `ae04fa80b2e0e52b7a9f4b3fd4239698df586673`. It changes only `cloud-hypervisor/tests/common/tests_wrappers.rs`: 26 additions, 17 deletions. No workflow, handoff, or `linux-fieldwork/` files are in the candidate diff.
 
-The clean branch is exactly one commit ahead of canonical snapshot `ae04fa80b2e0e52b7a9f4b3fd4239698df586673`. It changes only `cloud-hypervisor/tests/common/tests_wrappers.rs`: 26 additions, 17 deletions. No workflow, handoff, or `linux-fieldwork/` files are present in that candidate diff.
+The broad CI red on the diagnostic PR is laboratory-history noise: DCO/gitlint/REUSE reject the many unsigned diagnostic commits and research files. Build, formatting, clippy, fuzz-build, package consistency, and architecture build jobs were green. Judge the contribution from the clean branch plus the KVM proof, not from the diagnostic PR's history checks.
 
-A CI-control bug previously limited clean materialization to push events even though the visible successful gate was attached to the internal PR. That condition is removed, and clean materialization has now completed.
+### BuildKit — rootless/rootful reproducibility
 
-## Active investigations
+**State:** product defect reproduced and runc/native candidate proven end to end; ready for human review with a backend-scope decision.
 
-### Cloud Hypervisor — propagate ACPI construction failures
+- Canonical issue: `moby/buildkit#6686`
+- Internal Fieldwork issue: #229
+- Branch: `teamleaderleo/buildkit:linux-fieldwork/rootless-reproducibility`
 
-**State:** exact-source candidate applies cleanly; first run stopped only on rustfmt; formatting repair pushed; compile matrix queued.
+Exact-current matching rootful/rootless native-snapshotter workers reproduced the divergence without registry input. Rootful committed runtime-created `/proc` and `/sys` mountpoint stubs while rootless omitted `/sys`. Pre-creating the mountpoints made the control converge.
 
-- Canonical issue: `cloud-hypervisor/cloud-hypervisor#8666`
-- Internal Fieldwork issue: #444
-- Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/acpi-error-propagation`
-- Internal draft PR: `teamleaderleo/cloud-hypervisor#3`
-- First failed run/job: `31012686760` / `92328666632`
-- Current run: `31046631486`
+The candidate reuses BuildKit's existing mount-stub ownership cleanup but feeds it the finalized OCI spec after rootless conversion. Strict patch application, focused ownership tests, candidate binary builds, matching rootful/rootless runc/native workers, implicit parity, and explicit-control parity all passed. The remaining caveat is live containerd-worker/runtime coverage; runc/native is proven.
 
-The candidate establishes an ACPI-specific error boundary across direct-memory, fw_cfg, and TDX paths. The first run passed exact-source application and generated-scope checks, then failed on one mechanically unformatted expression. It did not reach a compile or design rejection. The generator now runs rustfmt before the check and retains the aarch64 interrupt-controller lock guard for the lifetime of the VGIC reference.
-
-Next gate: focused overflow unit test, default build, fw_cfg build, TDX build, and aarch64 build.
+## Strong candidate — human design review useful
 
 ### libarchive — deterministic cpio inode identity mapping
 
-**State:** deterministic baseline and production hypothesis both compile far enough to validate their carriers; repaired focused runs are queued.
+**State:** baseline defect proven; production candidate focused tests, normal CI, and lint are green. Main remaining question is compatibility policy, not basic correctness.
 
 - Canonical issue: `libarchive/libarchive#3314`
 - Internal Fieldwork issue: #446
 - Baseline branch/PR: `linux-fieldwork/cpio-inode-remap`, `teamleaderleo/libarchive#7`
 - Candidate branch/PR: `linux-fieldwork/cpio-inode-synthesis-candidate`, `teamleaderleo/libarchive#8`
-- Current baseline run: `31047067855`
-- Current candidate run: `31047099193`
+- Baseline run: `31047067855` — success
+- Candidate focused run: `31047099193` — success
+- Candidate normal CI: `31047096729` — success across Linux, macOS, Windows, and FreeBSD jobs
+- Candidate lint: `31047099122` — success
 
-Source finding:
+The deterministic baseline constructs two 64-bit source inode values with identical low 32 bits and proves that current newc encoding collapses them to the same archive identity. Odc already synthesizes archive-local inode values and provides project precedent.
 
-- newc truncates 64-bit source inode values to 32 bits, allowing distinct source identities to collide;
-- odc already uses synthetic archive-local inode values;
-- the candidate extends the synthetic policy to newc and keys retained hardlink mappings by `(devmajor, devminor, ino)`.
+The candidate synthesizes all nonzero newc archive inode identities in encounter order and retains hardlink mappings by `(devmajor, devminor, ino)`. Focused tests prove distinct large identities remain distinct, repeated hardlinks remain equal, and the same inode on another device remains separate. `test_write_format_cpio`, `test_write_format_cpio_newc`, `test_format_newc`, and `test_option_c` all pass.
 
-Baseline status:
+CIFuzz run `31047099243` is not candidate evidence: the OSS-Fuzz integration fetched `refs/pull/8/merge` from canonical `libarchive/libarchive`, so it tested canonical PR #8 rather than fork PR #8 and then failed in unrelated generated test-list infrastructure. Do not treat that red badge as a candidate failure.
 
-- repository CI run `31014818002`: success;
-- lint run `31014817568`: success;
-- focused run `31014817428` applied the deterministic test, passed scope checks, configured successfully, and built `libarchive_test` successfully;
-- CMake linked the binary under `build/bin/`, but the focused workflow looked under `libarchive/test/`, so no behavioral assertion ran in that attempt.
+**Human decision:** is changing representable newc inode values to archive-local sequential identities an acceptable compatibility tradeoff? It gives collision-free, host-independent behavior and preserves hardlink identity, but no longer preserves source inode numbers when they happen to fit in 32 bits.
 
-Candidate status:
+## Active investigation
 
-- initial run `31015401080` failed before source generation because its wrapper matched the wrong pre-transform prototype text;
-- the wrapper now inserts the forward declaration at the actual synthesis-prototype marker;
-- both focused workflows now use the real CMake outputs under `build/bin/` and assert that each executable exists before running it.
+### Cloud Hypervisor — propagate ACPI construction failures
 
-Next gate: execute the deterministic newc/odc identity baseline, then compile and run the synthesis candidate against library-level tests plus `test_format_newc` and `test_option_c`.
+**State:** error-boundary design remains plausible; latest focused run exposed one candidate transform bug plus one test-feature configuration problem. Not ready for human review yet.
 
-### mkosi — ToolsTree depmod executable boundary
+- Canonical issue: `cloud-hypervisor/cloud-hypervisor#8666`
+- Internal Fieldwork issue: #444
+- Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/acpi-error-propagation`
+- Internal draft PR: `teamleaderleo/cloud-hypervisor#3`
+- Latest focused run/job: `31046631486` / `92443620996`
 
-**State:** exact-source patch and focused regression prepared; normal checkout execution still pending.
+Latest run passed exact-source application, generated-scope checks, and rustfmt. The focused test build then found:
 
-- Canonical issue: `systemd/mkosi#4319`
-- Branch: `teamleaderleo/mkosi:linux-fieldwork/tools-tree-depmod-path`
+1. a real aarch64 transform bug: the generated code attempted to lock `interrupt_controller` without first binding it from `device_manager.get_interrupt_controller()`;
+2. a separate test invocation problem: building VMM tests without a hypervisor backend produced unrelated uninhabited-hypervisor/VFIO errors.
 
-Finding: `run_depmod()` bypasses the ToolsTree-aware sandbox and uses a chroot command whose executable lookup depends on host `PATH`. Candidate routes depmod through `Context.sandbox()` and uses `--basedir /buildroot` so tools come from ToolsTree while metadata is written to the target root.
-
-Next gate: apply in a normal checkout and run focused pytest, ruff, mypy, and the original host-PATH reproducer.
-
-### BuildKit — rootless/rootful reproducibility
-
-**State:** discriminator and archive comparison tooling validated synthetically; live daemon gate pending.
-
-- Canonical issue: `moby/buildkit#6686`
-- Branch: `teamleaderleo/buildkit:linux-fieldwork/rootless-reproducibility`
-
-The tooling compares OCI config diff IDs and reports the first divergent layer plus `/proc` and `/sys` metadata. Next gate: run against matching rootful and rootless BuildKit daemons and locate the earliest divergence boundary.
+Next gate: restore the missing interrupt-controller binding, run the unit test with a real backend feature, then execute default, fw_cfg, TDX, and aarch64 compile surfaces.
 
 ## Parked or negative results
+
+### mkosi — ToolsTree depmod hypothesis
+
+**State:** retired after source review.
+
+Current `chroot_cmd()` already establishes `PATH=/usr/bin:/usr/sbin` inside the target, covering the reported host-PATH failure while preserving target `depmod` configuration semantics. Moving `depmod` into ToolsTree with `--basedir` would add configuration/version risk. Do not revive the retained patch without new evidence.
+
+Other parked results:
 
 - bootc #1805: current source already performs fs-verity capability validation before destructive mutation; no duplicate branch opened.
 - bootc #1896: upstream PR #2357 merged the requested file-backed `rpm2cpio` workaround; no duplicate work.
