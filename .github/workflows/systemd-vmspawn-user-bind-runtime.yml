@@ -24,6 +24,7 @@ concurrency:
 
 env:
   SYSTEMD_HEAD: 741db5faed175180d427526b3878d5527d838b2d
+  RUNTIME_ROOT: /tmp/fieldwork-systemd-vmspawn-runtime
 
 jobs:
   runtime-baseline:
@@ -48,13 +49,12 @@ jobs:
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get build-dep -y systemd
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            linux-image-generic \
             meson \
             ninja-build \
             qemu-system-x86 \
             virtiofsd
 
-      - name: Build exact systemd-vmspawn
+      - name: Build and stage exact systemd-vmspawn
         working-directory: systemd
         shell: bash
         run: |
@@ -64,6 +64,19 @@ jobs:
           ninja -C build systemd-vmspawn
           test -x build/systemd-vmspawn
           build/systemd-vmspawn --version
+
+          rm -rf "$RUNTIME_ROOT"
+          install -d -m 0755 "$RUNTIME_ROOT/src/shared"
+          install -m 0755 build/systemd-vmspawn "$RUNTIME_ROOT/systemd-vmspawn"
+          install -m 0755 \
+            build/src/shared/libsystemd-shared-262.so \
+            "$RUNTIME_ROOT/src/shared/libsystemd-shared-262.so"
+
+          LD_LIBRARY_PATH="$RUNTIME_ROOT/src/shared" \
+            "$RUNTIME_ROOT/systemd-vmspawn" --version
+          LD_LIBRARY_PATH="$RUNTIME_ROOT/src/shared" \
+            ldd "$RUNTIME_ROOT/systemd-vmspawn" | tee /tmp/systemd-vmspawn-ldd.txt
+          ! grep -F 'not found' /tmp/systemd-vmspawn-ldd.txt
           test -z "$(git status --porcelain)"
 
       - name: Prepare disposable host state
@@ -78,14 +91,18 @@ jobs:
             echo 'FIELDWORK_CREATED_TESTUSER=0' >> "$GITHUB_ENV"
           fi
 
-          if [[ ! -e /boot/vmlinuz ]]; then
-            kernel="$(find /boot -maxdepth 1 -type f -name 'vmlinuz-*' -print -quit)"
-            test -n "$kernel"
-            sudo ln -s "$kernel" /boot/vmlinuz
-            echo 'FIELDWORK_CREATED_BOOT_VMLINUZ=1' >> "$GITHUB_ENV"
-          else
-            echo 'FIELDWORK_CREATED_BOOT_VMLINUZ=0' >> "$GITHUB_ENV"
-          fi
+          kernel=""
+          for candidate in \
+            "/usr/lib/modules/$(uname -r)/vmlinuz" \
+            "/boot/vmlinuz-$(uname -r)" \
+            /boot/vmlinuz; do
+            if [[ -f "$candidate" ]]; then
+              kernel="$candidate"
+              break
+            fi
+          done
+          test -n "$kernel"
+          printf 'kernel=%s\n' "$kernel"
 
           command -v qemu-system-x86_64
           if command -v virtiofsd >/dev/null 2>&1; then
@@ -94,12 +111,19 @@ jobs:
             test -x /usr/libexec/virtiofsd -o -x /usr/lib/virtiofsd
           fi
 
+          sudo -u testuser env \
+            LD_LIBRARY_PATH="$RUNTIME_ROOT/src/shared" \
+            PATH="$RUNTIME_ROOT:$PATH" \
+            systemd-vmspawn --version
+
       - name: Execute ordinary-user bind discriminator
         working-directory: systemd
         shell: bash
         run: |
           set -euxo pipefail
-          sudo env PATH="$PWD/build:$PATH" \
+          sudo env \
+            LD_LIBRARY_PATH="$RUNTIME_ROOT/src/shared" \
+            PATH="$RUNTIME_ROOT:$PATH" \
             bash test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
 
       - name: Prove cleanup and remove workflow-owned state
@@ -108,10 +132,10 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          sudo pkill -TERM -f 'test-vmspawn-user-bind-' 2>/dev/null || true
+          sudo pkill -TERM -f '[t]est-vmspawn-user-bind-' 2>/dev/null || true
           sleep 0.2
-          sudo pkill -KILL -f 'test-vmspawn-user-bind-' 2>/dev/null || true
-          test -z "$(pgrep -af 'test-vmspawn-user-bind-' || true)"
+          sudo pkill -KILL -f '[t]est-vmspawn-user-bind-' 2>/dev/null || true
+          test -z "$(pgrep -af '[t]est-vmspawn-user-bind-' || true)"
 
           if [[ "${FIELDWORK_CREATED_TESTUSER:-0}" == 1 ]] && id testuser >/dev/null 2>&1; then
             uid="$(id -u testuser)"
@@ -120,9 +144,8 @@ jobs:
             sudo userdel --remove testuser
           fi
 
-          if [[ "${FIELDWORK_CREATED_BOOT_VMLINUZ:-0}" == 1 ]]; then
-            sudo rm -f /boot/vmlinuz
-          fi
+          sudo rm -rf "$RUNTIME_ROOT"
+          test ! -e "$RUNTIME_ROOT"
 
           if compgen -G '/tmp/test-vmspawn-user-bind.*' >/dev/null; then
             find /tmp -maxdepth 1 -name 'test-vmspawn-user-bind.*' -print
