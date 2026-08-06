@@ -1,13 +1,14 @@
-# ManagedOOM strict message parser
+# ManagedOOM owned message parser
 
 Updated: `2026-08-06`  
 Controlled draft: `teamleaderleo/systemd#29`  
 Branch: `linux-fieldwork/oomd-managed-oom-parser`  
+Superseded duplicate: `teamleaderleo/systemd#30` (closed)  
 External contact: `false`
 
 ## Why this lane exists
 
-The current live receiver in `src/oom/oomd-manager.c` walks the incoming `cgroups[]` array and deliberately skips malformed elements while continuing to process the rest. That means one wire message can be only partly accepted.
+The current live receiver in `src/oom/oomd-manager.c` walks the incoming `cgroups[]` array and skips malformed elements while continuing to process the rest. One wire message can therefore be only partly accepted.
 
 PR `teamleaderleo/systemd#24` supplies an atomic typed-array transaction, but it cannot protect the message boundary unless the complete JSON array is decoded before that transaction is called.
 
@@ -15,7 +16,7 @@ PR `teamleaderleo/systemd#24` supplies an atomic typed-array transaction, but it
 
 ```text
 Varlink parameters
-  -> strict owned OomdManagedOOMMessageBatch
+  -> owned OomdManagedOOMMessageBatch
   -> full-array authorization/default resolution
   -> one adapter snapshot or update transaction
 ```
@@ -30,20 +31,40 @@ The parser lane stops after the first arrow. It does not access cgroupfs, mutate
 io.systemd.oom.ReportManagedOOMCGroups(cgroups: ControlGroup[])
 ```
 
+The parser uses:
+
+```text
+SD_JSON_STRICT | SD_JSON_ALLOW_EXTENSIONS
+```
+
+That combination keeps strict validation of known fields and duplicate JSON object-key rejection while preserving forward compatibility with additional fields.
+
 The complete message is rejected when any of the following occurs:
 
 - the top-level value is not an object;
 - `cgroups` is absent or not an array;
 - an array element is not an object;
-- a mandatory field is missing or has the wrong type;
-- an unknown field or duplicate object key is present;
+- a mandatory known field is missing or has the wrong type;
+- a JSON object repeats a key;
 - the mode or property is unknown;
 - a path is relative or not normalized;
 - two entries use the same `(property, canonical path)` key;
-- an OOMRules entry has an incoherent mode/rules combination;
+- a kill-mode `OOMRules` entry has no rules;
 - allocation or string-copying fails.
 
 An empty path is canonicalized to `/` before duplicate comparison. Therefore `""` and `"/"` cannot create two root contributions.
+
+## Compatibility normalization
+
+Whole-message validation must not create a new mixed-version failure for wire shapes the existing receiver accepts.
+
+- `auto` always becomes an explicit withdrawal; configured `limit`, `duration`, or `rules` metadata is discarded.
+- swap entries discard pressure and rules metadata.
+- memory-pressure entries preserve `limit` and `duration` but discard rules metadata.
+- rules entries preserve a deduplicated non-empty rules list and discard pressure metadata.
+- unknown extension fields are ignored after strict known-field dispatch.
+
+The current official sender can include configured pressure fields while switching a memory-pressure property to `auto`, so rejecting that shape would be a product regression.
 
 ## Ownership
 
@@ -53,9 +74,9 @@ The returned batch owns:
 - each rules vector and rule string;
 - the message array itself.
 
-The input `sd_json_variant` may be unreferenced immediately after a successful parse. No output is published to the caller until every array element has parsed and validated.
+The input `sd_json_variant` may be unreferenced immediately after a successful parse. No output is published to the caller until every array element has parsed and validated. The output batch is reset on every failure.
 
-Limit and duration are preserved as wire metadata. Manager defaults are deliberately not resolved in this parser because that requires live manager state. Cgroup-owner authorization is also deferred so parsing remains deterministic and side-effect free.
+Manager defaults are deliberately not resolved in this parser because that requires live manager state. Cgroup-owner authorization is also deferred so parsing remains deterministic and side-effect free.
 
 ## Focused matrix
 
@@ -64,25 +85,33 @@ Limit and duration are preserved as wire metadata. Manager defaults are delibera
 - authoritative empty report;
 - typed memory-pressure, swap, and OOMRules entries;
 - ownership after JSON storage release;
+- `auto` withdrawal canonicalization with configured metadata;
+- extension-field acceptance with strict known-field decoding;
+- irrelevant-field normalization for all three properties;
 - empty-path root canonicalization;
-- root-alias duplicate rejection;
+- root-alias and duplicate property/path rejection;
+- duplicate JSON object-key rejection;
 - malformed later-element whole-message failure;
 - non-object elements;
-- unknown properties and fields;
+- unknown modes and properties;
 - relative and non-normalized paths;
-- duplicate property/path keys;
-- inconsistent rule mode/property combinations;
-- missing and wrongly typed `cgroups`.
+- missing and empty kill-mode rules;
+- missing and wrongly typed `cgroups`;
+- output-batch clearing on failure.
 
 ## Current head and gate
 
 ```text
-head:     3b0b4712612f9dbaa0c26d27b7ccf96f80eb0cae
+head:     2284cac72f5319a47cfd2cf6c6dc58900374e803
 workflow: Fieldwork OOMD managed message parser
 status:   exact-head compile/test receipt pending
 ```
 
-The standard systemd build for this head is also queued. No pass is claimed.
+The standard systemd build for this head is also pending. No pass is claimed.
+
+## Duplicate cleanup
+
+Draft PR `#30` was opened during a branch-state race after the canonical parser branch temporarily appeared absent. It was closed as superseded. Its useful compatibility findings were ported into PR `#29`; no parallel parser implementation remains active.
 
 ## Next integration contract
 
