@@ -6,7 +6,7 @@ External contact: `false`
 
 ## Current status
 
-`DEFECT REPRODUCED — BOUNDED LIVE CORRECTION GREEN — REDUCER/LIFECYCLE/REGISTRY/GRACE LAYERS GREEN — INITIAL-EMPTY SENDER, LINK-ADAPTER, AND MESSAGE-ATOMICITY GATES ACTIVE — NATIVE OOMD JSON/CALLBACK INTEGRATION NOT YET IMPLEMENTED`
+`DEFECT REPRODUCED — BOUNDED LIVE CORRECTION GREEN — REDUCER/LIFECYCLE/REGISTRY/GRACE LAYERS GREEN — SENDER, LINK-ADAPTER, MESSAGE-ATOMICITY, AND STRICT-PARSER GATES ACTIVE — LIVE OOMD CALLBACK INTEGRATION NOT YET IMPLEMENTED`
 
 Linux Fieldwork is the durable narrative and evidence home. `teamleaderleo/systemd` carries controlled executable experiments. Internal review is not upstream systemd approval.
 
@@ -117,13 +117,7 @@ Matching expiry withdraws retained old policy, clears only the disconnected old 
 
 ### Initial-empty user-manager sender — `teamleaderleo/systemd#21`
 
-The existing method already accepts:
-
-```text
-io.systemd.oom.ReportManagedOOMCGroups(cgroups: ControlGroup[])
-```
-
-An empty array is valid and is a harmless no-op for an older oomd receiver. The helper already constructs empty state; the generated product change is only:
+The existing method accepts `ReportManagedOOMCGroups(cgroups: ControlGroup[])`. The helper already constructs empty state; the generated product change is only:
 
 ```text
 manager_varlink_send_managed_oom_initial(): allow_empty=false -> true
@@ -134,7 +128,7 @@ current head: 7586cf535fbd93d91c9e76f3e1afd18e693e9417
 state:        exact-head compile receipt pending
 ```
 
-Predecessor failures were harness-only: an injector check scoped globally instead of to the initial sender, then an ambiguous Meson target. The current workflow selects `src/core/systemd:executable`, runs on branch pushes, and stores evidence outside the checkout.
+Predecessor failures were harness-only: an injector check scoped globally instead of to the initial sender, then ambiguous Meson targets. The current workflow selects `src/core/systemd:executable`, runs on branch pushes, and stores evidence outside the checkout.
 
 ### Callback-facing link adapter — `teamleaderleo/systemd#23`
 
@@ -145,14 +139,6 @@ state:        exact-head compile/test receipt pending
 
 The adapter maps live link IDs to `(authority, generation)` sessions and emits exact generation-qualified timer actions. Review repaired unbounded disconnected-link retention, retained-active ID aliasing, ambiguous timer cancellation, false dirty-tree checks, and unreliable stacked-PR triggering.
 
-Focused targets:
-
-```text
-test-oomd-reporter-adapter
-test-oomd-reporter-adapter-reuse
-test-oomd-reporter-adapter-events
-```
-
 See `LINK-ADAPTER.md`.
 
 ### ManagedOOM message atomicity — `teamleaderleo/systemd#24`
@@ -162,11 +148,22 @@ current head: 15d98da67cbd33aa6895db1a31471fbc7fe875bb
 state:        exact-head compile/test receipt pending
 ```
 
-One Varlink report contains a `cgroups[]` array. This lane adds one transactional array call through policy store, registry, and adapter so a malformed later element cannot leave earlier elements published.
-
-Complete first snapshots are also fully prevalidated before candidate construction or generation promotion. Empty incremental arrays are allocation-free no-ops; duplicate keys and malformed paths are rejected atomically.
+One Varlink report contains a `cgroups[]` array. This lane adds one transactional array call through policy store, registry, and adapter so a malformed later typed element cannot leave earlier elements published. Complete first snapshots are fully prevalidated before candidate construction or generation promotion.
 
 See `MESSAGE-ATOMICITY.md`.
+
+### Strict owned message parser — `teamleaderleo/systemd#29`
+
+```text
+current head: 3b0b4712612f9dbaa0c26d27b7ccf96f80eb0cae
+state:        exact-head compile/test receipt pending
+```
+
+The current live receiver explicitly skips malformed elements and continues processing the rest of the same message. PR `#29` adds an owned typed parser that rejects the complete `cgroups[]` report when any element, field, property, path, rule combination, or duplicate `(property, canonical path)` key is invalid.
+
+Empty paths are canonicalized to `/`; JSON storage may be released immediately after successful parsing; no output batch is published until every element succeeds. Default resolution and cgroup-owner authorization remain in the next manager-side layer.
+
+See `MESSAGE-PARSER.md`.
 
 ## Wire compatibility
 
@@ -188,7 +185,7 @@ Verify systemd-oomd reporter collision 30980834339  success
 Linux Fieldwork CI                     30980834398  success
 ```
 
-The policy workflow stores Python bytecode outside the checkout, so all 30 tests and the clean-tree gate pass together.
+The four newer systemd exact heads and the refreshed Linux Fieldwork head are still queued at this checkpoint. No new pass is claimed.
 
 ## Durable records
 
@@ -199,6 +196,7 @@ CONNECTION-LIFECYCLE.md
 WIRE-COMPATIBILITY.md
 LINK-ADAPTER.md
 MESSAGE-ATOMICITY.md
+MESSAGE-PARSER.md
 C-REDUCER.md
 INDEPENDENT-REVIEW-2026-08-05-CONTINUATION.md
 HANDOFF.md
@@ -218,13 +216,14 @@ artifacts/2026-08-01-current-main-causal-trace.txt
 - Initial-empty sender: **exact-head gate pending**.
 - Callback-facing link adapter: **exact-head gate pending**.
 - Message-atomicity layer: **exact-head gate pending**.
-- Native JSON parsing, live Varlink callbacks/timers, PID 1 stream integration, and effective monitored-map publication: **not implemented**.
+- Strict owned message parser: **exact-head gate pending**.
+- Full-array authorization/default resolution, live Varlink callbacks/timers, PID 1 stream integration, and effective monitored-map publication: **not implemented**.
 - Upstream-shaped candidate: **not ready**.
 - Upstream contact: **none**.
 
 ## Next engineering move
 
-Finish the three active exact-head gates. Then add a strict native parser that owns and validates the entire `cgroups[]` message before one snapshot or batch transaction, followed by live connect/disconnect callbacks, generation-keyed `sd_event` timers, PID 1 stream handling, atomic derived monitored-map publication, contributor diagnostics, and a native VM matrix.
+Finish the four active exact-head gates. Then add the manager-side resolver that authorizes every parsed path and resolves default pressure values before calling one adapter transaction. Follow with live connect/disconnect callbacks, generation-keyed `sd_event` timers, PID 1 stream handling, atomic derived-map publication, contributor diagnostics, and a native VM matrix.
 
 ## Authority
 
