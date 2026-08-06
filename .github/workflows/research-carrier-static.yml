@@ -63,6 +63,7 @@ jobs:
       - name: Check out Linux Fieldwork candidate
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           path: fieldwork
 
       - name: Check out exact BuildKit test carrier
@@ -96,9 +97,12 @@ jobs:
           test ! -s /tmp/test-gofmt.diff
           go test -mod=vendor ./frontend/dockerfile -run '^$'
 
-          git apply --check "$candidate_patch"
-          git apply "$candidate_patch"
+          git apply --check --recount "$candidate_patch"
+          git apply --recount "$candidate_patch"
           git diff --check
+          git diff --binary HEAD > /tmp/candidate-normalized.patch
+          test -s /tmp/candidate-normalized.patch
+          git apply --check --reverse /tmp/candidate-normalized.patch
 
           gofmt -d frontend/dockerfile/dockerfile2llb/convert.go | tee /tmp/candidate-gofmt.diff
           test ! -s /tmp/candidate-gofmt.diff
