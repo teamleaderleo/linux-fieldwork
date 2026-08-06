@@ -1,0 +1,102 @@
+name: util-linux dlopen version-skew probe
+
+on:
+  push:
+    branches:
+      - research/util-linux-dlopen-version-skew
+    paths:
+      - investigations/util-linux-dlopen-version-skew/**
+      - .github/workflows/util-linux-dlopen-version-skew.yml
+  pull_request:
+    paths:
+      - investigations/util-linux-dlopen-version-skew/**
+      - .github/workflows/util-linux-dlopen-version-skew.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact Fieldwork head
+        uses: actions/checkout@v4
+
+      - name: Fetch exact util-linux source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git init util-linux
+          git -C util-linux remote add origin https://github.com/util-linux/util-linux.git
+          git -C util-linux fetch --depth=1 origin cdd407b45e00b6a6b561d10f3bcc9fdc6a05755f
+          git -C util-linux checkout --detach FETCH_HEAD
+          test "$(git -C util-linux rev-parse HEAD)" = cdd407b45e00b6a6b561d10f3bcc9fdc6a05755f
+
+      - name: Build fake DSO and exact resolver probe
+        shell: bash
+        run: |
+          set -euxo pipefail
+          work=investigations/util-linux-dlopen-version-skew
+          mkdir -p "$work/run/fake"
+          cc -shared -fPIC \
+            -Wl,-soname,libsystemd.so.0 \
+            "$work/fake-systemd.c" \
+            -o "$work/run/fake/libsystemd.so.0"
+          cc -Wall -Wextra -Werror \
+            -Iutil-linux/include \
+            util-linux/lib/dl-utils.c \
+            "$work/probe.c" \
+            -ldl \
+            -o "$work/run/probe"
+
+      - name: Execute version-skew discriminator
+        shell: bash
+        run: |
+          set -euxo pipefail
+          work=investigations/util-linux-dlopen-version-skew
+          nm -D --defined-only "$work/run/fake/libsystemd.so.0" \
+            | tee "$work/run/fake-symbols.txt"
+          grep -F sd_journal_sendv "$work/run/fake-symbols.txt"
+          ! grep -F sd_device_open "$work/run/fake-symbols.txt"
+
+          LD_LIBRARY_PATH="$PWD/$work/run/fake" \
+            "$work/run/probe" \
+            >"$work/run/stdout.txt" \
+            2>"$work/run/stderr.txt"
+          cat "$work/run/stdout.txt"
+          cat "$work/run/stderr.txt"
+
+          grep -F 'common_result=-' "$work/run/stdout.txt"
+          grep -F 'journal_result=0' "$work/run/stdout.txt"
+          grep -F 'journal_call_result=73' "$work/run/stdout.txt"
+          grep -F 'fake sd_journal_sendv invoked with 1 vectors' "$work/run/stderr.txt"
+
+          {
+            echo "fieldwork_head=$(git rev-parse HEAD)"
+            echo "util_linux_head=$(git -C util-linux rev-parse HEAD)"
+            cc --version | head -n1
+            uname -a
+          } | tee "$work/run/identity.txt"
+          sha256sum \
+            "$work/run/fake/libsystemd.so.0" \
+            "$work/run/probe" \
+            "$work/run/stdout.txt" \
+            "$work/run/stderr.txt" \
+            "$work/run/fake-symbols.txt" \
+            "$work/run/identity.txt" \
+            | tee "$work/run/SHA256SUMS"
+
+      - name: Check repository hygiene
+        shell: bash
+        run: |
+          git diff --check
+          git status --short
+
+      - name: Upload retained receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: util-linux-dlopen-version-skew
+          path: investigations/util-linux-dlopen-version-skew/run/
+          if-no-files-found: error
+          retention-days: 14
