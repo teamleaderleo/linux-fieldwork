@@ -1,7 +1,7 @@
 # Handoff — systemd-oomd reporter ownership
 
-Updated: `2026-08-05`  
-State: `ACTIVE — DEFECT REPRODUCED; LIVE BOUNDED CORRECTION AND CORE MODEL LAYERS GREEN; SENDER, LINK-ADAPTER, AND MESSAGE-ATOMICITY GATES ACTIVE`  
+Updated: `2026-08-06`  
+State: `ACTIVE — DEFECT REPRODUCED; LIVE BOUNDED CORRECTION AND CORE MODEL LAYERS GREEN; FOUR EXACT-HEAD GATES ACTIVE; MANAGER INTEGRATION NEXT`  
 Linux Fieldwork issue: `#140`  
 Linux Fieldwork PR: `#245`  
 Current review: `INDEPENDENT-REVIEW-2026-08-05-CONTINUATION.md`  
@@ -35,7 +35,7 @@ contribution key = (authority, property, cgroup path)
 effective key    = (property, cgroup path)
 ```
 
-Keep sender-specific withdrawal, whole-value system precedence, lower-authority fallback, authoritative complete first snapshots including empty state, monotonic generations, stale-callback isolation, current disconnect/stream withdrawal, message-level atomicity, and effective no-op timing preservation.
+Keep sender-specific withdrawal, whole-value system precedence, lower-authority fallback, authoritative complete first snapshots including empty state, monotonic generations, stale-callback isolation, current disconnect/stream withdrawal, whole-message and policy-level atomicity, and effective no-op timing preservation.
 
 ## Exact-head-green receipts
 
@@ -81,7 +81,7 @@ sha256:    11981b8da73450f2e9680f14652746b8ba0b573bd38762dc38f78ad73e7ca55c
 result:    compatibility model passed with -Werror
 ```
 
-A newer pending generation re-keys/re-arms grace so a stale timer cannot retain disconnected old policy forever.
+A newer pending generation re-keys and re-arms grace so a stale timer cannot retain disconnected old policy forever.
 
 ### Registry grace transaction — systemd PR `#22`
 
@@ -93,7 +93,7 @@ sha256:    5eae85dfbcf07fb46f0b4bdb4d573de5919092a77c44bd9ba8fe43f17ab22b86
 result:    registry focused test passed
 ```
 
-Matching expiry withdraws retained old policy, clears only the disconnected old active generation, preserves the pending generation, and ignores stale/promoted timers.
+Matching expiry withdraws retained old policy, clears only the disconnected old active generation, preserves the pending generation, and ignores stale or promoted timers.
 
 ## Active gates
 
@@ -104,19 +104,7 @@ head:   7586cf535fbd93d91c9e76f3e1afd18e693e9417
 status: exact-head compile receipt pending
 ```
 
-The existing method accepts `cgroups: []`; the helper already constructs empty state. The generated product change is only:
-
-```text
-manager_varlink_send_managed_oom_initial(): allow_empty=false -> true
-```
-
-Predecessor failures were harness-only:
-
-- uniqueness check scoped globally instead of to the initial sender;
-- target name `systemd` ambiguous;
-- first path qualifier `./systemd:executable` incorrect.
-
-The current workflow compiles `src/core/systemd:executable`, runs on branch pushes, and keeps evidence outside the checkout.
+The generated product change is only `manager_varlink_send_managed_oom_initial(): allow_empty=false -> true`. The current workflow compiles `src/core/systemd:executable`; predecessor failures were harness-only.
 
 ### Callback-facing link adapter — systemd PR `#23`
 
@@ -125,9 +113,7 @@ head:   6180f35f349a65856ec51bf59e7297cae617cf0a
 status: exact-head compile/test receipt pending
 ```
 
-The adapter maps live link IDs to registry sessions and emits generation-qualified arm/replace/cancel timer actions. Review repairs include bounded link-record lifetime, retained-active ID reservation, exact cancellation tokens, clean evidence handling, and push-triggered exact-head gates.
-
-Read `LINK-ADAPTER.md`.
+The adapter maps live link IDs to registry sessions and emits generation-qualified arm/replace/cancel timer actions. Read `LINK-ADAPTER.md`.
 
 ### Message atomicity — systemd PR `#24`
 
@@ -136,32 +122,45 @@ head:   15d98da67cbd33aa6895db1a31471fbc7fe875bb
 status: exact-head compile/test receipt pending
 ```
 
-One wire report contains a `cgroups[]` array. The complete array is now one transaction through adapter, registry, and policy store. Complete first snapshots are also fully prevalidated before candidate construction and generation promotion.
+The complete typed update array is one transaction through adapter, registry, and policy store. Complete first snapshots are prevalidated before generation promotion. Read `MESSAGE-ATOMICITY.md`.
 
-Read `MESSAGE-ATOMICITY.md`.
+### Strict owned message parser — systemd PR `#29`
+
+```text
+head:   3b0b4712612f9dbaa0c26d27b7ccf96f80eb0cae
+status: exact-head compile/test receipt pending
+```
+
+The parser owns and validates the entire existing `cgroups[]` method payload before exposing a typed batch. A malformed later element, unknown field/property, bad path, incoherent rules entry, or duplicate `(property, canonical path)` rejects the whole message. Empty path is canonicalized to `/`, and the JSON variant may be released immediately after success.
+
+The parser deliberately does not read cgroupfs, resolve manager defaults, call the registry, or modify live `oomd-manager.c`. Read `MESSAGE-PARSER.md`.
 
 ## Linux Fieldwork gate
 
-At `56a5c911ffe03f375e95a49839ecc04e3362e8d7`:
+Last completed green checkpoint:
 
 ```text
-policy model        30980834388  success
-collision verifier  30980834339  success
-Linux Fieldwork CI  30980834398  success
+head:                56a5c911ffe03f375e95a49839ecc04e3362e8d7
+policy model:        30980834388  success
+collision verifier: 30980834339  success
+Linux Fieldwork CI:  30980834398  success
 ```
+
+The current refreshed Fieldwork head and all four active systemd heads are queued. Do not promote them without exact receipts.
 
 ## Immediate engineering sequence
 
-1. Inspect and record exact-head completion for PRs `#21`, `#23`, and `#24`.
+1. Inspect and record exact-head completion for PRs `#21`, `#23`, `#24`, and `#29`.
 2. Repair only attributable source or harness failures and move every receipt with its exact head.
-3. Add a strict native parser that owns and validates the entire `cgroups[]` array before one snapshot or incremental transaction.
-4. Bind user-manager Varlink connect/disconnect callbacks and attach `(authority, generation)` link state.
-5. Translate adapter arm/cancel actions into generation-keyed `sd_event` timers.
-6. Handle PID 1 subscription termination/reconnect as the system authority lane.
-7. Publish derived monitored maps atomically while preserving pressure/rules timers on effective no-ops.
-8. Add cgroup-disappearance cleanup and contributor diagnostics.
-9. Run a native VM matrix before promotion to the user's review desk.
-10. Keep all work internal until upstream contact is separately authorized.
+3. Add a manager-side resolver that authorizes every parsed canonical path and resolves default pressure values into one owned policy array.
+4. Call the adapter exactly once as a complete snapshot or incremental transaction.
+5. Publish derived monitored-map changes only after registry success.
+6. Bind user-manager Varlink connect/disconnect callbacks and attach `(authority, generation)` link state.
+7. Translate adapter arm/cancel actions into generation-keyed `sd_event` timers.
+8. Handle PID 1 subscription termination/reconnect as the system authority lane.
+9. Add cgroup-disappearance cleanup, timing preservation, and contributor diagnostics.
+10. Run a native VM matrix before promotion to the user's review desk.
+11. Keep all work internal until upstream contact is separately authorized.
 
 ## Read order
 
@@ -173,6 +172,7 @@ CONNECTION-LIFECYCLE.md
 WIRE-COMPATIBILITY.md
 LINK-ADAPTER.md
 MESSAGE-ATOMICITY.md
+MESSAGE-PARSER.md
 INDEPENDENT-REVIEW-2026-08-05-CONTINUATION.md
 ```
 
