@@ -28,7 +28,7 @@ diff --git a/libcontainer/process_linux_test.go b/libcontainer/process_linux_tes
 new file mode 100644
 --- /dev/null
 +++ b/libcontainer/process_linux_test.go
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,25 @@
 +package libcontainer
 +
 +import (
