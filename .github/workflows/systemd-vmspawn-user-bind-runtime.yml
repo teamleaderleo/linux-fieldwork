@@ -7,6 +7,12 @@ on:
     paths:
       - .github/workflows/systemd-vmspawn-user-bind-runtime.yml
       - investigations/systemd-vmspawn-unmapped-bind-userns/**
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/systemd-vmspawn-user-bind-runtime.yml
+      - investigations/systemd-vmspawn-unmapped-bind-userns/**
   workflow_dispatch:
 
 permissions:
