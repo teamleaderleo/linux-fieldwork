@@ -1,0 +1,113 @@
+name: systemd vmspawn ordinary-user bind runtime
+
+on:
+  push:
+    branches:
+      - research/foundational-systems-deep-dive-2026-08-03
+    paths:
+      - .github/workflows/systemd-vmspawn-user-bind-runtime.yml
+      - investigations/systemd-vmspawn-unmapped-bind-userns/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: systemd-vmspawn-user-bind-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SYSTEMD_HEAD: 741db5faed175180d427526b3878d5527d838b2d
+
+jobs:
+  runtime-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out exact systemd carrier
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/systemd
+          ref: ${{ env.SYSTEMD_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: systemd
+
+      - name: Enable source packages and install build/runtime dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get build-dep -y systemd
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            linux-image-generic \
+            meson \
+            ninja-build \
+            qemu-system-x86 \
+            virtiofsd
+
+      - name: Build exact systemd-vmspawn
+        working-directory: systemd
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(git rev-parse HEAD)" = "$SYSTEMD_HEAD"
+          meson setup build
+          ninja -C build systemd-vmspawn
+          test -x build/systemd-vmspawn
+          build/systemd-vmspawn --version
+          test -z "$(git status --porcelain)"
+
+      - name: Prepare disposable host state
+        working-directory: systemd
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if ! id testuser >/dev/null 2>&1; then
+            sudo useradd --create-home --shell /bin/bash testuser
+            echo 'FIELDWORK_CREATED_TESTUSER=1' >> "$GITHUB_ENV"
+          else
+            echo 'FIELDWORK_CREATED_TESTUSER=0' >> "$GITHUB_ENV"
+          fi
+
+          kernel="$(find /boot -maxdepth 1 -type f -name 'vmlinuz-*' -print -quit)"
+          test -n "$kernel"
+          sudo ln -sfn "$kernel" /boot/vmlinuz
+
+          command -v qemu-system-x86_64
+          if command -v virtiofsd >/dev/null 2>&1; then
+            command -v virtiofsd
+          else
+            test -x /usr/libexec/virtiofsd -o -x /usr/lib/virtiofsd
+          fi
+
+      - name: Execute ordinary-user bind discriminator
+        working-directory: systemd
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo env PATH="$PWD/build:$PATH" \
+            bash test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
+
+      - name: Prove cleanup and remove workflow-owned state
+        if: always()
+        working-directory: systemd
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo pkill -TERM -f 'test-vmspawn-user-bind-' 2>/dev/null || true
+          sleep 0.2
+          sudo pkill -KILL -f 'test-vmspawn-user-bind-' 2>/dev/null || true
+          test -z "$(pgrep -af 'test-vmspawn-user-bind-' || true)"
+
+          if [[ "${FIELDWORK_CREATED_TESTUSER:-0}" == 1 ]]; then
+            uid="$(id -u testuser)"
+            sudo systemctl stop "user@${uid}.service" 2>/dev/null || true
+            sudo loginctl disable-linger testuser 2>/dev/null || true
+            sudo userdel --remove testuser
+          fi
+
+          test ! -e /tmp/test-vmspawn-user-bind.
+          test -z "$(git status --porcelain)"
