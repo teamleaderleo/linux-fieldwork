@@ -4,36 +4,41 @@ Updated: 2026-08-07
 
 This is the live operational board for the strongest current investigations. Detailed evidence remains in the linked fork branches, internal pull requests, Fieldwork issues, and retained CI artifacts.
 
-## Proven and ready for human review
+## Submitted upstream
 
 ### Cloud Hypervisor — API shutdown lifecycle event gates
 
-**State:** runtime-proven; rebuilt as a current-upstream, one-commit submission candidate.
+**State:** human-submitted upstream; review pending.
 
-- Canonical issue: `cloud-hypervisor/cloud-hypervisor#8046`
-- Diagnostic branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/api-shutdown-events`
-- Clean branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/api-shutdown-events-clean`
-- Internal evidence PR: `teamleaderleo/cloud-hypervisor#1`
-- Internal clean PR: `teamleaderleo/cloud-hypervisor#4`
+- Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/issues/8046
+- Upstream PR: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8699
+- Fieldwork issue: `teamleaderleo/linux-fieldwork#423`
+- Submission branch: `teamleaderleo/cloud-hypervisor:fix/8046-shutdown-events`
+- Submitted head: `f7e386b074138700cb57101b8c3ef0ecc069a018`
+- Archived evidence PR: `teamleaderleo/cloud-hypervisor#1`
+- Superseded fork review PR: `teamleaderleo/cloud-hypervisor#5`
 - Current canonical/fork-main base: `538237492941914440eec589ae4d2bfe33f7f108`
-- Clean commit: `89a6e754d0a2758918411b1229ed28a990fd849b`
 - Runtime workflow/job: `30953976821` / `92176887306`
 - Runtime artifact: `8915262953`
 - Artifact digest: `sha256:eed3ebbca87dba9fa11801d12ea69a3cc57fa137f00a33dc4542dbbd9addec3b`
 
 All four real KVM selectors passed: HTTP shutdown, HTTP delete/create/boot, D-Bus shutdown, and D-Bus delete/create/boot.
 
-The fork `main` is synced to current canonical main. The clean branch is exactly one commit ahead, zero behind, and changes only `cloud-hypervisor/tests/common/tests_wrappers.rs`: 26 additions, 17 deletions. No workflow, handoff, or `linux-fieldwork/` files are in the candidate diff.
+The submitted branch is exactly one commit ahead of the synchronized upstream base and changes only `cloud-hypervisor/tests/common/tests_wrappers.rs`: 32 additions, 15 deletions. The final version preserves explanatory comments around normal guest poweroff and the VMM-owned shutdown-event completion gate.
 
-Submission hygiene is now present in the clean commit: valid `tests:` component, wrapped explanatory body, `Fixes #8046`, `Assisted-by: ChatGPT:GPT-5.6 Thinking`, and DCO `Signed-off-by: leo03164 <leo03164@gmail.com>`.
+Submission hygiene is present in the submitted commit: valid `tests:` component, wrapped explanatory body, `Fixes #8046`, `Assisted-by: ChatGPT:GPT-5.6 Thinking`, and DCO `Signed-off-by: Leo Li <cheerleaderleo@outlook.com>`.
 
-Internal clean PR #4 is mergeable against synced fork `main`. Its latest CI event `31134701463` is `action_required` with no jobs, i.e. a GitHub workflow-approval state rather than a test failure. The previously established focused compile and real-KVM runtime evidence remains green for the same source transformation.
+The upstream PR body explains why `--no-shutdown` is needed: it keeps the VMM/API process alive after guest poweroff so the tests can exercise the subsequent boot or delete/create transition. The test then waits for the exact VMM `shutdown` event instead of treating SSH loss as completion.
+
+Earlier fork materialization commits and internal interaction surfaces referenced the canonical issue directly, producing noisy GitHub timeline backlinks. Those are historical. `ADAPTIVE_COORDINATION.md` already requires `redirect.github.com` for external GitHub references in interaction surfaces; current live records now follow that rule.
+
+## Proven and ready for human review
 
 ### BuildKit — rootless/rootful reproducibility
 
 **State:** product defect reproduced and runc/native candidate proven end to end; ready for human review with a backend-scope decision.
 
-- Canonical issue: `moby/buildkit#6686`
+- Canonical issue: https://redirect.github.com/moby/buildkit/issues/6686
 - Internal Fieldwork issue: #229
 - Branch: `teamleaderleo/buildkit:linux-fieldwork/rootless-reproducibility`
 
@@ -47,7 +52,7 @@ The candidate reuses BuildKit's existing mount-stub ownership cleanup but feeds 
 
 **State:** baseline defect proven; production candidate focused tests, normal CI, and lint are green. Main remaining question is compatibility policy, not basic correctness.
 
-- Canonical issue: `libarchive/libarchive#3314`
+- Canonical issue: https://redirect.github.com/libarchive/libarchive/issues/3314
 - Internal Fieldwork issue: #446
 - Baseline branch/PR: `linux-fieldwork/cpio-inode-remap`, `teamleaderleo/libarchive#7`
 - Candidate branch/PR: `linux-fieldwork/cpio-inode-synthesis-candidate`, `teamleaderleo/libarchive#8`
@@ -70,7 +75,7 @@ CIFuzz run `31047099243` is not candidate evidence: the OSS-Fuzz integration fet
 
 **State:** error-boundary design remains plausible; latest focused run exposed one candidate transform bug plus one test-feature configuration problem. Not ready for human review yet.
 
-- Canonical issue: `cloud-hypervisor/cloud-hypervisor#8666`
+- Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/issues/8666
 - Internal Fieldwork issue: #444
 - Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/acpi-error-propagation`
 - Internal draft PR: `teamleaderleo/cloud-hypervisor#3`
@@ -99,6 +104,6 @@ Other parked results:
 
 ## External-contact state
 
-`false; none occurred`.
+`true — Cloud Hypervisor PR #8699 was submitted by the human contributor on 2026-08-07.`
 
-No canonical upstream issue comments, pull requests, reviews, reactions, emails, or other interactions have been created from this workbench.
+No other canonical upstream pull requests, issue comments, reviews, reactions, emails, or other intentional interactions have been created from this workbench. Historical automatic cross-reference events were generated by direct canonical issue references in fork commits and internal GitHub interaction surfaces; current live records use redirect links to avoid creating additional backlinks.
