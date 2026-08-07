@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: teamleaderleo/kmod
-          ref: 8e0a95313fd56b189b5466516807fedbd8825718
+          ref: 9dbb2701a2fcf96280a99b8d2ebcb4b0451be6b3
           path: empty-carrier
           persist-credentials: false
 
@@ -59,9 +59,9 @@ jobs:
           test "$(git -C kmod-current rev-parse HEAD:tools/modprobe.c)" = \
             c4b5021137a01529d75d9979e262308ce371bbae
           test "$(git -C empty-carrier rev-parse HEAD)" = \
-            8e0a95313fd56b189b5466516807fedbd8825718
+            9dbb2701a2fcf96280a99b8d2ebcb4b0451be6b3
           test "$(git -C empty-carrier hash-object .github/modprobe-empty-options-environment.patch)" = \
-            2f57e3a8c2ed1a37f4519de0a8928872891bb78c
+            08612258b78b1b0529bf2bc999ac88d1df21cb94
           sha256sum empty-carrier/.github/modprobe-empty-options-environment.patch > \
             current-carrier-patch.sha256
           git -C kmod-current apply --check --index \
