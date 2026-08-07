@@ -121,6 +121,8 @@ jobs:
 
       - name: Run direct, focused, complete, and scope controls
         shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
         run: |
           set -euo pipefail
           compiler=${{ matrix.compiler }}
