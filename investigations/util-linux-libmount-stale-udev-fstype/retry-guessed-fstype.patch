@@ -37,7 +37,7 @@ diff --git a/libmount/src/context.c b/libmount/src/context.c
 diff --git a/libmount/src/context_mount.c b/libmount/src/context_mount.c
 --- a/libmount/src/context_mount.c
 +++ b/libmount/src/context_mount.c
-@@ -1,10 +1,31 @@
+@@ -1,10 +1,34 @@
  	/* mount stage */
  	type = mnt_fs_get_fstype(cxt->fs);
  	if (type) {
@@ -55,20 +55,23 @@ diff --git a/libmount/src/context_mount.c b/libmount/src/context_mount.c
 +	 * LABEL=/UUID=/PARTUUID= specifications: stale tag identity is a separate
 +	 * correctness problem and must not be turned into a successful mount. */
 +	if (res == EINVAL && type && !strchr(type, ',') &&
-+	    (cxt->flags & MNT_FL_FSTYPE_GUESSED) &&
-+	    mnt_is_path(mnt_context_get_source(cxt))) {
-+		const char *src = mnt_fs_get_srcpath(cxt->fs);
-+		char *direct_type = src ? mnt_get_fstype(src, NULL, NULL) : NULL;
++	    (cxt->flags & MNT_FL_FSTYPE_GUESSED)) {
++		const char *source = mnt_context_get_source(cxt);
 +
-+		if (direct_type && strcmp(type, direct_type) != 0) {
-+			DBG_OBJ(CXT, cxt, ul_debug(
-+				"guessed FS type '%s' failed, retrying directly probed type '%s'",
-+				type, direct_type));
-+			res = do_mount(cxt, direct_type);
-+			if (res == 0)
-+				cxt->flags &= ~MNT_FL_FSTYPE_GUESSED;
++		if (source && mnt_is_path(source)) {
++			const char *src = mnt_fs_get_srcpath(cxt->fs);
++			char *direct_type = src ? mnt_get_fstype(src, NULL, NULL) : NULL;
++
++			if (direct_type && strcmp(type, direct_type) != 0) {
++				DBG_OBJ(CXT, cxt, ul_debug(
++					"guessed FS type '%s' failed, retrying directly probed type '%s'",
++					type, direct_type));
++				res = do_mount(cxt, direct_type);
++				if (res == 0)
++					cxt->flags &= ~MNT_FL_FSTYPE_GUESSED;
++			}
++			free(direct_type);
 +		}
-+		free(direct_type);
 +	}
  
  	/* after mount stage */
