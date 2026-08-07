@@ -6,7 +6,7 @@ Current util-linux issue `#4527` reports a 2.42.2 regression: after an ext3 file
 
 Current systemd does enable `OPTIONS+="watch"` for ordinary block devices in `60-block.rules`, so the strongest model is an asynchronous freshness race: mkfs closes the block device, udev is expected to synthesize and process a change event, but a mount started before that refresh can still consume the old `ID_FS_TYPE`.
 
-The leading libmount candidate does not discard the udev optimization globally. Instead, remember when the filesystem type was auto-guessed. If the type-specific mount syscall fails with `EINVAL`, directly probe the source; retry only when the direct type differs from the guessed type. Explicit `-t` and fstab types remain authoritative.
+The leading libmount candidate does not discard the udev optimization globally. For **path-based mount sources only**, it remembers when the filesystem type was auto-guessed. If that type-specific mount syscall fails with `EINVAL`, it directly probes the same source and retries only when the direct type differs. Explicit `-t` and fstab types remain authoritative, and LABEL=/UUID=/PARTUUID= sources are deliberately excluded from this recovery.
 
 A live loop-device reproducer is running before this candidate is promoted.
 
@@ -54,7 +54,7 @@ Current systemd's `60-block.rules` enables `OPTIONS+="watch"` for normal loop, N
 
 This means the expected healthy steady state is fresh udev metadata. It does **not** make the database synchronously fresh at the instant a writer closes. The close notification, synthesized event, worker execution, blkid probe, and database update are separate asynchronous steps.
 
-`udevadm settle` is therefore an important discriminator. The runtime experiment now measures three points separately:
+`udevadm settle` is therefore an important discriminator. The runtime experiment measures three points separately:
 
 1. automatic mount immediately after `mkfs.ext4`;
 2. automatic mount after `udevadm settle` but without an explicit trigger;
@@ -83,6 +83,8 @@ Classifications:
 - `STALE_PERSISTS_UNTIL_EXPLICIT_CHANGE`: settle alone leaves ext3, while an explicit change refreshes it;
 - `UDEV_REFRESHED_BEFORE_IMMEDIATE_MOUNT`: this runner cannot hit the race because udev has already advanced to ext4.
 
+An x86-64 run matches the reporter. A separate ARM64 carrier tests whether the mechanism is architecture-independent if that runner becomes available first.
+
 ## Candidate design
 
 See `retry-guessed-fstype.patch`.
@@ -95,12 +97,31 @@ Add a private context bit indicating that the current single filesystem type cam
 
 After `do_mount(cxt, NULL)` returns `EINVAL` for a guessed single type:
 
-1. obtain the prepared source path;
-2. call `mnt_get_fstype(src, ..., NULL)` so the cache/udev optimization is bypassed;
-3. if direct probing returns the same type, preserve the original failure;
-4. if direct probing returns a different type, retry with existing `do_mount(cxt, direct_type)` machinery.
+1. require the original source specification to be a path;
+2. obtain the prepared source path;
+3. call `mnt_get_fstype(src, ..., NULL)` so the cache/udev optimization is bypassed;
+4. if direct probing returns the same type, preserve the original failure;
+5. if direct probing returns a different type, retry with existing `do_mount(cxt, direct_type)` machinery;
+6. clear guessed-type provenance after a successful retry.
 
 This is deliberately failure-only: a correct udev guess does not pay for a direct probe.
+
+## Stale tag identity is a separate lane
+
+The udev optimization also means LABEL/UUID/PARTUUID metadata can be temporarily stale after an in-place rewrite. That must **not** be silently folded into #4527's filesystem-type recovery.
+
+Example:
+
+```text
+old filesystem: LABEL=old, TYPE=ext3
+new filesystem: LABEL=new, TYPE=ext4
+udev database has not refreshed yet
+mount LABEL=old /mnt
+```
+
+If stale `LABEL=old` resolves the device and libmount then merely corrects ext3 to ext4, it could make the old label request succeed against a filesystem that no longer carries that label. That is worse than a transient failure.
+
+Therefore the current candidate only recovers path-based sources. Stale tag resolution should be investigated separately with identity-preserving semantics.
 
 ## Why this candidate is preferable to the obvious alternatives
 
@@ -120,17 +141,19 @@ Useful operationally if the runtime confirms it closes the race, but `mount` his
 
 Broader than needed. A direct probe gives a specific new type and avoids trial mounting unrelated filesystems.
 
-## Permanent regression home
+## Permanent regression strategy
 
-`tests/ts/libmount/context` is already the right upstream test surface. It provisions a real SCSI-debug block device, formats filesystems, interacts with udev, and mounts through the libmount context helper.
+`tests/ts/libmount/context` is the right end-to-end upstream surface. It already provisions a real SCSI-debug block device, formats filesystems, interacts with udev, and mounts through the libmount context helper.
 
-A deterministic regression should arrange for udev's ext4 refresh to be delayed while the ext3 database entry remains visible, then verify:
+For a deterministic code-path test, `libmount/src/context_mount.c` is also built as `test_mount_context_mount` with `TEST_PROGRAM`, so it can access private context flags. A candidate-specific helper can:
 
-- auto-guessed stale ext3 recovers to direct-probed ext4;
-- explicit `-t ext3` still fails;
-- after udev refresh, the normal fast path succeeds.
+1. set an ext4 block-device source and mount target;
+2. set `ext3` directly on the internal fs object;
+3. mark `MNT_FL_FSTYPE_GUESSED`;
+4. call the normal context mount path and require success via direct-probed ext4;
+5. repeat with public `mnt_context_set_fstype(..., "ext3")`, which clears guessed provenance, and require the explicit ext3 request to fail.
 
-Avoid a permanently timing-dependent test if a controlled udev queue or equivalent fixture can hold the stale state safely.
+That unit/integration hybrid proves the recovery invariant without stopping udev's global execution queue or relying on timing. The isolated hosted loop-device job remains the real end-to-end race proof.
 
 ## Cross-context controls
 
@@ -141,11 +164,12 @@ Avoid a permanently timing-dependent test if a controlled udev queue or equivale
 - stale ext3 -> ext4 should retry ext4 only after the ext3 failure;
 - stale ext3 -> ext2 should behave analogously if direct blkid reports ext2;
 - udev-disabled builds must remain behaviorally compatible; their direct guess should normally compare equal on a failure;
-- an explicit type set after earlier preparation must clear guessed-type provenance so later failure does not override caller intent.
+- an explicit type set after earlier preparation must clear guessed-type provenance so later failure does not override caller intent;
+- LABEL=/UUID=/PARTUUID= sources must not use the path-only type retry.
 
 ## Evidence boundary
 
-The libmount source mechanism, the global block-device watch rule, and the asynchronous udev update path are demonstrated. The loop-device current-head reproduction and candidate execution are separate gates and must not be claimed until their hosted receipts complete.
+The libmount source mechanism, the global block-device watch rule, the asynchronous udev update path, and the source-identity hazard for stale tags are demonstrated. The loop-device current-head reproduction and candidate execution are separate gates and must not be claimed until their hosted receipts complete.
 
 ## Authority
 
