@@ -102,7 +102,8 @@ jobs:
         run: |
           set -euxo pipefail
           test -x test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
-          grep -F 'TEST-13-NSPAWN-container-template' test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
+          grep -F 'GUEST_SOURCE=/usr/share/minimal_0.raw' test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
+          grep -F 'mke2fs -t ext4' test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
           grep -F 'vmspawn ordinary-user bind is readable and writable inside the guest' \
             test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
 
