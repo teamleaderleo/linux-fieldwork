@@ -3,12 +3,12 @@
 ## State
 
 - Investigation: recursive `modprobe` configuration identity and adjacent empty-environment allocation correctness
-- Disposition: `HOLD — recursive defect proven on current master; fallback carrier blocked; allocator repair independently validated`
+- Disposition: `HOLD — recursive defect proven on current master; original fallback carrier exhausted under bounded recovery; allocator repair independently validated`
 - Linux Fieldwork branch: `investigation/kmod-modprobe-options-config-path`
-- Linux Fieldwork technical head before this handoff update: `89f26be1c6a3ad1fed6f17cb88dd4fe2f790fa1c`
+- Linux Fieldwork technical head before this handoff update: `3ead37769d58f1f94e78b9c6adf9988c6b8d30ba`
 - Linux Fieldwork draft PR: `teamleaderleo/linux-fieldwork#412`
 - Native characterization: `teamleaderleo/kmod#1@84ba8ae9db4f455965efa22afdd5cb177781106b`
-- Provenance fallback experiment: `teamleaderleo/kmod#5@94c42b0374c5b668eaf8f31a8daf79da1b268be0`
+- Provenance fallback experiment: `teamleaderleo/kmod#5@3bdcf36edfa04e217d67e0aa0570349b6f449eaf`
 - Empty-environment allocation repair: `teamleaderleo/kmod#6@9dbb2701a2fcf96280a99b8d2ebcb4b0451be6b3`
 - Formal reviews: none
 - External contact: unauthorized; none made
@@ -90,9 +90,9 @@ PR #3 carries only generated `-C/-s/-q/-v` state. A reversing inherited-`-d` con
 
 PR #4 separates inherited state from exact generated state, but rejects an install script that mutates `MODPROBE_OPTIONS` by appending `-q`. Current kmod accepts that mutation for representable legacy values, so strict mismatch rejection is not recursively equivalent.
 
-### Provenance fallback experiment blocked on carrier reconstruction
+### Provenance fallback experiment — original carrier recovery closed
 
-PR #5 tests a bounded fallback after exact metadata validates:
+PR #5 records a bounded fallback policy after exact metadata validates:
 
 1. compare the actual legacy mirror with the expected inherited-plus-generated mirror;
 2. when an install script changed the mirror, rebase the actual string as inherited state;
@@ -101,9 +101,11 @@ PR #5 tests a bounded fallback after exact metadata validates:
 5. publish it once to avoid later duplication;
 6. continue to reject malformed exact/base records and positional exact records.
 
-Local GCC 14.2 and Clang 17 ASan/UBSan multicall builds passed spaced recursive `-C` through three dependency-free levels, inherited `-d`, install-script `-q` mutation, repeated and clustered options, representable mixed-version direction, and safe malformed-state boundaries.
+Its committed discriminator additionally requires pure CLI-origin base length `0`, byte-stable `(base_len, exact_len, legacy_len)` tuples through three recursive levels, inherited private-option retention, successful install-script `-q` mutation, representable new-parent/old-child behavior, honest old-parent/new-child loss, and visible failure for unrepresentable old-child handoff.
 
-Hosted recovery run:
+Local GCC 14.2 and Clang 17 ASan/UBSan multicall builds passed spaced recursive `-C` through three dependency-free levels, inherited `-d`, install-script `-q` mutation, repeated and clustered options, representable mixed-version direction, and safe malformed-state boundaries. That remains useful design history, not hosted source provenance.
+
+The original hosted recovery run was:
 
 ```text
 head:  94c42b0374c5b668eaf8f31a8daf79da1b268be0
@@ -112,17 +114,77 @@ GCC:   92447161754
 Clang: 92447161730
 ```
 
-The committed Base64 carrier matched its pinned digest. Decompression produced output despite the known gzip CRC/length damage, but both jobs then failed before source execution at:
+The committed Base64 carrier matched its pinned digest. Decompression produced output despite gzip CRC/length errors, but both jobs failed before source execution at:
 
 ```text
 error: corrupt patch at .../fallback.patch:889
 ```
 
-`git apply --check` never succeeded; formatting, build, native tests, and the fallback discriminator were skipped. Cleanup and failure receipts completed successfully.
+`git apply --check` never succeeded; formatting, build, native tests, and the fallback discriminator were skipped.
 
-The recovered patch is therefore syntactically corrupt in addition to the damaged gzip trailer. Do not treat run `31047684477` as source evidence. Reconstruct a clean patch from trustworthy retained source/history before any further hosted fallback execution.
+#### Carrier provenance and localization
 
-The fallback remains an experiment. It cannot recover pathname identity after an old parent has already flattened an unrepresentable value.
+Branch history shows carrier-introduction commit `b13cebe88975595773ce6816e2aa7ebc5b0e22f6` added the already-damaged Base64 payload directly on exact base `5086df...`. Every later PR #5 commit before diagnostics changed only tests/workflows. There is no earlier clean fallback payload in branch history.
+
+The decoded patch contains 29 diff sections:
+
+- sections 1–28 individually pass `git apply --recount --check`;
+- section 29, `tools/modprobe.c`, is corrupt;
+- its content is byte-identical to clean strict PR #4 through local diff line 469;
+- corruption begins immediately after the final intact `option_transport_clear(&selected);` transition;
+- later hunk offsets show the fallback main hunk is net eight added lines longer than strict PR #4, but the decoded bytes are broadly mangled, so the net line delta cannot establish exact source.
+
+Clean strict PR #4 is independently pinned by:
+
+```text
+uncompressed patch sha256: caed53a3a7f5dc57f2d4114da21a623dfd9ea1343881bdced3617adf30ecee32
+gzip sha256:              ae01646901a5bc8305a4869446344022e21be420414ab6074fa1e2a7a5be75bd
+```
+
+#### Gzip exactness oracle
+
+The original fallback gzip trailer remains internally useful:
+
+```text
+gzip bytes:              6434
+trailer CRC32:            23be8cfa
+trailer ISIZE:            36682
+recovered output bytes:   36704
+recovered output CRC32:   50dc6748
+```
+
+A byte-exact recovery claim must reproduce size `36,682` and CRC32 `23be8cfa`, then pass `git apply --check` and the exact 29-path fence.
+
+#### Bounded byte-level recovery results
+
+Every bounded small-corruption model tested returned zero candidates matching the original CRC32/ISIZE:
+
+1. single bit anywhere — run `31144903377`;
+2. arbitrary single decoded byte anywhere — run `31145103754`, including `1,636,080` full-payload substitutions;
+3. one Base64 character substitution anywhere — run `31145253016`, `540,477` substitutions;
+4. arbitrary adjacent two-byte replacement near mapped compressed offset `5354` — run `31145342454`, `4,259,775` substitutions across 65 pair starts;
+5. two independent bit flips across 129 nearby bytes — run `31145625437`, job `92764337808`, `528,384` candidates.
+
+The final two-bit receipt is artifact `8981366890`, ZIP SHA-256 `4e65b2b9831d3207f963b298c69b0f5f5cf1397a19d5c3b4d94ded5a77840fbf`.
+
+These negative searches do not establish impossibility for arbitrary multi-byte damage. They close the economically bounded, high-probability carrier-repair models. Continuing brute-force recovery would be a poor provenance tradeoff.
+
+PR #5 final head `3bdcf36edfa04e217d67e0aa0570349b6f449eaf` therefore keeps a lightweight read-only characterization rather than pretending to validate product source:
+
+```text
+workflow: Characterize damaged provenance fallback carrier
+run:      31145763781
+job:      92764744393
+result:   success
+artifact: 8981406622
+sha256:   3e6124f16d17a7e2139fdbbccd6ef48fd782adba1587ed9c46dd0de0c371b02a
+```
+
+That gate requires exact base/carrier identity, the pinned trailer/recovered metrics, failed normal and recount application, exactly 28 valid sections plus the corrupt tools section, and a clean tree. It intentionally performs no product build/test.
+
+Do not treat decoded PR #5 bytes as candidate source. A future fallback implementation should be a **reconstructed successor** from clean strict PR #4 plus the documented fallback policy and committed discriminator. It must be labeled reconstructed unless its complete patch independently reproduces the original gzip trailer and all patch/fence checks.
+
+The fallback limitation remains: pathname identity cannot be recovered after an old parent has already flattened an unrepresentable value.
 
 ## Separate empty `MODPROBE_OPTIONS` allocation defect
 
@@ -210,31 +272,38 @@ The allocator repair is independently validated on the original exact base and e
 
 ## Overlap refresh
 
-The last open upstream issue/PR searches found no matching implementation for:
+Read-only upstream searches on 2026-08-07 found no open matching issue or pull request across these variants:
 
-- recursive `MODPROBE_OPTIONS` configuration-path identity with whitespace;
-- explicitly empty `MODPROBE_OPTIONS` heap-buffer-overflow;
-- `prepend_options_from_env()` allocation correction.
+- `MODPROBE_OPTIONS`;
+- `prepend_options_from_env`;
+- `empty MODPROBE_OPTIONS`;
+- `heap-buffer-overflow modprobe`;
+- `modprobe -C whitespace`.
 
-Searches can miss differently worded work. Refresh immediately before any authorized public action.
+The broader `modprobe config path` issue search returned only issue #349 about `--force` test coverage, unrelated to these defects.
+
+Search wording can miss differently described work. Refresh immediately before any authorized public action.
 
 ## Stop rule
 
 Do not select or publish a recursive transport repair until:
 
-1. the fallback source is reconstructed from a trustworthy clean artifact or history;
-2. the reconstructed fallback passes exact file fencing, formatting, GCC/Clang sanitizer builds, focused reruns, complete suite, and safe discriminator;
-3. mixed-version and install-script mutation limitations remain documented honestly;
-4. no temporary carrier remains in a selected source diff;
-5. standard final-head CI is inspected;
-6. overlap, contribution policy, and formal review state are refreshed.
+1. any continued fallback implementation is introduced as a reconstructed successor from a clean provenance base;
+2. its exact source/fence is retained independently of the damaged PR #5 carrier;
+3. the reconstructed successor passes formatting, GCC/Clang sanitizer builds, focused reruns, complete suite, and the committed fallback discriminator;
+4. mixed-version and install-script mutation limitations remain documented honestly;
+5. no temporary carrier remains in a selected source diff;
+6. standard final-head CI is inspected;
+7. overlap, contribution policy, and formal review state are refreshed.
+
+Do not label a successor as byte-exact PR #5 recovery unless its complete patch reproduces the original fallback trailer `(ISIZE=36682, CRC32=23be8cfa)` and passes the expected patch/fence checks.
 
 The allocator lane has cleared its technical gates. Product source remains uncommitted, so any next allocator step should be a clean source-only owned-fork candidate or an explicitly retained patch-only handoff. Upstream publication still requires separate authorization.
 
 ## First incomplete steps
 
-1. Reconstruct PR #5's fallback patch from trustworthy retained source/history; do not reuse the corrupt recovered patch at line 889.
-2. If continuing the recursive lane, rerun the full fallback matrix only after a clean reproducible carrier exists.
+1. If continuing the recursive lane, create a reconstructed successor from clean strict PR #4 plus the documented fallback policy and committed discriminator; do not reuse damaged PR #5 source bytes.
+2. Run that successor through exact fencing, formatting, GCC/Clang sanitizers, focused suite twice, complete suite, fallback discriminator, cleanup, and standard final-head CI.
 3. For the allocator lane, consider a clean source-only owned-fork candidate based on the validated two-file patch.
 4. Refresh overlap and formal-review state immediately before any promotion decision.
 5. Do not contact upstream without explicit authorization.
