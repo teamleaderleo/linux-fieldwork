@@ -1,0 +1,201 @@
+name: Verify coreutils install backup rollback fd candidate
+
+on:
+  push:
+    branches:
+      - investigate/coreutils-install-backup-rollback
+    paths:
+      - .github/workflows/verify-coreutils-install-backup-rollback-fd.yml
+      - investigations/coreutils-install-backup-rollback/apply_fd_staged_candidate.py
+      - investigations/coreutils-install-backup-rollback/finalize_fd_staged_candidate.py
+      - investigations/coreutils-install-backup-rollback/RACE_SAFE_DESIGN.md
+      - tests/test_coreutils_install_backup_rollback_model.py
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/verify-coreutils-install-backup-rollback-fd.yml
+      - investigations/coreutils-install-backup-rollback/apply_fd_staged_candidate.py
+      - investigations/coreutils-install-backup-rollback/finalize_fd_staged_candidate.py
+      - investigations/coreutils-install-backup-rollback/RACE_SAFE_DESIGN.md
+      - tests/test_coreutils_install_backup_rollback_model.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  COREUTILS_SHA: eb0d2a0d7627cb563bc24dd4982cb45207810105
+  COREUTILS_BASE_SHA: b13ee7a8319f439cb9a1ba550e98de665f9c4bb1
+
+jobs:
+  model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out Linux Fieldwork
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Compile transformers and run filesystem reversal model
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            investigations/coreutils-install-backup-rollback/apply_fd_staged_candidate.py \
+            investigations/coreutils-install-backup-rollback/finalize_fd_staged_candidate.py \
+            tests/test_coreutils_install_backup_rollback_model.py
+          python3 -m unittest -v \
+            tests.test_coreutils_install_backup_rollback_model
+
+  fd-staged-candidate:
+    needs: model
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Check out Linux Fieldwork carrier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact fd-bound coreutils source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: uutils/coreutils
+          ref: ${{ env.COREUTILS_SHA }}
+          path: coreutils
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+          components: clippy,rustfmt
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          workspaces: coreutils
+
+      - name: Record inherited fd-strip baseline
+        working-directory: coreutils
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../artifacts/fd-staged
+          set +e
+          cargo test --features 'install chmod' --no-default-features \
+            --test tests test_install_and_strip \
+            2>&1 | tee ../artifacts/fd-staged/baseline-strip.log
+          baseline_status=${PIPESTATUS[0]}
+          set -e
+          test "$baseline_status" -ne 0
+          grep -F '/proc/self/fd/' ../artifacts/fd-staged/baseline-strip.log
+          grep -F 'could not create temporary file to hold stripped copy' \
+            ../artifacts/fd-staged/baseline-strip.log
+          printf 'baseline_status=%s\n' "$baseline_status" \
+            >../artifacts/fd-staged/baseline-strip-status.txt
+
+      - name: Verify exact source and apply fail-closed candidate
+        run: |
+          set -euo pipefail
+          test "$(git -C coreutils rev-parse HEAD)" = "$COREUTILS_SHA"
+          python3 fieldwork/investigations/coreutils-install-backup-rollback/apply_fd_staged_candidate.py coreutils
+          python3 fieldwork/investigations/coreutils-install-backup-rollback/finalize_fd_staged_candidate.py coreutils
+          test "$(git -C coreutils diff --name-only | sort)" = $'src/uu/install/Cargo.toml\nsrc/uu/install/locales/en-US.ftl\nsrc/uu/install/locales/fr-FR.ftl\nsrc/uu/install/src/install.rs\ntests/by-util/test_install.rs'
+          git -C coreutils diff --check
+
+      - name: Format exact candidate and retain identity
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          {
+            echo "source_head=$(git rev-parse HEAD)"
+            echo "source_base=$COREUTILS_BASE_SHA"
+            echo "install_blob_before=$(git rev-parse HEAD:src/uu/install/src/install.rs)"
+            echo "test_blob_before=$(git rev-parse HEAD:tests/by-util/test_install.rs)"
+            rustc --version
+            cargo --version
+          } >../artifacts/fd-staged/source-identity.txt
+          git diff --stat >../artifacts/fd-staged/candidate.stat
+          git diff -- \
+            src/uu/install/Cargo.toml \
+            src/uu/install/src/install.rs \
+            src/uu/install/locales/en-US.ftl \
+            src/uu/install/locales/fr-FR.ftl \
+            tests/by-util/test_install.rs \
+            >../artifacts/fd-staged/candidate.patch
+
+      - name: Run no-clobber helper unit controls
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          cargo test --features 'install chmod' --no-default-features \
+            restore_backup_noclobber_restores_absent_destination
+          cargo test --features 'install chmod' --no-default-features \
+            restore_backup_noclobber_preserves_occupied_destination
+
+      - name: Run rollback and publication controls
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          for test_name in \
+            test_install_restores_destination_after_copy_error_with_backup \
+            test_install_copy_error_rollback_preserves_original_backup_for_later_source \
+            test_install_copy_error_rollback_preserves_existing_numbered_backup \
+            test_install_staged_publication_does_not_clobber_replacement \
+            test_install_strip_program_symlink_swap_does_not_touch_victim
+          do
+            cargo test --features 'install chmod' --no-default-features "$test_name"
+          done
+
+      - name: Confirm inherited fd-strip failure remains isolated
+        working-directory: coreutils
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          cargo test --features 'install chmod' --no-default-features \
+            --test tests test_install_and_strip \
+            2>&1 | tee ../artifacts/fd-staged/candidate-strip.log
+          candidate_status=${PIPESTATUS[0]}
+          set -e
+          test "$candidate_status" -ne 0
+          grep -F '/proc/self/fd/' ../artifacts/fd-staged/candidate-strip.log
+          grep -F 'could not create temporary file to hold stripped copy' \
+            ../artifacts/fd-staged/candidate-strip.log
+          printf 'candidate_status=%s\n' "$candidate_status" \
+            >../artifacts/fd-staged/candidate-strip-status.txt
+
+      - name: Run complete install module outside inherited strip defect
+        working-directory: coreutils
+        run: |
+          cargo test --features 'install chmod' --no-default-features \
+            --test tests test_install -- \
+            --skip test_install::test_install_and_strip \
+            --skip test_install::test_install_and_strip_with_program
+
+      - name: Run focused clippy
+        working-directory: coreutils
+        run: cargo clippy --features 'install chmod' --no-default-features --all-targets --no-deps -- -D warnings
+
+      - name: Verify final candidate fence and source identity
+        working-directory: coreutils
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$COREUTILS_SHA"
+          test "$(git diff --name-only | sort)" = $'src/uu/install/Cargo.toml\nsrc/uu/install/locales/en-US.ftl\nsrc/uu/install/locales/fr-FR.ftl\nsrc/uu/install/src/install.rs\ntests/by-util/test_install.rs'
+          git diff --check
+          test -z "$(git status --porcelain | grep '^??' || true)"
+
+      - name: Upload complete fd-staged review packet
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: coreutils-install-fd-staged-${{ env.COREUTILS_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/fd-staged/
+          if-no-files-found: error
+          retention-days: 30
