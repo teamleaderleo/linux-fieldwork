@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: kmod-project/kmod
-          ref: f9fa9becf86956b9a84413a5bfa2e83dcff8370d
+          ref: dae6c02ffed2e8d16da8dba16d974fc955eebb1f
           path: kmod-current
           persist-credentials: false
 
@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C kmod-current rev-parse HEAD)" = \
-            f9fa9becf86956b9a84413a5bfa2e83dcff8370d
+            dae6c02ffed2e8d16da8dba16d974fc955eebb1f
           test "$(git -C kmod-current rev-parse HEAD:tools/modprobe.c)" = \
             c4b5021137a01529d75d9979e262308ce371bbae
           git -C kmod-current status --short --untracked-files=no | \
