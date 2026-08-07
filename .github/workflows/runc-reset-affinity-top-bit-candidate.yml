@@ -1,0 +1,127 @@
+name: runc reset-affinity top-bit candidate
+
+on:
+  pull_request:
+    paths:
+      - "investigations/runc-dynamic-mask-boundaries/candidate-reset-affinity-top-bit.patch"
+      - ".github/workflows/runc-reset-affinity-top-bit-candidate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RUNC_SHA: 0c87c02ff02123f1bc2cd1b3f850f94e5b8de983
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out exact proposed Fieldwork state
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Check out exact runc source
+        uses: actions/checkout@v4
+        with:
+          repository: opencontainers/runc
+          ref: 0c87c02ff02123f1bc2cd1b3f850f94e5b8de983
+          path: _runc-source
+          persist-credentials: false
+          clean: true
+
+      - name: Set up declared Go toolchain
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: _runc-source/go.mod
+          cache: false
+          check-latest: false
+
+      - name: Apply and execute the focused candidate
+        shell: bash
+        run: |
+          set -euxo pipefail
+          source_dir="$GITHUB_WORKSPACE/_runc-source"
+          patch_file="$GITHUB_WORKSPACE/investigations/runc-dynamic-mask-boundaries/candidate-reset-affinity-top-bit.patch"
+          artifact_dir="$RUNNER_TEMP/runc-reset-affinity-top-bit-artifact"
+          rm -rf "$artifact_dir"
+          mkdir -p "$artifact_dir"
+          printf 'SOURCE_DIR=%s\n' "$source_dir" >>"$GITHUB_ENV"
+          printf 'ARTIFACT_DIR=%s\n' "$artifact_dir" >>"$GITHUB_ENV"
+
+          test "$(git -C "$source_dir" rev-parse HEAD)" = "$RUNC_SHA"
+          test -z "$(git -C "$source_dir" status --porcelain)"
+          grep -Fq 'buf := unix.NewCPUSet(configs.MaxCPU)' \
+            "$source_dir/libcontainer/process_linux.go"
+          if grep -Fq 'buf := unix.NewCPUSet(configs.MaxCPU + 1)' \
+            "$source_dir/libcontainer/process_linux.go"; then
+            echo 'baseline already contains the candidate allocation' >&2
+            exit 1
+          fi
+
+          git -C "$source_dir" apply --check "$patch_file"
+          git -C "$source_dir" apply "$patch_file"
+          gofmt -w \
+            "$source_dir/libcontainer/process_linux.go" \
+            "$source_dir/libcontainer/process_linux_test.go"
+          git -C "$source_dir" add -N \
+            libcontainer/process_linux.go \
+            libcontainer/process_linux_test.go
+          git -C "$source_dir" diff --check
+
+          mapfile -t changed < <(git -C "$source_dir" diff --name-only)
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = 'libcontainer/process_linux.go'
+          test "${changed[1]}" = 'libcontainer/process_linux_test.go'
+
+          {
+            printf 'workflow_run_id=%s\n' "$GITHUB_RUN_ID"
+            printf 'workflow_run_attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
+            printf 'fieldwork_commit=%s\n' "$GITHUB_SHA"
+            printf 'runc_commit=%s\n' "$RUNC_SHA"
+            uname -a
+            go version
+            sha256sum "$patch_file"
+          } >"$artifact_dir/identity.txt"
+          git -C "$source_dir" diff --binary >"$artifact_dir/candidate.diff"
+
+          (
+            cd "$source_dir"
+            go test ./libcontainer \
+              -run '^TestResetCPUAffinityMaskIncludesMaxCPU$' \
+              -count=2 -v | tee "$artifact_dir/focused.log"
+            go test ./libcontainer/configs \
+              -run '^TestToCPUSet$/65536$' \
+              -count=1 -v | tee "$artifact_dir/config-control.log"
+          )
+
+          grep -Fq -- '--- PASS: TestResetCPUAffinityMaskIncludesMaxCPU' \
+            "$artifact_dir/focused.log"
+          grep -Fq -- '--- PASS: TestToCPUSet' \
+            "$artifact_dir/config-control.log"
+          (
+            cd "$artifact_dir"
+            sha256sum identity.txt candidate.diff focused.log config-control.log \
+              >SHA256SUMS
+          )
+
+      - name: Publish exact candidate receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: runc-reset-affinity-top-bit-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prove cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf \
+            "${SOURCE_DIR:-$GITHUB_WORKSPACE/_runc-source}" \
+            "${ARTIFACT_DIR:-$RUNNER_TEMP/runc-reset-affinity-top-bit-artifact}"
+          test -z "$(git status --porcelain)"
