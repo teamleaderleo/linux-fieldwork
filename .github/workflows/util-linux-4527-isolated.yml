@@ -24,20 +24,30 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Install build and filesystem tools
+      - name: Install focused build and filesystem tools
         shell: bash
         run: |
           set -euxo pipefail
-          sudo add-apt-repository -y --no-update --enable-source
           sudo apt-get update
-          sudo apt-get build-dep -y util-linux
-          sudo apt-get install -y --no-install-recommends meson ninja-build libsystemd-dev e2fsprogs udev
+          sudo apt-get install -y --no-install-recommends \
+            build-essential meson ninja-build pkg-config gettext bison \
+            libudev-dev libselinux1-dev libcap-ng-dev libpcre2-dev \
+            libreadline-dev libncurses-dev libsystemd-dev \
+            e2fsprogs udev
 
       - name: Build current mount with libmount udev support
         shell: bash
         run: |
           set -euxo pipefail
-          meson setup build -Dbuild-libmount-udev-support=enabled
+          meson setup build \
+            -Dnls=disabled \
+            -Dbuild-python=disabled \
+            -Dbuild-pylibmount=disabled \
+            -Dbuild-liblastlog2=disabled \
+            -Dbuild-pam-lastlog2=disabled \
+            -Dbuild-libmount=enabled \
+            -Dbuild-mount=enabled \
+            -Dbuild-libmount-udev-support=enabled
           meson compile -C build mount
           MOUNT_BIN="$(find build -type f -name mount -perm -111 -print -quit)"
           test -n "$MOUNT_BIN"
