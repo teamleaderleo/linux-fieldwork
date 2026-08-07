@@ -1,0 +1,29 @@
+From: Linux Fieldwork <fieldwork@example.invalid>
+Subject: [DIAGNOSTIC PATCH] logind: prioritize VT release signal
+
+This patch is retained for controlled-fork compilation and ordering tests only.
+It is not an upstream submission.
+
+diff --git a/src/login/logind.c b/src/login/logind.c
+--- a/src/login/logind.c
++++ b/src/login/logind.c
+@@ -925,9 +925,21 @@ static int manager_connect_console(Manager *m) {
+ 
+         assert_se(ignore_signals(SIGRTMIN + 1) >= 0);
+ 
+-        r = sd_event_add_signal(m->event, /* ret= */ NULL, (SIGRTMIN + 0) | SD_EVENT_SIGNAL_PROCMASK, manager_vt_switch, m);
++        _cleanup_(sd_event_source_unrefp) sd_event_source *vt_switch_source = NULL;
++        r = sd_event_add_signal(m->event, &vt_switch_source, (SIGRTMIN + 0) | SD_EVENT_SIGNAL_PROCMASK, manager_vt_switch, m);
+         if (r < 0)
+                 return log_error_errno(r, "Failed to subscribe to SIGRTMIN+0 signal: %m");
+ 
++        r = sd_event_source_set_priority(vt_switch_source, SD_EVENT_PRIORITY_IMPORTANT);
++        if (r < 0)
++                return log_error_errno(r, "Failed to prioritize SIGRTMIN+0 signal source: %m");
++
++        r = sd_event_source_set_floating(vt_switch_source, true);
++        if (r < 0)
++                return log_error_errno(r, "Failed to make SIGRTMIN+0 signal source floating: %m");
++
+         return 0;
+ }
