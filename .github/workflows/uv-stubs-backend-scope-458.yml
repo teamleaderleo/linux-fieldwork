@@ -1,0 +1,221 @@
+name: uv stub backend scope 458
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/uv-stubs-backend-scope-458.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Execute Hatch Poetry and Flit stub-only matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/uv-stubs-458"
+          rm -rf "$root"
+          mkdir -p "$root"
+
+          python3 -m pip install --disable-pip-version-check --no-input 'uv==0.12.3'
+          echo "UV_VERSION=$(uv --version)"
+          echo "PYTHON_VERSION=$(python3 --version)"
+
+          make_tree() {
+            local dir="$1"
+            mkdir -p "$dir/src/foo-stubs"
+            printf 'VALUE: int\n' > "$dir/src/foo-stubs/__init__.pyi"
+          }
+
+          prepare_backend() {
+            local dir="$1"
+            local requirement="$2"
+            uv venv "$dir/.venv" --python python3 >/dev/null
+            uv pip install --python "$dir/.venv/bin/python" "$requirement" >/dev/null
+            "$dir/.venv/bin/python" - "$requirement" <<'PY'
+          import importlib.metadata
+          import sys
+          req = sys.argv[1]
+          name = req.split('<')[0].split('>')[0].split('=')[0].strip()
+          print(f"BACKEND_REQUIREMENT={req}")
+          print(f"BACKEND_VERSION={name}=={importlib.metadata.version(name)}")
+          PY
+          }
+
+          build_case() {
+            local label="$1"
+            local dir="$2"
+            echo "===== CASE $label ====="
+            rm -rf "$dir/dist"
+            set +e
+            VIRTUAL_ENV="$dir/.venv" PATH="$dir/.venv/bin:$PATH" \
+              uv build "$dir" --wheel --no-build-isolation --out-dir "$dir/dist" \
+              >"$dir/build.stdout" 2>"$dir/build.stderr"
+            local status=$?
+            set -e
+            echo "BUILD_STATUS=$status"
+            sed -n '1,160p' "$dir/build.stdout"
+            sed -n '1,220p' "$dir/build.stderr"
+            if compgen -G "$dir/dist/*.whl" > /dev/null; then
+              local wheel
+              wheel=$(printf '%s\n' "$dir"/dist/*.whl | head -n1)
+              echo "WHEEL=$(basename "$wheel")"
+              echo "WHEEL_CONTENTS_BEGIN"
+              unzip -Z1 "$wheel" | sort
+              echo "WHEEL_CONTENTS_END"
+              if unzip -Z1 "$wheel" | grep -Fxq 'foo-stubs/__init__.pyi'; then
+                echo "STUB_ENTRY=present"
+              else
+                echo "STUB_ENTRY=absent"
+              fi
+              if unzip -Z1 "$wheel" | grep -Eq '\.dist-info/entry_points\.txt$'; then
+                echo "ENTRY_POINTS_FILE=present"
+              else
+                echo "ENTRY_POINTS_FILE=absent"
+              fi
+            else
+              echo "WHEEL=absent"
+              echo "STUB_ENTRY=absent"
+              echo "ENTRY_POINTS_FILE=absent"
+            fi
+            echo "===== END $label ====="
+            return "$status"
+          }
+
+          # Hatch baseline: current uv build-system plus exact stub-only tree, no Hatch override.
+          d="$root/hatch-default"
+          make_tree "$d"
+          cat > "$d/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          description = "stub-only fixture"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["hatchling"]
+          build-backend = "hatchling.build"
+          TOML
+          prepare_backend "$d" 'hatchling'
+          set +e; build_case hatch-default "$d"; hatch_default=$?; set -e
+
+          # Hatch explicit package selection supplied in the maintainer guidance.
+          d="$root/hatch-explicit"
+          make_tree "$d"
+          cat > "$d/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          description = "stub-only fixture"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["hatchling"]
+          build-backend = "hatchling.build"
+
+          [tool.hatch.build.targets.wheel]
+          packages = ["src/foo-stubs"]
+          TOML
+          prepare_backend "$d" 'hatchling'
+          build_case hatch-explicit "$d"
+          unzip -Z1 "$d"/dist/*.whl | grep -Fxq 'foo-stubs/__init__.pyi'
+
+          # Poetry baseline: current uv build-system, no package declaration.
+          d="$root/poetry-default"
+          make_tree "$d"
+          cat > "$d/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          description = "stub-only fixture"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["poetry-core>=2,<3"]
+          build-backend = "poetry.core.masonry.api"
+          TOML
+          prepare_backend "$d" 'poetry-core>=2,<3'
+          set +e; build_case poetry-default "$d"; poetry_default=$?; set -e
+
+          # Poetry maintainer declaration without from=src: required control.
+          d="$root/poetry-no-from"
+          make_tree "$d"
+          cat > "$d/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          description = "stub-only fixture"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["poetry-core>=2,<3"]
+          build-backend = "poetry.core.masonry.api"
+
+          [tool.poetry]
+          packages = [{ include = "foo-stubs" }]
+          TOML
+          prepare_backend "$d" 'poetry-core>=2,<3'
+          set +e; build_case poetry-no-from "$d"; poetry_no_from=$?; set -e
+
+          # Poetry exact src-layout form from Poetry Core's own PEP 561 fixture.
+          d="$root/poetry-from-src"
+          make_tree "$d"
+          cat > "$d/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          description = "stub-only fixture"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["poetry-core>=2,<3"]
+          build-backend = "poetry.core.masonry.api"
+
+          [tool.poetry]
+          packages = [{ include = "foo-stubs", from = "src" }]
+          TOML
+          prepare_backend "$d" 'poetry-core>=2,<3'
+          build_case poetry-from-src "$d"
+          unzip -Z1 "$d"/dist/*.whl | grep -Fxq 'foo-stubs/__init__.pyi'
+
+          # Flit current UV constraint: the <4 row is expected to lack stub-package support.
+          d="$root/flit-current"
+          make_tree "$d"
+          cat > "$d/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          description = "stub-only fixture"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["flit_core>=3.2,<4"]
+          build-backend = "flit_core.buildapi"
+          TOML
+          prepare_backend "$d" 'flit_core>=3.2,<4'
+          set +e; build_case flit-current-lt4 "$d"; flit_current=$?; set -e
+
+          # Flit 4 control: PR 742 support, same project and source tree, no backend-specific config.
+          d="$root/flit-4"
+          make_tree "$d"
+          cat > "$d/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          description = "stub-only fixture"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["flit_core>=4,<5"]
+          build-backend = "flit_core.buildapi"
+          TOML
+          prepare_backend "$d" 'flit_core>=4,<5'
+          build_case flit-4 "$d"
+          unzip -Z1 "$d"/dist/*.whl | grep -Fxq 'foo-stubs/__init__.pyi'
+
+          echo "CONTROL_STATUS hatch-default=$hatch_default poetry-default=$poetry_default poetry-no-from=$poetry_no_from flit-current-lt4=$flit_current"
