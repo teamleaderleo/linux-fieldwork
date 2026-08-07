@@ -1,24 +1,36 @@
 # UV stubs-package backend boundary
 
-State: `ACTIVE — PUBLIC CANDIDATE REJECTED AS OVER-BROAD; SCOPED CANDIDATE QUEUED`  
-Canonical issues: `astral-sh/uv#19663`, `astral-sh/uv#20734`  
-Active public candidate: `astral-sh/uv#19671`  
-External contact authorized: `false`  
-External contact made: `none`
+State: `ACTIVE — BACKEND CAPABILITY RESEARCH; UV-ONLY CANDIDATE PROVISIONAL`  
+Canonical issue: [uv issue 19663](https://redirect.github.com/astral-sh/uv/issues/19663)  
+Active public candidate: [uv PR 19671](https://redirect.github.com/astral-sh/uv/pull/19671)  
+Existing public Fieldwork comment: [comment 5210595906](https://redirect.github.com/astral-sh/uv/pull/19671#issuecomment-5210595906)  
+Maintainer follow-up: [comment 5217482196](https://redirect.github.com/astral-sh/uv/pull/19671#issuecomment-5217482196)  
+Further external mutation authorized by this record: `false`
 
-## Problem
+## Current question
 
-A project named `foo-stubs` has two competing generated-layout contracts:
+A distribution named `foo-stubs` should be treated as a stub-only package unless a backend cannot represent that project kind. The target source shape is therefore:
 
-- `uv_build` requires a PEP 561 stub-only layout at `src/foo-stubs/__init__.pyi` and no runtime console script;
-- the other supported build backends currently expect uv's existing normalized import package at `src/foo_stubs/__init__.py`.
+```text
+src/foo-stubs/__init__.pyi
+```
 
-Applying one backend's layout globally fixes `uv_build` but breaks other backends.
+with no generated runtime console script.
+
+The unresolved part is backend policy:
+
+```text
+foo-stubs
+  -> backend supports stub-only directly
+  -> backend supports stub-only with explicit configuration
+  -> backend does not support this project kind and should be rejected
+```
+
+Do not assume that a successful build of `src/foo_stubs/__init__.py` is the desired compatibility result. The earlier matrix measured build success, not whether the produced wheel was a correct PEP 561 stub-only distribution.
 
 ## Exact public candidate
 
 ```text
-canonical PR: astral-sh/uv#19671
 base: 3d00ce70244d8b5660e8c02136568a9147dc97e8
 head: 082af3c5eb95bbc0f0173ebc67965919c14e1a0a
 source file: crates/uv/src/commands/project/init.rs
@@ -52,7 +64,7 @@ Observed:
 
 That branch was closed without merge after evidence transfer.
 
-## Completed eight-backend review
+## Completed eight-backend regression matrix
 
 Controlled fork PR `teamleaderleo/uv#28` compared exact baseline and public-candidate source:
 
@@ -82,69 +94,90 @@ Result:
 | Maturin | success | failure |
 | Scikit-build | success | success |
 
-The public candidate correctly fixes `uv_build`, but forces every backend to use `src/foo-stubs/__init__.py` or `.pyi` while removing the application script. Hatch, Flit, Poetry, and Maturin continue to resolve the underscore-normalized import package and fail.
+This remains useful evidence: PR 19671 changes shared initialization behavior and produces failing generated projects for Hatch, Flit, Poetry, and Maturin. It does **not** establish that the correct repair is to restore ordinary underscore runtime-package behavior for every non-UV backend.
 
-Disposition for the public candidate as written: `DO NOT ROUTE`.
+## Provisional UV-only containment candidate
 
-## Scoped controlled candidate
-
-```text
-controlled repository: teamleaderleo/uv
-exact public-candidate base branch: fieldwork/19671-public-candidate-base
-experiment branch: fieldwork/19671-uv-backend-scope
-experiment head: b49c4c0e92cb05dc86ae87776c6103fcca457e6b
-internal draft PR: teamleaderleo/uv#30
-focused run: 30851211326 — queued at last check
-ordinary fork CI: 30851211543 — pending at last check
-```
-
-The branch commits three carrier files and no product source beyond the exact public candidate base. The disposable one-file transformation:
-
-- resolves `ProjectBuildBackend` before script generation;
-- suppresses the runtime application script only for `uv_build` stub packages;
-- chooses the hyphenated `.pyi` directory only for `uv_build`;
-- preserves the existing underscore `.py` layout for every non-UV backend.
-
-The workflow requires:
-
-- exact public base/head and source blob;
-- one-file product diff;
-- rustfmt;
-- affected compilation;
-- existing native `init_package_stubs` and `init_package` controls;
-- packaged application and library initialization across all eight backends;
-- successful builds for all 16 generated projects.
-
-Expected contract:
+Current clean controlled candidate:
 
 ```text
-uv_build application/library:
-  src/foo-stubs/__init__.pyi
-  no project script
-  build success
-
-non-UV application:
-  src/foo_stubs/__init__.py
-  project script retained
-  build success
-
-non-UV library:
-  src/foo_stubs/__init__.py
-  no project script
-  build success
+repository: teamleaderleo/uv
+internal draft PR: #54
+base branch: fieldwork/19671-current-main-product-base
+base: bab65d090d4f05d7dab432ac25304288ff1f2327
+branch: candidate/19671-current-main-uv-backend-scope
+head: 3e1fa232b6240e0d2617f399d3ca801c4760a30d
+matrix run: 31013625610 — all 16 init/build rows passed
 ```
 
-## Decision boundary
+The candidate proves a narrow causal fact: containing the special layout/script behavior to `uv_build` removes the cross-backend build regressions.
 
-If run `30851211326` is green, retain the exact scoped patch and complete matrix. Before promoting a clean source branch, review whether preserving a runtime package for non-UV backends is an intentional compatibility fallback or whether each backend needs explicit stub-only configuration. Do not silently generalize `uv_build`'s directory contract.
+It is **not the current implementation recommendation**. Its non-UV output deliberately preserves the old `foo_stubs/__init__.py` runtime-package shape and application script. Maintainer feedback indicates that at least some third-party backends can instead represent a genuine stub-only package with backend-specific configuration.
 
-If the run fails:
+Keep PR #54 as a containment/control experiment until the capability research below completes.
 
-1. classify source transformation and rustfmt before product semantics;
-2. distinguish application from library failures;
-3. inspect the first backend-specific build failure;
-4. repair only the owning layer.
+## Maintainer guidance received
+
+The maintainer follow-up identifies a more specific backend model:
+
+- Hatch needs an explicit wheel package selection, beginning with:
+
+  ```toml
+  [tool.hatch.build.targets.wheel]
+  packages = ["src/foo-stubs"]
+  ```
+
+- Poetry needs an explicit package declaration, beginning with:
+
+  ```toml
+  [tool.poetry]
+  packages = [{ include = "foo-stubs" }]
+  ```
+
+  The exact `src/` form still needs verification.
+
+- Flit should support stub-only packages; inspect and verify the current behavior associated with [Flit PR 742](https://redirect.github.com/pypa/flit/pull/742).
+- Maturin does not support stub-only packages and is not an appropriate backend for that project kind; verify the current source/docs and determine the clean UV rejection boundary.
+
+This feedback supersedes the earlier working assumption that all non-UV backends should retain ordinary runtime-package semantics.
+
+## Parallel research lanes
+
+Two bounded internal issues can be handed to separate workers without overlapping implementation authority:
+
+- Linux Fieldwork #458 — Hatch, Poetry, and Flit;
+- Linux Fieldwork #459 — PDM, setuptools, Scikit-build, and Maturin.
+
+Both lanes must inspect **wheel contents**, not just process exit status. For every backend classify:
+
+1. exact backend/version used by current UV initialization;
+2. direct stub-only support versus explicit configuration versus unsupported;
+3. minimal configuration;
+4. build result;
+5. actual wheel payload, requiring `foo-stubs/__init__.pyi` for a supported stub-only case;
+6. whether a runtime script is absent;
+7. source/docs explaining the behavior;
+8. plausible UV behavior: generate directly, generate backend-specific configuration, or reject.
+
+Do not modify the product candidate from either helper lane. Research and report first.
+
+## Next decision
+
+After #458 and #459 report, build one capability table:
+
+| Backend | Stub-only support | Extra config | Correct UV init policy |
+|---|---|---|---|
+| uv_build | yes | none known | generate stub-only layout |
+| Hatch | research | research | determine |
+| Flit | research | research | determine |
+| PDM | research | research | determine |
+| Poetry | research | research | determine |
+| setuptools | research | research | determine |
+| Maturin | expected unsupported | n/a | verify rejection policy |
+| Scikit-build | research | research | determine |
+
+Only then choose whether PR #54 should be replaced by a backend-capability implementation, reduced to a narrower UV-only fix, or retained only as evidence.
 
 ## Publication boundary
 
-No canonical UV issue comment, pull request, review, reaction, email, or maintainer contact is authorized or made.
+The thread already contains the human-posted Fieldwork comment linked above. This record does not authorize another canonical UV comment, review, reaction, pull request, email, or other upstream mutation. Internal and controlled-fork work may continue. Any external GitHub references added to controlled-repository interaction surfaces must use `redirect.github.com`.
