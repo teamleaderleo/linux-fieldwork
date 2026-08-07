@@ -171,3 +171,211 @@ jobs:
               exit "$status"
               ;;
           esac
+
+  vmspawn-guest-visible-bind:
+    if: github.head_ref == 'research/foundational-systems-deep-dive-2026-08-03'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Check out exact systemd repair branch
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/systemd
+          ref: repair/vmspawn-unmapped-bind-userns-2dd0706
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: systemd/mkosi@f7762b71437227922a367bb89597843c77494ef9
+
+      - name: Free disk space
+        run: |
+          sudo mv /usr/local /usr/local.trash
+          sudo mv /opt/hostedtoolcache /opt/hostedtoolcache.trash
+          sudo systemd-run rm -rf /usr/local.trash /opt/hostedtoolcache.trash
+
+      - name: Prepare compressed build workspace
+        shell: bash
+        run: |
+          set -euxo pipefail
+          truncate --size=100G btrfs.raw
+          mkfs.btrfs btrfs.raw
+          sudo mkdir -p /mnt/mkosi
+          LOOP="$(sudo losetup --find --show --direct-io=on btrfs.raw)"
+          rm -f btrfs.raw
+          sudo mount "$LOOP" /mnt/mkosi --options compress=zstd:1,user_subvol_rm_allowed,noatime,discard=async,space_cache=v2
+          sudo chown "$(id -u):$(id -g)" /mnt/mkosi
+          mkdir -p /mnt/mkosi/tmp
+          ln -sf /mnt/mkosi/build build
+
+      - name: Configure Arch test image
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat >mkosi/mkosi.local.conf <<'EOF'
+          [Distribution]
+          Distribution=arch
+          Release=rolling
+
+          [Output]
+          Format=disk
+
+          [Build]
+          UseSubvolumes=yes
+          ToolsTreeDistribution=arch
+          ToolsTreeRelease=rolling
+          WithTests=yes
+          WorkspaceDirectory=/mnt/mkosi/tmp
+          PackageCacheDirectory=/mnt/mkosi/tmp/cache
+          Environment=
+                  CFLAGS="-Og"
+                  MESON_OPTIONS=--werror
+                  LLVM=0
+                  SYSEXT=1
+
+          [Runtime]
+          RAM=4G
+          EOF
+
+      - name: Build current test image
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkosi --debug genkey
+          sudo mkosi -f box -- true
+          sudo mkosi box -- \
+            meson setup \
+            --buildtype=debugoptimized \
+            -Dbpf-framework=disabled \
+            build
+          sudo mkosi box -- meson compile -C build mkosi
+
+      - name: Run TEST-87 only
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo mkosi box -- \
+            env \
+            TEST_PREFER_QEMU=1 \
+            TEST_NO_QEMU=0 \
+            TEST_NO_KVM=0 \
+            TEST_RUNNER=linux-fieldwork \
+            meson test \
+            -C build \
+            --timeout-multiplier=2 \
+            --no-rebuild \
+            --setup=integration \
+            --suite=integration-tests \
+            --print-errorlogs \
+            --no-stdsplit \
+            --num-processes=1 \
+            TEST-87-AUX-UTILS-VM
+
+      - name: Upload focused receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: systemd-vmspawn-guest-bind-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/meson-logs/testlog.txt
+            build/test/journal/*.journal
+          if-no-files-found: warn
+          retention-days: 7
+
+  util-linux-stale-udev-type:
+    if: github.head_ref == 'research/foundational-systems-deep-dive-2026-08-03'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out current util-linux source
+        uses: actions/checkout@v4
+        with:
+          repository: util-linux/util-linux
+          ref: d26ad4d8c2f0b25c97cc860ea8b2059e65f54c5e
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install build and filesystem tools
+        run: |
+          sudo add-apt-repository -y --no-update --enable-source
+          sudo apt-get update
+          sudo apt-get build-dep -y util-linux
+          sudo apt-get install -y --no-install-recommends meson ninja-build libsystemd-dev e2fsprogs udev
+
+      - name: Build mount with udev support
+        run: |
+          set -euxo pipefail
+          meson setup build -Dbuild-libmount-udev-support=enabled
+          meson compile -C build mount
+          MOUNT_BIN="$(find build -type f -name mount -perm -111 -print -quit)"
+          test -n "$MOUNT_BIN"
+          echo "MOUNT_BIN=$PWD/$MOUNT_BIN" >>"$GITHUB_ENV"
+          "$MOUNT_BIN" --version
+
+      - name: Reproduce stale ext3 to ext4 type
+        shell: bash
+        run: |
+          set -euxo pipefail
+          IMG="$RUNNER_TEMP/libmount-stale-type.img"
+          MNT="$RUNNER_TEMP/libmount-stale-type.mnt"
+          LOG="$RUNNER_TEMP/libmount-stale-type.log"
+          truncate -s 256M "$IMG"
+          mkdir -p "$MNT"
+          LOOP="$(sudo losetup --find --show "$IMG")"
+          cleanup() {
+            set +e
+            mountpoint -q "$MNT" && sudo umount "$MNT"
+            sudo losetup -d "$LOOP"
+          }
+          trap cleanup EXIT
+
+          sudo mkfs.ext3 -F "$LOOP"
+          sudo udevadm trigger --action=change --name-match="$(basename "$LOOP")"
+          sudo udevadm settle
+          test "$(sudo udevadm info --query=property --name="$LOOP" | sed -n 's/^ID_FS_TYPE=//p')" = ext3
+
+          sudo mkfs.ext4 -F "$LOOP"
+          test "$(sudo blkid -s TYPE -o value "$LOOP")" = ext4
+          echo '--- stale udev after mkfs.ext4 ---' | tee -a "$LOG"
+          sudo udevadm info --query=property --name="$LOOP" | tee -a "$LOG"
+          test "$(sudo udevadm info --query=property --name="$LOOP" | sed -n 's/^ID_FS_TYPE=//p')" = ext3
+
+          echo '--- settle without new event ---' | tee -a "$LOG"
+          sudo udevadm settle
+          sudo udevadm info --query=property --name="$LOOP" | tee -a "$LOG"
+          test "$(sudo udevadm info --query=property --name="$LOOP" | sed -n 's/^ID_FS_TYPE=//p')" = ext3
+
+          echo '--- auto mount with stale udev TYPE ---' | tee -a "$LOG"
+          set +e
+          sudo env LIBMOUNT_DEBUG=all "$MOUNT_BIN" "$LOOP" "$MNT" >>"$LOG" 2>&1
+          AUTO_RC=$?
+          set -e
+          echo "auto_rc=$AUTO_RC" | tee -a "$LOG"
+          test "$AUTO_RC" -ne 0
+          ! mountpoint -q "$MNT"
+
+          echo '--- explicit ext4 control ---' | tee -a "$LOG"
+          sudo "$MOUNT_BIN" -t ext4 "$LOOP" "$MNT"
+          mountpoint -q "$MNT"
+          sudo umount "$MNT"
+
+          echo '--- udev change refresh ---' | tee -a "$LOG"
+          sudo udevadm trigger --action=change --name-match="$(basename "$LOOP")"
+          sudo udevadm settle
+          sudo udevadm info --query=property --name="$LOOP" | tee -a "$LOG"
+          test "$(sudo udevadm info --query=property --name="$LOOP" | sed -n 's/^ID_FS_TYPE=//p')" = ext4
+
+          echo '--- auto mount after udev refresh ---' | tee -a "$LOG"
+          sudo "$MOUNT_BIN" "$LOOP" "$MNT"
+          mountpoint -q "$MNT"
+          sudo umount "$MNT"
+
+          cp "$LOG" "$GITHUB_WORKSPACE/util-linux-4527-receipt.txt"
+
+      - name: Upload receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: util-linux-4527-stale-udev-${{ github.run_id }}-${{ github.run_attempt }}
+          path: util-linux-4527-receipt.txt
+          if-no-files-found: warn
+          retention-days: 7
