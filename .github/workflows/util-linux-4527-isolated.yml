@@ -74,6 +74,18 @@ jobs:
           udev_type() {
             sudo udevadm info --query=property --name="$LOOP" | sed -n 's/^ID_FS_TYPE=//p'
           }
+          auto_mount() {
+            set +e
+            sudo env LIBMOUNT_DEBUG=all "$MOUNT_BIN" "$LOOP" "$MNT" >>"$LOG" 2>&1
+            local rc=$?
+            set -e
+            if mountpoint -q "$MNT"; then
+              sudo umount "$MNT"
+              printf '%s %s\n' "$rc" 1
+            else
+              printf '%s %s\n' "$rc" 0
+            fi
+          }
 
           sudo mkfs.ext3 -F "$LOOP"
           trigger_change
@@ -83,47 +95,45 @@ jobs:
 
           sudo mkfs.ext4 -F "$LOOP"
           BLKID_TYPE="$(sudo blkid -s TYPE -o value "$LOOP")"
-          TYPE_AFTER_MKFS="$(udev_type)"
+          TYPE_IMMEDIATE="$(udev_type)"
           echo "blkid_after_ext4=$BLKID_TYPE" | tee -a "$LOG"
-          echo "udev_after_ext4=$TYPE_AFTER_MKFS" | tee -a "$LOG"
+          echo "udev_immediate_after_ext4=$TYPE_IMMEDIATE" | tee -a "$LOG"
           test "$BLKID_TYPE" = ext4
 
-          sudo udevadm settle
-          TYPE_AFTER_SETTLE="$(udev_type)"
-          echo "udev_after_settle_only=$TYPE_AFTER_SETTLE" | tee -a "$LOG"
-
-          set +e
-          sudo env LIBMOUNT_DEBUG=all "$MOUNT_BIN" "$LOOP" "$MNT" >>"$LOG" 2>&1
-          AUTO_RC=$?
-          set -e
-          echo "auto_mount_rc=$AUTO_RC" | tee -a "$LOG"
-          if mountpoint -q "$MNT"; then
-            AUTO_MOUNTED=1
-            sudo umount "$MNT"
-          else
-            AUTO_MOUNTED=0
-          fi
-          echo "auto_mounted=$AUTO_MOUNTED" | tee -a "$LOG"
+          read -r IMMEDIATE_RC IMMEDIATE_MOUNTED < <(auto_mount)
+          echo "auto_immediate_rc=$IMMEDIATE_RC" | tee -a "$LOG"
+          echo "auto_immediate_mounted=$IMMEDIATE_MOUNTED" | tee -a "$LOG"
 
           sudo "$MOUNT_BIN" -t ext4 "$LOOP" "$MNT"
           mountpoint -q "$MNT"
           sudo umount "$MNT"
           echo "explicit_ext4_control=pass" | tee -a "$LOG"
 
+          sudo udevadm settle
+          TYPE_AFTER_SETTLE="$(udev_type)"
+          echo "udev_after_settle=$TYPE_AFTER_SETTLE" | tee -a "$LOG"
+          read -r SETTLE_RC SETTLE_MOUNTED < <(auto_mount)
+          echo "auto_after_settle_rc=$SETTLE_RC" | tee -a "$LOG"
+          echo "auto_after_settle_mounted=$SETTLE_MOUNTED" | tee -a "$LOG"
+
           trigger_change
           TYPE_AFTER_TRIGGER="$(udev_type)"
-          echo "udev_after_change_event=$TYPE_AFTER_TRIGGER" | tee -a "$LOG"
+          echo "udev_after_explicit_change=$TYPE_AFTER_TRIGGER" | tee -a "$LOG"
           test "$TYPE_AFTER_TRIGGER" = ext4
+          read -r TRIGGER_RC TRIGGER_MOUNTED < <(auto_mount)
+          echo "auto_after_explicit_change_rc=$TRIGGER_RC" | tee -a "$LOG"
+          echo "auto_after_explicit_change_mounted=$TRIGGER_MOUNTED" | tee -a "$LOG"
+          test "$TRIGGER_RC" -eq 0
+          test "$TRIGGER_MOUNTED" -eq 1
 
-          sudo "$MOUNT_BIN" "$LOOP" "$MNT"
-          mountpoint -q "$MNT"
-          sudo umount "$MNT"
-          echo "auto_after_change_event=pass" | tee -a "$LOG"
-
-          if [[ "$TYPE_AFTER_MKFS" = ext3 && "$TYPE_AFTER_SETTLE" = ext3 && "$AUTO_RC" -ne 0 && "$AUTO_MOUNTED" -eq 0 ]]; then
-            echo "classification=CONFIRMED_STALE_UDEV_TYPE" | tee -a "$LOG"
-          elif [[ "$TYPE_AFTER_MKFS" = ext4 && "$AUTO_RC" -eq 0 && "$AUTO_MOUNTED" -eq 1 ]]; then
-            echo "classification=ENVIRONMENT_AUTO_REFRESHED_UDEV" | tee -a "$LOG"
+          if [[ "$TYPE_IMMEDIATE" = ext3 && "$IMMEDIATE_RC" -ne 0 && "$IMMEDIATE_MOUNTED" -eq 0 &&
+                "$TYPE_AFTER_SETTLE" = ext4 && "$SETTLE_RC" -eq 0 && "$SETTLE_MOUNTED" -eq 1 ]]; then
+            echo "classification=CONFIRMED_RACE_SETTLE_REFRESHES" | tee -a "$LOG"
+          elif [[ "$TYPE_IMMEDIATE" = ext3 && "$IMMEDIATE_RC" -ne 0 && "$IMMEDIATE_MOUNTED" -eq 0 &&
+                  "$TYPE_AFTER_SETTLE" = ext3 && "$SETTLE_RC" -ne 0 && "$SETTLE_MOUNTED" -eq 0 ]]; then
+            echo "classification=STALE_PERSISTS_UNTIL_EXPLICIT_CHANGE" | tee -a "$LOG"
+          elif [[ "$TYPE_IMMEDIATE" = ext4 && "$IMMEDIATE_RC" -eq 0 && "$IMMEDIATE_MOUNTED" -eq 1 ]]; then
+            echo "classification=UDEV_REFRESHED_BEFORE_IMMEDIATE_MOUNT" | tee -a "$LOG"
           else
             echo "classification=UNEXPECTED_INTERMEDIATE_STATE" | tee -a "$LOG"
             cat "$LOG"
