@@ -1,18 +1,18 @@
-name: systemd vmspawn guest-visible bind isolated runtime
+name: systemd vmspawn guest-visible bind isolated runtime arm64
 
 on:
   pull_request:
     branches:
-      - automation/vmspawn-guest-bind-runtime-base-20260808
+      - automation/vmspawn-guest-bind-arm-base-20260808
     paths:
-      - .github/vmspawn-guest-bind-trigger
+      - .github/vmspawn-guest-bind-arm-trigger
 
 permissions:
   contents: read
 
 jobs:
   guest-visible-bind:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 150
 
     steps:
@@ -103,6 +103,7 @@ jobs:
           set -euxo pipefail
           test -x test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
           grep -F 'GUEST_SOURCE=/usr/share/minimal_0.raw' test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
+          grep -F 'mount -t squashfs -o loop,ro' test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
           grep -F 'mke2fs -t ext4' test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
           grep -F 'vmspawn ordinary-user bind is readable and writable inside the guest' \
             test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
@@ -122,7 +123,7 @@ jobs:
             TEST_PREFER_QEMU=1 \
             TEST_NO_QEMU=0 \
             TEST_NO_KVM="$TEST_NO_KVM_VALUE" \
-            TEST_RUNNER=isolated-linux-fieldwork \
+            TEST_RUNNER=isolated-linux-fieldwork-arm64 \
             meson test \
             -C build \
             --timeout-multiplier=2 \
@@ -138,7 +139,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmspawn-guest-visible-bind-${{ github.run_id }}-${{ github.run_attempt }}
+          name: vmspawn-guest-visible-bind-arm64-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             build/meson-logs/testlog.txt
             build/test/journal/*.journal
