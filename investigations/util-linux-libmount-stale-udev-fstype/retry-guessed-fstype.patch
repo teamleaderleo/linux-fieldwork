@@ -1,0 +1,59 @@
+From: Linux Fieldwork <fieldwork@example.invalid>
+Subject: [DIAGNOSTIC PATCH] libmount: recheck failed guessed filesystem type
+
+Retained for controlled-fork compilation and runtime comparison only.
+Not an upstream submission.
+
+diff --git a/libmount/src/mountP.h b/libmount/src/mountP.h
+--- a/libmount/src/mountP.h
++++ b/libmount/src/mountP.h
+@@ -548,3 +548,4 @@
+ #define MNT_FL_PREPARED		(1 << 24)
+ #define MNT_FL_HELPER		(1 << 25)	/* [u]mount.<type> */
++#define MNT_FL_FSTYPE_GUESSED	(1 << 26)	/* filesystem type set by auto-detection */
+ #define MNT_FL_MOUNTOPTS_FIXED  (1 << 27)
+diff --git a/libmount/src/context.c b/libmount/src/context.c
+--- a/libmount/src/context.c
++++ b/libmount/src/context.c
+@@ -1,5 +1,6 @@
+ 	rc = mnt_context_guess_srcpath_fstype(cxt, &type);
+-	if (rc == 0 && type)
++	if (rc == 0 && type) {
+ 		__mnt_fs_set_fstype_ptr(cxt->fs, type);
+-	else
++		cxt->flags |= MNT_FL_FSTYPE_GUESSED;
++	} else
+ 		free(type);
+diff --git a/libmount/src/context_mount.c b/libmount/src/context_mount.c
+--- a/libmount/src/context_mount.c
++++ b/libmount/src/context_mount.c
+@@ -1,10 +1,27 @@
+ 	/* mount stage */
+ 	type = mnt_fs_get_fstype(cxt->fs);
+ 	if (type) {
+ 		if (strchr(type, ','))
+ 			/* this only happens if fstab contains a list of filesystems */
+ 			res = do_mount_by_types(cxt, type);
+ 		else
+ 			res = do_mount(cxt, NULL);
+ 	} else
+ 		res = do_mount_by_pattern(cxt, cxt->fstype_pattern);
++
++	/* A guessed type can come from cached metadata such as the udev database.
++	 * If the kernel rejects that type, compare it with a direct device probe
++	 * before giving up. Explicit and fstab-provided types never set this flag. */
++	if (res == EINVAL && type && !strchr(type, ',') &&
++	    (cxt->flags & MNT_FL_FSTYPE_GUESSED)) {
++		const char *src = mnt_fs_get_srcpath(cxt->fs);
++		char *direct_type = src ? mnt_get_fstype(src, NULL, NULL) : NULL;
++
++		if (direct_type && strcmp(type, direct_type) != 0) {
++			DBG_OBJ(CXT, cxt, ul_debug(
++				"guessed FS type '%s' failed, retrying directly probed type '%s'",
++				type, direct_type));
++			res = do_mount(cxt, direct_type);
++		}
++		free(direct_type);
++	}
+ 
+ 	/* after mount stage */
