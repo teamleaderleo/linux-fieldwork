@@ -50,14 +50,16 @@ jobs:
           build_case() {
             local label="$1"
             local dir="$2"
+            local status
             echo "===== CASE $label ====="
             rm -rf "$dir/dist"
-            set +e
-            VIRTUAL_ENV="$dir/.venv" PATH="$dir/.venv/bin:$PATH" \
+            if VIRTUAL_ENV="$dir/.venv" PATH="$dir/.venv/bin:$PATH" \
               uv build "$dir" --wheel --no-build-isolation --out-dir "$dir/dist" \
-              >"$dir/build.stdout" 2>"$dir/build.stderr"
-            local status=$?
-            set -e
+              >"$dir/build.stdout" 2>"$dir/build.stderr"; then
+              status=0
+            else
+              status=$?
+            fi
             echo "BUILD_STATUS=$status"
             sed -n '1,160p' "$dir/build.stdout"
             sed -n '1,220p' "$dir/build.stderr"
@@ -87,7 +89,19 @@ jobs:
             return "$status"
           }
 
-          # Hatch baseline: current uv build-system plus exact stub-only tree, no Hatch override.
+          capture_control() {
+            local result_var="$1"
+            local label="$2"
+            local dir="$3"
+            local status
+            if build_case "$label" "$dir"; then
+              status=0
+            else
+              status=$?
+            fi
+            printf -v "$result_var" '%s' "$status"
+          }
+
           d="$root/hatch-default"
           make_tree "$d"
           cat > "$d/pyproject.toml" <<'TOML'
@@ -102,9 +116,8 @@ jobs:
           build-backend = "hatchling.build"
           TOML
           prepare_backend "$d" 'hatchling'
-          set +e; build_case hatch-default "$d"; hatch_default=$?; set -e
+          capture_control hatch_default hatch-default "$d"
 
-          # Hatch explicit package selection supplied in the maintainer guidance.
           d="$root/hatch-explicit"
           make_tree "$d"
           cat > "$d/pyproject.toml" <<'TOML'
@@ -125,7 +138,6 @@ jobs:
           build_case hatch-explicit "$d"
           unzip -Z1 "$d"/dist/*.whl | grep -Fxq 'foo-stubs/__init__.pyi'
 
-          # Poetry baseline: current uv build-system, no package declaration.
           d="$root/poetry-default"
           make_tree "$d"
           cat > "$d/pyproject.toml" <<'TOML'
@@ -140,9 +152,8 @@ jobs:
           build-backend = "poetry.core.masonry.api"
           TOML
           prepare_backend "$d" 'poetry-core>=2,<3'
-          set +e; build_case poetry-default "$d"; poetry_default=$?; set -e
+          capture_control poetry_default poetry-default "$d"
 
-          # Poetry maintainer declaration without from=src: required control.
           d="$root/poetry-no-from"
           make_tree "$d"
           cat > "$d/pyproject.toml" <<'TOML'
@@ -160,9 +171,8 @@ jobs:
           packages = [{ include = "foo-stubs" }]
           TOML
           prepare_backend "$d" 'poetry-core>=2,<3'
-          set +e; build_case poetry-no-from "$d"; poetry_no_from=$?; set -e
+          capture_control poetry_no_from poetry-no-from "$d"
 
-          # Poetry exact src-layout form from Poetry Core's own PEP 561 fixture.
           d="$root/poetry-from-src"
           make_tree "$d"
           cat > "$d/pyproject.toml" <<'TOML'
@@ -183,7 +193,6 @@ jobs:
           build_case poetry-from-src "$d"
           unzip -Z1 "$d"/dist/*.whl | grep -Fxq 'foo-stubs/__init__.pyi'
 
-          # Flit current UV constraint: the <4 row is expected to lack stub-package support.
           d="$root/flit-current"
           make_tree "$d"
           cat > "$d/pyproject.toml" <<'TOML'
@@ -198,9 +207,8 @@ jobs:
           build-backend = "flit_core.buildapi"
           TOML
           prepare_backend "$d" 'flit_core>=3.2,<4'
-          set +e; build_case flit-current-lt4 "$d"; flit_current=$?; set -e
+          capture_control flit_current flit-current-lt4 "$d"
 
-          # Flit 4 control: PR 742 support, same project and source tree, no backend-specific config.
           d="$root/flit-4"
           make_tree "$d"
           cat > "$d/pyproject.toml" <<'TOML'
