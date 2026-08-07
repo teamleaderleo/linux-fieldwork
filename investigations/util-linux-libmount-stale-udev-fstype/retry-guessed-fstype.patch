@@ -15,6 +15,16 @@ diff --git a/libmount/src/mountP.h b/libmount/src/mountP.h
 diff --git a/libmount/src/context.c b/libmount/src/context.c
 --- a/libmount/src/context.c
 +++ b/libmount/src/context.c
+@@ -1,3 +1,10 @@
+ int mnt_context_set_fstype(struct libmnt_context *cxt, const char *fstype)
+ {
+-	return mnt_fs_set_fstype(mnt_context_get_fs(cxt), fstype);
++	int rc = mnt_fs_set_fstype(mnt_context_get_fs(cxt), fstype);
++
++	if (rc == 0)
++		cxt->flags &= ~MNT_FL_FSTYPE_GUESSED;
++	return rc;
+ }
 @@ -1,5 +1,6 @@
  	rc = mnt_context_guess_srcpath_fstype(cxt, &type);
 -	if (rc == 0 && type)
@@ -27,7 +37,7 @@ diff --git a/libmount/src/context.c b/libmount/src/context.c
 diff --git a/libmount/src/context_mount.c b/libmount/src/context_mount.c
 --- a/libmount/src/context_mount.c
 +++ b/libmount/src/context_mount.c
-@@ -1,10 +1,27 @@
+@@ -1,10 +1,29 @@
  	/* mount stage */
  	type = mnt_fs_get_fstype(cxt->fs);
  	if (type) {
@@ -52,6 +62,8 @@ diff --git a/libmount/src/context_mount.c b/libmount/src/context_mount.c
 +				"guessed FS type '%s' failed, retrying directly probed type '%s'",
 +				type, direct_type));
 +			res = do_mount(cxt, direct_type);
++			if (res == 0)
++				cxt->flags &= ~MNT_FL_FSTYPE_GUESSED;
 +		}
 +		free(direct_type);
 +	}
