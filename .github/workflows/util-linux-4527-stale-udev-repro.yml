@@ -1,0 +1,121 @@
+name: util-linux 4527 stale udev filesystem type
+
+on:
+  push:
+    branches:
+      - research/foundational-systems-deep-dive-2026-08-03
+    paths:
+      - .github/workflows/util-linux-4527-stale-udev-repro.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out current util-linux source
+        uses: actions/checkout@v4
+        with:
+          repository: util-linux/util-linux
+          ref: d26ad4d8c2f0b25c97cc860ea8b2059e65f54c5e
+          path: util-linux
+          persist-credentials: false
+
+      - name: Install build and filesystem tools
+        run: |
+          sudo add-apt-repository -y --no-update --enable-source
+          sudo apt-get update
+          sudo apt-get build-dep -y util-linux
+          sudo apt-get install -y --no-install-recommends \
+            meson ninja-build libsystemd-dev e2fsprogs udev
+
+      - name: Build mount with libmount udev support
+        working-directory: util-linux
+        run: |
+          set -euxo pipefail
+          meson setup build -Dbuild-libmount-udev-support=enabled
+          meson compile -C build mount
+          MOUNT_BIN="$(find build -type f -name mount -perm -111 -print -quit)"
+          test -n "$MOUNT_BIN"
+          echo "MOUNT_BIN=$PWD/$MOUNT_BIN" >>"$GITHUB_ENV"
+          "$MOUNT_BIN" --version
+
+      - name: Reproduce stale ext3 to ext4 type
+        shell: bash
+        run: |
+          set -euxo pipefail
+          IMG="$RUNNER_TEMP/libmount-stale-type.img"
+          MNT="$RUNNER_TEMP/libmount-stale-type.mnt"
+          LOG="$RUNNER_TEMP/libmount-stale-type.log"
+          truncate -s 256M "$IMG"
+          mkdir -p "$MNT"
+          LOOP="$(sudo losetup --find --show "$IMG")"
+          cleanup() {
+            set +e
+            mountpoint -q "$MNT" && sudo umount "$MNT"
+            sudo losetup -d "$LOOP"
+          }
+          trap cleanup EXIT
+
+          sudo mkfs.ext3 -F "$LOOP"
+          sudo udevadm trigger --action=change --name-match="$(basename "$LOOP")"
+          sudo udevadm settle
+          sudo udevadm info --query=property --name="$LOOP" | tee -a "$LOG"
+          test "$(sudo udevadm info --query=property --name="$LOOP" | sed -n 's/^ID_FS_TYPE=//p')" = ext3
+
+          sudo mkfs.ext4 -F "$LOOP"
+          test "$(sudo blkid -s TYPE -o value "$LOOP")" = ext4
+
+          echo '--- after mkfs.ext4, before settle ---' | tee -a "$LOG"
+          sudo udevadm info --query=property --name="$LOOP" | tee -a "$LOG"
+          test "$(sudo udevadm info --query=property --name="$LOOP" | sed -n 's/^ID_FS_TYPE=//p')" = ext3
+
+          echo '--- settle without new event ---' | tee -a "$LOG"
+          sudo udevadm settle
+          sudo udevadm info --query=property --name="$LOOP" | tee -a "$LOG"
+          test "$(sudo udevadm info --query=property --name="$LOOP" | sed -n 's/^ID_FS_TYPE=//p')" = ext3
+
+          echo '--- auto mount with stale udev TYPE ---' | tee -a "$LOG"
+          set +e
+          sudo env LIBMOUNT_DEBUG=all "$MOUNT_BIN" "$LOOP" "$MNT" >>"$LOG" 2>&1
+          AUTO_RC=$?
+          set -e
+          echo "auto_rc=$AUTO_RC" | tee -a "$LOG"
+          test "$AUTO_RC" -ne 0
+          ! mountpoint -q "$MNT"
+
+          echo '--- explicit ext4 control ---' | tee -a "$LOG"
+          sudo "$MOUNT_BIN" -t ext4 "$LOOP" "$MNT"
+          mountpoint -q "$MNT"
+          sudo umount "$MNT"
+
+          echo '--- explicit udev change event after ext4 ---' | tee -a "$LOG"
+          sudo udevadm trigger --action=change --name-match="$(basename "$LOOP")"
+          sudo udevadm settle
+          sudo udevadm info --query=property --name="$LOOP" | tee -a "$LOG"
+          test "$(sudo udevadm info --query=property --name="$LOOP" | sed -n 's/^ID_FS_TYPE=//p')" = ext4
+
+          echo '--- auto mount after udev refresh ---' | tee -a "$LOG"
+          sudo "$MOUNT_BIN" "$LOOP" "$MNT"
+          mountpoint -q "$MNT"
+          sudo umount "$MNT"
+
+          cp "$LOG" util-linux-4527-receipt.txt
+
+      - name: Upload receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: util-linux-4527-stale-udev-${{ github.run_id }}-${{ github.run_attempt }}
+          path: util-linux-4527-receipt.txt
+          if-no-files-found: warn
+          retention-days: 7
