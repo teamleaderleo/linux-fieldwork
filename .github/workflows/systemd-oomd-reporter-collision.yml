@@ -1,0 +1,175 @@
+name: Verify systemd-oomd reporter collision
+
+on:
+  pull_request:
+    paths:
+      - "investigations/systemd-oomd-reporter-collision/**"
+      - ".github/workflows/systemd-oomd-reporter-collision.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  PINNED_SYSTEMD: 6a863b4dc31adc49fdfdd5deba32ed1b115adda3
+
+jobs:
+  source-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact Linux Fieldwork head
+        uses: actions/checkout@v4
+
+      - name: Check out pinned systemd source
+        uses: actions/checkout@v4
+        with:
+          repository: systemd/systemd
+          ref: ${{ env.PINNED_SYSTEMD }}
+          path: upstream-systemd
+          fetch-depth: 1
+
+      - name: Verify source mechanism
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python3 -m py_compile \
+            investigations/systemd-oomd-reporter-collision/verify_source.py
+          python3 investigations/systemd-oomd-reporter-collision/verify_source.py \
+            upstream-systemd \
+            --output evidence/source-proof.json
+
+      - name: Verify retained regression patch
+        run: |
+          set -euo pipefail
+          patch_file="$GITHUB_WORKSPACE/investigations/systemd-oomd-reporter-collision/0001-test-preserve-system-registration-across-user-reload.patch"
+          git -C upstream-systemd apply --check --whitespace=error-all "$patch_file"
+          git -C upstream-systemd apply "$patch_file"
+          bash -n upstream-systemd/test/units/TEST-55-OOMD.sh
+          grep -F 'testcase_user_manager_reload_preserves_system_oomd_registration()' \
+            upstream-systemd/test/units/TEST-55-OOMD.sh
+          grep -F 'ActiveEnterTimestampMonotonic' \
+            upstream-systemd/test/units/TEST-55-OOMD.sh
+          grep -F 'systemctl --machine "testuser@.host" --user daemon-reload' \
+            upstream-systemd/test/units/TEST-55-OOMD.sh
+          git -C upstream-systemd diff --check
+          git -C upstream-systemd diff -- \
+            test/units/TEST-55-OOMD.sh > evidence/regression.diff
+
+      - name: Record exact execution identity
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          upstream = subprocess.run(
+              ["git", "-C", "upstream-systemd", "rev-parse", "HEAD"],
+              check=True,
+              text=True,
+              stdout=subprocess.PIPE,
+          ).stdout.strip()
+          record = {
+              "schema_version": 2,
+              "linux_fieldwork_head": os.environ["GITHUB_SHA"],
+              "systemd_head": upstream,
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "source_proof": "source-proof.json",
+              "regression_diff": "regression.diff",
+              "runtime_vm_executed": False,
+              "controlled_fork_pr": "teamleaderleo/systemd#1",
+              "controlled_fork_branch": "linux-fieldwork/oomd-reporter-collision-current-main",
+              "authority": "internal Linux Fieldwork investigation; no upstream contact",
+          }
+          pathlib.Path("evidence/receipt.json").write_text(
+              json.dumps(record, indent=2) + "\n", encoding="utf-8"
+          )
+          print(json.dumps(record, indent=2))
+          PY
+
+      - name: Upload source and regression evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: systemd-oomd-reporter-collision-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  artifact-receipt:
+    needs: source-proof
+    if: ${{ always() && needs.source-proof.result != 'cancelled' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download exact evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: systemd-oomd-reporter-collision-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence
+
+      - name: Validate exact source and execution identity
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          def require(condition: bool, message: str) -> None:
+              if not condition:
+                  raise SystemExit(message)
+
+          source = json.loads(pathlib.Path("evidence/source-proof.json").read_text(encoding="utf-8"))
+          receipt = json.loads(pathlib.Path("evidence/receipt.json").read_text(encoding="utf-8"))
+          diff = pathlib.Path("evidence/regression.diff").read_text(encoding="utf-8")
+
+          require(source.get("schema_version") == 2, "unsupported source-proof schema")
+          require(
+              source.get("systemd_revision")
+              == "6a863b4dc31adc49fdfdd5deba32ed1b115adda3",
+              "source proof used an unexpected systemd revision",
+          )
+          require(
+              source.get("source_blobs", {}).get("test")
+              == "43937c6ec7877df23f66ccd3827a1b6f154943ff",
+              "source proof used an unexpected TEST-55-OOMD blob",
+          )
+          chain = source.get("demonstrated_source_chain", {})
+          required = {
+              "user_manager_root_from_own_pid_cgroup",
+              "root_slice_uses_manager_cgroup_root",
+              "managed_oom_defaults_to_auto",
+              "unit_load_publishes_managed_oom_update",
+              "user_manager_sends_all_managed_oom_properties",
+              "oomd_auto_removes_by_path_without_reporter_identity",
+          }
+          require(set(chain) == required, "source chain is incomplete or contains unknown keys")
+          require(all(value is True for value in chain.values()), "a source-chain proof is false")
+          require(
+              receipt.get("linux_fieldwork_head") == os.environ["GITHUB_SHA"],
+              "receipt does not match this Linux Fieldwork head",
+          )
+          require(
+              receipt.get("systemd_head")
+              == "6a863b4dc31adc49fdfdd5deba32ed1b115adda3",
+              "receipt does not match the pinned systemd head",
+          )
+          require(receipt.get("run_id") == os.environ["GITHUB_RUN_ID"], "run_id mismatch")
+          require(
+              receipt.get("run_attempt") == os.environ["GITHUB_RUN_ATTEMPT"],
+              "run_attempt mismatch",
+          )
+          require(receipt.get("runtime_vm_executed") is False, "source receipt overclaims VM execution")
+          require(
+              "testcase_user_manager_reload_preserves_system_oomd_registration" in diff,
+              "retained regression is absent from diff evidence",
+          )
+          print(source["inference"])
+          print(source["runtime_status"])
+          PY

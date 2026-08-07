@@ -1,0 +1,44 @@
+Controlled systemd fork run 30693755971, attempt 1
+Artifact 8817102322
+Artifact ZIP sha256 c5257b5e3f230722d50f4f2f8a5a98ff94fc2fdc2644deecd4e9de5cd07c5aa9
+
+Relevant exact guest-journal sequence for /user.slice/user-4711.slice/user@4711.service:
+
+[    9.523264] systemd[252] (user manager) sends ReportManagedOOMCGroups:
+  ManagedOOMSwap=auto
+  ManagedOOMMemoryPressure=auto
+  OOMRules=auto
+
+[    9.526873] systemd[1] sends its continued subscription update:
+  ManagedOOMSwap=auto
+  ManagedOOMMemoryPressure=kill
+  limit=2147483648 (50% in the uint32 scale)
+  OOMRules=auto
+
+[    9.527279] systemd-oomd[387] receives the PID 1 update with pressure=kill.
+
+[    9.552473] systemd-oomd[387] receives the user-manager method call with pressure=auto.
+
+The user-manager AUTO therefore reaches the receive path 25.194 ms after the PID 1 KILL update and removes the shared path from the effective hashmap.
+
+[   10.524699] the +1 second oomctl lookup returns an empty block.
+
+Controls:
+  ActiveEnterTimestampMonotonic before=6615081 after=6615081
+  NRestarts before=0 after=0
+  ManagedOOMMemoryPressure before=kill after=kill
+
+Final marker:
+  FIELDWORK_OOMD_REPORTER_COLLISION=REPRODUCED
+
+File digests from the downloaded artifact:
+  receipt.json          sha256 647d9312a372f4b48105f76249bbfcef0cfae1e482da7a98dedbedf6c43dceae
+  regression.diff       sha256 057b19dd2a184e411ff6454eddda9c38ed98159f0440382ad564365da6bc0ea4
+  meson-test.txt        sha256 eba222a6789fa578c84caf2712174e55c655cfbc514bb4c85ebc5bd8e9284156
+  guest-journal.txt     sha256 65ab299cf8b03024d8a995d35317da3fbb1e5851f5a188818c7d8a13e94e6d7f
+  test-exit-status.txt  sha256 4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865
+
+Identity note:
+The pull_request workflow checked out GitHub's synthetic merge commit ef608bce10e19f55ff355ec893945ec77bd09ab6, whose base parent is canonical systemd main 6a863b4dc31adc49fdfdd5deba32ed1b115adda3 and whose head contribution contains only the two Fieldwork workflow/injector files. The receipt accurately records the merge SHA. Future focused runs must explicitly check out the pull-request head SHA to remove this ambiguity.
+
+Authority: internal work in teamleaderleo-owned repositories only; no upstream contact.
