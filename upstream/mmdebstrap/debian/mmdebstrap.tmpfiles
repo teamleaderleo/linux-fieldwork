@@ -1,2 +1,0 @@
-# prevent files in the chroot with a too old mtime from being cleaned up
-x /tmp/mmdebstrap.*

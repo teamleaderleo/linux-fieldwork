@@ -1,5 +1,0 @@
-comparison=converged
-clean_snapshot_sha256=b199b05808890cf48df92060f29f30d461e7193c94f646ed5d172fbf998504c0
-after_state_snapshot_sha256=b199b05808890cf48df92060f29f30d461e7193c94f646ed5d172fbf998504c0
-diff_bytes=0
-registry_lines=1

@@ -1,0 +1,139 @@
+name: systemd vmspawn guest-visible bind isolated runtime
+
+on:
+  pull_request:
+    branches:
+      - automation/vmspawn-guest-bind-runtime-base-20260808
+    paths:
+      - .github/vmspawn-guest-bind-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  guest-visible-bind:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+
+    steps:
+      - name: Check out exact systemd repair branch
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/systemd
+          ref: repair/vmspawn-unmapped-bind-userns-2dd0706
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: systemd/mkosi@f7762b71437227922a367bb89597843c77494ef9
+
+      - name: Install host filesystem tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends btrfs-progs
+
+      - name: Free disk space
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo mv /usr/local /usr/local.trash
+          sudo mv /opt/hostedtoolcache /opt/hostedtoolcache.trash
+          sudo systemd-run rm -rf /usr/local.trash /opt/hostedtoolcache.trash
+
+      - name: Prepare compressed build workspace
+        shell: bash
+        run: |
+          set -euxo pipefail
+          truncate --size=100G btrfs.raw
+          mkfs.btrfs btrfs.raw
+          sudo mkdir -p /mnt/mkosi
+          LOOP="$(sudo losetup --find --show --direct-io=on btrfs.raw)"
+          rm -f btrfs.raw
+          sudo mount "$LOOP" /mnt/mkosi --options compress=zstd:1,user_subvol_rm_allowed,noatime,discard=async,space_cache=v2
+          sudo chown "$(id -u):$(id -g)" /mnt/mkosi
+          mkdir -p /mnt/mkosi/tmp
+          ln -sf /mnt/mkosi/build build
+
+      - name: Configure current Arch test image
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat >mkosi/mkosi.local.conf <<'EOF'
+          [Distribution]
+          Distribution=arch
+          Release=rolling
+
+          [Output]
+          Format=disk
+
+          [Build]
+          UseSubvolumes=yes
+          ToolsTreeDistribution=arch
+          ToolsTreeRelease=rolling
+          WithTests=yes
+          WorkspaceDirectory=/mnt/mkosi/tmp
+          PackageCacheDirectory=/mnt/mkosi/tmp/cache
+          Environment=
+                  CFLAGS="-Og"
+                  MESON_OPTIONS=--werror
+                  LLVM=0
+                  SYSEXT=1
+
+          [Runtime]
+          RAM=4G
+          EOF
+
+      - name: Build tools tree and test image
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkosi --debug genkey
+          sudo mkosi -f box -- true
+          sudo mkosi box -- \
+            meson setup \
+            --buildtype=debugoptimized \
+            -Dbpf-framework=disabled \
+            build
+          sudo mkosi box -- meson compile -C build mkosi
+
+      - name: Verify guest proof is installed in TEST-87
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -x test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
+          grep -F 'vmspawn ordinary-user bind is readable and writable inside the guest' \
+            test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
+          test -e build/mkosi.output/minimal_0.raw || find build -name minimal_0.raw -print -quit | grep .
+
+      - name: Run TEST-87 only
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo mkosi box -- \
+            env \
+            TEST_PREFER_QEMU=1 \
+            TEST_NO_QEMU=0 \
+            TEST_NO_KVM=1 \
+            TEST_RUNNER=isolated-linux-fieldwork \
+            meson test \
+            -C build \
+            --timeout-multiplier=2 \
+            --no-rebuild \
+            --setup=integration \
+            --suite=integration-tests \
+            --print-errorlogs \
+            --no-stdsplit \
+            --num-processes=1 \
+            TEST-87-AUX-UTILS-VM
+
+      - name: Upload focused logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmspawn-guest-visible-bind-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/meson-logs/testlog.txt
+            build/test/journal/*.journal
+          if-no-files-found: warn
+          retention-days: 7

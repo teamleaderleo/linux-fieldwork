@@ -1,3 +1,0 @@
-version=4
-opts=filenamemangle=s{.*/(.*)}{@PACKAGE@-$1} \
-https://gitlab.mister-muffin.de/josch/@PACKAGE@/tags /josch/@PACKAGE@/archive/([0-9.]+)\.tar\.gz
