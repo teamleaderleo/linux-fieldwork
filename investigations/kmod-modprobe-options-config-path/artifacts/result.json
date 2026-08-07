@@ -1,0 +1,154 @@
+{
+  "cases": [
+    {
+      "config_dir": "$TMP/no_space/confdir",
+      "direct": {
+        "argv": [
+          "/usr/sbin/modprobe",
+          "-C",
+          "$TMP/no_space/confdir",
+          "-c"
+        ],
+        "marker_count": 1,
+        "status": 0,
+        "stderr": "",
+        "stdout": "blacklist lf_no_space_marker\ninstall lf_outer_no_space $TMP/no_space/helper.sh\noptions systemd unified_cgroup_hierarchy=1\n\n# End of configuration files. Dumping indexes now:\n\n"
+      },
+      "label": "no_space",
+      "marker": "lf_no_space_marker",
+      "nested": {
+        "marker_count": 1,
+        "modprobe_options": "-C $TMP/no_space/confdir",
+        "nested_status": 0,
+        "nested_stderr": "",
+        "nested_stdout": "blacklist lf_no_space_marker\ninstall lf_outer_no_space $TMP/no_space/helper.sh\noptions systemd unified_cgroup_hierarchy=1\n\n# End of configuration files. Dumping indexes now:\n\n"
+      },
+      "outer": {
+        "argv": [
+          "/usr/sbin/modprobe",
+          "-C",
+          "$TMP/no_space/confdir",
+          "lf_outer_no_space"
+        ],
+        "status": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    {
+      "config_dir": "$TMP/space/conf dir",
+      "direct": {
+        "argv": [
+          "/usr/sbin/modprobe",
+          "-C",
+          "$TMP/space/conf dir",
+          "-c"
+        ],
+        "marker_count": 1,
+        "status": 0,
+        "stderr": "",
+        "stdout": "blacklist lf_space_marker\ninstall lf_outer_space $TMP/space/helper.sh\noptions systemd unified_cgroup_hierarchy=1\n\n# End of configuration files. Dumping indexes now:\n\n"
+      },
+      "label": "space",
+      "marker": "lf_space_marker",
+      "nested": {
+        "marker_count": 0,
+        "modprobe_options": "-C $TMP/space/conf dir",
+        "nested_status": 0,
+        "nested_stderr": "",
+        "nested_stdout": "options systemd unified_cgroup_hierarchy=1\n\n# End of configuration files. Dumping indexes now:\n\n"
+      },
+      "outer": {
+        "argv": [
+          "/usr/sbin/modprobe",
+          "-C",
+          "$TMP/space/conf dir",
+          "lf_outer_space"
+        ],
+        "status": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    }
+  ],
+  "environment": {
+    "euid": 0,
+    "modprobe": "/usr/sbin/modprobe",
+    "uname": {
+      "argv": [
+        "uname",
+        "-srmo"
+      ],
+      "status": 0,
+      "stderr": "",
+      "stdout": "Linux 6.12.13 x86_64 GNU/Linux\n"
+    },
+    "version": {
+      "argv": [
+        "/usr/sbin/modprobe",
+        "--version"
+      ],
+      "status": 0,
+      "stderr": "",
+      "stdout": "kmod version 34.2\n+ZSTD +XZ -ZLIB +OPENSSL\n"
+    }
+  },
+  "parser_controls": {
+    "leading_and_repeated_spaces": {
+      "argv": [
+        "/usr/sbin/modprobe",
+        "-c"
+      ],
+      "marker_count": 0,
+      "modprobe_options": "  -C   '$TMP/parser conf'  ",
+      "status": 0,
+      "stderr": "",
+      "stdout": "options systemd unified_cgroup_hierarchy=1\n\n# End of configuration files. Dumping indexes now:\n\n"
+    },
+    "normal_single_quotes": {
+      "argv": [
+        "/usr/sbin/modprobe",
+        "-c"
+      ],
+      "marker_count": 1,
+      "modprobe_options": "-C '$TMP/parser conf'",
+      "status": 0,
+      "stderr": "",
+      "stdout": "blacklist lf_parser_marker\noptions systemd unified_cgroup_hierarchy=1\n\n# End of configuration files. Dumping indexes now:\n\n"
+    },
+    "tab_separator": {
+      "argv": [
+        "/usr/sbin/modprobe",
+        "-c"
+      ],
+      "marker_count": 0,
+      "modprobe_options": "-C\t$TMP/parser conf",
+      "status": 0,
+      "stderr": "",
+      "stdout": "options systemd unified_cgroup_hierarchy=1\n\n# End of configuration files. Dumping indexes now:\n\n"
+    },
+    "unmatched_quote": {
+      "argv": [
+        "/usr/sbin/modprobe",
+        "-c"
+      ],
+      "marker_count": 0,
+      "modprobe_options": "-C '$TMP/parser conf",
+      "status": 0,
+      "stderr": "",
+      "stdout": "options systemd unified_cgroup_hierarchy=1\n\n# End of configuration files. Dumping indexes now:\n\n"
+    }
+  },
+  "quoted_env_control": {
+    "argv": [
+      "/usr/sbin/modprobe",
+      "-c"
+    ],
+    "config_dir": "$TMP/quoted env conf",
+    "marker_count": 1,
+    "modprobe_options": "-C '$TMP/quoted env conf'",
+    "status": 0,
+    "stderr": "",
+    "stdout": "blacklist lf_quoted_env_marker\noptions systemd unified_cgroup_hierarchy=1\n\n# End of configuration files. Dumping indexes now:\n\n"
+  }
+}

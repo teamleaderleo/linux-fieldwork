@@ -51,6 +51,18 @@ targets:
       - rootless-execution
       - filesystems-images
 
+  kmod:
+    title: kmod
+    state: active
+    canonical_repository: https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git
+    mirror_repository: https://github.com/kmod-project/kmod.git
+    map_path: targets/kmod/map.md
+    programmes:
+      - services-resources
+      - security-networking
+      - boot-kernel
+      - ecosystem-contributions
+
   reproducible-builds:
     title: Reproducible Builds toolchain and guidance
     state: inbox
