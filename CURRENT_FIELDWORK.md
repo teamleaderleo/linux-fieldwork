@@ -8,22 +8,26 @@ This is the live operational board for the strongest current investigations. Det
 
 ### Cloud Hypervisor — API shutdown lifecycle event gates
 
-**State:** runtime-proven; clean one-commit candidate ready in the fork.
+**State:** runtime-proven; rebuilt as a current-upstream, one-commit submission candidate.
 
 - Canonical issue: `cloud-hypervisor/cloud-hypervisor#8046`
 - Diagnostic branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/api-shutdown-events`
 - Clean branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/api-shutdown-events-clean`
 - Internal evidence PR: `teamleaderleo/cloud-hypervisor#1`
+- Internal clean PR: `teamleaderleo/cloud-hypervisor#4`
+- Current canonical/fork-main base: `538237492941914440eec589ae4d2bfe33f7f108`
+- Clean commit: `89a6e754d0a2758918411b1229ed28a990fd849b`
 - Runtime workflow/job: `30953976821` / `92176887306`
-- Packaging workflow: `31046745930` — focused gate and clean materialization both succeeded
 - Runtime artifact: `8915262953`
 - Artifact digest: `sha256:eed3ebbca87dba9fa11801d12ea69a3cc57fa137f00a33dc4542dbbd9addec3b`
 
 All four real KVM selectors passed: HTTP shutdown, HTTP delete/create/boot, D-Bus shutdown, and D-Bus delete/create/boot.
 
-The clean branch is exactly one signed-off commit ahead of canonical snapshot `ae04fa80b2e0e52b7a9f4b3fd4239698df586673`. It changes only `cloud-hypervisor/tests/common/tests_wrappers.rs`: 26 additions, 17 deletions. No workflow, handoff, or `linux-fieldwork/` files are in the candidate diff.
+The fork `main` is synced to current canonical main. The clean branch is exactly one commit ahead, zero behind, and changes only `cloud-hypervisor/tests/common/tests_wrappers.rs`: 26 additions, 17 deletions. No workflow, handoff, or `linux-fieldwork/` files are in the candidate diff.
 
-The broad CI red on the diagnostic PR is laboratory-history noise: DCO/gitlint/REUSE reject the many unsigned diagnostic commits and research files. Build, formatting, clippy, fuzz-build, package consistency, and architecture build jobs were green. Judge the contribution from the clean branch plus the KVM proof, not from the diagnostic PR's history checks.
+Submission hygiene is now present in the clean commit: valid `tests:` component, wrapped explanatory body, `Fixes #8046`, `Assisted-by: ChatGPT:GPT-5.6 Thinking`, and DCO `Signed-off-by: leo03164 <leo03164@gmail.com>`.
+
+Internal clean PR #4 is mergeable against synced fork `main`. Its latest CI event `31134701463` is `action_required` with no jobs, i.e. a GitHub workflow-approval state rather than a test failure. The previously established focused compile and real-KVM runtime evidence remains green for the same source transformation.
 
 ### BuildKit — rootless/rootful reproducibility
 
