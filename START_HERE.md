@@ -140,3 +140,7 @@ For a merge or upstream decision, say what the reviewer is choosing and which ex
 ## Upstream contact
 
 Programme, lane, target, research, note, and investigation records grant no authority to contact maintainers. External issues, email, merge requests, patches, comments, and reviews require a deliberate decision.
+
+Before posting or editing any GitHub interaction surface in a controlled repository — including internal fork pull-request titles or bodies, issue comments, reviews, and discussions — convert third-party GitHub issue, pull-request, discussion, and commit references to `https://redirect.github.com/...`. Do not use direct `https://github.com/OWNER/REPO/issues/...` or `.../pull/...` links, and do not use bare `OWNER/REPO#123` shorthand merely to cite evidence: those forms can create upstream timeline backlinks even when the interaction itself is in a controlled fork.
+
+If a direct third-party reference is posted accidentally, edit the originating controlled-repository interaction surface to redirect form immediately. Repository files may still use direct third-party links because they do not create GitHub issue or pull-request cross-reference events. See [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md#external-github-backlinks) for the full rule.
