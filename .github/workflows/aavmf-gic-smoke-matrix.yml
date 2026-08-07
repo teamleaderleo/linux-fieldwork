@@ -1,0 +1,137 @@
+name: Probe AAVMF GIC boot matrix
+
+on:
+  pull_request:
+    paths:
+      - "investigations/aavmf-gic-smoke-matrix/**"
+      - "tests/test_aavmf_gic_smoke_matrix.py"
+      - ".github/workflows/aavmf-gic-smoke-matrix.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact Linux Fieldwork head
+        uses: actions/checkout@v4
+
+      - name: Install pinned Determinate Nix v3.21.9
+        uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858
+
+      - name: Validate runner and Nix expression
+        run: |
+          python3 -m py_compile \
+            investigations/aavmf-gic-smoke-matrix/run_matrix.py \
+            tests/test_aavmf_gic_smoke_matrix.py
+          python3 -m unittest tests.test_aavmf_gic_smoke_matrix -v
+          nix-instantiate --parse \
+            investigations/aavmf-gic-smoke-matrix/case.nix >/dev/null
+
+      - name: Run exact firmware and GIC matrix
+        run: |
+          python3 investigations/aavmf-gic-smoke-matrix/run_matrix.py \
+            --results \
+            "$GITHUB_WORKSPACE/evidence/aavmf-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --build-timeout 2400 \
+            --case-timeout 120 \
+            --qemu-timeout 60
+
+      - name: Upload all firmware, QEMU, and capability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aavmf-gic-smoke-matrix-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/aavmf-${{ github.run_id }}-${{ github.run_attempt }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  artifact-receipt:
+    needs: matrix
+    if: ${{ always() && needs.matrix.result != 'cancelled' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download exact matrix evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: aavmf-gic-smoke-matrix-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence
+
+      - name: Validate exact provenance and classification contract
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          def require(condition: bool, message: str) -> None:
+              if not condition:
+                  raise SystemExit(message)
+
+          summaries = list(pathlib.Path("evidence").rglob("summary.json"))
+          require(len(summaries) == 1, f"expected one summary, found {summaries!r}")
+          summary = json.loads(summaries[0].read_text(encoding="utf-8"))
+          require(summary.get("schema_version") == 1, "unsupported summary schema")
+          require(summary.get("host_system") == "x86_64-linux", "unexpected host system")
+          require(summary.get("guest_system") == "aarch64-linux", "unexpected guest system")
+          require(summary.get("accelerator") == "tcg", "matrix did not use TCG")
+          require(
+              summary.get("gic_modes") == ["default", "2", "3", "max"],
+              "unexpected GIC mode set",
+          )
+          require(
+              summary.get("qemu_revision")
+              == "396e6226eab2fd092b1690abcd33ea522fde16dc",
+              "unexpected QEMU revision",
+          )
+          require(
+              summary.get("firmware_revisions")
+              == {
+                  "known-good": "d41f19d0a8017b17cc4d527938bcf94a3e0b0a81",
+                  "known-bad": "45788a75f5dbf0f449f6168b2fd647d49135e841",
+                  "current": "396e6226eab2fd092b1690abcd33ea522fde16dc",
+              },
+              "unexpected firmware revisions",
+          )
+          actions = summary.get("github_actions", {})
+          require(actions.get("run_id") == os.environ["GITHUB_RUN_ID"], "run_id mismatch")
+          require(
+              actions.get("run_attempt") == os.environ["GITHUB_RUN_ATTEMPT"],
+              "run_attempt mismatch",
+          )
+          require(actions.get("head_sha") == os.environ["GITHUB_SHA"], "head_sha mismatch")
+          require(len(summary.get("builds", [])) == 3, "missing firmware build records")
+          classifications = summary.get("classifications", {})
+          require(
+              set(classifications) == {"known-good", "known-bad", "current"},
+              "classification set is incomplete",
+          )
+          controls = summary.get("controls", {})
+          if summary.get("valid_environment") is True:
+              require(len(summary.get("cases", [])) == 12, "valid matrix lacks twelve cases")
+              require(controls.get("all_builds_succeeded") is True, "valid matrix has a build failure")
+              require(
+                  controls.get("known_good_default_passed") is True,
+                  "valid matrix lacks the known-good control",
+              )
+              require(
+                  controls.get("no_infrastructure_timeout") is True,
+                  "valid matrix has an infrastructure timeout",
+              )
+          print(f"valid_environment={summary['valid_environment']}")
+          print(
+              "tcg_reproduces_reported_boundary="
+              f"{summary['tcg_reproduces_reported_boundary']}"
+          )
+          for label, classification in classifications.items():
+              print(f"{label}={classification}")
+          PY
