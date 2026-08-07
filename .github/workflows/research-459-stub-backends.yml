@@ -1,0 +1,205 @@
+name: Research 459 stub backend matrix
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/research-459-stub-backends.yml
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install exact UV release
+        run: |
+          python -m pip install 'uv==0.12.3'
+          uv --version
+      - name: Execute wheel-content matrix
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ROOT="$RUNNER_TEMP/stub-matrix"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+
+          version() {
+            req="$1"
+            dist="$2"
+            uv run --no-project --with "$req" python - "$dist" <<'PY'
+          import importlib.metadata, sys
+          print(f"RESOLVED {sys.argv[1]}={importlib.metadata.version(sys.argv[1])}")
+          PY
+          }
+
+          inspect() {
+            label="$1"
+            wheel=$(find "$ROOT/$label/dist" -maxdepth 1 -name '*.whl' -print -quit)
+            python - "$label" "$wheel" <<'PY'
+          import sys, zipfile
+          label, wheel = sys.argv[1:]
+          with zipfile.ZipFile(wheel) as zf:
+              names = sorted(zf.namelist())
+          print(f"WHEEL {label} {wheel}")
+          for name in names:
+              print(f"  {name}")
+          wanted = "foo-stubs/__init__.pyi"
+          print(f"HAS_STUB {label} {wanted in names}")
+          PY
+          }
+
+          make_base() {
+            label="$1"
+            mkdir -p "$ROOT/$label/src/foo-stubs"
+            printf '%s\n' 'def answer() -> int: ...' > "$ROOT/$label/src/foo-stubs/__init__.pyi"
+          }
+
+          version 'pdm-backend' 'pdm-backend'
+          version 'setuptools>=61' 'setuptools'
+          version 'scikit-build-core>=0.12' 'scikit-build-core'
+          version 'maturin>=1.0,<2.0' 'maturin'
+
+          # PDM: exact UV build-system config, stub-only src tree.
+          make_base pdm
+          cat > "$ROOT/pdm/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["pdm-backend"]
+          build-backend = "pdm.backend"
+          TOML
+          (cd "$ROOT/pdm" && uv build --wheel --out-dir dist -v)
+          inspect pdm
+
+          # Setuptools: exact UV range, then lower/pre-69 discriminator and repairs.
+          make_base setuptools-current
+          cat > "$ROOT/setuptools-current/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["setuptools>=61"]
+          build-backend = "setuptools.build_meta"
+          TOML
+          (cd "$ROOT/setuptools-current" && uv build --wheel --out-dir dist -v)
+          inspect setuptools-current
+
+          make_base setuptools-68
+          cat > "$ROOT/setuptools-68/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["setuptools==68.2.2"]
+          build-backend = "setuptools.build_meta"
+          TOML
+          (cd "$ROOT/setuptools-68" && uv build --wheel --out-dir dist -v)
+          inspect setuptools-68
+
+          make_base setuptools-68-config
+          cat > "$ROOT/setuptools-68-config/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          requires-python = ">=3.9"
+
+          [tool.setuptools.package-data]
+          "*" = ["*.pyi"]
+
+          [build-system]
+          requires = ["setuptools==68.2.2"]
+          build-backend = "setuptools.build_meta"
+          TOML
+          (cd "$ROOT/setuptools-68-config" && uv build --wheel --out-dir dist -v)
+          inspect setuptools-68-config
+
+          make_base setuptools-69
+          cat > "$ROOT/setuptools-69/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["setuptools==69.0.0"]
+          build-backend = "setuptools.build_meta"
+          TOML
+          (cd "$ROOT/setuptools-69" && uv build --wheel --out-dir dist -v)
+          inspect setuptools-69
+
+          # Scikit-build-core capability: no CMake, explicitly copy stub package.
+          make_base scikit-explicit
+          cat > "$ROOT/scikit-explicit/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          requires-python = ">=3.9"
+
+          [tool.scikit-build]
+          minimum-version = "build-system.requires"
+          wheel.cmake = false
+          wheel.packages = ["src/foo-stubs"]
+
+          [build-system]
+          requires = ["scikit-build-core>=0.12", "pybind11>=3"]
+          build-backend = "scikit_build_core.build"
+          TOML
+          (cd "$ROOT/scikit-explicit" && uv build --wheel --out-dir dist -v)
+          inspect scikit-explicit
+
+          # Scikit exact UV backend contract with the stub-only tree and no CMake project.
+          make_base scikit-uv-contract
+          cat > "$ROOT/scikit-uv-contract/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          requires-python = ">=3.9"
+
+          [tool.scikit-build]
+          minimum-version = "build-system.requires"
+
+          [tool.uv]
+          cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.{h,c,hpp,cpp}" }, { file = "CMakeLists.txt" }]
+
+          [build-system]
+          requires = ["scikit-build-core>=0.12", "pybind11>=3"]
+          build-backend = "scikit_build_core.build"
+          TOML
+          set +e
+          (cd "$ROOT/scikit-uv-contract" && uv build --wheel --out-dir dist -v) >"$ROOT/scikit-uv-contract/build.log" 2>&1
+          code=$?
+          set -e
+          echo "BUILD_EXIT scikit-uv-contract $code"
+          cat "$ROOT/scikit-uv-contract/build.log"
+
+          # Maturin exact UV build-system range with no Rust project: expected unsupported failure.
+          make_base maturin-uv-contract
+          cat > "$ROOT/maturin-uv-contract/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          requires-python = ">=3.9"
+
+          [build-system]
+          requires = ["maturin>=1.0,<2.0"]
+          build-backend = "maturin"
+          TOML
+          set +e
+          (cd "$ROOT/maturin-uv-contract" && uv build --wheel --out-dir dist -v) >"$ROOT/maturin-uv-contract/build.log" 2>&1
+          code=$?
+          set -e
+          echo "BUILD_EXIT maturin-uv-contract $code"
+          cat "$ROOT/maturin-uv-contract/build.log"
