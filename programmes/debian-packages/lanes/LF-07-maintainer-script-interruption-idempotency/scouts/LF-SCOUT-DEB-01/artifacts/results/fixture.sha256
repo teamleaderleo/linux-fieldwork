@@ -1,3 +1,0 @@
-bab96cd236e21b167f896174d3d5c110e71c9aa961684f856923e3e07a55ef73  ./DEBIAN/control
-6d6b7b94f85eca449d92bdd3230bae2538f5bf5cef4dc96b625e73063178a6a7  ./DEBIAN/postinst
-be8211213693fd7e1924f07e6bf7964e03f4b254058c547b7160017d6963d8e0  ./usr/share/lf-script-idempotency-fixture/payload.txt

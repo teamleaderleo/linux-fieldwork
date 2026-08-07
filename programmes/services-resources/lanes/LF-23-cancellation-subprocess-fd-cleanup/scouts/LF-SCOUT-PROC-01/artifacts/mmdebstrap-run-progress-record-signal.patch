@@ -1,9 +1,0 @@
-diff --git a/upstream/mmdebstrap/mmdebstrap b/upstream/mmdebstrap/mmdebstrap
---- a/upstream/mmdebstrap/mmdebstrap
-+++ b/upstream/mmdebstrap/mmdebstrap
-@@ -4909,6 +4909,7 @@ sub run_progress {
-     my $got_signal = 0;
-     my $ignore     = sub {
-+        $got_signal = $_[0] if !$got_signal;
-         info "run_progress() received signal $_[0]: waiting for child...";
-     };

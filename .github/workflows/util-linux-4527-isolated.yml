@@ -1,0 +1,143 @@
+name: util-linux 4527 isolated runtime
+
+on:
+  pull_request:
+    branches:
+      - automation/util-linux-4527-runtime-base-20260808
+    paths:
+      - .github/util-linux-4527-trigger
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce-stale-udev-type:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out current util-linux
+        uses: actions/checkout@v4
+        with:
+          repository: util-linux/util-linux
+          ref: d26ad4d8c2f0b25c97cc860ea8b2059e65f54c5e
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install build and filesystem tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo add-apt-repository -y --no-update --enable-source
+          sudo apt-get update
+          sudo apt-get build-dep -y util-linux
+          sudo apt-get install -y --no-install-recommends meson ninja-build libsystemd-dev e2fsprogs udev
+
+      - name: Build current mount with libmount udev support
+        shell: bash
+        run: |
+          set -euxo pipefail
+          meson setup build -Dbuild-libmount-udev-support=enabled
+          meson compile -C build mount
+          MOUNT_BIN="$(find build -type f -name mount -perm -111 -print -quit)"
+          test -n "$MOUNT_BIN"
+          echo "MOUNT_BIN=$PWD/$MOUNT_BIN" >>"$GITHUB_ENV"
+          "$MOUNT_BIN" --version
+
+      - name: Reproduce and classify
+        shell: bash
+        run: |
+          set -euxo pipefail
+          IMG="$RUNNER_TEMP/libmount-stale-type.img"
+          MNT="$RUNNER_TEMP/libmount-stale-type.mnt"
+          LOG="$RUNNER_TEMP/libmount-stale-type.log"
+          truncate -s 256M "$IMG"
+          mkdir -p "$MNT"
+          LOOP="$(sudo losetup --find --show "$IMG")"
+          cleanup() {
+            set +e
+            mountpoint -q "$MNT" && sudo umount "$MNT"
+            sudo losetup -d "$LOOP"
+          }
+          trap cleanup EXIT
+
+          if ! sudo udevadm control --ping; then
+            UDEVD="$(command -v systemd-udevd || true)"
+            [[ -n "$UDEVD" ]] || UDEVD=/lib/systemd/systemd-udevd
+            sudo "$UDEVD" --daemon
+          fi
+
+          trigger_change() {
+            sudo udevadm trigger --action=change --sysname-match="$(basename "$LOOP")"
+            sudo udevadm settle
+          }
+          udev_type() {
+            sudo udevadm info --query=property --name="$LOOP" | sed -n 's/^ID_FS_TYPE=//p'
+          }
+
+          sudo mkfs.ext3 -F "$LOOP"
+          trigger_change
+          TYPE_EXT3="$(udev_type)"
+          echo "initial_udev_type=$TYPE_EXT3" | tee -a "$LOG"
+          test "$TYPE_EXT3" = ext3
+
+          sudo mkfs.ext4 -F "$LOOP"
+          BLKID_TYPE="$(sudo blkid -s TYPE -o value "$LOOP")"
+          TYPE_AFTER_MKFS="$(udev_type)"
+          echo "blkid_after_ext4=$BLKID_TYPE" | tee -a "$LOG"
+          echo "udev_after_ext4=$TYPE_AFTER_MKFS" | tee -a "$LOG"
+          test "$BLKID_TYPE" = ext4
+
+          sudo udevadm settle
+          TYPE_AFTER_SETTLE="$(udev_type)"
+          echo "udev_after_settle_only=$TYPE_AFTER_SETTLE" | tee -a "$LOG"
+
+          set +e
+          sudo env LIBMOUNT_DEBUG=all "$MOUNT_BIN" "$LOOP" "$MNT" >>"$LOG" 2>&1
+          AUTO_RC=$?
+          set -e
+          echo "auto_mount_rc=$AUTO_RC" | tee -a "$LOG"
+          if mountpoint -q "$MNT"; then
+            AUTO_MOUNTED=1
+            sudo umount "$MNT"
+          else
+            AUTO_MOUNTED=0
+          fi
+          echo "auto_mounted=$AUTO_MOUNTED" | tee -a "$LOG"
+
+          sudo "$MOUNT_BIN" -t ext4 "$LOOP" "$MNT"
+          mountpoint -q "$MNT"
+          sudo umount "$MNT"
+          echo "explicit_ext4_control=pass" | tee -a "$LOG"
+
+          trigger_change
+          TYPE_AFTER_TRIGGER="$(udev_type)"
+          echo "udev_after_change_event=$TYPE_AFTER_TRIGGER" | tee -a "$LOG"
+          test "$TYPE_AFTER_TRIGGER" = ext4
+
+          sudo "$MOUNT_BIN" "$LOOP" "$MNT"
+          mountpoint -q "$MNT"
+          sudo umount "$MNT"
+          echo "auto_after_change_event=pass" | tee -a "$LOG"
+
+          if [[ "$TYPE_AFTER_MKFS" = ext3 && "$TYPE_AFTER_SETTLE" = ext3 && "$AUTO_RC" -ne 0 && "$AUTO_MOUNTED" -eq 0 ]]; then
+            echo "classification=CONFIRMED_STALE_UDEV_TYPE" | tee -a "$LOG"
+          elif [[ "$TYPE_AFTER_MKFS" = ext4 && "$AUTO_RC" -eq 0 && "$AUTO_MOUNTED" -eq 1 ]]; then
+            echo "classification=ENVIRONMENT_AUTO_REFRESHED_UDEV" | tee -a "$LOG"
+          else
+            echo "classification=UNEXPECTED_INTERMEDIATE_STATE" | tee -a "$LOG"
+            cat "$LOG"
+            exit 1
+          fi
+
+          cp "$LOG" "$GITHUB_WORKSPACE/util-linux-4527-receipt.txt"
+          cat "$GITHUB_WORKSPACE/util-linux-4527-receipt.txt"
+
+      - name: Upload receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: util-linux-4527-${{ github.run_id }}-${{ github.run_attempt }}
+          path: util-linux-4527-receipt.txt
+          if-no-files-found: warn
+          retention-days: 7

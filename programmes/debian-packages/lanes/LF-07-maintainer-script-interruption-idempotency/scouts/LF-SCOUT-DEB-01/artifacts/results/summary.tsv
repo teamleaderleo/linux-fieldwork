@@ -1,4 +1,0 @@
-point	first_rc	pre_recovery_status	recovery_rc	final_status	final_comparison	registry_lines	assertions
-after-state	1	install ok half-configured	0	install ok installed	converged	1	passed
-after-registry	1	install ok half-configured	0	install ok installed	diverged	2	passed
-after-config	1	install ok half-configured	0	install ok installed	diverged	2	passed

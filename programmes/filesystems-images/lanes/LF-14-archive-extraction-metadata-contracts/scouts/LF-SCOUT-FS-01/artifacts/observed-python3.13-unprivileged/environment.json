@@ -1,9 +1,0 @@
-{
-  "egid": 65534,
-  "euid": 65534,
-  "filesystem": "ext2/ext3 family",
-  "platform": "Linux",
-  "python": "3.13.5",
-  "tar": "tar (GNU tar) 1.35",
-  "tarfilter_boundary": "upstream/mmdebstrap/tarfilter parse/addfile rewrite path"
-}
