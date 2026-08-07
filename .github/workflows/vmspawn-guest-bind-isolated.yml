@@ -102,19 +102,25 @@ jobs:
         run: |
           set -euxo pipefail
           test -x test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
+          grep -F 'TEST-13-NSPAWN-container-template' test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
           grep -F 'vmspawn ordinary-user bind is readable and writable inside the guest' \
             test/units/TEST-87-AUX-UTILS-VM.vmspawn-user-bind.sh
-          test -e build/mkosi.output/minimal_0.raw || find build -name minimal_0.raw -print -quit | grep .
 
       - name: Run TEST-87 only
         shell: bash
         run: |
           set -euxo pipefail
+          if [[ -w /dev/kvm ]]; then
+            TEST_NO_KVM_VALUE=0
+          else
+            TEST_NO_KVM_VALUE=1
+          fi
+          echo "outer_TEST_NO_KVM=$TEST_NO_KVM_VALUE"
           sudo mkosi box -- \
             env \
             TEST_PREFER_QEMU=1 \
             TEST_NO_QEMU=0 \
-            TEST_NO_KVM=1 \
+            TEST_NO_KVM="$TEST_NO_KVM_VALUE" \
             TEST_RUNNER=isolated-linux-fieldwork \
             meson test \
             -C build \
