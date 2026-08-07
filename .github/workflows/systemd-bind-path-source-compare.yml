@@ -1,0 +1,147 @@
+name: systemd bind-path source comparison
+
+on:
+  push:
+    branches:
+      - investigation/cross-ecosystem-round-2026-08-02
+    paths:
+      - .github/workflows/systemd-bind-path-source-compare.yml
+      - investigations/systemd-bind-path-whitespace-overlap/**
+      - tests/test_systemd_bind_path_source_compare_workflow.py
+  pull_request:
+    paths:
+      - .github/workflows/systemd-bind-path-source-compare.yml
+      - investigations/systemd-bind-path-whitespace-overlap/**
+      - tests/test_systemd_bind_path_source_compare_workflow.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: systemd-bind-path-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - name: canonical-base
+            sha: 63e35ca3f99566095c84248e9eb41a3a6b32f2eb
+          - name: active-pr-43217
+            sha: d32993d1f67ec1b42719c89eeda9425042df57ce
+
+    steps:
+      - name: Check out Linux Fieldwork carrier
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          path: fieldwork
+
+      - name: Validate carrier workflow contract
+        working-directory: fieldwork
+        run: |
+          python3 -m unittest -v \
+            tests.test_systemd_bind_path_source_compare_workflow
+
+      - name: Check out exact systemd source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          repository: systemd/systemd
+          ref: ${{ matrix.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          path: systemd
+
+      - name: Enable source packages and install build dependencies
+        run: |
+          set -euo pipefail
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.{list,sources}
+          for file in /etc/apt/sources.list.d/*.sources; do
+            sudo sed -i 's/^Types: deb$/Types: deb deb-src/' "$file"
+          done
+          sudo apt-get update
+          sudo apt-get build-dep --yes systemd
+          sudo apt-get install --yes --no-install-recommends \
+            meson ninja-build pkg-config python3-jinja2 python3-pyelftools
+
+      - name: Configure exact source
+        env:
+          VARIANT: ${{ matrix.name }}
+          EXPECTED_SHA: ${{ matrix.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C systemd rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -f systemd/meson.build
+          mkdir -p "artifacts/$VARIANT"
+          {
+            echo "variant=$VARIANT"
+            echo "head=$EXPECTED_SHA"
+            echo "load_fragment=$(git -C systemd hash-object src/core/load-fragment.c)"
+            echo "execute_serialize=$(git -C systemd hash-object src/core/execute-serialize.c)"
+            echo "test_execute=$(git -C systemd hash-object src/test/test-execute.c)"
+            meson --version
+            ninja --version
+            cc --version | head -n1
+          } >"artifacts/$VARIANT/source-identity.txt"
+          meson setup systemd/build systemd \
+            --buildtype=debugoptimized \
+            --auto-features=disabled \
+            -Dmode=developer \
+            -Dman=disabled \
+            -Dhtml=disabled \
+            -Dtranslations=false \
+            >"artifacts/$VARIANT/meson-setup.log" 2>&1
+
+      - name: Build systemd-analyze
+        env:
+          VARIANT: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          meson compile -C systemd/build systemd-analyze \
+            >"artifacts/$VARIANT/build.log" 2>&1
+          analyze=$(find systemd/build -type f -name systemd-analyze -perm -111 -print -quit)
+          test -n "$analyze"
+          printf '%s\n' "$analyze" >"artifacts/$VARIANT/analyzer-path.txt"
+          "$analyze" --version >"artifacts/$VARIANT/analyzer-version.txt"
+          sha256sum "$analyze" >"artifacts/$VARIANT/analyzer-sha256.txt"
+
+      - name: Run corrected grammar matrix
+        env:
+          VARIANT: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          analyze=$(cat "artifacts/$VARIANT/analyzer-path.txt")
+          SYSTEMD_ANALYZE="$PWD/$analyze" \
+            bash fieldwork/investigations/systemd-bind-path-whitespace-overlap/reproduce.sh \
+            "$PWD/artifacts/$VARIANT/parser"
+
+      - name: Retain source-native test inventory
+        if: always()
+        env:
+          VARIANT: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          mkdir -p "artifacts/$VARIANT/source-review"
+          git -C systemd grep -n \
+            -e 'BindPaths' \
+            -e 'BindReadOnlyPaths' \
+            -e 'exec-context-bind-path' \
+            -- src/test test units >"artifacts/$VARIANT/source-review/matches.txt" || true
+          git -C systemd diff-tree --no-commit-id --name-only -r HEAD \
+            >"artifacts/$VARIANT/source-review/head-files.txt"
+
+      - name: Upload exact comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: systemd-bind-path-${{ matrix.name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/${{ matrix.name }}/
+          if-no-files-found: error
+          retention-days: 30
