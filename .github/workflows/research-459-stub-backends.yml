@@ -28,6 +28,8 @@ jobs:
           rm -rf "$ROOT"
           mkdir -p "$ROOT"
 
+          declare -A STATUS
+
           mkbase() {
             mkdir -p "$ROOT/$1/src/foo-stubs"
             printf '%s\n' 'def answer() -> int: ...' > "$ROOT/$1/src/foo-stubs/__init__.pyi"
@@ -46,24 +48,44 @@ jobs:
             if [ -z "$wheel" ]; then
               echo "WHEEL $label NONE"
               echo "HAS_STUB $label false"
+              echo "HAS_CONSOLE_SCRIPT $label false"
               return
             fi
             python - "$label" "$wheel" <<'PY'
-          import sys, zipfile
+          import configparser
+          import io
+          import sys
+          import zipfile
+
           label, wheel = sys.argv[1:]
           with zipfile.ZipFile(wheel) as zf:
               names = sorted(zf.namelist())
+              entry_points = [name for name in names if name.endswith('.dist-info/entry_points.txt')]
+              console_scripts = []
+              for name in entry_points:
+                  text = zf.read(name).decode('utf-8')
+                  print(f"ENTRY_POINTS {label} {name}")
+                  print(text if text else "<empty>")
+                  parser = configparser.ConfigParser()
+                  parser.optionxform = str
+                  parser.read_file(io.StringIO(text))
+                  if parser.has_section('console_scripts'):
+                      console_scripts.extend(parser.options('console_scripts'))
           print(f"WHEEL {label} {wheel}")
           for name in names:
               print(f"  {name}")
           print(f"HAS_STUB {label} {'foo-stubs/__init__.pyi' in names}")
+          print(f"HAS_CONSOLE_SCRIPT {label} {bool(console_scripts)}")
           PY
           }
 
           build() {
             label="$1"
+            set +e
             (cd "$ROOT/$label" && uv build --wheel --out-dir dist -v) >"$ROOT/$label/build.log" 2>&1
             code=$?
+            set -e
+            STATUS[$label]="$code"
             echo "BUILD_EXIT $label $code"
             cat "$ROOT/$label/build.log"
             inspect "$label"
@@ -182,3 +204,18 @@ jobs:
           build-backend = "maturin"
           TOML
           build maturin-uv-contract
+
+          echo "FINAL_STATUS"
+          for label in pdm setuptools-current setuptools-68 setuptools-68-config setuptools-69 scikit-explicit scikit-auto scikit-uv-contract maturin-uv-contract; do
+            echo "$label=${STATUS[$label]}"
+          done
+
+          test "${STATUS[pdm]}" = 0
+          test "${STATUS[setuptools-current]}" = 0
+          test "${STATUS[setuptools-68]}" = 0
+          test "${STATUS[setuptools-68-config]}" = 0
+          test "${STATUS[setuptools-69]}" = 0
+          test "${STATUS[scikit-explicit]}" = 0
+          test "${STATUS[scikit-auto]}" = 0
+          test "${STATUS[scikit-uv-contract]}" != 0
+          test "${STATUS[maturin-uv-contract]}" != 0
