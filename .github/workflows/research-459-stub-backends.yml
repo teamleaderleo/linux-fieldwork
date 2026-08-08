@@ -11,14 +11,14 @@ permissions:
 
 jobs:
   matrix:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
       - name: Install released UV driver
         run: |
-          python -m pip install 'uv==0.11.29'
+          python -m pip install 'uv==0.12.3'
           uv --version
       - name: Build and inspect stub-only wheels
         shell: bash
@@ -44,20 +44,25 @@ jobs:
 
           inspect() {
             label="$1"
+            expected_stub="$2"
             wheel=$(find "$ROOT/$label/dist" -maxdepth 1 -name '*.whl' -print -quit 2>/dev/null || true)
             if [ -z "$wheel" ]; then
               echo "WHEEL $label NONE"
               echo "HAS_STUB $label false"
               echo "HAS_CONSOLE_SCRIPT $label false"
-              return
+              if [ "$expected_stub" != "none" ]; then
+                echo "expected a wheel for $label" >&2
+                return 1
+              fi
+              return 0
             fi
-            python - "$label" "$wheel" <<'PY'
+            python - "$label" "$wheel" "$expected_stub" <<'PY'
           import configparser
           import io
           import sys
           import zipfile
 
-          label, wheel = sys.argv[1:]
+          label, wheel, expected_stub = sys.argv[1:]
           with zipfile.ZipFile(wheel) as zf:
               names = sorted(zf.namelist())
               entry_points = [name for name in names if name.endswith('.dist-info/entry_points.txt')]
@@ -71,16 +76,26 @@ jobs:
                   parser.read_file(io.StringIO(text))
                   if parser.has_section('console_scripts'):
                       console_scripts.extend(parser.options('console_scripts'))
+          has_stub = 'foo-stubs/__init__.pyi' in names
           print(f"WHEEL {label} {wheel}")
           for name in names:
               print(f"  {name}")
-          print(f"HAS_STUB {label} {'foo-stubs/__init__.pyi' in names}")
+          print(f"HAS_STUB {label} {has_stub}")
           print(f"HAS_CONSOLE_SCRIPT {label} {bool(console_scripts)}")
+          if expected_stub == 'true' and not has_stub:
+              raise SystemExit(f'{label}: expected stub payload')
+          if expected_stub == 'false' and has_stub:
+              raise SystemExit(f'{label}: expected stub payload to be absent')
+          if expected_stub == 'none':
+              raise SystemExit(f'{label}: expected no wheel, but one was built')
+          if console_scripts:
+              raise SystemExit(f'{label}: unexpected runtime console scripts: {console_scripts}')
           PY
           }
 
           build() {
             label="$1"
+            expected_stub="$2"
             set +e
             (cd "$ROOT/$label" && uv build --wheel --out-dir dist -v) >"$ROOT/$label/build.log" 2>&1
             code=$?
@@ -88,7 +103,7 @@ jobs:
             STATUS[$label]="$code"
             echo "BUILD_EXIT $label $code"
             cat "$ROOT/$label/build.log"
-            inspect "$label"
+            inspect "$label" "$expected_stub"
           }
 
           resolved 'pdm-backend' pdm-backend
@@ -106,7 +121,7 @@ jobs:
           requires = ["pdm-backend"]
           build-backend = "pdm.backend"
           TOML
-          build pdm
+          build pdm true
 
           for label in setuptools-current setuptools-68 setuptools-68-config setuptools-69; do mkbase "$label"; done
           cat > "$ROOT/setuptools-current/pyproject.toml" <<'TOML'
@@ -133,7 +148,7 @@ jobs:
           version = "0.1.0"
           requires-python = ">=3.9"
           [tool.setuptools.package-data]
-          "foo-stubs" = ["*.pyi"]
+          "*" = ["*.pyi"]
           [build-system]
           requires = ["setuptools==68.2.2"]
           build-backend = "setuptools.build_meta"
@@ -147,10 +162,10 @@ jobs:
           requires = ["setuptools==69.0.0"]
           build-backend = "setuptools.build_meta"
           TOML
-          build setuptools-current
-          build setuptools-68
-          build setuptools-68-config
-          build setuptools-69
+          build setuptools-current true
+          build setuptools-68 false
+          build setuptools-68-config true
+          build setuptools-69 true
 
           for label in scikit-explicit scikit-auto scikit-uv-contract; do mkbase "$label"; done
           cat > "$ROOT/scikit-explicit/pyproject.toml" <<'TOML'
@@ -189,9 +204,9 @@ jobs:
           requires = ["scikit-build-core>=0.12", "pybind11>=3"]
           build-backend = "scikit_build_core.build"
           TOML
-          build scikit-explicit
-          build scikit-auto
-          build scikit-uv-contract
+          build scikit-explicit true
+          build scikit-auto false
+          build scikit-uv-contract none
 
           mkbase maturin-uv-contract
           cat > "$ROOT/maturin-uv-contract/pyproject.toml" <<'TOML'
@@ -203,7 +218,7 @@ jobs:
           requires = ["maturin>=1.0,<2.0"]
           build-backend = "maturin"
           TOML
-          build maturin-uv-contract
+          build maturin-uv-contract none
 
           echo "FINAL_STATUS"
           for label in pdm setuptools-current setuptools-68 setuptools-68-config setuptools-69 scikit-explicit scikit-auto scikit-uv-contract maturin-uv-contract; do
