@@ -27,6 +27,26 @@ Put issue-closing syntax and external references in the pull-request body instea
 
 A source commit message should describe the code change itself. Keep required project trailers such as `Signed-off-by` when the target project requires them.
 
+## Use the contributor's configured identity for sign-offs
+
+When the target project requires DCO or another `Signed-off-by` trailer, first verify the project's contribution instructions and then use the contributor's configured Git identity.
+
+Prefer ordinary Git commands such as:
+
+```text
+git config user.name
+git config user.email
+git commit -s
+```
+
+For an amended commit where the author identity also needs to match the configured identity, use normal Git author-reset/sign-off behavior rather than constructing the trailer by hand.
+
+Never manufacture, infer, or substitute a sign-off identity from GitHub account metadata. In particular, do not synthesize a `users.noreply.github.com` address from a username or numeric account ID, and do not replace a configured real name with a GitHub login.
+
+If the configured Git identity is unavailable to the current execution environment, do not guess. Leave the candidate unsigned for the human to sign locally, or provide the exact `git commit -s` / amend command needed to finish it.
+
+A privacy-preserving noreply address is acceptable only when it is already the contributor's configured or explicitly chosen Git identity. The tooling must not choose it on the contributor's behalf.
+
 ## One logical change, one clean history
 
 For a small upstream candidate, prefer one clean commit when the change is naturally atomic.
@@ -57,6 +77,7 @@ Before handing a candidate to a human for upstream submission, verify all of the
 3. No temporary workflow, trigger, receipt, carrier, or Fieldwork-only file remains.
 4. The commit history is minimal and reviewable.
 5. Commit messages contain no issue or pull-request numbers, shorthand references, or URLs.
-6. Required project trailers such as DCO sign-off are present.
-7. Issue-closing syntax, if desired, appears only in the pull-request body.
-8. No upstream interaction has occurred beyond what the human explicitly authorized.
+6. Required project trailers such as DCO sign-off are present and use the contributor's configured or explicitly chosen Git identity.
+7. No sign-off name or email was inferred or synthesized from provider account metadata.
+8. Issue-closing syntax, if desired, appears only in the pull-request body.
+9. No upstream interaction has occurred beyond what the human explicitly authorized.
