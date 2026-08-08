@@ -12,6 +12,10 @@ These rules are mandatory for owned-fork candidates that may later be offered up
 - Never put external issue numbers, pull-request numbers, shorthand references, or URLs in commit subjects or bodies. This includes `#123`, `Fixes #123`, `OWNER/REPO#123`, and direct or redirect issue/PR URLs.
 - Put issue-closing syntax and external references in the pull-request body only, after that upstream interaction is explicitly authorized.
 - Preserve required project trailers such as `Signed-off-by` when applicable.
+- When DCO or another sign-off is required, use the contributor's configured or explicitly chosen Git identity. Prefer `git commit -s` and normal amend/reset-author behavior.
+- Never infer or synthesize a sign-off name or email from GitHub account metadata. Do not manufacture a `users.noreply.github.com` address from a login or numeric account ID.
+- A noreply address is acceptable only when it is already the contributor's configured or explicitly chosen Git email.
+- If the configured Git identity is unavailable, do not guess; leave the candidate for the human to sign locally and provide the exact command needed.
 - For a small atomic fix, prefer one clean commit. Squash or rebuild away temporary setup, cleanup, rename, repair, and failed-automation commits before human review.
 - Before presenting a candidate, compare against the intended upstream base and verify that only the intended files remain.
 - A commit reference that creates a GitHub backlink or timeline event counts as external interaction. Do not create such references without explicit authorization.
