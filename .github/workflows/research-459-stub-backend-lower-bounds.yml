@@ -3,6 +3,8 @@ name: Research 459 stub backend lower bounds
 on:
   push:
     branches: [research/459-stub-backend-runtime]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
