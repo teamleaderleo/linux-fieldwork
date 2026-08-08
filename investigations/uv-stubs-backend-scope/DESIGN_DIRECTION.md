@@ -1,4 +1,4 @@
-# UV stub-only initialization: reconciled design direction
+# UV simple-stub initialization: reconciled design direction
 
 State: `PROPOSAL FOR INTERNAL DEBATE — NO PRODUCT CHANGE`  
 Date: 2026-08-09  
@@ -11,71 +11,98 @@ Further upstream mutation authorized by this record: `false`
 
 ## Working conclusion
 
-A PEP 561 distribution named `foo-stubs` should keep stub-only package semantics regardless of the selected Python build backend.
+The bug can be fixed with a **narrow scaffold inference**, not a universal model of PEP 561 distributions.
 
-The common generated source contract is:
+When UV is synthesizing its normal project→package source layout and the project name normalizes to a `*-stubs` name, it is reasonable for the default scaffold to infer the common simple-stub shape:
 
 ```text
 src/foo-stubs/__init__.pyi
 ```
 
-with no generated runtime `main()` and no `[project.scripts]` entry.
+with no generated runtime `main()` and no generated `[project.scripts]` entry.
 
-Backend selection should then answer a separate question: what stable backend configuration expresses that project, is a newer backend genuinely required, or is the selected UV backend template incompatible with that project kind?
+The selected backend should then receive the smallest configuration needed to package that generated tree, or the source-generating template should reject a genuinely incompatible backend.
 
-This supersedes both of the earlier broad shortcuts:
+For ordinary project names, existing behavior remains unchanged.
 
-1. applying the same hyphenated source path to every backend without adaptation; and
-2. limiting stub-only semantics to `uv_build` and silently turning `foo-stubs` back into an ordinary runtime package for third-party backends.
+## Critical scope correction from independent review
+
+`project.name.ends_with("-stubs")` is **not** a normative statement that the finished distribution is globally "stub-only".
+
+PEP 561 describes installed stub-package conventions, but real packaging can be richer:
+
+- project/distribution naming and import-package layout are not required to be a one-to-one identity in every project;
+- namespace stub packages need not have a root `__init__.pyi`;
+- partial stub packages use `py.typed` with `partial`;
+- a distribution can ship a `*-stubs` package and executable Python support code together.
+
+A concrete counterexample is `django-stubs`, whose distribution includes both the stub package and runtime/plugin support code.
+
+Therefore the internal concept should describe **what UV is generating by default**, not assert a permanent content invariant about the distribution.
+
+Conceptual names such as `SimpleStubScaffold` or `GeneratedPackageContent::SimpleStub` are safer than `StubOnly`.
+
+## Where the inference should apply
+
+Apply the inference only on source-generating packaged initialization paths where UV is choosing the default package layout.
+
+Do not apply it globally to every distribution object or every build-system declaration.
+
+### Preserve `--bare`
+
+`--bare` intentionally lets users create metadata/build-system scaffolding without UV creating the expected source files.
+
+A project ending in `-stubs` should therefore remain allowed with `--bare --build-backend ...`, including Scikit and Maturin. The user may be supplying a custom layout or richer project that is outside the simple scaffold.
+
+Backend rejection belongs to the **source-generating simple-stub scaffold**, not to the package name in isolation.
+
+### Explicit app intent
+
+If the eventual implementation can cheaply distinguish an explicit `--app --package` request from the ordinary inferred packaged scaffold, explicit user intent should be considered before silently overriding it with the name heuristic.
+
+This is a small CLI-precedence question, not a reason to broaden the model. The reported bug and current research contract concern UV's generated default package layout for `foo-stubs`.
 
 ## Architectural boundary
 
-Do **not** model `StubOnly` as another value of UV's existing `InitProjectKind` without a strong reason.
+Do not add `SimpleStub` as another value of the existing `InitProjectKind` unless implementation details make that clearly simpler.
 
-Current `InitProjectKind` describes scaffold shape such as packaged application, flat application, library, and bare project. Stub-only is a different dimension: it describes package content semantics.
+`InitProjectKind` currently describes scaffold form such as packaged application, flat application, library, and bare project. The simple-stub inference is orthogonal generated-package content.
 
-Current UV source already centralizes the relevant operations in a small set of functions:
+Current UV source already centralizes the relevant work in a few places:
 
 - project/build-system rendering;
 - backend prerequisite generation;
 - package source generation;
 - project-script generation.
 
-The cleaner implementation is therefore an orthogonal content classification derived once from the project name and passed through those existing choke points.
+The upstream patch can remain smaller than the internal model: a helper/derived value passed through those choke points is enough. Avoid a compatibility registry, trait hierarchy, or new user-facing mode.
 
-Illustratively only:
+## Executed backend evidence for the exact simple scaffold
 
-```rust
-enum PackageContent {
-    Runtime,
-    StubOnly,
-}
-```
-
-The exact type is not important. The invariant is that `-stubs` recognition happens once rather than as scattered suffix checks in backend branches.
-
-## Executed backend evidence
-
-The fixed target throughout the research is:
+Research target:
 
 ```text
-distribution: foo-stubs
-source:       src/foo-stubs/__init__.pyi
-runtime CLI:  absent
+project/distribution: foo-stubs
+source:               src/foo-stubs/__init__.pyi
+generated runtime CLI: absent
 ```
+
+### `uv_build`
+
+Direct support. Generate the common stub tree with no extra backend configuration.
 
 ### Hatch
 
 Executed with `hatchling==1.31.0`.
 
-Default project-name discovery fails on normalized `foo_stubs`. This succeeds:
+Required generated config:
 
 ```toml
 [tool.hatch.build.targets.wheel]
 packages = ["src/foo-stubs"]
 ```
 
-The wheel contains `foo-stubs/__init__.pyi` and no runtime console entry point.
+The wheel contains `foo-stubs/__init__.pyi` and no runtime console script.
 
 Classification: **support with explicit config**.
 
@@ -83,46 +110,34 @@ Classification: **support with explicit config**.
 
 Executed with `poetry-core==2.4.1`.
 
-Default discovery fails, and `{ include = "foo-stubs" }` without a source root fails for the fixed `src/` fixture. This succeeds:
+Required generated config for UV's `src/` layout:
 
 ```toml
 [tool.poetry]
 packages = [{ include = "foo-stubs", from = "src" }]
 ```
 
-The wheel contains `foo-stubs/__init__.pyi` and no runtime console entry point.
+The wheel contains `foo-stubs/__init__.pyi` and no runtime console script.
 
 Classification: **support with explicit config**.
 
 ### Flit
 
-UV currently generates:
+UV currently generates `flit_core>=3.2,<4`. The executed row resolved 3.12.0 and failed on the simple stub tree.
 
-```toml
-[build-system]
-requires = ["flit_core>=3.2,<4"]
-build-backend = "flit_core.buildapi"
-```
+The same tree with `flit_core>=4,<5` resolved 4.0.2 and built correctly without extra package configuration.
 
-That resolved to `flit_core==3.12.0` in the executed fixture and failed looking for `foo_stubs`.
+Independent review also checked the apparent Flit 3 escape hatch: older Flit could accept a hyphenated module through `[tool.flit.module]`, but maintainers described that behavior as a bug and the old path still required `__init__.py`. Do not generate against accidental Flit 3 behavior.
 
-The same project with:
+Classification: **Flit 4 is the first stable clean path for this scaffold**.
 
-```toml
-[build-system]
-requires = ["flit_core>=4,<5"]
-build-backend = "flit_core.buildapi"
-```
-
-resolved to `flit_core==4.0.2`, built directly, and shipped `foo-stubs/__init__.pyi`.
-
-Flit 4 is therefore a **real capability boundary**, not merely a convenience floor. The remaining policy choice is whether UV should use Flit 4 only for stub-only scaffolds or update the general Flit template.
+Open policy: use Flit 4 only for simple-stub scaffolds or update the general Flit template.
 
 ### PDM
 
-Current PDM has automatic `*-stubs` discovery, but requiring that newer feature is unnecessary for generated projects.
+Current PDM has automatic stub discovery, but a newer floor is unnecessary.
 
-A hosted lower-bound discriminator on Python 3.9.25 proved:
+Hosted lower-bound proof:
 
 ```toml
 [tool.pdm.build]
@@ -133,26 +148,15 @@ requires = ["pdm-backend==2.1.4"]
 build-backend = "pdm.backend"
 ```
 
-produces a wheel containing `foo-stubs/__init__.pyi` with no console script. The unconfigured `pdm-backend==2.1.4` control built a metadata-only wheel without the stub.
+produced the correct wheel with no console script. The unconfigured 2.1.4 control produced metadata only.
 
-Receipt: run `31282617646`, job `93166265545`, carrier head `f21b2f158fe47c06e5f81369be1f08fb727b982c`.
-
-Classification: **support with explicit config; no new backend floor required**.
-
-Recommended generated adapter:
-
-```toml
-[tool.pdm.build]
-includes = ["src/foo-stubs"]
-```
-
-Keep UV's existing PDM build requirement unless a separate reason exists to change it.
+Classification: **support with explicit config; preserve UV's existing backend requirement**.
 
 ### setuptools
 
-Setuptools 69 added implicit `.pyi` package-data inclusion, but a version-floor increase is also unnecessary for generated projects.
+Setuptools 69 added implicit `.pyi` inclusion, but no new floor is needed.
 
-A hosted lower-bound discriminator on Python 3.9.25 proved:
+Hosted lower-bound proof:
 
 ```toml
 [tool.setuptools.package-data]
@@ -163,122 +167,138 @@ requires = ["setuptools==61.0.0"]
 build-backend = "setuptools.build_meta"
 ```
 
-produces a wheel containing `foo-stubs/__init__.pyi` with no console script. The unconfigured `setuptools==61.0.0` control built a wheel that omitted the stub.
+produced the correct wheel with no console script. The unconfigured 61.0.0 control omitted the stub.
 
-The wildcard key is intentional: setuptools 61's pyproject schema rejects a package-specific `"foo-stubs"` key because it is not a normal Python module name, but explicitly permits `"*"`.
-
-Receipt: run `31282617646`, job `93166265545`, carrier head `f21b2f158fe47c06e5f81369be1f08fb727b982c`.
+The wildcard is intentional: older pyproject schemas reject a package-specific `"foo-stubs"` key while permitting `"*"`.
 
 Classification: **support with explicit config; preserve `setuptools>=61`**.
 
-Recommended generated adapter:
-
-```toml
-[tool.setuptools.package-data]
-"*" = ["*.pyi"]
-```
-
 ### Scikit-build-core
 
-Two separate facts must not be collapsed:
+Artifact execution now proves all three important states with scikit-build-core 1.0.3:
 
-1. scikit-build-core itself can package an explicit Python tree without CMake, using `wheel.cmake = false` and `wheel.packages = ["src/foo-stubs"]`;
-2. UV's current `--build-backend scikit` template is specifically an extension-module starter: current source/tests generate `CMakeLists.txt`, pybind11 requirements, C++ source, and `_core.pyi`.
+1. explicit pure-Python configuration
 
-So the policy question is **UV template semantics**, not raw backend capability.
+   ```toml
+   [tool.scikit-build]
+   minimum-version = "build-system.requires"
+   wheel.cmake = false
+   wheel.packages = ["src/foo-stubs"]
+   ```
 
-Current recommendation: reject `foo-stubs + scikit` under the existing extension-template contract. Supporting it should be an intentional new pure-stub Scikit template, not a silent semantic switch inside the current extension starter.
+   builds a correct wheel containing `foo-stubs/__init__.pyi` with no console script;
 
-The repaired broad #459 execution carrier is still the remaining artifact-level check for this row. Until that receipt completes, keep this conclusion labeled source/template-backed rather than whole-matrix artifact proof.
+2. `wheel.cmake = false` without explicit `wheel.packages` builds a metadata-only wheel and misses the stub;
+3. UV's current CMake-oriented contract fails on the pure stub fixture because it expects a CMake project.
+
+This removes backend capability as an uncertainty. The remaining question is purely **UV template semantics**.
+
+Two coherent policies remain:
+
+- **support:** if `--build-backend scikit` means "use this backend for the requested scaffold", generate the CMake-less explicit package configuration;
+- **reject:** if UV deliberately defines the current selector as an extension-module starter family, reject the source-generating simple-stub combination and preserve `--bare` as the custom-layout escape hatch.
+
+Under the strict "scaffold first, backend adapter second" model, support is the internally consistent result. Rejection is still defensible as a product-template decision, but should not be described as backend incapability.
 
 ### Maturin
 
-Maturin's project model is a Rust/PyO3 extension package, and the upstream Maturin guidance for pure PEP 561 stub packages is to distribute them separately.
+Artifact execution with Maturin 1.14.1 reached the backend and failed because the pure stub fixture has no Cargo project, matching maintainer/source guidance.
 
-Current recommendation: reject a pure `foo-stubs` project with the Maturin template during `uv init`, before Cargo/PyO3 starter files are written.
+Classification: **incompatible with the source-generating simple-stub scaffold**.
 
-This is an incompatibility row, not something to force into a passing pure-stub fixture.
+Recommended behavior: reject before UV writes Cargo/PyO3 starter files, while preserving `--bare --build-backend maturin` for expert/custom projects.
 
-## Reconciled backend policy
+## Reconciled matrix
 
-| Backend | Stub-only classification | Proposed UV adapter |
+| Backend | Exact simple-stub result | Suggested generated adapter |
 |---|---|---|
-| `uv_build` | direct support | common stub tree; no extra config |
+| `uv_build` | direct | none |
 | Hatch | explicit config | `packages = ["src/foo-stubs"]` |
 | Poetry | explicit config | `{ include = "foo-stubs", from = "src" }` |
-| Flit | direct support only in 4.x | Flit 4.x requirement; decide conditional vs general upgrade |
-| PDM | explicit config works on older backend | `includes = ["src/foo-stubs"]`; preserve existing requirement |
-| setuptools | explicit config works at current UV floor | `"*" = ["*.pyi"]`; preserve `setuptools>=61` |
-| Scikit-build-core | backend capable, current UV template semantic mismatch | reject current template or deliberately add a pure-stub template |
-| Maturin | incompatible with pure stub-only project | reject during init |
+| Flit | stable support begins in 4.x | Flit 4.x requirement |
+| PDM | explicit config works on older backend | `includes = ["src/foo-stubs"]`; preserve current requirement |
+| setuptools | explicit config works at current UV floor | `"*" = ["*.pyi"]`; preserve `>=61` |
+| Scikit-build-core | explicit pure-Python config artifact-proven | support with `wheel.cmake=false` + `wheel.packages`, **or** reject by deliberate template policy |
+| Maturin | current native template incompatible | reject source-generating simple-stub scaffold; preserve bare mode |
 
-## Design principle for backend floors
+## Backend-floor principle
 
-Prefer stable explicit generated configuration over raising a backend floor **when both produce the same correct artifact and explicit config preserves UV's existing compatibility surface**.
+Prefer stable explicit generated configuration over raising a backend floor when both produce the same correct artifact and the explicit config preserves UV's existing compatibility surface.
 
-Raise the floor when the capability itself is absent in older versions.
+Raise a floor only when the needed capability is genuinely unavailable or unstable in older supported versions.
 
-That distinction now separates the rows cleanly:
+For this scaffold:
 
-- PDM: explicit config avoids a new floor.
-- setuptools: explicit config avoids a new floor.
-- Flit: older generated major version actually lacks the stub-package capability, so a 4.x decision remains necessary.
+- PDM: no new floor.
+- setuptools: no new floor.
+- Flit: 4.x remains necessary for the stable clean path.
 
-## Generation order
-
-A future product implementation should conceptually follow this order:
+## Likely generation order
 
 ```text
-1. derive package-content semantics once
-2. resolve/validate (content semantics, backend template)
-3. render backend build-system and stub-specific adapter config
-4. generate common stub-only source files for supported rows
-5. generate runtime scripts/native starter files only for runtime rows
+1. determine whether UV is generating a normal source package or operating in bare/custom mode
+2. on the normal generated-package path, infer the simple-stub scaffold from the project name
+3. resolve the selected backend's adapter/policy
+4. render backend config
+5. generate src/foo-stubs/__init__.pyi
+6. skip runtime script/native starter generation for the simple-stub path
 ```
 
-Validation should happen before Maturin/Scikit prerequisite files are written when the chosen combination is rejected.
+For rejected source-generating combinations, validate before native prerequisite files are written.
 
-## Test contract for a future candidate
+## Test contract
 
-For every supported stub-only backend, assert all of the following:
+For supported simple-stub adapters:
 
 1. initialization succeeds;
 2. `src/foo-stubs/__init__.pyi` exists;
-3. `src/foo_stubs/__init__.py` is not generated as a compatibility substitute;
-4. `[project.scripts]` is absent;
-5. the backend adapter/config is exact;
-6. `uv build` succeeds;
-7. the wheel contains `foo-stubs/__init__.pyi`;
-8. the wheel contains no generated runtime console script.
+3. UV does not substitute `src/foo_stubs/__init__.py`;
+4. generated runtime `[project.scripts]` is absent;
+5. backend-specific configuration is exact;
+6. the resulting wheel contains `foo-stubs/__init__.pyi`;
+7. no generated runtime console script appears.
 
-For rejected template combinations:
+For rejected source-generating templates:
 
 1. initialization fails before misleading native starter files are written;
-2. the diagnostic names the incompatible template/project combination;
-3. the diagnostic suggests choosing a compatible Python packaging backend without promising identical configuration across alternatives.
+2. the diagnostic names the scaffold/template incompatibility rather than claiming the backend can never be used with a `-stubs` project;
+3. `--bare` remains available.
 
-Negative controls should cover ordinary non-`-stubs` packaged applications and libraries for every backend so the orthogonal content path cannot alter existing runtime scaffolds.
+Negative controls should prove ordinary non-`-stubs` templates are unchanged.
+
+## Non-goals for this bug fix
+
+Do not widen this work into:
+
+- general namespace-stub scaffolding;
+- partial-stub scaffolding;
+- arbitrary distribution-name → import-package mapping;
+- a claim that `*-stubs` distributions contain no runtime Python at all;
+- a public `--stub-only` project type;
+- dynamic build-backend capability detection;
+- a general backend feature registry.
+
+Those can be successor features if real demand appears.
 
 ## What `teamleaderleo/uv#54` still proves
 
-The controlled `uv_build`-only candidate remains valuable as a containment experiment. Its all-backend green matrix proved that the public candidate's regressions came from changing shared source/script behavior without backend adaptation.
+The old `uv_build`-only candidate remains useful containment evidence: it proved the public candidate's third-party regressions were caused by changing shared source/script behavior without adapting backend templates.
 
-It should not be extended in place as the likely final implementation because its third-party backend behavior deliberately changes `foo-stubs` back into an ordinary runtime package.
+It is not the preferred semantic direction because it changes `foo-stubs` back into an ordinary runtime scaffold whenever a third-party backend is selected.
 
-If implementation is authorized later, build a fresh candidate from current UV main using the reconciled backend matrix rather than mutating #54 into a different design.
+If product implementation is authorized, use a fresh current-main candidate rather than mutating #54 into a different design.
 
-## Remaining debate
+## Remaining product decisions
 
-The evidence has narrowed the useful debate to a few genuine policy choices:
+Evidence is saturated for the current **simple generated stub scaffold**. The remaining decisions are policy:
 
-1. **Representation:** what is the smallest orthogonal content-semantic value that avoids scattered suffix checks?
-2. **Flit:** use 4.x only for stub-only projects, or update UV's general Flit template?
-3. **Scikit:** reject under today's extension-template semantics, or intentionally define a second pure-stub Scikit template?
-4. **Diagnostics:** exact wording and timing for incompatible template/project combinations.
-5. **Integration-test depth:** which backend wheel inspections belong in UV tests versus generated-tree/config snapshots.
+1. **Scikit:** backend-adapter support or preserve the current extension-template family and reject?
+2. **Flit:** conditional 4.x requirement or general template upgrade?
+3. **Explicit `--app --package`:** should explicit app intent outrank the `-stubs` scaffold heuristic if that distinction is readily available?
+4. **Diagnostics/testing depth:** exact rejection wording and how much third-party wheel execution belongs in UV CI versus template snapshots.
 
-PDM and setuptools version floors are no longer open design questions for this fixture: executed lower-bound evidence shows explicit configuration can preserve the existing UV requirements.
+Everything else in the current eight-backend matrix is now evidence-backed enough to implement once policy is chosen.
 
 ## Publication boundary
 
-This is an internal design record. It grants no authority for another canonical UV comment, review, reaction, pull request, email, or other maintainer contact. Any third-party GitHub references written into controlled-repository interaction text must use `redirect.github.com`.
+This is an internal design record. It grants no authority for another canonical UV comment, review, reaction, pull request, email, or other maintainer contact. Third-party GitHub references written into controlled-repository interaction text must use `redirect.github.com`.
