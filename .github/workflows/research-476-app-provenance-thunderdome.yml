@@ -1,0 +1,221 @@
+name: Research 476 app provenance thunderdome
+
+on:
+  pull_request:
+    branches:
+      - automation/476-app-provenance-base-20260809
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    env:
+      BASE_SHA: 1993c1e81ec8446d2db76308c4d516fdf23d5162
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: candidate/19671-simple-stubs-scikit-support
+          path: uv
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned toolchain formatter
+        working-directory: uv
+        run: rustup component add rustfmt
+
+      - name: Compare provenance factorizations
+        shell: bash
+        working-directory: uv
+        run: |
+          set -euo pipefail
+
+          build_variant() {
+            mode="$1"
+            git reset --hard "$BASE_SHA"
+            git clean -fd
+
+            MODE="$mode" python - <<'PY'
+          import os
+          from pathlib import Path
+
+          mode = os.environ["MODE"]
+          lib_path = Path("crates/uv/src/lib.rs")
+          settings_path = Path("crates/uv/src/settings.rs")
+          init_path = Path("crates/uv/src/commands/project/init.rs")
+          test_path = Path("crates/uv/tests/project/init.rs")
+          lib = lib_path.read_text()
+          settings = settings_path.read_text()
+          init = init_path.read_text()
+          tests = test_path.read_text()
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              return text.replace(old, new, 1)
+
+          init = replace_once(
+              init,
+              "    name: Option<PackageName>,\n    init_kind: InitKind,\n    bare: bool,\n",
+              "    name: Option<PackageName>,\n    init_kind: InitKind,\n    explicit_app: bool,\n    bare: bool,\n",
+              "init signature",
+          )
+          init = replace_once(
+              init,
+              "                &name,\n                project_kind,\n                bare,\n",
+              "                &name,\n                project_kind,\n                explicit_app,\n                bare,\n",
+              "init_project call",
+          )
+          init = replace_once(
+              init,
+              "    name: &PackageName,\n    project_kind: InitProjectKind,\n    bare: bool,\n",
+              "    name: &PackageName,\n    project_kind: InitProjectKind,\n    explicit_app: bool,\n    bare: bool,\n",
+              "init_project signature",
+          )
+          init = replace_once(
+              init,
+              "        name,\n        path,\n        &requires_python,\n",
+              "        name,\n        path,\n        &requires_python,\n        explicit_app,\n",
+              "project kind call",
+          )
+          init = replace_once(
+              init,
+              "        requires_python: &RequiresPython,\n        description: Option<&str>,\n",
+              "        requires_python: &RequiresPython,\n        explicit_app: bool,\n        description: Option<&str>,\n",
+              "project kind signature",
+          )
+          init = replace_once(
+              init,
+              "        let simple_stub = matches!(self, Self::ApplicationWithLibrary | Self::Library)\n            && simple_stub_package_module_dir(name).is_some();\n",
+              "        let simple_stub = !explicit_app\n            && matches!(self, Self::ApplicationWithLibrary | Self::Library)\n            && simple_stub_package_module_dir(name).is_some();\n",
+              "stub inference precedence",
+          )
+
+          if mode == "local":
+              lib = replace_once(
+                  lib,
+                  "        ProjectCommand::Init(args) => {\n            // Resolve the settings from the command-line arguments and workspace configuration.\n            let args = settings::InitSettings::resolve(args, filesystem, environment)?;\n",
+                  "        ProjectCommand::Init(args) => {\n            // Preserve explicit application intent before settings resolution collapses it.\n            let explicit_app = args.app;\n\n            // Resolve the settings from the command-line arguments and workspace configuration.\n            let args = settings::InitSettings::resolve(args, filesystem, environment)?;\n",
+                  "local app capture",
+              )
+              lib = replace_once(
+                  lib,
+                  "                args.name,\n                args.kind,\n                args.bare,\n",
+                  "                args.name,\n                args.kind,\n                explicit_app,\n                args.bare,\n",
+                  "local dispatch",
+              )
+          elif mode == "settings":
+              settings = replace_once(
+                  settings,
+                  "    pub(crate) kind: InitKind,\n    pub(crate) bare: bool,\n",
+                  "    pub(crate) kind: InitKind,\n    pub(crate) explicit_app: bool,\n    pub(crate) bare: bool,\n",
+                  "settings field",
+              )
+              settings = replace_once(
+                  settings,
+                  "            name,\n            kind,\n            bare,\n",
+                  "            name,\n            kind,\n            explicit_app: app,\n            bare,\n",
+                  "settings assignment",
+              )
+              lib = replace_once(
+                  lib,
+                  "                args.name,\n                args.kind,\n                args.bare,\n",
+                  "                args.name,\n                args.kind,\n                args.explicit_app,\n                args.bare,\n",
+                  "settings dispatch",
+              )
+          else:
+              raise SystemExit(mode)
+
+          test_block = r'''#[test]
+          fn init_package_stubs_explicit_app_precedence() -> Result<()> {
+              let context = uv_test::test_context!("3.12");
+
+              for (dir, args) in [
+                  ("stub-default", vec!["--name", "foo-stubs"]),
+                  ("stub-package", vec!["--name", "foo-stubs", "--package"]),
+                  ("stub-lib", vec!["--name", "foo-stubs", "--lib"]),
+              ] {
+                  let mut command = context.init();
+                  command.arg(dir);
+                  for arg in args {
+                      command.arg(arg);
+                  }
+                  let output = command.output()?;
+                  assert!(output.status.success(), "{dir}: {}", String::from_utf8_lossy(&output.stderr));
+                  let child = context.temp_dir.child(dir);
+                  child.child("src/foo-stubs/__init__.pyi").assert(predicate::path::is_file());
+                  child.child("src/foo_stubs/__init__.py").assert(predicate::path::missing());
+              }
+
+              let app_dir = "runtime-app-stubs-name";
+              let output = context.init().arg(app_dir).arg("--name").arg("foo-stubs").arg("--app").output()?;
+              assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+              let app = context.temp_dir.child(app_dir);
+              app.child("src/foo_stubs/__init__.py").assert(predicate::path::is_file());
+              app.child("src/foo-stubs/__init__.pyi").assert(predicate::path::missing());
+              let pyproject = fs_err::read_to_string(app.join("pyproject.toml"))?;
+              assert!(pyproject.contains("[project.scripts]"));
+              assert!(pyproject.contains("foo-stubs = \"foo_stubs:main\""));
+
+              let scikit_dir = "runtime-app-stubs-name-scikit";
+              let output = context.init().arg(scikit_dir).arg("--name").arg("foo-stubs").arg("--app").arg("--build-backend").arg("scikit").output()?;
+              assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+              let scikit = context.temp_dir.child(scikit_dir);
+              scikit.child("CMakeLists.txt").assert(predicate::path::is_file());
+              scikit.child("src/main.cpp").assert(predicate::path::is_file());
+              scikit.child("src/foo_stubs/_core.pyi").assert(predicate::path::is_file());
+              scikit.child("src/foo-stubs/__init__.pyi").assert(predicate::path::missing());
+              let pyproject = fs_err::read_to_string(scikit.join("pyproject.toml"))?;
+              assert!(pyproject.contains("pybind11>=3"));
+              assert!(pyproject.contains("[project.scripts]"));
+
+              let maturin_dir = "runtime-app-stubs-name-maturin";
+              let output = context.init().arg(maturin_dir).arg("--name").arg("foo-stubs").arg("--app").arg("--build-backend").arg("maturin").output()?;
+              assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+              let maturin = context.temp_dir.child(maturin_dir);
+              maturin.child("Cargo.toml").assert(predicate::path::is_file());
+              maturin.child("src/lib.rs").assert(predicate::path::is_file());
+              maturin.child("src/foo_stubs/_core.pyi").assert(predicate::path::is_file());
+              maturin.child("src/foo-stubs/__init__.pyi").assert(predicate::path::missing());
+
+              Ok(())
+          }
+
+          '''
+          tests = replace_once(tests, "#[test]\nfn init_bare_lib() {", test_block + "#[test]\nfn init_bare_lib() {", "test insertion")
+
+          lib_path.write_text(lib)
+          settings_path.write_text(settings)
+          init_path.write_text(init)
+          test_path.write_text(tests)
+          PY
+
+            cargo fmt --all
+            git diff --check
+            cargo check --locked -p uv
+            cargo test --locked -p uv --test project init::init_package_stubs_explicit_app_precedence -- --exact
+            cargo test --locked -p uv --test project init::init_package_stubs_backends -- --exact
+            cargo test --locked -p uv --test project init::init_app_build_backend_scikit -- --exact
+            cargo test --locked -p uv --test project init::init_lib_build_backend_scikit -- --exact
+            cargo test --locked -p uv --test project init::init_application_package -- --exact
+
+            mkdir -p "/tmp/provenance-$mode"
+            cp crates/uv/src/lib.rs "/tmp/provenance-$mode/lib.rs"
+            cp crates/uv/src/settings.rs "/tmp/provenance-$mode/settings.rs"
+            cp crates/uv/src/commands/project/init.rs "/tmp/provenance-$mode/project-init.rs"
+            cp crates/uv/tests/project/init.rs "/tmp/provenance-$mode/test-init.rs"
+            echo "=== $mode stat against common base ==="
+            git diff --stat "$BASE_SHA"
+          }
+
+          build_variant local
+          build_variant settings
+
+          echo '=== local -> settings production/test diff ==='
+          diff -u /tmp/provenance-local/lib.rs /tmp/provenance-settings/lib.rs || true
+          diff -u /tmp/provenance-local/settings.rs /tmp/provenance-settings/settings.rs || true
+          diff -u /tmp/provenance-local/project-init.rs /tmp/provenance-settings/project-init.rs || true
+          diff -u /tmp/provenance-local/test-init.rs /tmp/provenance-settings/test-init.rs || true
