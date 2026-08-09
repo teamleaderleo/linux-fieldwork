@@ -1,0 +1,142 @@
+name: Research 494 final UV82 validation
+
+on:
+  push:
+    branches: [research/494-final-uv82-validation]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: 488125f382d1987a9657eb2d190cf0db9f4fa7ae
+          path: uv-src
+          persist-credentials: false
+
+      - name: Build exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C uv-src rev-parse HEAD
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/uv82-target"
+          cargo build --manifest-path uv-src/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv82"
+          "$RUNNER_TEMP/uv82" --version
+
+      - name: Exercise final candidate matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          UV="$RUNNER_TEMP/uv82"
+          ROOT="$RUNNER_TEMP/uv82-final"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+
+          build_supported() {
+            label="$1"
+            backend="$2"
+            mkdir -p "$ROOT/$label"
+            if [ -n "$backend" ]; then
+              (cd "$ROOT/$label" && "$UV" init --package --name foo-stubs --build-backend "$backend" --no-workspace --vcs none)
+            else
+              (cd "$ROOT/$label" && "$UV" init --package --name foo-stubs --no-workspace --vcs none)
+            fi
+            (cd "$ROOT/$label" && "$UV" build --wheel --out-dir dist)
+          }
+
+          build_supported uv ""
+          build_supported hatch hatchling
+          build_supported poetry poetry
+          build_supported flit flit
+          build_supported pdm pdm
+          build_supported setuptools setuptools
+
+          reject_cleanly() {
+            label="$1"
+            backend="$2"
+            set +e
+            (cd "$ROOT" && "$UV" init "$label" --package --name foo-stubs --build-backend "$backend" --no-workspace) >"$ROOT/$label.log" 2>&1
+            code=$?
+            set -e
+            cat "$ROOT/$label.log"
+            test "$code" -ne 0
+            test ! -e "$ROOT/$label"
+            grep -F 'simple stub scaffold' "$ROOT/$label.log"
+            grep -F -- '--bare' "$ROOT/$label.log"
+          }
+          reject_cleanly reject-scikit scikit
+          reject_cleanly reject-maturin maturin
+
+          for backend in scikit maturin; do
+            mkdir -p "$ROOT/bare-$backend"
+            (cd "$ROOT/bare-$backend" && "$UV" init --bare --name foo-stubs --build-backend "$backend" --no-workspace --vcs none)
+            test -f "$ROOT/bare-$backend/pyproject.toml"
+            test ! -e "$ROOT/bare-$backend/src"
+          done
+
+          mkdir -p "$ROOT/ordinary-hatch"
+          (cd "$ROOT/ordinary-hatch" && "$UV" init --package --name foo --build-backend hatchling --no-workspace --vcs none)
+          test -f "$ROOT/ordinary-hatch/src/foo/__init__.py"
+          grep -F '[project.scripts]' "$ROOT/ordinary-hatch/pyproject.toml"
+          if grep -F '[tool.hatch.build.targets.wheel]' "$ROOT/ordinary-hatch/pyproject.toml"; then exit 1; fi
+
+          mkdir -p "$ROOT/ordinary-flit"
+          (cd "$ROOT/ordinary-flit" && "$UV" init --package --name foo --build-backend flit --no-workspace --vcs none)
+          grep -F 'requires = ["flit_core>=3.2,<4"]' "$ROOT/ordinary-flit/pyproject.toml"
+
+          mkdir -p "$ROOT/ordinary-scikit"
+          (cd "$ROOT/ordinary-scikit" && "$UV" init --package --name foo --build-backend scikit --no-workspace --vcs none)
+          test -f "$ROOT/ordinary-scikit/CMakeLists.txt"
+          test -f "$ROOT/ordinary-scikit/src/main.cpp"
+          test -f "$ROOT/ordinary-scikit/src/foo/_core.pyi"
+
+          python - "$ROOT" <<'PY'
+          import configparser
+          import io
+          import pathlib
+          import sys
+          import tomllib
+          import zipfile
+
+          root = pathlib.Path(sys.argv[1])
+          for label in ["uv", "hatch", "poetry", "flit", "pdm", "setuptools"]:
+              project = root / label
+              data = tomllib.loads((project / "pyproject.toml").read_text())
+              assert "scripts" not in data.get("project", {}), (label, data.get("project"))
+              assert (project / "src/foo-stubs/__init__.pyi").is_file(), label
+              assert not (project / "src/foo_stubs/__init__.py").exists(), label
+              wheels = list((project / "dist").glob("*.whl"))
+              assert len(wheels) == 1, (label, wheels)
+              with zipfile.ZipFile(wheels[0]) as zf:
+                  names = sorted(zf.namelist())
+                  assert "foo-stubs/__init__.pyi" in names, (label, names)
+                  console = []
+                  for name in names:
+                      if not name.endswith(".dist-info/entry_points.txt"):
+                          continue
+                      parser = configparser.ConfigParser()
+                      parser.optionxform = str
+                      parser.read_file(io.StringIO(zf.read(name).decode()))
+                      if parser.has_section("console_scripts"):
+                          console.extend(parser.options("console_scripts"))
+                  assert not console, (label, console)
+              print(f"PASS {label}: {wheels[0].name}")
+
+          expected = {
+              "hatch": '[tool.hatch.build.targets.wheel]\npackages = ["src/foo-stubs"]',
+              "poetry": '[tool.poetry]\npackages = [{ include = "foo-stubs", from = "src" }]',
+              "flit": 'requires = ["flit_core>=4,<5"]',
+              "pdm": '[tool.pdm.build]\nincludes = ["src/foo-stubs"]',
+              "setuptools": '[tool.setuptools.package-data]\n"*" = ["*.pyi"]',
+          }
+          for label, snippet in expected.items():
+              text = (root / label / "pyproject.toml").read_text()
+              assert snippet in text, (label, snippet, text)
+          PY
