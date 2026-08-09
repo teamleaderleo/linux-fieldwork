@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+import pathlib
+import sys
+
+
+def replace_exact(text: str, old: str, new: str, expected: int, label: str) -> str:
+    count = text.count(old)
+    if count != expected:
+        raise SystemExit(f"{label}: expected {expected} matches, found {count}")
+    return text.replace(old, new)
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: uv_candidate_final_refine.py <crates/uv/src/commands/project/init.rs>")
+
+    path = pathlib.Path(sys.argv[1])
+    text = path.read_text()
+
+    if "ProjectBuildBackend::Maturin | ProjectBuildBackend::Scikit => unreachable!" in text:
+        print("Final candidate refinement is already materialized")
+        return
+
+    if "let flit_requirement = if simple_stub" not in text:
+        raise SystemExit("candidate cleanup must be materialized before final refinement")
+
+    prerequisite_block = '''                if !simple_stub {
+                    pyproject_build_backend_prerequisites(name, path, build_backend)?;
+                }
+'''
+    text = replace_exact(
+        text,
+        prerequisite_block,
+        '''                pyproject_build_backend_prerequisites(name, path, build_backend)?;
+''',
+        2,
+        "source-generating backend prerequisite calls",
+    )
+
+    text = replace_exact(
+        text,
+        '''        ProjectBuildBackend::Uv | ProjectBuildBackend::Flit | ProjectBuildBackend::Scikit => None,
+        ProjectBuildBackend::Maturin => unreachable!("validated simple stub backend"),''',
+        '''        ProjectBuildBackend::Uv | ProjectBuildBackend::Flit => None,
+        ProjectBuildBackend::Maturin | ProjectBuildBackend::Scikit => {
+            unreachable!("validated simple stub backend")
+        }''',
+        1,
+        "stub config native backend invariant",
+    )
+
+    path.write_text(text)
+
+
+if __name__ == "__main__":
+    main()
