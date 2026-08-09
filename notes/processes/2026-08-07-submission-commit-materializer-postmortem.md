@@ -4,6 +4,8 @@ This is the Linux Fieldwork companion to the general Fieldwork postmortem at:
 
 `teamleaderleo/fieldwork:research/postmortems/2026-08-07-cloud-hypervisor-submission-materializer.md`
 
+> **2026-08-10 follow-up:** The correctly attributed commit recorded below was later replaced during maintainer-requested history cleanup. An API-created squash briefly reintroduced a DCO identity mismatch even though the `Signed-off-by:` text and GitHub account association looked correct. The human submitter repaired that rewrite locally. See `notes/processes/2026-08-10-dco-squash-api-identity-followup.md`. Commit references below describe the state at the close of this original incident, not the current PR head.
+
 ## In simple words
 
 The Cloud Hypervisor #8046 investigation had a good source fix and good runtime evidence, but the packaging machinery became much more complicated than the patch.
@@ -139,6 +141,8 @@ Historical upstream issue timeline events remain historical records; there is no
 6. Disposable/internal commits should not contain canonical closing keywords such as `Fixes` or `Closes`.
 7. Write-capable temporary scaffolding must be disabled immediately after promotion.
 8. If repeatable write automation is genuinely necessary, use stale-run cancellation/concurrency controls and make the write target explicitly non-submission state.
+9. Provider account resolution is not raw identity verification. After every history rewrite, inspect the raw author and committer name/email directly and compare them with the intended DCO identity.
+10. If the commit-writing tool cannot set and verify raw author/committer identity, it cannot finalize the DCO-bearing submission commit.
 
 ## Better pattern
 
