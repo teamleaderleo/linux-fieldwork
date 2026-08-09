@@ -1,0 +1,111 @@
+name: Research 485 clean CMake-less Scikit
+
+on:
+  push:
+    branches: [research/485-clean-scikit-cmakeless]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install exact UV driver
+        run: |
+          python -m pip install 'uv==0.12.3'
+          uv --version
+
+      - name: Compare CMake-less configs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/scikit-cmakeless"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/current/src/foo-stubs" "$ROOT/clean/src/foo-stubs"
+          printf '%s\n' 'def answer() -> int: ...' | tee "$ROOT/current/src/foo-stubs/__init__.pyi" > "$ROOT/clean/src/foo-stubs/__init__.pyi"
+
+          cat > "$ROOT/current/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          requires-python = ">=3.9"
+
+          [tool.scikit-build]
+          minimum-version = "build-system.requires"
+          wheel.cmake = false
+          wheel.packages = ["src/foo-stubs"]
+
+          [build-system]
+          requires = ["scikit-build-core==1.0.3", "pybind11>=3"]
+          build-backend = "scikit_build_core.build"
+          TOML
+
+          cat > "$ROOT/clean/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          requires-python = ">=3.9"
+
+          [tool.scikit-build]
+          minimum-version = "build-system.requires"
+          cmake.version = ""
+          wheel.cmake = false
+          wheel.packages = ["src/foo-stubs"]
+
+          [build-system]
+          requires = ["scikit-build-core==1.0.3", "pybind11>=3"]
+          build-backend = "scikit_build_core.build"
+          TOML
+
+          for label in current clean; do
+            (cd "$ROOT/$label" && uv build --wheel --out-dir dist -v) >"$ROOT/$label/build.log" 2>&1
+            echo "=== $label ==="
+            cat "$ROOT/$label/build.log"
+          done
+
+          grep -F 'CMakeLists.txt not found when looking for minimum CMake version' "$ROOT/current/build.log"
+          if grep -F 'CMakeLists.txt not found when looking for minimum CMake version' "$ROOT/clean/build.log"; then
+            echo 'clean config still emitted CMakeLists warning' >&2
+            exit 1
+          fi
+
+          for unwanted in 'Downloading cmake' 'Installing build requirement: cmake' 'Configuring CMake' 'Building project with Ninja'; do
+            if grep -F "$unwanted" "$ROOT/clean/build.log"; then
+              echo "clean config unexpectedly used native tooling: $unwanted" >&2
+              exit 1
+            fi
+          done
+
+          python - "$ROOT" <<'PY'
+          import configparser
+          import io
+          import pathlib
+          import sys
+          import zipfile
+
+          root = pathlib.Path(sys.argv[1])
+          for label in ("current", "clean"):
+              wheels = list((root / label / "dist").glob("*.whl"))
+              assert len(wheels) == 1, (label, wheels)
+              with zipfile.ZipFile(wheels[0]) as zf:
+                  names = sorted(zf.namelist())
+                  assert "foo-stubs/__init__.pyi" in names, (label, names)
+                  console = []
+                  for name in names:
+                      if not name.endswith(".dist-info/entry_points.txt"):
+                          continue
+                      parser = configparser.ConfigParser()
+                      parser.optionxform = str
+                      parser.read_file(io.StringIO(zf.read(name).decode()))
+                      if parser.has_section("console_scripts"):
+                          console.extend(parser.options("console_scripts"))
+                  assert not console, (label, console)
+              print(f"PASS {label}: {wheels[0].name}")
+          PY
