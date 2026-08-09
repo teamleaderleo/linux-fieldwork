@@ -115,7 +115,7 @@ run_pair() {
 }
 
 echo "=== environment ==="
-ldd --version | head -1
+ldd --version 2>&1 | sed -n '1p'
 uname -a
 
 # Numeric values compare equal in the historical cache comparator even though
