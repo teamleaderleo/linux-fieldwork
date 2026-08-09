@@ -1,0 +1,79 @@
+name: Research 476 scaffold type thunderdome
+
+on:
+  pull_request:
+    branches:
+      - automation/476-scaffold-type-base-20260809
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: candidate/19671-simple-stubs-scikit-support
+          path: uv
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned toolchain formatter
+        working-directory: uv
+        run: rustup component add rustfmt
+
+      - name: Materialize typed scaffold variant
+        shell: bash
+        working-directory: uv
+        run: |
+          set -euo pipefail
+          BASE_SHA=$(git rev-parse HEAD)
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("crates/uv/src/commands/project/init.rs")
+          src = path.read_text()
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global src
+              count = src.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              src = src.replace(old, new, 1)
+
+          marker = '''/// The kind of Python project to initialize (either an application or a library).\n#[derive(Debug, Copy, Clone, Default)]\npub(crate) enum InitProjectKind {\n'''
+          replacement = '''#[derive(Debug, Copy, Clone, Eq, PartialEq)]\nenum PackageScaffold {\n    Runtime,\n    SimpleStub,\n}\n\nimpl PackageScaffold {\n    fn is_simple_stub(self) -> bool {\n        self == Self::SimpleStub\n    }\n}\n\n/// The kind of Python project to initialize (either an application or a library).\n#[derive(Debug, Copy, Clone, Default)]\npub(crate) enum InitProjectKind {\n'''
+          replace_once(marker, replacement, "scaffold enum insertion")
+
+          old = '''        let simple_stub = matches!(self, Self::ApplicationWithLibrary | Self::Library)\n            && simple_stub_package_module_dir(name).is_some();\n'''
+          new = '''        let scaffold = if matches!(self, Self::ApplicationWithLibrary | Self::Library)\n            && simple_stub_package_module_dir(name).is_some()\n        {\n            PackageScaffold::SimpleStub\n        } else {\n            PackageScaffold::Runtime\n        };\n'''
+          replace_once(old, new, "scaffold resolution")
+
+          # Thread the semantic value through the same existing ownership points.
+          src = src.replace("simple_stub: bool", "scaffold: PackageScaffold")
+          src = src.replace(", simple_stub)", ", scaffold)")
+          src = src.replace(", simple_stub)?", ", scaffold)?")
+          src = src.replace("if !simple_stub {", "if !scaffold.is_simple_stub() {")
+          src = src.replace("if simple_stub &&", "if scaffold.is_simple_stub() &&")
+          src = src.replace("if simple_stub =>", "if scaffold.is_simple_stub() =>")
+          src = src.replace("if simple_stub {", "if scaffold.is_simple_stub() {")
+
+          if "simple_stub: bool" in src or "if simple_stub" in src or ", simple_stub)" in src:
+              raise SystemExit("unconverted simple_stub plumbing remains")
+
+          path.write_text(src)
+          PY
+
+          cargo fmt --all
+          git diff --check
+          cargo check --locked -p uv
+          cargo test --locked -p uv --test project init::init_package_stubs_backends -- --exact
+          cargo test --locked -p uv --test project init::init_app_build_backend_scikit -- --exact
+          cargo test --locked -p uv --test project init::init_lib_build_backend_scikit -- --exact
+
+          echo '=== bool -> enum diff stat ==='
+          git diff --stat "$BASE_SHA" -- crates/uv/src/commands/project/init.rs
+          echo '=== bool -> enum diff ==='
+          git diff --unified=25 "$BASE_SHA" -- crates/uv/src/commands/project/init.rs
