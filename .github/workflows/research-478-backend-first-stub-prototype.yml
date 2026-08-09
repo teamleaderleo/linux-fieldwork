@@ -28,6 +28,8 @@ jobs:
         run: |
           python investigations/uv-stubs-backend-scope/thunderdome/backend_first_transform.py \
             uv-src/crates/uv/src/commands/project/init.rs
+          python investigations/uv-stubs-backend-scope/thunderdome/refine_canonical_stub_helper.py \
+            uv-src/crates/uv/src/commands/project/init.rs
           git -C uv-src diff --check
           git -C uv-src diff --stat
           git -C uv-src diff -- crates/uv/src/commands/project/init.rs
