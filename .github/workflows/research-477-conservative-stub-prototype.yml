@@ -3,6 +3,8 @@ name: Research 477 conservative stub prototype
 on:
   push:
     branches: [research/477-conservative-stub-prototype]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
