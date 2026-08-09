@@ -40,3 +40,27 @@ jobs:
           name: glibc-cache-name-identity-noble-x86_64
           path: glibc-cache-name-identity.log
           if-no-files-found: error
+
+  current-source-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Clone current upstream glibc and check candidate
+        run: |
+          set -euxo pipefail
+          git clone --depth=1 https://sourceware.org/git/glibc.git glibc-current
+          git -C glibc-current rev-parse HEAD | tee glibc-current-head.txt
+          git -C glibc-current log -1 --format='%H %cI %s' | tee -a glibc-current-head.txt
+          git -C glibc-current apply --check "$GITHUB_WORKSPACE/investigations/glibc-cache-name-identity/candidate-exact-name.patch"
+          grep -n '_dl_cache_libcmp (name, string_table + lib->key)' glibc-current/elf/dl-cache.c | tee -a glibc-current-head.txt
+          grep -n 'int val1' glibc-current/elf/dl-cache.c | tee -a glibc-current-head.txt
+      - name: Upload source receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: glibc-current-source-candidate
+          path: glibc-current-head.txt
+          if-no-files-found: error
