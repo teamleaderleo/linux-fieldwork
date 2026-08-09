@@ -1,6 +1,7 @@
 # UV simple-stub initialization: upstream acceptance shape
 
-State: `INTERNAL REVIEW STRATEGY — NO UPSTREAM MUTATION`  
+State: `INTERNAL REVIEW STRATEGY — NO UPSTREAM MUTATION`
+
 Date: 2026-08-09
 
 External context:
@@ -8,222 +9,177 @@ External context:
 - [uv issue 19663](https://redirect.github.com/astral-sh/uv/issues/19663)
 - [uv PR 19671](https://redirect.github.com/astral-sh/uv/pull/19671)
 
+Controlled current-main candidate: `teamleaderleo/uv#82`.
+
 ## Thesis
 
-The most reviewable fix is **not** a general backend compatibility framework and **not** a global claim that every `*-stubs` distribution is permanently stub-only.
+The most reviewable fix is a narrow `uv init` scaffold rule, not a general backend compatibility framework and not a global claim that every `*-stubs` distribution is permanently stub-only.
 
-It is a narrow `uv init` scaffold rule:
+> When UV is generating its normal packaged/library source layout and the canonical project name maps to `*-stubs`, infer the common simple-stub scaffold. Adapt the selected backend with the small generated configuration needed for that tree, or reject the selected source-generating template when the focused product policy cannot honestly represent it.
 
-> When UV is generating its normal project→package source layout and the project name normalizes to `*-stubs`, infer the common simple-stub scaffold. Then adapt the already-selected backend template with small generated configuration, or reject a source-generating template that cannot honestly represent that scaffold.
+Preserve `--bare` and custom layouts outside that inference. Ordinary project names stay unchanged.
 
-Preserve `--bare` and custom-layout use cases outside that inference.
+## Why this is upstream-plausible
 
-For ordinary project names, existing initialization behavior remains unchanged.
+The live upstream discussion already accepts the basic special-case direction and identifies backend-specific consequences:
 
-## Why this looks upstream-plausible
+- Hatch needs explicit package selection;
+- Poetry needs explicit package mapping;
+- Flit has dedicated stub support;
+- Maturin is the wrong generated template for a pure stub-only package.
 
-The live upstream discussion gives two positive signals.
+The review problem is therefore scope and template policy, not whether UV may recognize the conventional generated scaffold.
 
-First, the initial code review did not reject the stub special case. It asked for a comment explaining it and explicitly noted that UV already has similar special-casing.
+## Narrow framing
 
-Second, after the cross-backend regression was reported, maintainer feedback supplied backend-specific Hatch and Poetry configuration, pointed to Flit stub support, and identified Maturin as the wrong backend for a pure stub-only scaffold.
+Do not lead with “`*-stubs` is a new project kind.”
 
-That means the likely review question is about **scope and template policy**, not whether UV is allowed to recognize the conventional scaffold at all.
+Use:
 
-## Important narrowing from adversarial review
+> UV maps the project name to a default generated package layout. For the conventional `foo-stubs` case, that default mapping should generate the simple PEP 561 stub package instead of a normalized runtime package.
 
-Do not lead upstream with "`*-stubs` is a new project kind".
+This framing leaves namespace stubs, partial stubs, arbitrary distribution→import mappings, and richer mixed distributions outside the patch.
 
-That phrasing is too broad because:
-
-- PEP 561 permits richer layouts than a root `__init__.pyi` package;
-- namespace and partial stub packages differ;
-- project/distribution naming need not encode the entire import layout;
-- real distributions such as `django-stubs` can ship the stubs plus runtime/plugin support code.
-
-The safer framing is:
-
-> UV currently maps the project name to a default source-package scaffold. For the conventional `foo-stubs` case, that default mapping should generate the simple PEP 561 stub package instead of a normalized runtime package.
-
-This is a scaffold heuristic, not a permanent distribution-content invariant.
-
-## Preserve expert/custom surfaces
+## Preserve custom surfaces
 
 ### `--bare`
 
 Do not reject `foo-stubs --bare --build-backend scikit` or `maturin` merely because of the name.
 
-`--bare` intentionally skips the source files UV normally expects. A user may be supplying a custom multi-package, native, partial-stub, or otherwise richer layout.
+Bare initialization intentionally skips UV-owned source layout. The user may provide a custom native, multi-package, partial-stub, or otherwise richer project.
 
-Any Maturin/Scikit policy applies only when UV itself is generating the simple stub source scaffold.
+### Do not invent an explicit-`--app` escape in this patch
 
-### Explicit application intent
+The provenance experiment showed that retaining the raw flag is cheap, but the behavior is not a clean bug-fix safeguard:
 
-If current argument resolution can cheaply tell that the user explicitly requested `--app --package`, consider whether explicit app intent should outrank the name heuristic.
+- `--app` is documented as an explicit spelling of the default application target;
+- a naive runtime `foo-stubs` override still conflicts with `uv_build`'s independent name-based stub inference;
+- making it build correctly would add another `uv_build` `module-name` adapter;
+- it would not provide a corresponding runtime-library escape.
 
-This should remain a small precedence question. Do not introduce a broad mode system just to answer it.
+If UV later needs a regular-package override for names ending in `-stubs`, that should be a separate explicit module/scaffold-control feature. Keep this patch focused.
 
-## Keep the implementation smaller than the design model
+## Keep implementation smaller than the design history
 
-A revised upstream patch can stay close to the existing PR's helper style.
+The selected implementation does not need:
 
-The existing PR already derives the conventional hyphenated stub directory from the normalized package name. A current-main implementation can keep one small helper/derived value and use it only along the source-generating packaged path.
-
-Avoid:
-
-- compatibility registries;
-- backend feature databases;
+- another `InitProjectKind` variant;
+- a `PackageScaffold` enum;
+- a capability registry;
 - trait hierarchies;
 - a public `--stub-only` flag;
-- global changes to package-name semantics.
+- resolver/installer/lockfile changes.
 
-## Smallest production behavior
+An executed representation comparison showed the current local `simple_stub: bool` is better than a two-case scaffold enum. `BareWithBuildSystem` has no package scaffold, so `Runtime | SimpleStub` would mislabel that path unless another state/`Option` were introduced.
 
-### 1. Infer the simple stub scaffold only when UV is generating source
+The boolean precisely answers the only required question: whether simple-stub template adaptation applies.
 
-For the conventional generated `foo-stubs` scaffold:
+## Selected backend behavior
 
-```text
-src/foo-stubs/__init__.pyi
-```
-
-and no generated runtime entry point.
-
-For ordinary names, use the existing path unchanged.
-
-For bare/custom initialization, do not infer or reject from the name alone.
-
-### 2. Adapt pure-Python backend templates in the existing backend match
-
-Executed evidence supports these generated deltas:
-
-| Backend | Simple-stub template delta |
+| Backend | Focused first-fix behavior |
 |---|---|
-| `uv_build` | none beyond the generated stub tree |
+| `uv_build` | direct generated stub tree |
 | Hatch | `packages = ["src/foo-stubs"]` |
 | Poetry | `{ include = "foo-stubs", from = "src" }` |
-| Flit | stable clean support requires 4.x |
-| PDM | `includes = ["src/foo-stubs"]` |
-| setuptools | wildcard `"*" = ["*.pyi"]` package data |
+| Flit | conditional `flit_core>=4,<5` |
+| PDM | `includes = ["src/foo-stubs"]`; preserve current requirement |
+| setuptools | `"*" = ["*.pyi"]`; preserve `>=61` |
+| Scikit-build-core | reject generated simple-stub scaffold; preserve `--bare` |
+| Maturin | reject generated simple-stub scaffold; preserve `--bare` |
 
-Do not raise PDM or setuptools floors just to gain automatic detection. Older supported backends produce the correct wheel with explicit generated configuration.
+### Scikit qualification
 
-Flit remains different: the stable clean capability is genuinely a 4.x boundary for this exact scaffold.
+Do not say scikit-build-core is incapable of packaging the stub tree.
 
-### 3. Treat Scikit as an explicit product-policy fork
+Fieldwork proved that this works at UV's current backend floor:
 
-Artifact evidence is now complete:
+```toml
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+wheel.cmake = false
+wheel.packages = ["src/foo-stubs"]
+```
 
-- `wheel.cmake = false` + `wheel.packages = ["src/foo-stubs"]` builds the correct wheel;
-- CMake-disabled auto discovery misses the stub;
-- UV's current CMake-style contract fails on the pure stub fixture.
+Both support and reject product variants were materialized and passed the same focused tests. The selected first-fix policy is conservative rejection because current UV documentation presents Scikit as an extension-module starter and the rejection version preserves that template identity with a smaller semantic surface.
 
-Therefore do **not** say "Scikit cannot support stub packages."
+The CMake-less support candidate remains useful evidence if maintainers explicitly prefer backend identity over starter-family continuity.
 
-Two reviewable policies exist:
+### Maturin qualification
 
-- **support it:** treat `--build-backend scikit` as backend selection and generate the CMake-less explicit adapter;
-- **reject the generated simple-stub combination:** preserve UV's current interpretation of Scikit as an extension-module starter, while leaving `--bare` available for custom use.
+Reject only the generated simple-stub path. Artifact/source evidence says the pure fixture is outside Maturin's intended project kind, but `--bare` remains valid for custom projects.
 
-If optimizing for semantic consistency with the other backend adapters, support is cleaner. If optimizing for preserving the current template family with the smallest behavior change, rejection is smaller. This is a maintainer decision, not an evidence gap.
+## Likely production footprint
 
-### 4. Reject Maturin only on the source-generating simple-stub path
+A review-friendly patch should remain recognizable as:
 
-Maturin 1.14.1 artifact execution failed because the fixture has no Cargo project, matching maintainer/source guidance.
+1. compute one local `simple_stub` predicate after final name/project-kind resolution;
+2. validate selected rejected backends before filesystem/VCS initialization;
+3. suppress generated runtime script metadata for the stub path;
+4. render normal build-system declarations plus small explicit backend stub config;
+5. write `src/foo-stubs/__init__.pyi` and return before runtime/native source generation.
 
-If UV is about to generate the simple `src/foo-stubs/__init__.pyi` scaffold, reject Maturin before writing Cargo/PyO3 starter files.
+Explicit backend helpers/match arms are preferable to a generic table because the required TOML changes are structurally different.
 
-Do not block `--bare --build-backend maturin` based on the name alone.
+## Test shape
 
-## Likely code footprint
+Prefer UV-native tests for the templates UV owns:
 
-A review-friendly production patch should still be small:
+- exact generated `pyproject.toml` snippets/config;
+- `src/foo-stubs/__init__.pyi` exists;
+- normalized runtime `src/foo_stubs/__init__.py` is absent;
+- `[project.scripts]` is absent on the simple-stub path;
+- default `uv_build` project builds successfully;
+- Scikit/Maturin selected rejection happens before project/VCS side effects;
+- `--bare` controls succeed;
+- ordinary packaged/native templates remain unchanged.
 
-1. one helper/derived "simple stub scaffold" value on the generated-package path;
-2. one condition suppressing the generated runtime script;
-3. one source-generation branch writing `__init__.pyi` under the hyphenated directory;
-4. small backend-specific TOML branches in existing template rendering;
-5. narrow validation for source-generating incompatible templates, if maintainers choose rejection rows.
+Fieldwork's hosted backend matrix is the artifact evidence for third-party backends. UV does not need a permanent networked matrix in its normal CI to make this fix reviewable.
 
-No resolver, installer, lockfile, or runtime execution path needs to change. This logic runs during `uv init` only.
+## Current controlled candidate
 
-The test diff may be much larger than the production diff because generated-template snapshots are verbose.
+`teamleaderleo/uv#82` is based on exact upstream-main commit:
 
-## Test shape that matches UV ownership
+```text
+dd0584d560a4693b5713a78be54304123ada3e77
+```
 
-Prefer testing the thing UV owns: generated templates.
+Its current diff is limited to:
 
-Upstream tests should focus on:
+- `crates/uv/src/commands/project/init.rs`;
+- `crates/uv/tests/project/init.rs`.
 
-- exact generated `pyproject.toml` per affected backend;
-- exact `src/foo-stubs/__init__.pyi` path;
-- absence of the generated runtime `[project.scripts]` entry;
-- preservation of `--bare` behavior;
-- rejection snapshots only for backend/template combinations maintainers choose to reject;
-- ordinary non-stub package/library snapshots unchanged;
-- keep the existing `uv_build` end-to-end build assertion.
+It already uses the selected boolean representation and conservative Scikit/Maturin rejection policy.
 
-Fieldwork's hosted backend matrix provides artifact evidence for the third-party templates. UV does not necessarily need networked/live third-party builds in its normal test suite.
-
-## Explicit non-goals
-
-Do not make this bug fix responsible for:
-
-- all PEP 561 namespace-stub layouts;
-- partial stub packages;
-- arbitrary distribution→import-package mappings;
-- proving a `*-stubs` distribution contains no runtime code;
-- dynamic backend capability detection;
-- a general backend feature registry;
-- global PDM/setuptools upgrades;
-- a public project-kind API.
-
-## Main review choices that remain
-
-### Flit
-
-Use Flit 4 only for the inferred simple-stub scaffold, or upgrade the general Flit template. The bug fix only requires the conditional form.
-
-### Scikit-build-core
-
-Support with the proven CMake-less explicit adapter, or preserve the current extension-template family and reject only the source-generating simple-stub combination.
-
-### Explicit `--app --package`
-
-If explicit app provenance is available without architectural churn, decide whether it should outrank the project-name scaffold heuristic.
+The earlier temporary execution machinery is not part of the stable product diff.
 
 ## Acceptance risks
 
-Nothing guarantees merge.
+Nothing guarantees merge. Remaining risk is ordinary review/product preference:
 
-The primary risks are normal product/review risks:
+- upstream PR #19671 is stale and may be preferred as the ownership vehicle;
+- maintainers may choose the proven Scikit-support variant instead of conservative rejection;
+- maintainers may prefer a different diagnostic or test split;
+- they may choose to land only part of the backend adapter matrix initially.
 
-- the current public PR is stale and non-mergeable against current main;
-- maintainers may prefer the existing author to update it rather than accept a competing implementation;
-- maintainers may choose a different Scikit or Flit policy;
-- they may intentionally support only a subset of backend adapters in the first patch;
-- they may prefer build-time failure over init-time rejection for some advanced combinations.
-
-Technically, though, this does **not** require a large compatibility switch or ongoing runtime subsystem.
+None of these require a larger architecture.
 
 ## Recommended upstream framing, if authorized
 
-Lead with the narrow result:
+Lead with the narrow, executed result:
 
-1. the original shared hyphenated layout was correct in intent but incomplete across backend templates;
+1. the original hyphenated stub layout is correct in intent but incomplete across backend templates;
 2. Hatch/Poetry/PDM/setuptools need only generated configuration;
-3. Flit needs 4.x for the stable clean scaffold;
-4. Scikit is artifact-capable and now purely a template-policy choice;
-5. Maturin is incompatible with the generated simple-stub scaffold, but bare/custom mode should remain available;
-6. ordinary projects are untouched;
-7. the inference applies to UV's default generated scaffold, not every possible `*-stubs` distribution.
+3. Flit needs 4.x conditionally for the stable clean scaffold;
+4. Scikit is technically capable, but the focused candidate conservatively preserves UV's current extension-template family and rejects generated stubs while keeping `--bare`;
+5. Maturin rejects only the generated simple-stub path;
+6. ordinary projects are unchanged;
+7. the suffix is a default-scaffold heuristic, not a universal distribution ontology;
+8. the implementation is one local predicate plus explicit existing backend/source branches, not a new framework.
 
-Then ask whether maintainers prefer the existing PR to be updated or a fresh current-main candidate.
-
-That avoids an unsolicited competing PR and gives maintainers control over patch ownership and the two remaining policy decisions.
+Then ask whether maintainers prefer updating the existing PR or using a fresh current-main patch. Do not create unsolicited canonical competition without authorization.
 
 ## Internal next step
 
-Evidence is saturated enough to build a minimal controlled current-main prototype once the desired Scikit policy is chosen.
+Architecture research is saturated. Continue with candidate-quality work on #82: exact diff review, diagnostics, source-branch hygiene, and focused test receipts. Reopen architecture only if upstream source materially changes or a concrete new compatibility case invalidates the selected boundary.
 
-Keep that prototype internal until there is explicit authorization for another canonical upstream interaction.
+No canonical upstream interaction was made.
