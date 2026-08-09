@@ -1,0 +1,173 @@
+name: research-504-uv-find-links-macos
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-504-uv-find-links-macos.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  macos-x86:
+    runs-on: macos-13
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show host identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -a
+          uname -m
+          sw_vers
+          python3 --version
+
+      - name: Check out pinned uv current main
+        uses: actions/checkout@v4
+        with:
+          repository: astral-sh/uv
+          ref: 1881d30773386da77017f2ad5ceaf160535d65da
+          path: uv-main
+          persist-credentials: false
+
+      - name: Prepare released uv binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/uv-releases"
+          for version in 0.11.26 0.12.0 0.12.1 0.12.2 0.12.3; do
+            dest="$RUNNER_TEMP/uv-releases/$version"
+            mkdir -p "$dest"
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/$version/uv-x86_64-apple-darwin.tar.gz" \
+              | tar -xz -C "$dest" --strip-components=1
+            "$dest/uv" --version
+          done
+
+      - name: Build pinned current-main uv
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/uv-current-target"
+          cargo build --manifest-path uv-main/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv-current"
+          git -C uv-main rev-parse HEAD
+          "$RUNNER_TEMP/uv-current" --version
+
+      - name: Execute exact macOS MRE matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/find-links-504-macos"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/private_wheels"
+
+          python3 - "$ROOT/private_wheels" <<'PY'
+          import base64, csv, hashlib, io, pathlib, sys, zipfile
+          target = pathlib.Path(sys.argv[1])
+          files = {
+              "demo_pkg/__init__.py": b"__version__ = '1.0.0'\n",
+              "demo_pkg-1.0.0.dist-info/METADATA": b"Metadata-Version: 2.1\nName: demo-pkg\nVersion: 1.0.0\n",
+              "demo_pkg-1.0.0.dist-info/WHEEL": b"Wheel-Version: 1.0\nGenerator: fieldwork-504-macos\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+          }
+          rows = []
+          for name, data in files.items():
+              digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
+              rows.append([name, f"sha256={digest}", str(len(data))])
+          rows.append(["demo_pkg-1.0.0.dist-info/RECORD", "", ""])
+          sio = io.StringIO(); csv.writer(sio, lineterminator="\n").writerows(rows)
+          files["demo_pkg-1.0.0.dist-info/RECORD"] = sio.getvalue().encode()
+          wheel = target / "demo_pkg-1.0.0-py3-none-any.whl"
+          with zipfile.ZipFile(wheel, "w", zipfile.ZIP_DEFLATED) as zf:
+              for name, data in files.items(): zf.writestr(name, data)
+          print(f"WHEEL={wheel.resolve()} exists={wheel.exists()}")
+          PY
+
+          python3 -m venv "$ROOT/venv"
+          PYTHON="$ROOT/venv/bin/python"
+          RESULTS="$ROOT/results.tsv"
+          printf 'version\tvariant\tcommand\texit\n' > "$RESULTS"
+
+          cat > "$ROOT/requirements-equals-dot.in" <<'EOF'
+          --no-index
+          --find-links=./private_wheels/
+          demo-pkg==1.0.0
+          EOF
+          cat > "$ROOT/requirements-equals-plain.in" <<'EOF'
+          --no-index
+          --find-links=private_wheels/
+          demo-pkg==1.0.0
+          EOF
+          cat > "$ROOT/requirements-space-dot.in" <<'EOF'
+          --no-index
+          --find-links ./private_wheels/
+          demo-pkg==1.0.0
+          EOF
+          ABS=$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve())' "$ROOT/private_wheels")
+          cat > "$ROOT/requirements-absolute.in" <<EOF
+          --no-index
+          --find-links=$ABS
+          demo-pkg==1.0.0
+          EOF
+
+          run_one() {
+            label="$1"; uv_bin="$2"; variant="$3"; command="$4"
+            req="requirements-$variant.in"
+            log="$ROOT/${label}-${variant}-${command}.log"
+            echo "=== $label $variant $command ==="
+            pwd
+            python3 - "$ROOT/$req" <<'PY'
+          import pathlib,sys
+          p=pathlib.Path(sys.argv[1])
+          print(f"REQ={p.resolve()} EXISTS={p.exists()}")
+          print(f"REL_LINKS={(p.parent/'private_wheels').resolve()} EXISTS={(p.parent/'private_wheels').exists()}")
+          PY
+            set +e
+            if [ "$command" = compile ]; then
+              "$uv_bin" pip compile "$req" -o "$ROOT/out-${label}-${variant}.txt" >"$log" 2>&1
+            else
+              "$uv_bin" pip install --dry-run --python "$PYTHON" -r "$req" >"$log" 2>&1
+            fi
+            code=$?
+            set -e
+            cat "$log"
+            printf '%s\t%s\t%s\t%s\n' "$label" "$variant" "$command" "$code" >> "$RESULTS"
+          }
+
+          cd "$ROOT"
+          for version in 0.11.26 0.12.0 0.12.1 0.12.2 0.12.3; do
+            for variant in equals-dot equals-plain space-dot absolute; do
+              run_one "$version" "$RUNNER_TEMP/uv-releases/$version/uv" "$variant" compile
+              run_one "$version" "$RUNNER_TEMP/uv-releases/$version/uv" "$variant" install
+            done
+          done
+          for variant in equals-dot equals-plain space-dot absolute; do
+            run_one current "$RUNNER_TEMP/uv-current" "$variant" compile
+            run_one current "$RUNNER_TEMP/uv-current" "$variant" install
+          done
+
+          echo '=== RESULTS ==='
+          cat "$RESULTS"
+          python3 - "$RESULTS" <<'PY'
+          import csv,sys
+          rows=list(csv.DictReader(open(sys.argv[1]),delimiter='\t'))
+          for version in ['0.11.26','0.12.0','0.12.1','0.12.2','0.12.3','current']:
+              subset=[r for r in rows if r['version']==version]
+              print(f"SUMMARY {version}: {sum(r['exit']=='0' for r in subset)}/{len(subset)}")
+          abs_bad=[r for r in rows if r['variant']=='absolute' and r['exit']!='0']
+          assert not abs_bad, abs_bad
+          PY
+          cp "$RESULTS" "$GITHUB_WORKSPACE/results-504-macos.tsv"
+          cp "$ROOT"/*.log "$GITHUB_WORKSPACE/" || true
+
+      - name: Upload macOS research receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: uv-find-links-504-macos
+          path: |
+            results-504-macos.tsv
+            *.log
+          if-no-files-found: error
