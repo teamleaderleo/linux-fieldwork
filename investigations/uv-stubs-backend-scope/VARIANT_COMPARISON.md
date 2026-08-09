@@ -116,7 +116,11 @@ otherwise                        -> existing runtime scaffold
 
 ### Source finding
 
-Current UV still has the raw `app` boolean while resolving `InitArgs`. It first maps `(app, lib)` to an `InitProjectKind`, then applies `--package` overrides. Both default packaged applications and explicit `--app --package` ultimately become `InitProjectKind::ApplicationWithLibrary`.
+Current UV still has the raw `app` boolean while resolving `InitArgs`. It first maps `(app, lib)` to an `InitProjectKind`, then applies `--package` overrides.
+
+A subtle but important detail: **plain explicit `--app` is packaged by default**. The resolver first selects `InitProjectKind::Application`, then `(Application, None | Some(true))` becomes `ApplicationWithLibrary`. Explicit `--app --package` reaches the same result; the extra `--package` is redundant for this case.
+
+The default no-mode packaged application and explicit `--app` therefore both ultimately become `InitProjectKind::ApplicationWithLibrary`.
 
 So explicit-app provenance is **available cheaply at settings resolution but is discarded before project generation**.
 
@@ -246,7 +250,7 @@ Reopen this comparison only if:
 1. a current-main source change alters argument provenance or backend-template ownership;
 2. maintainers explicitly define whether `scikit` means backend identity or extension-starter family;
 3. an implementation prototype shows Scikit-S is materially larger/riskier than the design model predicts;
-4. a concrete `--app --package foo-stubs` compatibility case argues against explicit-intent precedence;
+4. a concrete explicit `--app foo-stubs` compatibility case argues against explicit-intent precedence;
 5. a backend deprecates one of the explicit configuration mechanisms used by Variant C/D.
 
 Otherwise further PEP 561 ecosystem exploration is outside the current bug-fix decision.
