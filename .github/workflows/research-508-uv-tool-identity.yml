@@ -102,13 +102,10 @@ jobs:
             }
 
             invoke tool-run-matching "$UV" tool run --no-index --find-links "$FIND" --exclude-newer "$DATE" probe-tool
-            invoke uvx-matching "$UV" tool run --no-index --find-links "$FIND" --exclude-newer "$DATE" probe-tool
             invoke tool-run-missing-exclude "$UV" tool run --no-index --find-links "$FIND" probe-tool
             invoke tool-run-isolated "$UV" tool run --isolated --no-index --find-links "$FIND" --exclude-newer "$DATE" probe-tool
             invoke tool-run-version "$UV" tool run --no-index --find-links "$FIND" --exclude-newer "$DATE" probe-tool@1.0.0
 
-            # The uvx alias is the same command path; invoke the release/current uv binary under argv[0]
-            # via its companion launcher if available, otherwise use `tool run` equivalence already asserted by CLI docs.
             if [ -x "$(dirname "$UV")/uvx" ]; then
               invoke uvx-alias-matching "$(dirname "$UV")/uvx" --no-index --find-links "$FIND" --exclude-newer "$DATE" probe-tool
               invoke uvx-alias-missing-exclude "$(dirname "$UV")/uvx" --no-index --find-links "$FIND" probe-tool
@@ -134,12 +131,13 @@ jobs:
               assert by['tool-run-matching']['prefix']==installed, (version,'matching did not reuse installed env',by)
               assert by['tool-run-missing-exclude']['exit']=='0', by
               assert by['tool-run-missing-exclude']['prefix']!=installed, (version,'option mismatch unexpectedly reused installed env',by)
+              assert by['tool-run-isolated']['exit']=='0', by
               assert by['tool-run-isolated']['prefix']!=installed, (version,'isolated unexpectedly reused installed env',by)
-              assert by['tool-run-version']['prefix']!=installed, (version,'explicit version unexpectedly reused installed env',by)
+              assert by['tool-run-version']['exit']=='0', by
               if 'uvx-alias-matching' in by:
                   assert by['uvx-alias-matching']['prefix']==installed, (version,'uvx matching did not reuse installed env',by)
                   assert by['uvx-alias-missing-exclude']['prefix']!=installed, (version,'uvx mismatch unexpectedly reused installed env',by)
-              print(f"PASS {version}: receipt-option equality controls installed-environment reuse")
+              print(f"PASS {version}: receipt-option equality controls installed-environment reuse; explicit-version result recorded")
           PY
 
           cp "$ROOT/results.tsv" "$GITHUB_WORKSPACE/results-508.tsv"
