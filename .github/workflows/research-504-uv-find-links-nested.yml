@@ -1,0 +1,138 @@
+name: research-504-uv-find-links-nested
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-504-uv-find-links-nested.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  nested-containing-file:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out pinned uv current main
+        uses: actions/checkout@v4
+        with:
+          repository: astral-sh/uv
+          ref: 1881d30773386da77017f2ad5ceaf160535d65da
+          path: uv-main
+          persist-credentials: false
+
+      - name: Prepare released and current uv
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/uv-releases"
+          for version in 0.11.26 0.12.0 0.12.1 0.12.2 0.12.3; do
+            dest="$RUNNER_TEMP/uv-releases/$version"
+            mkdir -p "$dest"
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/$version/uv-x86_64-unknown-linux-gnu.tar.gz" \
+              | tar -xz -C "$dest" --strip-components=1
+            "$dest/uv" --version
+          done
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/uv-current-target"
+          cargo build --manifest-path uv-main/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv-current"
+          git -C uv-main rev-parse HEAD
+          "$RUNNER_TEMP/uv-current" --version
+
+      - name: Execute unaliased nested requirements matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/find-links-504-nested"
+          REQDIR="$ROOT/requirements"
+          LINKDIR="$REQDIR/links"
+          rm -rf "$ROOT"
+          mkdir -p "$LINKDIR"
+          test ! -e "$ROOT/links"
+
+          python - "$LINKDIR" <<'PY'
+          import base64,csv,hashlib,io,pathlib,sys,zipfile
+          target=pathlib.Path(sys.argv[1])
+          files={
+            'ok/__init__.py': b'',
+            'ok-1.0.0.dist-info/METADATA': b'Metadata-Version: 2.1\nName: ok\nVersion: 1.0.0\n',
+            'ok-1.0.0.dist-info/WHEEL': b'Wheel-Version: 1.0\nGenerator: fieldwork-504-nested\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
+          }
+          rows=[]
+          for name,data in files.items():
+            digest=base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b'=').decode()
+            rows.append([name,f'sha256={digest}',str(len(data))])
+          rows.append(['ok-1.0.0.dist-info/RECORD','',''])
+          sio=io.StringIO(); csv.writer(sio,lineterminator='\n').writerows(rows)
+          files['ok-1.0.0.dist-info/RECORD']=sio.getvalue().encode()
+          with zipfile.ZipFile(target/'ok-1.0.0-py3-none-any.whl','w',zipfile.ZIP_DEFLATED) as zf:
+            for name,data in files.items(): zf.writestr(name,data)
+          PY
+
+          python -m venv "$ROOT/venv"
+          PYTHON="$ROOT/venv/bin/python"
+          cat > "$REQDIR/space.in" <<'EOF'
+          --no-index
+          --find-links ./links
+          ok==1.0.0
+          EOF
+          cat > "$REQDIR/equals.in" <<'EOF'
+          --no-index
+          --find-links=./links
+          ok==1.0.0
+          EOF
+
+          printf 'version\tvariant\tcommand\texit\n' > "$ROOT/results.tsv"
+          run_one() {
+            label="$1"; uv_bin="$2"; variant="$3"; command="$4"
+            req="requirements/$variant.in"
+            log="$ROOT/$label-$variant-$command.log"
+            echo "=== $label $variant $command ==="
+            test ! -e "$ROOT/links"
+            test -d "$LINKDIR"
+            set +e
+            if [ "$command" = install ]; then
+              (cd "$ROOT" && "$uv_bin" pip install --dry-run --python "$PYTHON" -r "$req") >"$log" 2>&1
+            else
+              (cd "$ROOT" && "$uv_bin" pip compile "$req" -o "$ROOT/out-$label-$variant.txt") >"$log" 2>&1
+            fi
+            code=$?
+            set -e
+            cat "$log"
+            printf '%s\t%s\t%s\t%s\n' "$label" "$variant" "$command" "$code" >> "$ROOT/results.tsv"
+          }
+
+          for version in 0.11.26 0.12.0 0.12.1 0.12.2 0.12.3; do
+            for variant in space equals; do
+              run_one "$version" "$RUNNER_TEMP/uv-releases/$version/uv" "$variant" install
+              run_one "$version" "$RUNNER_TEMP/uv-releases/$version/uv" "$variant" compile
+            done
+          done
+          for variant in space equals; do
+            run_one current "$RUNNER_TEMP/uv-current" "$variant" install
+            run_one current "$RUNNER_TEMP/uv-current" "$variant" compile
+          done
+
+          cat "$ROOT/results.tsv"
+          python - "$ROOT/results.tsv" <<'PY'
+          import csv,sys
+          rows=list(csv.DictReader(open(sys.argv[1]),delimiter='\t'))
+          for version in ['0.11.26','0.12.0','0.12.1','0.12.2','0.12.3','current']:
+            subset=[r for r in rows if r['version']==version]
+            print(f"SUMMARY {version}: {sum(r['exit']=='0' for r in subset)}/{len(subset)}")
+          PY
+          cp "$ROOT/results.tsv" "$GITHUB_WORKSPACE/results-504-nested.tsv"
+          cp "$ROOT"/*.log "$GITHUB_WORKSPACE/" || true
+
+      - name: Upload corrected nested receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: uv-find-links-504-nested
+          path: |
+            results-504-nested.tsv
+            *.log
+          if-no-files-found: error
