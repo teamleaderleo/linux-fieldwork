@@ -1,0 +1,39 @@
+name: glibc cache name identity
+
+on:
+  pull_request:
+    paths:
+      - 'investigations/glibc-cache-name-identity/**'
+      - '.github/workflows/glibc-cache-name-identity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  noble-x86_64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Record image and glibc identity
+        run: |
+          set -euxo pipefail
+          printf 'ImageOS=%s\n' "${ImageOS:-}"
+          printf 'ImageVersion=%s\n' "${ImageVersion:-}"
+          uname -a
+          ldd --version | head -1
+          gcc --version | head -1
+      - name: Reproduce cache name identity
+        run: |
+          set -o pipefail
+          sudo bash investigations/glibc-cache-name-identity/probe.sh | tee glibc-cache-name-identity.log
+      - name: Upload retained probe output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: glibc-cache-name-identity-noble-x86_64
+          path: glibc-cache-name-identity.log
+          if-no-files-found: error
