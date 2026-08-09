@@ -107,13 +107,13 @@ jobs:
           python -m pip install --no-deps "$poetry_wheel" "$flit_wheel"
 
           python - <<'PY'
-          import importlib.metadata
           import pathlib
+          import pkg_resources
           import site
 
           import foo
           assert foo.answer() == 42
-          assert importlib.metadata.version("foo-stubs") == "0.1.0"
+          assert pkg_resources.get_distribution("foo-stubs").version == "0.1.0"
 
           candidates = []
           for root in site.getsitepackages():
