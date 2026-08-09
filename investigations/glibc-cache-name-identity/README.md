@@ -2,45 +2,45 @@
 
 ## TL;DR
 
-Current glibc can place two byte-distinct SONAMEs in `ld.so.cache` and then treat them as one lookup identity when `_dl_cache_libcmp` considers their numeric components equal. A disposable glibc 2.41 x86_64 fixture reproduced both a leading-zero pair (`libalias.so.1` / `libalias.so.01`) and a wide-decimal pair (`libwide.so.1` / `libwide.so.4294967297`): cache-backed lookup collapses the pair onto one DSO, while bypassing the cache loads each exact requested SONAME.
+Ubuntu Noble glibc 2.39 and Debian glibc 2.41 both reproduce a cache-only library identity defect: two byte-distinct SONAMEs can coexist in `ld.so.cache`, yet cache-backed `dlopen()` treats them as one name when `_dl_cache_libcmp` considers their numeric components equal. Bypassing the cache with the same loader and DSOs restores exact-name resolution.
 
-The immediate next gate is the same no-network fixture on Ubuntu Noble glibc 2.39. The first candidate boundary should preserve the historical cache sort contract while requiring byte-exact key identity inside the comparator-equivalent group. Comparator overflow deserves a second compatibility-aware correction because changing the cache ordering outright can invalidate already-generated caches.
+The retained fixture proves this with leading-zero aliases (`libalias.so.1` / `libalias.so.01`) and a wide-decimal pair (`libwide.so.1` / `libwide.so.4294967297`). The cleanest first candidate is deliberately smaller than a comparator rewrite: preserve the historical comparator to locate an old-cache equivalence group, then require byte-exact SONAME equality before an entry can participate in normal architecture/HWCAP preference. Comparator overflow remains a related successor because changing the sort relation outright can break lookup in already-generated caches.
 
 ## Explain like I'm five
 
-Linux keeps an index of shared libraries so programs can find them quickly. The index sorts numbers inside names numerically. That makes `1` and `01` look like the same number even though they are different library names.
+Linux keeps an index of shared libraries so programs can find them quickly. The index compares numbers inside names numerically. That lets `1` and `01` compare as the same numeric value even though they are different library names.
 
 Literal example:
 
 ```text
 cache contains libalias.so.1  -> implementation A
 cache contains libalias.so.01 -> implementation B
-program asks for libalias.so.01
-cache lookup -> implementation A or B according to the collapsed cache group
-cache bypass -> implementation B exactly
+program asks for either name
+cache lookup -> both requests can reach the same implementation
+cache bypass -> each request reaches its exact implementation
 ```
-
-The same mechanism also reaches very large digit strings because the comparator converts each decimal run into a C `int` without a checked bound.
 
 ## Why care
 
-`DT_NEEDED` and `dlopen()` library names are byte strings supplied as identities. A cache accelerator should preserve which name was requested. Here the cache changes that answer: two exact names that resolve separately through ordinary directory search can resolve to one object when the cache participates.
+`DT_NEEDED` and `dlopen()` library names are byte-string identities. A lookup cache should preserve which name was requested. Here enabling the cache changes the loaded object while all ordinary pathname inputs stay the same.
 
-The practical consequence depends on who can install libraries and regenerate the cache. Treat the current result as a dynamic-loader/package identity correctness defect. No privilege-escalation claim is made.
+The practical consequence depends on package/install authority and cache generation. The current claim is a dynamic-loader/package identity correctness defect. No privilege-escalation claim is made.
 
 ## Current state
 
 - State: `EXECUTING`
-- Exact working head: branch `investigation/glibc-cache-name-identity`; update after hosted gate
-- Latest authoritative gate or artifact: local disposable Debian glibc 2.41 x86_64 reproduction; issue #502 live checkpoints
-- First incomplete step: execute the committed probe on GitHub-hosted Ubuntu 24.04 / glibc 2.39
-- Cleanup state: local disposable chroots removed; committed probe guards its `/tmp` cleanup root
-- Next safe action: hosted Noble run, then candidate-model tests against the legacy cache ordering
+- Exact working branch: `investigation/glibc-cache-name-identity`
+- Dedicated Noble implementation gate: workflow `31341993102`, job `93317188110` — success
+- Noble artifact: `9046104503`, `glibc-cache-name-identity-noble-x86_64`, ZIP digest `sha256:480b08f4a6c1ec83a2f1bc8f33a5c916f1f83dc79b05f2ae7759e6081e3cad45`
+- Noble image: `ubuntu-24.04` image `20260720.247.2`, Ubuntu 24.04.4 LTS, glibc `2.39-0ubuntu8.7`
+- Local comparison: Debian glibc `2.41-12+deb13u3`
+- First incomplete step: execute against a current glibc development build and then turn Candidate A into a glibc-native regression/candidate patch
+- Cleanup state: disposable local roots removed; hosted fixture cleans its guarded private root
 - External-contact state: `false — unauthorized`
 
 ## Intent and precedent
 
-glibc deliberately uses `_dl_cache_libcmp` for natural numeric ordering of library names. Loader cache search uses that comparator for binary-search equality and for walking the complete matching-name group. The source comment says the loader must use the same algorithm that generated the sorted cache.
+glibc deliberately uses `_dl_cache_libcmp` for natural numeric ordering of library names. Loader cache search uses that comparator for binary-search equality and for walking the complete matching-name group. The source explicitly warns that lookup must use the same algorithm that generated the sorted cache.
 
 Primary source:
 
@@ -50,39 +50,44 @@ Primary source:
 
 - https://sourceware.org/pipermail/glibc-cvs/2020q4/071196.html
 
-Recent cache work still leaves `_dl_cache_libcmp` and `search_cache` at this boundary, while changing cache lifetime and alternate-cache behavior:
+Recent cache work continues to modify cache loading/lifetime and alternate-cache plumbing around this lookup boundary while retaining `search_cache` and `_dl_cache_libcmp`:
 
 - https://sourceware.org/pipermail/libc-alpha/2025-June/167244.html
 - https://sourceware.org/pipermail/libc-alpha/2026-April/176857.html
 
-SmolRunner independently encountered the same comparator-equivalence boundary while implementing a strict glibc 2.39 cache model. It chose to refuse comparator-equivalent byte aliases and comparator-overflowing names instead of treating them as one library identity.
+SmolRunner independently encountered the same comparator-equivalence boundary while implementing a strict Noble glibc 2.39 cache model. It chose to refuse comparator-equivalent byte aliases and comparator-overflowing names rather than treat them as one library identity.
 
 ## Question
 
-Can current glibc preserve exact requested SONAME identity when `ld.so.cache` contains two byte-distinct keys that `_dl_cache_libcmp` considers equal, and what is the smallest cache-compatible repair?
+Can glibc preserve exact requested SONAME identity when `ld.so.cache` contains byte-distinct keys that `_dl_cache_libcmp` considers equal, and what is the smallest old-cache-compatible repair?
 
 ## Source
 
 - Project: GNU C Library (`glibc`)
-- Requested revision or package version: Ubuntu Noble glibc 2.39 plus current runtime/main comparison
-- Resolved commit: pending current-main source checkout
+- Executed package versions: Ubuntu glibc `2.39-0ubuntu8.7`; Debian glibc `2.41-12+deb13u3`
+- Development-source review: current 2025–2026 `elf/dl-cache.c` patch series and RFCs retain this lookup/comparator boundary
+- Current-main execution: pending
 - Candidate source commit: none yet
-- Local source path: none yet; first fixture exercises installed glibc
-- Import metadata: none yet
+- Local imported source: pending candidate phase
 
 ## Environment
 
-First reproduced environment:
+### Hosted Noble gate
 
-- Distribution and release: Debian container environment
+- GitHub runner image: `ubuntu-24.04` / `20260720.247.2`
+- OS: Ubuntu 24.04.4 LTS
+- Kernel: `6.17.0-1020-azure` x86_64
+- glibc: `Ubuntu GLIBC 2.39-0ubuntu8.7` / 2.39
+- gcc: `13.3.0`
+- Workflow permissions: repository contents read-only
+- Probe context: guarded private chroot; host `/etc/ld.so.cache` untouched
+
+### Local comparison
+
 - glibc: `Debian GLIBC 2.41-12+deb13u3` / 2.41
-- Kernel and architecture: x86_64 Linux host kernel
-- Shell: bash
-- Privileges: root only for a disposable private chroot
-- Context: private `/tmp/glibc-cache-name-identity.*` roots; host `/etc/ld.so.cache` untouched
-- Relevant tools: system `gcc`, `ldconfig`, dynamic loader, `chroot`
-
-Hosted Noble environment will be recorded from the exact workflow job.
+- architecture: x86_64 Linux
+- privileges: root only for a disposable private chroot
+- context: private `/tmp/glibc-cache-name-identity.*` roots; host loader configuration/cache untouched
 
 ## Baseline behavior
 
@@ -95,105 +100,118 @@ libalias.so.1  -> marker 101
 libalias.so.01 -> marker 202
 ```
 
-`ldconfig` accepts both and emits both cache keys. Across the local fixture variants, cache-backed requests for both names collapse to the same loaded object. Which member wins can differ with the package/file layout: direct SONAME-named files selected the `.01` implementation in one fixture, while ordinary versioned files with `ldconfig`-created SONAME links selected `.1` in another.
+Noble's real `ldconfig` emits both cache keys. The hosted run observed:
 
-With `ld-linux --inhibit-cache --library-path ...`, the same requests load their exact corresponding DSOs.
+```text
+cached request libalias.so.1  -> marker 202, /usr/lib/libalias.so.01
+cached request libalias.so.01 -> marker 202, /usr/lib/libalias.so.01
+bypass request libalias.so.1  -> marker 101, /usr/lib/libalias.so.1
+bypass request libalias.so.01 -> marker 202, /usr/lib/libalias.so.01
+```
+
+An ordinary versioned-file layout with `ldconfig`-created SONAME links reproduced the same collapse. Local fixture variants showed that which alias wins is a cache-generation/order detail; the stable defect is that the two requested identities collapse while cache bypass keeps them separate.
 
 A separate local control linked executables with literal `DT_NEEDED` entries for each spelling and reproduced the same cache-only identity collapse.
 
 ### Wide-decimal aliases
 
-A second pair uses:
+The retained pair is:
 
 ```text
 libwide.so.1
 libwide.so.4294967297
 ```
 
-Both enter the real cache. Cache-backed lookup can collapse the large decimal spelling onto the other entry, while cache bypass loads the exact large-spelling DSO.
+Noble's real `ldconfig` emits both. The hosted run observed:
 
-The historical comparator accumulates digit runs into signed `int` values before comparing them. Very large decimal runs therefore introduce an overflow problem in addition to the exact-name alias problem.
+```text
+cached request libwide.so.1          -> marker 302, libwide.so.4294967297
+cached request libwide.so.4294967297 -> marker 302, libwide.so.4294967297
+bypass request libwide.so.1          -> marker 301, libwide.so.1
+bypass request libwide.so.4294967297 -> marker 302, libwide.so.4294967297
+```
+
+The historical comparator accumulates decimal runs into signed `int` values before comparing them. Wide decimal runs therefore add an overflow/ordering problem to the exact-name alias problem.
 
 ## Hypothesis or candidate
 
-### Candidate A — exact-name eligibility inside the legacy comparator group
+### Candidate A — byte-exact eligibility inside the legacy comparator group
 
-Keep `_dl_cache_libcmp` for locating the contiguous legacy-equivalence group in existing caches. While scanning that group, make an entry eligible only when its key is byte-equal to the requested name.
+Keep `_dl_cache_libcmp` for locating the contiguous equivalence group in existing caches. While scanning that group, make an entry eligible only when its key is byte-equal to the requested SONAME. Apply the existing architecture, ISA and HWCAP preference rules only among those exact-name entries.
 
-This is the strongest first candidate because:
+Why this is the strongest first candidate:
 
-- it preserves compatibility with caches already sorted using the historical comparator;
-- it keeps HWCAP/architecture/flag preference among entries for one exact SONAME;
-- it repairs the demonstrated cache-only wrong-object selection for leading-zero aliases;
-- it can be regression-tested without changing cache format or sort order.
+- old caches remain searchable using the relation under which they were sorted;
+- aliases such as `.1` and `.01` stop stealing one another's requests;
+- several entries for one exact SONAME still receive ordinary HWCAP preference;
+- no cache-format transition is required for the demonstrated leading-zero defect.
 
-### Candidate B — make numeric comparison overflow-safe
+`candidate_model.py` makes that boundary executable: an alias with artificially better HWCAP priority is rejected for a `.1` request, while an optimized entry carrying the exact `.1` SONAME still beats its exact-name baseline.
 
-The signed-`int` decimal accumulation should also receive a defined bound or an overflow-safe comparison. Replacing the comparator with a new total ordering everywhere is attractive but changes the ordering relation for old cache files. The loader explicitly relies on matching the generator's ordering, so this needs a cache-compatibility plan rather than a one-line comparator rewrite.
+### Candidate B — overflow-safe numeric comparison
 
-Possible compatible directions to test after Candidate A:
+The signed-`int` decimal accumulation needs a defined bound or an overflow-safe comparison. A new total ordering is attractive, but applying it directly to loader binary search would change the relation used to sort existing cache files.
 
-- detect over-wide numeric runs and use an exact-name linear fallback for that lookup;
-- make new `ldconfig` reject or specially order unrepresentable numeric runs while the loader retains an old-cache path;
-- introduce a cache-format/version transition if a total-order comparator is judged worth the compatibility cost.
+Compatibility-aware possibilities to test after Candidate A include:
+
+- an exact-name fallback for requests whose numeric runs exceed the legacy comparator's safe range;
+- new `ldconfig` validation/order semantics paired with an old-cache loader path;
+- a cache-format/version transition if maintainers prefer a comparator whose equality implies byte equality.
 
 ## Reproduction
 
-Run the committed fixture as root in a disposable environment:
+Run the committed fixture as root in a disposable x86_64 environment:
 
 ```sh
 sudo investigations/glibc-cache-name-identity/probe.sh
+python3 investigations/glibc-cache-name-identity/candidate_model.py
 ```
 
-The probe:
+The shell probe creates a guarded private `/tmp` root, copies only the current loader/libc needed by the tiny chroot, builds harmless marker DSOs, generates a private cache with `ldconfig -r`, compares cache-backed and `--inhibit-cache` lookup, and removes the complete private root on exit.
 
-1. creates a guarded private `/tmp` root;
-2. copies only the current loader and libc needed by the tiny chroot;
-3. builds harmless marker DSOs;
-4. generates a private `ld.so.cache` with system `ldconfig -r`;
-5. compares cache-backed `dlopen()` with `--inhibit-cache` lookup;
-6. checks leading-zero aliases under two packaging layouts;
-7. checks a wide-decimal alias;
-8. removes the complete private root on exit.
-
-It does not alter the host loader configuration or host cache and performs no network operation.
+It performs no network operation and does not alter the host cache.
 
 ## Results
 
-### Local glibc 2.41
+### Ubuntu Noble glibc 2.39
 
-Demonstrated:
+Dedicated workflow `31341993102`, job `93317188110` passed all three discriminator families:
 
-- both leading-zero SONAME spellings can coexist in a generated cache;
-- both wide-decimal SONAME spellings can coexist in a generated cache;
-- cache-backed lookup collapses each pair onto one object;
-- cache-bypass lookup keeps the two identities separate;
-- literal `DT_NEEDED` requests exhibit the same leading-zero behavior;
-- the winning leading-zero alias can change with library/file layout, consistent with the cache comparator treating the two keys as equal and later ordering details deciding their relative placement.
+- direct leading-zero aliases collapse with cache and remain exact without cache;
+- versioned-file leading-zero aliases collapse with cache and remain exact without cache;
+- wide-decimal aliases collapse with cache and remain exact without cache.
 
-Hosted artifacts: pending.
+Artifact `9046104503` retains the probe output. ZIP digest: `sha256:480b08f4a6c1ec83a2f1bc8f33a5c916f1f83dc79b05f2ae7759e6081e3cad45`.
+
+### Debian glibc 2.41
+
+The same families reproduced locally. A literal-`DT_NEEDED` control also showed the cache can change which DSO satisfies the exact dependency name.
+
+### Source alignment
+
+`search_cache` uses `_dl_cache_libcmp` both to locate the requested name by binary search and to define the matching group it scans for the best cache entry. No byte-exact key check separates comparator-equivalent spellings before an entry becomes eligible.
 
 ## Interpretation
 
-The defect is in cache identity semantics, rather than ordinary pathname search or ELF SONAME parsing. The negative control uses the same dynamic loader and the same DSOs while disabling only cache lookup; exact-name behavior returns immediately.
+The negative control changes one factor: cache participation. The same loader and same DSO files resolve exact SONAME spellings correctly when the cache is inhibited. That isolates the demonstrated identity change to cache lookup semantics.
 
-The source mechanism agrees with the experiment. `search_cache` calls `_dl_cache_libcmp` to decide that it found the requested name and continues scanning entries while that comparator returns zero. It has no byte-exact key check before an entry becomes eligible.
+Two independent release families, glibc 2.39 and 2.41, reproduce the same result, and active 2025–2026 source work retains the relevant comparator/search boundary. Current development-head execution remains the next version gate.
 
-The cleanest first repair therefore belongs in cache lookup eligibility. Comparator overflow remains a related successor because it can create additional false equivalence and makes the ordering relation unsafe for arbitrary digit runs.
+The first candidate belongs in cache-entry eligibility rather than cache generation. That keeps compatibility with existing cache ordering while restoring exact SONAME identity. Overflow then deserves its own compatibility decision.
 
 ## Evidence boundary
 
-Current executed evidence covers one x86_64 glibc 2.41 environment. Ubuntu Noble 2.39 and current glibc main execution remain pending. The fixture uses synthetic harmless DSOs and a private cache. It establishes wrong object identity under cache lookup; it does not establish real-world exploitability, package-manager reachability, a privilege boundary crossing, or behavior on non-Linux glibc ports.
+Executed evidence covers x86_64 glibc 2.39 and 2.41. Current development head and other architectures remain pending. The fixture uses synthetic harmless DSOs and a private cache. It establishes wrong object identity under cache lookup; it does not establish package-manager reachability, privilege escalation, or a concrete affected production package.
 
-Changing cache sorting could affect old/new cache interoperability, HWCAP ordering, architecture flags, and upgrades where a new loader briefly reads an older generated cache. Those compatibility surfaces must be tested before selecting any comparator-wide patch.
+Changing cache sorting can affect old/new cache interoperability, HWCAP ordering, architecture flags, and upgrades where a new loader reads an older generated cache. Those surfaces stay outside Candidate A and require dedicated evidence before a comparator-wide change.
 
 ## Next step
 
-1. Run `probe.sh` on GitHub-hosted Ubuntu 24.04 and retain the glibc/image identity and full output.
-2. Add a small candidate model proving exact-name filtering preserves HWCAP selection among truly identical keys.
-3. Reproduce against a current glibc main build.
-4. If all three agree, prepare an internal candidate patch and glibc-native regression test in an owned fork or imported source tree.
-5. Review the candidate against old-cache compatibility before any upstream packet decision.
+1. Execute the candidate model in the hosted gate and retain the final-head result.
+2. Build/test a current glibc development checkout or owned fork with a glibc-native regression reproducing the leading-zero pair.
+3. Implement Candidate A as an internal patch and prove exact `.1` / `.01` resolution plus ordinary same-name HWCAP selection.
+4. Add wide-decimal regression coverage and choose a compatibility-aware overflow repair separately.
+5. Obtain independent exact-diff review before any decision about an upstream packet.
 
 ## Authority
 
