@@ -18,7 +18,10 @@ def main() -> None:
     path = pathlib.Path(sys.argv[1])
     text = path.read_text()
 
-    if "ProjectBuildBackend::Maturin | ProjectBuildBackend::Scikit => unreachable!" in text:
+    if (
+        "ProjectBuildBackend::Maturin | ProjectBuildBackend::Scikit => {" in text
+        and "UV's Scikit-build template is an extension-module starter" in text
+    ):
         print("Final candidate refinement is already materialized")
         return
 
@@ -48,6 +51,39 @@ def main() -> None:
         }''',
         1,
         "stub config native backend invariant",
+    )
+
+    text = replace_exact(
+        text,
+        '''fn validate_simple_stub_backend(
+    package: &PackageName,
+    build_backend: ProjectBuildBackend,
+) -> Result<()> {
+    let backend = match build_backend {
+        ProjectBuildBackend::Maturin => "Maturin",
+        ProjectBuildBackend::Scikit => "Scikit-build",
+        _ => return Ok(()),
+    };
+    bail!(
+        "The {backend} backend does not support the generated simple stub scaffold for `{package}`; choose a supported Python build backend or use `--bare` for a custom layout"
+    )
+}''',
+        '''fn validate_simple_stub_backend(
+    package: &PackageName,
+    build_backend: ProjectBuildBackend,
+) -> Result<()> {
+    match build_backend {
+        ProjectBuildBackend::Maturin => bail!(
+            "The Maturin backend does not support the generated simple stub scaffold for `{package}`; choose a supported Python build backend or use `--bare` for a custom layout"
+        ),
+        ProjectBuildBackend::Scikit => bail!(
+            "UV's Scikit-build template is an extension-module starter and cannot generate the simple stub scaffold for `{package}`; choose a supported Python build backend or use `--bare` for a custom Scikit-build layout"
+        ),
+        _ => Ok(()),
+    }
+}''',
+        1,
+        "native backend diagnostic precision",
     )
 
     path.write_text(text)
