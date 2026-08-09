@@ -1,0 +1,123 @@
+name: Research 483 backend Python floor
+
+on:
+  push:
+    branches: [research/483-flit-python-floor]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  floor:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install exact UV driver
+        run: |
+          python -m pip install 'uv==0.12.3'
+          cp "$(command -v uv)" "$RUNNER_TEMP/uv"
+          "$RUNNER_TEMP/uv" --version
+          python --version
+
+      - name: Create Python-3.7-compatible project fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/backend-floor"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/poetry/src/foo" "$ROOT/flit/src/foo-stubs"
+
+          cat > "$ROOT/poetry/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo"
+          version = "0.1.0"
+          description = "ordinary Poetry backend floor probe"
+          requires-python = ">=3.7"
+
+          [build-system]
+          requires = ["poetry-core>=2,<3"]
+          build-backend = "poetry.core.masonry.api"
+          TOML
+          printf '%s\n' 'def answer(): return 42' > "$ROOT/poetry/src/foo/__init__.py"
+          printf '%s\n' '3.7' > "$ROOT/poetry/.python-version"
+
+          cat > "$ROOT/flit/pyproject.toml" <<'TOML'
+          [project]
+          name = "foo-stubs"
+          version = "0.1.0"
+          description = "simple stub Flit backend floor probe"
+          requires-python = ">=3.7"
+
+          [build-system]
+          requires = ["flit_core>=4,<5"]
+          build-backend = "flit_core.buildapi"
+          TOML
+          printf '%s\n' 'def answer() -> int: ...' > "$ROOT/flit/src/foo-stubs/__init__.pyi"
+          printf '%s\n' '3.7' > "$ROOT/flit/.python-version"
+
+      - name: Build both wheels on modern build host
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/backend-floor"
+          UV="$RUNNER_TEMP/uv"
+          (cd "$ROOT/poetry" && UV_NO_PYTHON_DOWNLOADS=1 "$UV" build --wheel --out-dir dist313 -v)
+          (cd "$ROOT/flit" && UV_NO_PYTHON_DOWNLOADS=1 "$UV" build --wheel --out-dir dist313 -v)
+          find "$ROOT" -path '*/dist313/*.whl' -print
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.7'
+
+      - name: Prove source builds fail on Python 3.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/backend-floor"
+          UV="$RUNNER_TEMP/uv"
+          python --version
+
+          for label in poetry flit; do
+            set +e
+            (cd "$ROOT/$label" && UV_NO_PYTHON_DOWNLOADS=1 "$UV" build --wheel --out-dir dist37 -v) >"$ROOT/$label/build37.log" 2>&1
+            code=$?
+            set -e
+            echo "BUILD37_EXIT $label $code"
+            cat "$ROOT/$label/build37.log"
+            test "$code" -ne 0
+          done
+
+          grep -Ei 'poetry-core|Python|requires-python|no solution|incompatible' "$ROOT/poetry/build37.log" | tail -n 30 || true
+          grep -Ei 'flit|Python|requires-python|no solution|incompatible' "$ROOT/flit/build37.log" | tail -n 30 || true
+
+      - name: Prove modern-built wheels remain installable on Python 3.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/backend-floor"
+          python -m pip --version
+
+          poetry_wheel=$(find "$ROOT/poetry/dist313" -name '*.whl' -print -quit)
+          flit_wheel=$(find "$ROOT/flit/dist313" -name '*.whl' -print -quit)
+          python -m pip install --no-deps "$poetry_wheel" "$flit_wheel"
+
+          python - <<'PY'
+          import importlib.metadata
+          import pathlib
+          import site
+
+          import foo
+          assert foo.answer() == 42
+          assert importlib.metadata.version("foo-stubs") == "0.1.0"
+
+          candidates = []
+          for root in site.getsitepackages():
+              candidates.append(pathlib.Path(root) / "foo-stubs" / "__init__.pyi")
+          assert any(path.is_file() for path in candidates), candidates
+          print("PY37_WHEEL_INSTALL poetry=True flit_stub=True")
+          PY
