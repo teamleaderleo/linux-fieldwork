@@ -2,7 +2,7 @@
 
 Use this runbook whenever a person or agent is asked to add Linux learning, map a research direction, or investigate a Linux or Debian project through this repository.
 
-Read [`FIELD_GUIDE.md`](FIELD_GUIDE.md) alongside this runbook for practical do, do-not, 🍩 donut, review, and investigation-selection lessons retained from prior work.
+Read [`FIELD_GUIDE.md`](FIELD_GUIDE.md) and [`BUG_LENSES.md`](BUG_LENSES.md) alongside this runbook for practical review lessons, recurring defect classes, and investigation methods retained from prior work.
 
 ## In simple words
 
@@ -30,6 +30,18 @@ When a gate fails, classify the first distinguishing owner before changing produ
 ### Make a bounded cross-context pass
 
 Before narrowing to one file or one happy path, sample the adjacent contexts that could change the decision: caller and callee, direct and mediated paths, producer and consumer, setup and cleanup, sibling modes or backends, representation and metadata, ownership, nearby tests, and relevant history.
+
+When behavior looks wrong, ask first: **what evidence would make this behavior correct, intentional, or required?** Search for that evidence before promoting a defect claim. Check:
+
+- relevant history, blame, old fixes, reverted changes, comments, and release notes;
+- nearby tests and project conventions;
+- callers, callees, wrappers, hooks, package scripts, services, and downstream consumers;
+- sibling modes, distributions, architectures, privilege levels, namespaces, and chroot or chrootless execution;
+- man pages, Debian policy, protocol or archive specifications, schemas, exit-status conventions, and other applicable contracts;
+- compatibility behavior or old workarounds whose purpose is easy to miss in the local implementation;
+- differences in operation owner or authority that can make similar-looking paths intentionally behave differently.
+
+If that pass explains the behavior, sharpen the claim or retain a negative result. If the invariant still fails, ask: **what adjacent context could overturn the current explanation of why it is wrong?** Give those contexts explicit discriminators before widening a patch or claiming a general defect.
 
 Choose two to four adjacent contexts. Give each one a discriminator that could make the current mechanism, compatibility claim, evidence boundary, or next action lose. Transfer reusable defect classes from other investigations—identity, ordering, completeness, cleanup authority, sanitizer bootstrap, metadata, retry, cache, and exact-execution mistakes—but keep them as hypotheses with negative controls.
 
@@ -101,7 +113,19 @@ Update or create a target map when one upstream project becomes recurrent across
 
 Prefer a command or test that preserves the important behavior while remaining easy to repeat. Capture the exact command, expected distinguishing outcomes, actual result, and cleanup steps.
 
-For a candidate change, compare baseline and candidate behavior under the same conditions. Use the donut checks in [`FIELD_GUIDE.md`](FIELD_GUIDE.md) to look for missing permission, path, metadata, lifecycle, compatibility, and evidence boundaries around the headline result.
+For a candidate change, compare baseline and candidate behavior under the same conditions. Use the donut checks in [`FIELD_GUIDE.md`](FIELD_GUIDE.md) and the invariant-first method in [`BUG_LENSES.md`](BUG_LENSES.md) to look for missing permission, path, metadata, lifecycle, compatibility, and evidence boundaries around the headline result.
+
+When useful, use this search sequence:
+
+1. state the invariant and at least one competing explanation;
+2. choose a discriminator such as differential testing, reduction, bisection, fault injection, signal or schedule perturbation, property testing, or an independent oracle;
+3. include a negative control;
+4. find the earliest meaningful divergence between good and bad behavior;
+5. reduce the failing case until the operation owner becomes clear;
+6. perturb timing, state, environment, privilege, retries, interruption, or ordering where relevant;
+7. inspect surviving processes, files, modes, mounts, sockets, locks, package records, environment, and metadata;
+8. run the same operation cleanly again;
+9. ask which nearby assumption could produce the next defect in the same family.
 
 Each important plain-language claim should map to a command, fixture, source line, or observed result.
 
