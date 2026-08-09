@@ -1,0 +1,18 @@
+diff --git a/elf/dl-cache.c b/elf/dl-cache.c
+--- a/elf/dl-cache.c
++++ b/elf/dl-cache.c
+@@ -250,6 +250,14 @@ search_cache (const char *string_table, uint32_t string_table_size,
+ 		      || (_dl_cache_libcmp (name, string_table + lib->key)
+ 			  != 0)))
+ 		break;
++
++	      /* _dl_cache_libcmp defines the ordering of existing cache files,
++		 but comparator equality does not imply byte-identical library
++		 names.  Keep using it to locate the matching cache group, then
++		 require the requested name before considering this entry.  */
++	      if (strcmp (name, string_table + lib->key) != 0)
++		continue;
++
+ 	      flags = lib->flags;
+ 	      if (_dl_cache_check_flags (flags)
+ 		  && _dl_cache_verify_ptr (lib->value, string_table_size))
