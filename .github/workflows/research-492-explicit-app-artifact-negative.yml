@@ -1,0 +1,91 @@
+name: Research 492 explicit app artifact negative
+
+on:
+  push:
+    branches: [research/492-explicit-app-artifact-negative]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  negative-control:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: research/19671-app-provenance-local-init-only
+          path: uv-src
+          persist-credentials: false
+
+      - name: Build init-only provenance UV
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/uv-provenance-target"
+          cargo build --manifest-path uv-src/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv"
+          git -C uv-src rev-parse HEAD
+          "$RUNNER_TEMP/uv" --version
+
+      - name: Prove init-only provenance creates a backend-invalid project
+        shell: bash
+        run: |
+          set -euo pipefail
+          UV="$RUNNER_TEMP/uv"
+          ROOT="$RUNNER_TEMP/explicit-app-negative"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+
+          (cd "$ROOT" && "$UV" init --app --name foo-stubs --no-workspace --vcs none)
+          test -f "$ROOT/src/foo_stubs/__init__.py"
+          test ! -e "$ROOT/src/foo-stubs/__init__.pyi"
+          grep -F '[project.scripts]' "$ROOT/pyproject.toml"
+          grep -F 'foo-stubs = "foo_stubs:main"' "$ROOT/pyproject.toml"
+
+          set +e
+          (cd "$ROOT" && "$UV" build --wheel --out-dir dist-broken -v) >"$ROOT/build-broken.log" 2>&1
+          code=$?
+          set -e
+          echo "BROKEN_BUILD_EXIT=$code"
+          cat "$ROOT/build-broken.log"
+          test "$code" -ne 0
+          grep -F 'foo-stubs' "$ROOT/build-broken.log"
+          grep -F '__init__.pyi' "$ROOT/build-broken.log"
+
+          cat >> "$ROOT/pyproject.toml" <<'TOML'
+
+          [tool.uv.build-backend]
+          module-name = "foo_stubs"
+          TOML
+
+          (cd "$ROOT" && "$UV" build --wheel --out-dir dist-fixed -v)
+
+          python - "$ROOT" <<'PY'
+          import configparser
+          import io
+          import pathlib
+          import sys
+          import zipfile
+
+          root = pathlib.Path(sys.argv[1])
+          wheels = list((root / "dist-fixed").glob("*.whl"))
+          assert len(wheels) == 1, wheels
+          with zipfile.ZipFile(wheels[0]) as zf:
+              names = sorted(zf.namelist())
+              assert "foo_stubs/__init__.py" in names, names
+              assert "foo-stubs/__init__.pyi" not in names, names
+              console = []
+              for name in names:
+                  if not name.endswith(".dist-info/entry_points.txt"):
+                      continue
+                  parser = configparser.ConfigParser()
+                  parser.optionxform = str
+                  parser.read_file(io.StringIO(zf.read(name).decode()))
+                  if parser.has_section("console_scripts"):
+                      console.extend(parser.options("console_scripts"))
+              assert "foo-stubs" in console, console
+          print(f"FIXED_RUNTIME_WHEEL={wheels[0].name}")
+          PY
