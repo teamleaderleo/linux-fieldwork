@@ -20,9 +20,20 @@ def main() -> None:
 
     text = replace_once(
         text,
-        '''                pyproject.push_str(&pyproject_build_system(name, build_backend));''',
-        '''                pyproject.push_str(&pyproject_build_system(name, build_backend, false));''',
-        "bare build-system call",
+        '''            Self::BareWithBuildSystem => {
+                // Add a build system
+                let build_backend = build_backend.unwrap_or(ProjectBuildBackend::Uv);
+                pyproject.push('\\n');
+                pyproject.push_str(&pyproject_build_system(name, build_backend));
+            }''',
+        '''            Self::BareWithBuildSystem => {
+                // Add a build system. Bare initialization deliberately bypasses the generated
+                // simple-stub scaffold inference and leaves custom layout decisions to the user.
+                let build_backend = build_backend.unwrap_or(ProjectBuildBackend::Uv);
+                pyproject.push('\\n');
+                pyproject.push_str(&pyproject_build_system(name, build_backend, false));
+            }''',
+        "bare build-system block",
     )
 
     text = replace_once(
