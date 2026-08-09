@@ -44,7 +44,6 @@ jobs:
           build-backend = "poetry.core.masonry.api"
           TOML
           printf '%s\n' 'def answer(): return 42' > "$ROOT/poetry/src/foo/__init__.py"
-          printf '%s\n' '3.7' > "$ROOT/poetry/.python-version"
 
           cat > "$ROOT/flit/pyproject.toml" <<'TOML'
           [project]
@@ -58,7 +57,6 @@ jobs:
           build-backend = "flit_core.buildapi"
           TOML
           printf '%s\n' 'def answer() -> int: ...' > "$ROOT/flit/src/foo-stubs/__init__.pyi"
-          printf '%s\n' '3.7' > "$ROOT/flit/.python-version"
 
       - name: Build both wheels on modern build host
         shell: bash
@@ -81,6 +79,8 @@ jobs:
           ROOT="$RUNNER_TEMP/backend-floor"
           UV="$RUNNER_TEMP/uv"
           python --version
+          printf '%s\n' '3.7' > "$ROOT/poetry/.python-version"
+          printf '%s\n' '3.7' > "$ROOT/flit/.python-version"
 
           for label in poetry flit; do
             set +e
