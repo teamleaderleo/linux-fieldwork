@@ -1,0 +1,147 @@
+name: research-515-registry-404-cache
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-515-registry-404-cache.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  sample:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sample public registry negative responses
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/registry-404-515"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/headers"
+          NAME="fieldwork-negative-cache-515-this-project-should-not-exist"
+          TSV="$ROOT/public.tsv"
+          printf 'registry\tmethod\tattempt\tstatus\tcache_control\tage\tetag\tlast_modified\tvia\tx_cache\tserver\n' > "$TSV"
+
+          sample() {
+            registry="$1"; url="$2"; method="$3"; attempt="$4"
+            hdr="$ROOT/headers/${registry}-${method}-${attempt}.txt"
+            if [ "$method" = HEAD ]; then
+              status=$(curl -sS -I --max-time 20 -D "$hdr" -o /dev/null -w '%{http_code}' "$url" || true)
+            else
+              status=$(curl -sS --max-time 20 -D "$hdr" -o /dev/null -w '%{http_code}' "$url" || true)
+            fi
+            one() { awk -F': *' -v k="$1" 'BEGIN{IGNORECASE=1} $1==k {sub(/\r$/,"",$2); print $2; exit}' "$hdr"; }
+            cache_control=$(one 'cache-control' || true)
+            age=$(one 'age' || true)
+            etag=$(one 'etag' || true)
+            last_modified=$(one 'last-modified' || true)
+            via=$(one 'via' || true)
+            x_cache=$(one 'x-cache' || true)
+            server=$(one 'server' || true)
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+              "$registry" "$method" "$attempt" "$status" "$cache_control" "$age" "$etag" "$last_modified" "$via" "$x_cache" "$server" >> "$TSV"
+            echo "=== $registry $method $attempt $status ==="
+            cat "$hdr"
+          }
+
+          declare -A URLS
+          URLS[pypi]="https://pypi.org/simple/$NAME/"
+          URLS[testpypi]="https://test.pypi.org/simple/$NAME/"
+          URLS[piwheels]="https://www.piwheels.org/simple/$NAME/"
+          URLS[pytorch]="https://download.pytorch.org/whl/$NAME/"
+
+          for registry in pypi testpypi piwheels pytorch; do
+            for method in GET HEAD; do
+              for attempt in 1 2; do
+                sample "$registry" "${URLS[$registry]}" "$method" "$attempt"
+                sleep 1
+              done
+            done
+          done
+
+          echo '=== PUBLIC SUMMARY ==='
+          column -t -s $'\t' "$TSV" || cat "$TSV"
+          cp "$TSV" "$GITHUB_WORKSPACE/results-515-public.tsv"
+          cp -r "$ROOT/headers" "$GITHUB_WORKSPACE/headers-515-public"
+
+      - name: Run local pypiserver missing-then-published control
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/pypiserver-515"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/packages" "$ROOT/headers"
+          python -m venv "$ROOT/venv"
+          "$ROOT/venv/bin/pip" -q install pypiserver
+          "$ROOT/venv/bin/pypi-server" run -p 8085 "$ROOT/packages" >"$ROOT/server.log" 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            if curl -sS --max-time 2 http://127.0.0.1:8085/ >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+
+          probe() {
+            phase="$1"
+            hdr="$ROOT/headers/$phase.txt"
+            status=$(curl -sS --max-time 5 -D "$hdr" -o /dev/null -w '%{http_code}' http://127.0.0.1:8085/simple/probe-tool/ || true)
+            echo "PYPI_SERVER_${phase^^}_STATUS=$status"
+            cat "$hdr"
+            printf '%s\t%s\t%s\n' "$phase" "$status" "$(awk -F': *' 'BEGIN{IGNORECASE=1} $1=="cache-control" {sub(/\r$/,"",$2); print $2; exit}' "$hdr")" >> "$ROOT/results.tsv"
+          }
+
+          printf 'phase\tstatus\tcache_control\n' > "$ROOT/results.tsv"
+          probe before
+
+          python - "$ROOT/packages" <<'PY'
+          import base64,csv,hashlib,io,pathlib,sys,zipfile
+          target=pathlib.Path(sys.argv[1])
+          files={
+            'probe_tool/__init__.py': b'',
+            'probe_tool-1.0.0.dist-info/METADATA': b'Metadata-Version: 2.1\nName: probe-tool\nVersion: 1.0.0\n',
+            'probe_tool-1.0.0.dist-info/WHEEL': b'Wheel-Version: 1.0\nGenerator: fieldwork-515\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
+          }
+          rows=[]
+          for name,data in files.items():
+            digest=base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b'=').decode()
+            rows.append([name,f'sha256={digest}',str(len(data))])
+          rows.append(['probe_tool-1.0.0.dist-info/RECORD','',''])
+          sio=io.StringIO(); csv.writer(sio,lineterminator='\n').writerows(rows)
+          files['probe_tool-1.0.0.dist-info/RECORD']=sio.getvalue().encode()
+          with zipfile.ZipFile(target/'probe_tool-1.0.0-py3-none-any.whl','w',zipfile.ZIP_DEFLATED) as zf:
+            for name,data in files.items(): zf.writestr(name,data)
+          PY
+
+          sleep 1
+          probe after
+          echo '=== PYPI SERVER SUMMARY ==='
+          cat "$ROOT/results.tsv"
+          cat "$ROOT/server.log"
+
+          python - "$ROOT/results.tsv" <<'PY'
+          import csv,sys
+          rows={r['phase']:r for r in csv.DictReader(open(sys.argv[1]),delimiter='\t')}
+          assert rows['before']['status']=='404', rows
+          assert rows['after']['status']=='200', rows
+          print('PYPI_SERVER_PUBLICATION_TRANSITION=PASS')
+          PY
+
+          cp "$ROOT/results.tsv" "$GITHUB_WORKSPACE/results-515-pypiserver.tsv"
+          cp -r "$ROOT/headers" "$GITHUB_WORKSPACE/headers-515-pypiserver"
+
+      - name: Upload registry cache research receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: registry-404-cache-515
+          path: |
+            results-515-public.tsv
+            results-515-pypiserver.tsv
+            headers-515-public/
+            headers-515-pypiserver/
+          if-no-files-found: error
