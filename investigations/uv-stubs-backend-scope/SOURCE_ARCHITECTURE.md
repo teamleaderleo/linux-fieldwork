@@ -1,29 +1,30 @@
-# UV stub-only design: current-source architecture pass
+# UV simple-stub design: current-source architecture
 
-State: `SOURCE REVIEW — SUPPORTS DESIGN DEBATE, NO PRODUCT CHANGE`
+State: `EXECUTED ARCHITECTURE DIRECTION — NO PRODUCT CHANGE ON THIS RECORD`
 
 Date: 2026-08-09
 
 Source snapshot: `astral-sh/uv@dd0584d560a4693b5713a78be54304123ada3e77`.
 
-External source links in this record use the requested redirect form:
+Controlled implementation reference: `teamleaderleo/uv#82`.
+
+External source links in this record use redirect form:
 
 - https://redirect.github.com/astral-sh/uv/blob/dd0584d560a4693b5713a78be54304123ada3e77/crates/uv/src/commands/project/init.rs
 - https://redirect.github.com/astral-sh/uv/blob/dd0584d560a4693b5713a78be54304123ada3e77/crates/uv-configuration/src/project_build_backend.rs
 
 ## TL;DR
 
-The current source layout supports the design direction, but it suggests a narrower implementation shape than literally adding `StubOnly` to UV's existing `InitProjectKind` enum.
+The current source supports a narrow implementation:
 
-`InitProjectKind` currently represents CLI/scaffold shape: packaged application, flat application, library, bare project, or bare project with a build system. Stub-only status is orthogonal content semantics derived from the distribution name. A separate one-time classification such as `PackageContentKind::{Runtime, StubOnly}` (name illustrative only) would preserve that distinction and could be passed into the existing centralized generation functions.
+- keep `InitProjectKind` unchanged;
+- resolve the canonical project name first;
+- compute one local `simple_stub: bool` on source-generating packaged/library paths;
+- validate the selected backend before filesystem/VCS side effects for rejected combinations;
+- thread that boolean through the existing project-init/template owners;
+- keep backend deltas as explicit match arms/config helpers rather than adding a capability framework.
 
-Three current choke points already line up with the proposed model:
-
-1. `pyproject_build_system(...)` centralizes backend declarations and backend-specific `[tool.*]` config;
-2. `pyproject_build_backend_prerequisites(...)` centralizes Cargo/CMake starter generation for Maturin and Scikit-build;
-3. `generate_package_scripts(...)` centralizes source/package generation and the pure-Python versus binary starter split.
-
-That means a backend-capability implementation does not need suffix checks scattered throughout unrelated code. It can classify stub-only once, validate the `(content kind, backend)` pair, and thread that state through these existing boundaries.
+An executed bool-vs-enum experiment confirms that a dedicated `PackageScaffold` type is unnecessary for this bug fix. See `SCAFFOLD_TYPE_EXPERIMENT.md`.
 
 ## Existing project-kind meaning
 
@@ -37,118 +38,174 @@ Bare
 BareWithBuildSystem
 ```
 
-The enum therefore answers questions such as:
+They answer scaffold-shape questions:
 
-- should UV make a packaged application with a console entry point?
-- should UV make a flat `main.py` application?
-- should UV make a library?
-- should UV generate source files at all?
+- packaged application or flat application;
+- library;
+- bare metadata only;
+- bare metadata plus build system.
 
-It does not currently encode the nature of the packaged content.
+They should continue to do that. The simple-stub rule is an orthogonal **generated-template adaptation**, not another public/project-kind mode.
 
-A `foo-stubs` request changes that content nature. In particular, a packaged-application-shaped request normally creates `[project.scripts]`, but the stub-only interpretation must suppress runtime application behavior. Treating stub-only as a separate semantic value makes that override explicit without turning the existing scaffold-shape enum into a mixed-purpose type.
+Do not add `SimpleStub` to `InitProjectKind`.
 
-## Existing backend adapter point
+## Why a local boolean beats a scaffold enum here
 
-`pyproject_build_system(package, build_backend)` already owns all generated backend requirements and most backend-specific configuration.
+The architecture review originally suggested a conceptual content type such as `PackageContentKind::{Runtime, StubOnly}` to preserve orthogonality.
 
-Current examples include:
+That concept was useful for reasoning, but the implementation hypothesis has now been tested.
 
-```text
-Hatch       -> hatchling
-Flit        -> flit_core>=3.2,<4
-PDM         -> pdm-backend
-Poetry      -> poetry-core>=2,<3
-setuptools  -> setuptools>=61
-Maturin     -> [tool.maturin] + maturin>=1.0,<2.0
-Scikit      -> [tool.scikit-build] + scikit-build-core>=0.12 + pybind11>=3
+Internal Fieldwork #491 rewrote the green implementation from `simple_stub: bool` to:
+
+```rust
+enum PackageScaffold {
+    Runtime,
+    SimpleStub,
+}
 ```
 
-This is the natural place for stub-only conditional backend configuration and feature floors:
+and passed formatting, `cargo check`, the simple-stub backend test, and ordinary Scikit app/library tests.
 
-- Hatch package selection;
-- Poetry `packages` declaration;
-- Flit 4.x requirement;
-- PDM minimum stub-support version;
-- setuptools minimum implicit-`.pyi` version.
-
-The function would need project/content semantics as an input, but the current organization already avoids needing a new backend configuration subsystem.
-
-## Existing prerequisite point strengthens early rejection
-
-`pyproject_build_backend_prerequisites(...)` currently writes backend starter files:
-
-- Maturin writes `Cargo.toml` for a PyO3 `cdylib`;
-- Scikit writes `CMakeLists.txt` for a pybind11 extension.
-
-This is strong source evidence that UV's current Maturin and Scikit selectors mean native-extension starters, not generic Python file packagers.
-
-For a stub-only request, compatibility validation should therefore happen before this function runs. Otherwise UV can create native starter files for a project kind it later decides is incompatible.
-
-For Maturin, the research says pure stub-only is unsupported, so reject before `Cargo.toml` generation.
-
-For Scikit-build-core, the backend itself can copy an explicit Python package tree, but UV's current selector deliberately adds pybind11, writes CMake, and later writes C++ source. Supporting a pure-stub Scikit project would therefore be a separate template mode, not merely adding one package-data key to the existing starter. That strengthens the current recommendation to reject under today's selector semantics unless UV intentionally broadens the selector contract.
-
-## Existing source-generation point
-
-`generate_package_scripts(...)` currently:
-
-1. derives `src/<normalized module name>`;
-2. prepares pure-Python runtime source for ordinary backends;
-3. for Maturin/Scikit, generates native source plus `_core.pyi` and a Python wrapper;
-4. writes the runtime package initializer.
-
-A stub-only content branch belongs near the top of this function or in a small sibling generator invoked from the same call site:
+The rewrite cost:
 
 ```text
-if StubOnly:
-    create src/foo-stubs/
-    write __init__.pyi
-    do not generate runtime wrapper/main/native starter source
-else:
-    existing runtime path
+crates/uv/src/commands/project/init.rs | 61 ++++++++++++++++++++++------------
+1 file changed, 39 insertions(+), 22 deletions(-)
 ```
 
-The exact factoring is open, but source generation has one obvious owner today.
+More importantly, `BareWithBuildSystem` uses the backend renderer while deliberately generating **no package scaffold**. A two-case enum calls that state `Runtime`, which is false. Modeling it honestly requires `Option<PackageScaffold>` or a third `None` case.
 
-## Suggested source-level flow
+The boolean is more precise for the current implementation question:
 
-A current-source-shaped implementation could look conceptually like:
+> Should this init path receive the simple-stub adaptation?
+
+`false` can correctly mean ordinary runtime generation **or** no generated package scaffold at all.
+
+Therefore the selected implementation representation is the local boolean. Introduce a richer scaffold type only if future work creates multiple genuine generated package-content modes.
+
+## Existing ownership points
+
+Current UV source already centralizes the relevant work.
+
+### 1. Project/build-system rendering
+
+`pyproject_build_system(...)` owns backend requirements and backend-specific build-system declarations.
+
+The selected product candidate also uses a small `pyproject_simple_stub_config(...)` helper for the backend-specific package-selection/data tables.
+
+This is the right boundary for:
+
+- Hatch `packages = ["src/foo-stubs"]`;
+- Poetry package mapping from `src`;
+- PDM `includes`;
+- setuptools wildcard `.pyi` package data;
+- conditional Flit 4 requirement.
+
+### 2. Compatibility validation
+
+A small `validate_simple_stub_backend(...)` helper belongs before `create_dir_all`/VCS initialization for combinations the selected policy rejects.
+
+Current conservative policy rejects source-generating simple-stub scaffolds for:
+
+- Maturin, because the backend/template requires a Rust project;
+- Scikit, not because scikit-build-core lacks capability, but because UV's selected first-fix policy preserves the current extension-module starter family.
+
+`--bare` bypasses this inference and remains the custom-layout path.
+
+### 3. Package source generation
+
+`generate_package_scripts(...)` already owns normal runtime/native package source generation.
+
+The simple-stub branch belongs at the same boundary:
 
 ```text
-resolve existing InitProjectKind
-resolve build backend
-classify package content once from project identity
-validate content/backend capability
+src/foo-stubs/__init__.pyi
+```
+
+then return without generating:
+
+- runtime `__init__.py`;
+- application `main()`;
+- native starter source;
+- `_core.pyi` wrapper material.
+
+### 4. Runtime script metadata
+
+The packaged-application path normally emits `[project.scripts]`.
+
+The simple-stub predicate suppresses that metadata because the generated scaffold has no runtime target.
+
+## Keep backend policy explicit
+
+The backend differences are genuinely heterogeneous:
+
+- Hatch: explicit wheel package selection;
+- Poetry: package mapping with `from = "src"`;
+- PDM: explicit include path;
+- setuptools: package data;
+- Flit: requirement-floor change;
+- Maturin/Scikit: selected rejection policy.
+
+A general capability table would need special variants or callbacks to encode these different output shapes. That would move the same branching behind a new abstraction while making the generated TOML harder to review.
+
+Prefer explicit exhaustive match arms/helpers in project-init code. Rust will force a decision when another `ProjectBuildBackend` variant is added.
+
+Do not move scaffold-specific policy into resolver, installer, lockfile, or generic configuration subsystems.
+
+## Naming and standards boundary
+
+Do not state that every distribution whose project name ends in `-stubs` is normatively a stub-only distribution.
+
+The current typing specification constrains installed stub-package naming but allows distribution/project naming to differ, and real stub distributions may have richer layouts or helper runtime code.
+
+For this bug, the suffix is a **UV default-scaffold heuristic** because UV normally derives the generated package layout from the project name.
+
+The selected simple scaffold is intentionally narrow:
+
+```text
+src/foo-stubs/__init__.pyi
+```
+
+It is not intended to cover namespace-stub layouts, partial stubs, arbitrary distribution→import mappings, or richer mixed distributions.
+
+## Source-shaped flow
+
+The selected architecture is:
+
+```text
+resolve current InitProjectKind
+resolve final canonical project name
+resolve selected build backend
+compute simple_stub once for packaged/library source-generating modes
+if simple_stub:
+    validate backend before filesystem/VCS side effects
 render project metadata
-conditionally render runtime script metadata
-render backend config using content/backend policy
-generate backend prerequisites only when compatible
-generate stub or runtime source through one source-generation boundary
+suppress runtime script metadata when simple_stub
+render existing build system plus small explicit stub backend config
+write simple stub source or existing runtime/native source
 ```
 
-This is intentionally different from creating one giant `(StubOnly, Backend)` generator per backend. Common stub files should stay common; backend adapters should stay small.
+`Bare` and `BareWithBuildSystem` do not receive simple-stub source adaptation.
 
-## PEP 561 naming implication
+## Current controlled candidate
 
-PEP 561 says the name of a separately distributed stub package **must** follow the `foopkg-stubs` scheme, and that the `*-stubs` name itself is enough to identify the distribution as typing information without a `py.typed` marker.
+`teamleaderleo/uv#82` already follows this shape:
 
-That makes interpreting a generated `foo-stubs` project as stub-only semantics a standards-aligned default, not an arbitrary UV naming convention. A reviewer should still look for a credible counterexample where `uv init --package something-stubs` is intentionally meant to create ordinary runtime code; issue #476 explicitly asks for that challenge.
+```rust
+let simple_stub = matches!(self, Self::ApplicationWithLibrary | Self::Library)
+    && is_simple_stub_project(name);
+```
 
-PEP: https://peps.python.org/pep-0561/#stub-only-packages
+It uses the boolean through the existing backend/source boundaries and explicitly passes `false` for the bare build-system path.
 
-## Open design questions after source review
+That matches the executed representation result, so the bool-vs-enum experiment does not call for another product rewrite.
 
-1. What should the orthogonal content-semantic type be called, if a type is introduced at all?
-2. Should stub-only classification apply only to packaged source-generating modes, leaving `--bare` behavior untouched?
-3. Should compatibility validation happen before any filesystem/VCS initialization, or only before backend/source files are written?
-4. Should backend capability policy live as methods near `ProjectBuildBackend`, or remain in project-init code so the configuration crate does not acquire scaffold-specific semantics?
-5. Should Scikit rejection be permanent for this selector, or should a future explicit pure-Python/extension mode split make the backend eligible?
+## Reopen conditions
 
-## Current conclusion
+Revisit the representation only if UV gains multiple real generated package-content modes such that one boolean no longer names the decision accurately.
 
-The current source does not argue for a broad rewrite. It argues for a small orthogonal semantic classification threaded through already-centralized initialization owners.
+Revisit backend abstraction only if enough backends acquire structurally identical policy that an explicit helper/table removes real duplication without hiding generated output.
 
-That is a stronger and more idiomatic implementation direction than scattered `name.ends_with("-stubs")` checks, and more precise than overloading the existing `InitProjectKind` enum with a different conceptual dimension.
+Neither condition exists for the current bug fix.
 
-No product candidate was modified and no canonical upstream interaction was made.
+No canonical upstream interaction was made.
