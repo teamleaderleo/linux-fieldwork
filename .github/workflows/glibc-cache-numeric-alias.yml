@@ -98,7 +98,7 @@ jobs:
 
   current-glibc-candidate-regressions:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -107,15 +107,36 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build candidate and run existing cache tests
+      - name: Run existing glibc cache tests in privileged disposable fixture
         shell: bash
         run: |
           set -euo pipefail
           output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-regressions"
-          bash investigations/glibc-ld-cache-numeric-alias/probe-candidate-regressions.sh \
-            "$output" \
-            investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
-          grep -Fqx $'classification\tcandidate_regressions_passed' "$output/summary.tsv"
+          mkdir -p "$output"
+          docker pull ubuntu:24.04
+          docker image inspect --format='{{json .RepoDigests}}' ubuntu:24.04 \
+            >"$output/container-image.json"
+          docker run --rm --privileged \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -e RUNNER_TEMP=/tmp \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -e OUTPUT_PATH="$output" \
+            -v "$PWD:/fieldwork" \
+            -w /fieldwork \
+            ubuntu:24.04 \
+            bash -lc '
+              set -euo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential bison ca-certificates gawk git python3 rsync
+              bash investigations/glibc-ld-cache-numeric-alias/probe-candidate-regressions.sh \
+                "$OUTPUT_PATH" \
+                investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
+              grep -Fqx $'"'"'classification\tcandidate_regressions_passed'"'"' \
+                "$OUTPUT_PATH/summary.tsv"
+              chown -R "$HOST_UID:$HOST_GID" "$OUTPUT_PATH"
+            '
 
       - name: Upload candidate regression result
         if: always()
@@ -128,7 +149,7 @@ jobs:
 
   current-glibc-native-regression:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 50
     env:
       RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -137,17 +158,37 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Prove glibc-native regression fails before and passes after candidate
+      - name: Prove native regression in privileged disposable fixture
         shell: bash
         run: |
           set -euo pipefail
           output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-native"
-          bash investigations/glibc-ld-cache-numeric-alias/probe-native-regression.sh \
-            "$output" \
-            investigations/glibc-ld-cache-numeric-alias/glibc-native-regression.patch \
-            investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
-          grep -Fqx $'classification\tnative_regression_distinguishes_candidate' \
-            "$output/summary.tsv"
+          mkdir -p "$output"
+          docker pull ubuntu:24.04
+          docker image inspect --format='{{json .RepoDigests}}' ubuntu:24.04 \
+            >"$output/container-image.json"
+          docker run --rm --privileged \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -e RUNNER_TEMP=/tmp \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -e OUTPUT_PATH="$output" \
+            -v "$PWD:/fieldwork" \
+            -w /fieldwork \
+            ubuntu:24.04 \
+            bash -lc '
+              set -euo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential bison ca-certificates gawk git python3 rsync
+              bash investigations/glibc-ld-cache-numeric-alias/probe-native-regression.sh \
+                "$OUTPUT_PATH" \
+                investigations/glibc-ld-cache-numeric-alias/glibc-native-regression.patch \
+                investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
+              grep -Fqx $'"'"'classification\tnative_regression_distinguishes_candidate'"'"' \
+                "$OUTPUT_PATH/summary.tsv"
+              chown -R "$HOST_UID:$HOST_GID" "$OUTPUT_PATH"
+            '
 
       - name: Upload native regression result
         if: always()
