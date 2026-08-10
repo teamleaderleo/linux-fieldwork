@@ -69,8 +69,11 @@ Virtio 1.3's PCI common configuration describes `queue_enable` per queue and req
 Tracked patch:
 `candidate.patch`
 
-Fieldwork commit adding it:
-`e1fe9111325b87e25f592dccb900baddf85184b3`
+Latest Fieldwork patch commit:
+`0d57b4dc12125fe1fa46db1bfb4b48b05e0baddc`
+
+Patch blob:
+`ca5ccfd0b9f09a1ec41f107ae8b64ef0a256b062`
 
 The retained candidate does four things:
 
@@ -81,9 +84,24 @@ The retained candidate does four things:
 
 The partial multi-queue test is the negative control that distinguishes this candidate from a device-level guard.
 
+## Patch carrier validation
+
+The retained unified diff was checked as a patch carrier against a synthetic file containing the exact current-source contexts and line positions used by all three hunks.
+
+Executed locally in the analysis environment:
+
+```text
+git apply --check candidate.patch -> 0
+git apply candidate.patch         -> 0
+```
+
+After application, both the `queue.ready()` guard and the partial-multi-queue regression were present in the resulting file.
+
+This proves the retained patch is syntactically/applicatively coherent at its recorded source contexts. It is not a Cargo or runtime result.
+
 ## Execution state
 
-The retained patch has not yet been applied to the current-base source branch and has not received a fresh Fieldwork execution receipt. The connector environment used for this continuation could read and write exact Git objects but could not perform a network clone for local Cargo execution.
+The retained patch has not yet been applied to the current-base source branch and has not received a fresh Fieldwork Cargo/CI execution receipt. The connector environment used for this continuation could read and write exact Git objects but could not perform a network clone for local Cargo execution.
 
 Do not promote the retained patch from candidate design to proven product until all of these occur on the current-base source carrier:
 
