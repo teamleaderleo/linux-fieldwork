@@ -1,0 +1,70 @@
+name: Bubblewrap PID 1 environment probe
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/bubblewrap-pid1-environ.yml'
+      - 'investigations/bubblewrap-pid1-environ/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-current-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bubblewrap build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential meson ninja-build libcap-dev libselinux1-dev
+
+      - name: Fetch and build exact Bubblewrap source
+        run: |
+          git clone https://github.com/containers/bubblewrap.git /tmp/bubblewrap
+          git -C /tmp/bubblewrap checkout 2f55bae38468d0c50cf5df87b1e481e882b63acb
+          test "$(git -C /tmp/bubblewrap rev-parse HEAD)" = 2f55bae38468d0c50cf5df87b1e481e882b63acb
+          meson setup /tmp/bubblewrap/_build /tmp/bubblewrap -Dman=disabled -Dtests=false
+          meson compile -C /tmp/bubblewrap/_build
+          /tmp/bubblewrap/_build/bwrap --version
+
+      - name: Record environment
+        run: |
+          {
+            uname -a
+            id
+            cat /etc/os-release
+            docker version --format 'docker-client={{.Client.Version}} docker-server={{.Server.Version}}'
+          } | tee investigations/bubblewrap-pid1-environ/runtime-environment.txt
+
+      - name: Run libc versus procfs model
+        env:
+          FIELDWORK_MARKER: fieldwork-old-marker
+        run: |
+          set -o pipefail
+          python3 investigations/bubblewrap-pid1-environ/repro_pid1_environ.py --model \
+            | tee investigations/bubblewrap-pid1-environ/model-runtime.txt
+
+      - name: Run exact-current Bubblewrap probe in privileged disposable container
+        run: |
+          set -o pipefail
+          docker run --privileged --rm \
+            -v /tmp/bubblewrap:/tmp/bubblewrap:ro \
+            -v "$GITHUB_WORKSPACE":/fieldwork:ro \
+            ubuntu:24.04 \
+            bash -lc 'apt-get update >/dev/null && apt-get install -y python3 libcap2 libselinux1 >/dev/null && cd /fieldwork && python3 investigations/bubblewrap-pid1-environ/repro_pid1_environ.py --bwrap /tmp/bubblewrap/_build/bwrap' \
+            | tee investigations/bubblewrap-pid1-environ/exact-current-runtime.txt
+
+      - name: Retain runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bubblewrap-pid1-environ-runtime
+          path: |
+            investigations/bubblewrap-pid1-environ/runtime-environment.txt
+            investigations/bubblewrap-pid1-environ/model-runtime.txt
+            investigations/bubblewrap-pid1-environ/exact-current-runtime.txt
+          if-no-files-found: warn
