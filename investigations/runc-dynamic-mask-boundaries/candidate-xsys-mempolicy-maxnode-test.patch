@@ -1,7 +1,7 @@
 diff --git a/unix/syscall_linux_test.go b/unix/syscall_linux_test.go
 --- a/unix/syscall_linux_test.go
 +++ b/unix/syscall_linux_test.go
-@@ -664,6 +664,31 @@ func TestSchedSetaffinityDynamic(t *testing.T) {
+@@ -664,6 +664,32 @@ func TestSchedSetaffinityDynamic(t *testing.T) {
  	}
  }
  
