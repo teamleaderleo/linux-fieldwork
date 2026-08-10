@@ -85,33 +85,57 @@ The regression surface is now reduced to two tests:
 
 The second test also carries the positive control: its ready queue contains a real used index and must restore that index while the unready sibling remains untouched.
 
-This removes the two redundant standalone tests from the previous carrier and better matches the maintainer's request for a small repair.
+## Executable focused receipt
 
-## Patch carrier validation
+Disposable Fieldwork validation run:
+`31440887148`
 
-After the reduction, the unified diff was checked again against a synthetic file containing the exact current-source contexts from canonical blob `0c1593f...` at all three hunks.
+Job:
+`93625162482` — `inactive-virtio-restore` — **success**
 
-Executed locally in the analysis environment:
+The job checked out exact canonical source `a658c9f9fd0c4e0363004361d73ac8733fa24fd0`, applied the exact retained patch, and verified that only `virtio-devices/src/transport/pci_device.rs` changed.
+
+Stable runner toolchain recorded:
 
 ```text
-git apply --check candidate.patch -> 0
-git apply candidate.patch         -> 0
+rustc 1.97.1
+cargo 1.97.1
+rustfmt 1.9.0-stable
 ```
 
-This proves the reduced patch is a coherent unified-diff carrier for the recorded current-source contexts. It is not a Cargo or runtime result.
+`cargo fmt --all -- --check` passed.
 
-## Execution state
+The workflow first listed each exact Rust test name and required it to exist. It then executed each exact test independently:
 
-The retained patch has not yet been applied to the current-base source branch and has not received a fresh Fieldwork Cargo/CI execution receipt.
+```text
+transport::pci_device::unit_tests::restore_inactive_queue_skips_used_index_read
+running 1 test
+... ok
+1 passed; 0 failed
+```
 
-Do not promote the retained patch from candidate design to proven product until all of these occur on the current-base source carrier:
+```text
+transport::pci_device::unit_tests::restore_partially_enabled_device_skips_unready_queue
+running 1 test
+... ok
+1 passed; 0 failed
+```
 
-1. patch application and exact one-file diff review;
-2. the two focused restore regressions;
-3. immediate clean rerun;
-4. nightly rustfmt;
-5. focused `virtio-devices` Clippy/build gate;
-6. broader backend/build coverage appropriate to the touched crate.
+This supersedes the earlier run whose bare `--exact` filters compiled the crate but selected zero tests.
+
+## Current promotion boundary
+
+The reduced candidate now has:
+
+- exact-current patch application;
+- exact one-file scope;
+- stable rustfmt success;
+- the canonical inactive-queue regression executed and green;
+- the partial multi-queue discriminator/positive control executed and green.
+
+The next gate is focused KVM Clippy with warnings denied, followed by a clean rerun and broader backend/build coverage appropriate to `virtio-devices`.
+
+The clean owned-fork source branch remains unchanged while the exact patch identity is validated in disposable carriers.
 
 ## External-contact state
 
