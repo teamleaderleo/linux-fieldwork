@@ -42,6 +42,7 @@ jobs:
             cat /etc/os-release
             sysctl kernel.unprivileged_userns_clone 2>/dev/null || true
             sysctl user.max_user_namespaces 2>/dev/null || true
+            docker version --format 'docker-client={{.Client.Version}} docker-server={{.Server.Version}}'
           } | tee investigations/bubblewrap-unshare-pid-zombie/runtime-environment.txt
 
       - name: Run synthetic model
@@ -49,11 +50,25 @@ jobs:
           python3 investigations/bubblewrap-unshare-pid-zombie/repro_subreaper_zombie.py --model \
             | tee investigations/bubblewrap-unshare-pid-zombie/model-runtime.txt
 
-      - name: Run exact-current Bubblewrap probe
+      - name: Classify unprivileged host runner
         run: |
-          set -o pipefail
+          set +e
           python3 investigations/bubblewrap-unshare-pid-zombie/repro_subreaper_zombie.py \
             --bwrap /tmp/bubblewrap/_build/bwrap \
+            > investigations/bubblewrap-unshare-pid-zombie/host-runtime.txt 2>&1
+          rc=$?
+          set -e
+          cat investigations/bubblewrap-unshare-pid-zombie/host-runtime.txt
+          echo "host_probe_rc=$rc" | tee -a investigations/bubblewrap-unshare-pid-zombie/host-runtime.txt
+
+      - name: Run exact-current probe in privileged disposable container
+        run: |
+          set -o pipefail
+          docker run --privileged --rm \
+            -v /tmp/bubblewrap:/tmp/bubblewrap:ro \
+            -v "$GITHUB_WORKSPACE":/fieldwork:ro \
+            ubuntu:24.04 \
+            bash -lc 'apt-get update >/dev/null && apt-get install -y python3 libcap2 libselinux1 >/dev/null && cd /fieldwork && python3 investigations/bubblewrap-unshare-pid-zombie/repro_subreaper_zombie.py --bwrap /tmp/bubblewrap/_build/bwrap' \
             | tee investigations/bubblewrap-unshare-pid-zombie/exact-current-runtime.txt
 
       - name: Retain runtime evidence
@@ -64,5 +79,6 @@ jobs:
           path: |
             investigations/bubblewrap-unshare-pid-zombie/runtime-environment.txt
             investigations/bubblewrap-unshare-pid-zombie/model-runtime.txt
+            investigations/bubblewrap-unshare-pid-zombie/host-runtime.txt
             investigations/bubblewrap-unshare-pid-zombie/exact-current-runtime.txt
           if-no-files-found: warn
