@@ -10,7 +10,7 @@ if [[ -z "$output_dir" || -z "$patch_file" ]]; then
   exit 64
 fi
 
-for command in git make bison gawk python3; do
+for command in git make bison gawk python3 sudo; do
   if ! command -v "$command" >/dev/null 2>&1; then
     printf 'required command is unavailable: %s\n' "$command" >&2
     exit 69
@@ -28,7 +28,8 @@ fi
 
 work_root=$(mktemp -d "${RUNNER_TEMP:-/tmp}/glibc-cache-alias-regressions.XXXXXX")
 cleanup() {
-  chmod -R u+rwX "$work_root" 2>/dev/null || true
+  sudo chmod -R u+rwX "$work_root" 2>/dev/null || true
+  sudo chown -R "$(id -u):$(id -g)" "$work_root" 2>/dev/null || true
   rm -rf -- "$work_root"
 }
 trap cleanup EXIT INT TERM
@@ -87,9 +88,9 @@ run_test() {
   local out_file="$build/elf/$test_base.out"
 
   printf 'test:%s\n' "$test_name" >"$stage"
-  rm -f -- "$result_file" "$out_file"
+  sudo rm -f -- "$result_file" "$out_file"
   set +e
-  make -C "$build" test "t=$test_name" >"$output_dir/$safe_name.log" 2>&1
+  sudo -E make -C "$build" test "t=$test_name" >"$output_dir/$safe_name.log" 2>&1
   local make_status=$?
   set -e
 
@@ -117,6 +118,7 @@ run_test elf/tst-glibc-hwcaps-prepend-cache
 {
   printf 'classification\tcandidate_regressions_passed\n'
   printf 'glibc_commit\t%s\n' "$glibc_commit"
+  printf 'privilege\thosted_disposable_root_for_container_namespace_only\n'
   printf 'test\telf/tst-ldconfig-cache\tpass\n'
   printf 'test\telf/tst-glibc-hwcaps-prepend-cache\tpass\n'
 } >"$output_dir/summary.tsv"
