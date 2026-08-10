@@ -1,0 +1,152 @@
+name: research-519-uv-invalid-venv-readonly
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-519-uv-invalid-venv-readonly.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare uv versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/uv-releases"
+          for version in 0.11.19 0.12.3; do
+            dest="$RUNNER_TEMP/uv-releases/$version"
+            mkdir -p "$dest"
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/$version/uv-x86_64-unknown-linux-gnu.tar.gz" \
+              | tar -xz -C "$dest" --strip-components=1
+            "$dest/uv" --version
+          done
+
+      - name: Execute invalid project environment matrix
+        shell: bash
+        env:
+          UV_OFFLINE: '1'
+          UV_PYTHON_DOWNLOADS: never
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/uv-invalid-venv-519"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+          RESULTS="$GITHUB_WORKSPACE/results-519.tsv"
+          printf 'version\tstate\tcommand\texit\tvenv_changed\tfirst_line\n' > "$RESULTS"
+
+          tree_digest() {
+            path="$1"
+            if [ ! -e "$path" ]; then
+              printf 'ABSENT'
+              return
+            fi
+            python - "$path" <<'PY'
+          import hashlib, os, pathlib, stat, sys
+          root=pathlib.Path(sys.argv[1])
+          h=hashlib.sha256()
+          for p in sorted(root.rglob('*'), key=lambda p: p.as_posix()):
+              rel=p.relative_to(root).as_posix()
+              st=p.lstat()
+              h.update(rel.encode()+b'\0')
+              h.update(str(stat.S_IFMT(st.st_mode)).encode()+b'\0')
+              if p.is_symlink():
+                  h.update(os.readlink(p).encode()+b'\0')
+              elif p.is_file():
+                  h.update(p.read_bytes())
+          print(h.hexdigest())
+          PY
+          }
+
+          make_project() {
+            dir="$1"
+            rm -rf "$dir"
+            mkdir -p "$dir"
+            cat > "$dir/pyproject.toml" <<'EOF'
+          [project]
+          name = "probe-project"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          dependencies = []
+          EOF
+          }
+
+          set_state() {
+            dir="$1"; state="$2"
+            rm -rf "$dir/.venv"
+            case "$state" in
+              absent) ;;
+              empty) mkdir "$dir/.venv" ;;
+              invalid_nonempty)
+                mkdir "$dir/.venv"
+                printf 'preserve-me\n' > "$dir/.venv/marker.txt"
+                ;;
+              invalid_with_pyvenv)
+                mkdir "$dir/.venv"
+                printf 'preserve-me\n' > "$dir/.venv/marker.txt"
+                printf 'home = /definitely/not/a/python\n' > "$dir/.venv/pyvenv.cfg"
+                ;;
+              *) exit 99 ;;
+            esac
+          }
+
+          run_case() {
+            label="$1"; uv_bin="$2"; state="$3"; command="$4"; dir="$5"
+            set_state "$dir" "$state"
+            before=$(tree_digest "$dir/.venv")
+            log="$ROOT/${label}-${state}-${command}.log"
+            set +e
+            case "$command" in
+              lock) (cd "$dir" && "$uv_bin" lock) >"$log" 2>&1 ;;
+              lock_check) (cd "$dir" && "$uv_bin" lock --check) >"$log" 2>&1 ;;
+              lock_dry_run) (cd "$dir" && "$uv_bin" lock --dry-run) >"$log" 2>&1 ;;
+              lock_frozen) (cd "$dir" && "$uv_bin" lock --frozen) >"$log" 2>&1 ;;
+              tree) (cd "$dir" && "$uv_bin" tree) >"$log" 2>&1 ;;
+              export) (cd "$dir" && "$uv_bin" export --format requirements-txt --no-emit-project) >"$log" 2>&1 ;;
+              workspace_metadata) (cd "$dir" && "$uv_bin" workspace metadata) >"$log" 2>&1 ;;
+              sync) (cd "$dir" && "$uv_bin" sync) >"$log" 2>&1 ;;
+              run) (cd "$dir" && "$uv_bin" run python -c 'print("OK")') >"$log" 2>&1 ;;
+              *) exit 98 ;;
+            esac
+            code=$?
+            set -e
+            after=$(tree_digest "$dir/.venv")
+            if [ "$before" = "$after" ]; then changed=false; else changed=true; fi
+            first=$(head -n 1 "$log" | tr '\t\r\n' '   ' | cut -c1-180)
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$label" "$state" "$command" "$code" "$changed" "$first" >> "$RESULTS"
+            echo "=== $label $state $command exit=$code changed=$changed ==="
+            cat "$log"
+          }
+
+          for version in 0.11.19 0.12.3; do
+            uv_bin="$RUNNER_TEMP/uv-releases/$version/uv"
+            dir="$ROOT/project-$version"
+            make_project "$dir"
+            # Create the lockfile once with no project environment so check/frozen controls are meaningful.
+            (cd "$dir" && "$uv_bin" lock)
+            for state in absent empty invalid_nonempty invalid_with_pyvenv; do
+              for command in lock lock_check lock_dry_run lock_frozen tree export workspace_metadata sync run; do
+                run_case "$version" "$uv_bin" "$state" "$command" "$dir"
+              done
+            done
+          done
+
+          echo '=== MATRIX ==='
+          column -t -s $'\t' "$RESULTS" || cat "$RESULTS"
+
+      - name: Upload receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uv-invalid-venv-519
+          path: |
+            results-519.tsv
+          if-no-files-found: warn
