@@ -11,7 +11,7 @@ if [[ -z "$output_dir" || -z "$regression_patch" || -z "$candidate_patch" ]]; th
   exit 64
 fi
 
-for command in git make bison gawk python3; do
+for command in git make bison gawk python3 sudo; do
   if ! command -v "$command" >/dev/null 2>&1; then
     printf 'required command is unavailable: %s\n' "$command" >&2
     exit 69
@@ -39,7 +39,8 @@ done
 
 work_root=$(mktemp -d "${RUNNER_TEMP:-/tmp}/glibc-cache-alias-native.XXXXXX")
 cleanup() {
-  chmod -R u+rwX "$work_root" 2>/dev/null || true
+  sudo chmod -R u+rwX "$work_root" 2>/dev/null || true
+  sudo chown -R "$(id -u):$(id -g)" "$work_root" 2>/dev/null || true
   rm -rf -- "$work_root"
 }
 trap cleanup EXIT INT TERM
@@ -90,9 +91,9 @@ run_test() {
   local result_file="$build/elf/$test_base.test-result"
   local out_file="$build/elf/$test_base.out"
 
-  rm -f -- "$result_file" "$out_file"
+  sudo rm -f -- "$result_file" "$out_file"
   set +e
-  make -C "$build" test "t=$test_name" >"$output_dir/$label-make.log" 2>&1
+  sudo -E make -C "$build" test "t=$test_name" >"$output_dir/$label-make.log" 2>&1
   local make_status=$?
   set -e
 
@@ -119,7 +120,8 @@ if ! grep -Fqx "FAIL: $test_name" "$output_dir/baseline-test-result.txt"; then
   tail -n 120 "$output_dir/baseline-test-output.txt" >&2 2>/dev/null || true
   exit 1
 fi
-if grep -Fq 'Cannot create testroot lock' "$output_dir/baseline-test-output.txt" 2>/dev/null; then
+if grep -Eq 'Cannot create testroot lock|could not create a private mount namespace|unable to unshare' \
+  "$output_dir/baseline-test-output.txt" 2>/dev/null; then
   printf 'baseline failed in container setup instead of the cache identity assertion\n' >&2
   exit 1
 fi
@@ -151,6 +153,7 @@ fi
 {
   printf 'classification\tnative_regression_distinguishes_candidate\n'
   printf 'glibc_commit\t%s\n' "$glibc_commit"
+  printf 'privilege\thosted_disposable_root_for_container_namespace_only\n'
   printf 'baseline_test\tfail_as_expected\n'
   printf 'candidate_test\tpass\n'
 } >"$output_dir/summary.tsv"
