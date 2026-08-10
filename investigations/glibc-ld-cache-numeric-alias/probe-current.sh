@@ -133,6 +133,12 @@ EOF
 cat >"$work_root/control-b.c" <<'EOF'
 int marker(void) { return 302; }
 EOF
+cat >"$work_root/wide-a.c" <<'EOF'
+int marker(void) { return 401; }
+EOF
+cat >"$work_root/wide-b.c" <<'EOF'
+int marker(void) { return 402; }
+EOF
 cat >"$work_root/duplicate-a.c" <<'EOF'
 int marker(void) { return 501; }
 EOF
@@ -182,6 +188,10 @@ cc -shared -fPIC -Wl,-soname,libcontrol.so.1 \
   "$work_root/control-a.c" -o "$lib_a/libcontrol-a.so.1.0"
 cc -shared -fPIC -Wl,-soname,libcontrol.so.2 \
   "$work_root/control-b.c" -o "$lib_b/libcontrol-b.so.2.0"
+cc -shared -fPIC -Wl,-soname,libwide.so.1 \
+  "$work_root/wide-a.c" -o "$lib_a/libwide-a.so.1.0"
+cc -shared -fPIC -Wl,-soname,libwide.so.4294967297 \
+  "$work_root/wide-b.c" -o "$lib_b/libwide-b.so.4294967297.0"
 cc -shared -fPIC -Wl,-soname,libdup.so.1 \
   "$work_root/duplicate-a.c" -o "$lib_a/libdup-a.so.1.0"
 cc -shared -fPIC -Wl,-soname,libdup.so.1 \
@@ -253,6 +263,8 @@ for label in ab ba; do
     libalias.so.2 \
     libcontrol.so.1 \
     libcontrol.so.2 \
+    libwide.so.1 \
+    libwide.so.4294967297 \
     libdup.so.1; do
     stderr_file="$work_root/$label-${name//\//_}.stderr"
     result=$(query "$name" "$stderr_file")
@@ -272,6 +284,10 @@ ab_zero_zero_one=$(lookup ab libalias.so.001)
 ba_one=$(lookup ba libalias.so.1)
 ba_zero_one=$(lookup ba libalias.so.01)
 ba_zero_zero_one=$(lookup ba libalias.so.001)
+ab_wide_one=$(lookup ab libwide.so.1)
+ab_wide_large=$(lookup ab libwide.so.4294967297)
+ba_wide_one=$(lookup ba libwide.so.1)
+ba_wide_large=$(lookup ba libwide.so.4294967297)
 
 classification=unexpected
 if [[ "$ab_one" == 101 \
@@ -279,14 +295,22 @@ if [[ "$ab_one" == 101 \
    && "$ab_zero_zero_one" == 101 \
    && "$ba_one" == 202 \
    && "$ba_zero_one" == 202 \
-   && "$ba_zero_zero_one" == 202 ]]; then
+   && "$ba_zero_zero_one" == 202 \
+   && "$ab_wide_one" == 401 \
+   && "$ab_wide_large" == 401 \
+   && "$ba_wide_one" == 402 \
+   && "$ba_wide_large" == 402 ]]; then
   classification=alias_identity_reproduced
 elif [[ "$ab_one" == 101 \
      && "$ab_zero_one" == 202 \
      && "$ab_zero_zero_one" == MISSING \
      && "$ba_one" == 101 \
      && "$ba_zero_one" == 202 \
-     && "$ba_zero_zero_one" == MISSING ]]; then
+     && "$ba_zero_zero_one" == MISSING \
+     && "$ab_wide_one" == 401 \
+     && "$ab_wide_large" == 402 \
+     && "$ba_wide_one" == 401 \
+     && "$ba_wide_large" == 402 ]]; then
   classification=exact_identity_preserved
 fi
 
