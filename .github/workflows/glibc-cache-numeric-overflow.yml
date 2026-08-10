@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  noble-x86-64:
+  comparator-noble-x86-64:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -26,14 +26,44 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          output="investigations/glibc-ld-cache-numeric-overflow/runs/$RUN_ID"
+          output="investigations/glibc-ld-cache-numeric-overflow/runs/$RUN_ID-comparator"
           bash investigations/glibc-ld-cache-numeric-overflow/probe.sh "$output"
+          grep -Fqx $'classification\tsigned_overflow_reproduced' "$output/summary.tsv"
+          grep -Fqx $'antisymmetric\t0' "$output/plain-matrix.tsv"
+          grep -Fqx $'transitive\t0' "$output/plain-matrix.tsv"
 
-      - name: Upload result
+      - name: Upload comparator result
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: glibc-cache-numeric-overflow-${{ env.RUN_ID }}
-          path: investigations/glibc-ld-cache-numeric-overflow/runs/${{ env.RUN_ID }}/
+          name: glibc-cache-numeric-overflow-comparator-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-overflow/runs/${{ env.RUN_ID }}-comparator/
+          if-no-files-found: error
+          retention-days: 14
+
+  cache-noble-x86-64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Execute private-cache ordering fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-overflow/runs/$RUN_ID-cache"
+          bash investigations/glibc-ld-cache-numeric-overflow/probe-cache.sh "$output"
+
+      - name: Upload cache result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-overflow-cache-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-overflow/runs/${{ env.RUN_ID }}-cache/
           if-no-files-found: error
           retention-days: 14
