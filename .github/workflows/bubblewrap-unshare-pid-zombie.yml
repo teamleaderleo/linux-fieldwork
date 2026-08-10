@@ -27,12 +27,23 @@ jobs:
           git clone https://github.com/containers/bubblewrap.git /tmp/bubblewrap
           git -C /tmp/bubblewrap checkout 2f55bae38468d0c50cf5df87b1e481e882b63acb
           test "$(git -C /tmp/bubblewrap rev-parse HEAD)" = 2f55bae38468d0c50cf5df87b1e481e882b63acb
+          git -C /tmp/bubblewrap worktree add /tmp/bubblewrap-candidate HEAD
 
       - name: Build exact Bubblewrap source
         run: |
           meson setup /tmp/bubblewrap/_build /tmp/bubblewrap -Dman=disabled -Dtests=false
           meson compile -C /tmp/bubblewrap/_build
           /tmp/bubblewrap/_build/bwrap --version
+
+      - name: Build narrow reap candidate
+        run: |
+          git -C /tmp/bubblewrap-candidate apply --check "$GITHUB_WORKSPACE/investigations/bubblewrap-unshare-pid-zombie/0001-delay-exit-event-while-no-descendants-remain.patch"
+          git -C /tmp/bubblewrap-candidate apply "$GITHUB_WORKSPACE/investigations/bubblewrap-unshare-pid-zombie/0001-delay-exit-event-while-no-descendants-remain.patch"
+          git -C /tmp/bubblewrap-candidate diff --check
+          git -C /tmp/bubblewrap-candidate diff -- bubblewrap.c | tee investigations/bubblewrap-unshare-pid-zombie/candidate-applied.diff
+          meson setup /tmp/bubblewrap-candidate/_build /tmp/bubblewrap-candidate -Dman=disabled -Dtests=false
+          meson compile -C /tmp/bubblewrap-candidate/_build
+          /tmp/bubblewrap-candidate/_build/bwrap --version
 
       - name: Record execution environment
         run: |
@@ -71,6 +82,16 @@ jobs:
             bash -lc 'apt-get update >/dev/null && apt-get install -y python3 libcap2 libselinux1 >/dev/null && cd /fieldwork && python3 investigations/bubblewrap-unshare-pid-zombie/repro_subreaper_zombie.py --bwrap /tmp/bubblewrap/_build/bwrap' \
             | tee investigations/bubblewrap-unshare-pid-zombie/exact-current-runtime.txt
 
+      - name: Run candidate probe in privileged disposable container
+        run: |
+          set -o pipefail
+          docker run --privileged --rm \
+            -v /tmp/bubblewrap-candidate:/tmp/bubblewrap-candidate:ro \
+            -v "$GITHUB_WORKSPACE":/fieldwork:ro \
+            ubuntu:24.04 \
+            bash -lc 'apt-get update >/dev/null && apt-get install -y python3 libcap2 libselinux1 >/dev/null && cd /fieldwork && python3 investigations/bubblewrap-unshare-pid-zombie/repro_subreaper_zombie.py --bwrap /tmp/bubblewrap-candidate/_build/bwrap --expect-short-clean' \
+            | tee investigations/bubblewrap-unshare-pid-zombie/candidate-runtime.txt
+
       - name: Retain runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -81,4 +102,6 @@ jobs:
             investigations/bubblewrap-unshare-pid-zombie/model-runtime.txt
             investigations/bubblewrap-unshare-pid-zombie/host-runtime.txt
             investigations/bubblewrap-unshare-pid-zombie/exact-current-runtime.txt
+            investigations/bubblewrap-unshare-pid-zombie/candidate-runtime.txt
+            investigations/bubblewrap-unshare-pid-zombie/candidate-applied.diff
           if-no-files-found: warn
