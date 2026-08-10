@@ -1,43 +1,73 @@
-# Proposed upstream PR
+# Upstream PR record
+
+Updated: 2026-08-10
+
+Upstream PR: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8709
+State: ready for review
+Head: `e9c86bacee14a2fd6fe871dc678c6b3f1ac4012a`
 
 ## Title
 
-`vmm: propagate ACPI table construction errors`
+`vmm: Propagate ACPI table construction errors`
 
-## Body
+## Submitted body
 
 Fixes #8666.
 
-ACPI table construction now returns typed errors for runtime failures that previously panic. The error path covers checked table-address overflow, poisoned allocator / interrupt-controller / fw_cfg locks, missing fw_cfg, guest-memory writes, and fw_cfg I/O failures.
+Several operations in ACPI table construction currently use `unwrap()` / `expect()`, allowing failures to panic the VMM. This PR gives the ACPI path its own error type and propagates ACPI construction failures through `vm::Error::CreatingAcpiTables`.
 
 ```text
-runtime ACPI failure
-        |
-        v
-    acpi::Error
-        |
-        v
-vm::Error::CreatingAcpiTables
-        |
-        v
-     VM boot error
+checked_add / write_slice / fw_cfg
+              ↓
+          acpi::Error
+              ↓
+               ?
+              ↓
+    CreatingAcpiTables
+              ↓
+        Vm::boot() Err
 ```
 
-`next_table_address()` centralizes the repeated checked guest-address calculations. Fixed SRAT type-size checks are compile-time assertions, while the existing programming and table-layout invariants remain assertions. Successful ACPI generation and architecture-specific boot ordering remain unchanged.
+I added `next_table_address()` to consolidate the repeated checked table-address additions. It returns `AddressOverflow` instead of unwrapping a failed addition.
 
-Testing covers:
+A missing `fw_cfg` device, `fw_cfg` delivery failures, and guest-memory write failures propagate through the same ACPI error path. Making the builders return `Result` accounts for most of the `Ok(...)` / `?` changes.
 
-- the focused `next_table_address()` success/overflow unit test;
-- Clippy with `kvm,fw_cfg,tdx` and warnings denied;
-- x86_64 KVM and MSHV builds;
-- fw_cfg and TDX builds;
-- AArch64 KVM and MSHV cross-builds;
-- nightly rustfmt and diff checks.
+Fixed SRAT structure sizes are checked at compile time. Other internal VMM and table-construction invariants remain unchanged.
 
-AI assistance: ChatGPT (GPT-5.6 Sol) was used for source review, test design, and patch refinement.
+### Validation
 
-## Internal drafting notes
+`next_table_address()` has a test covering normal addition and overflow.
 
-The upstream body intentionally stays concise. Detailed rationale for each error variant, retained invariant, call-site propagation step, and validation boundary lives in the adjacent `README.md`.
+The change was also validated with nightly rustfmt, VMM Clippy with warnings denied, x86_64 KVM/MSHV builds, `fw_cfg` and TDX feature builds, AArch64 KVM/MSHV cross-builds, and the repository's RISC-V KVM build.
 
-The preferred tone is descriptive present tense. The PR body avoids explaining routine Rust `Result` / `Ok` / `?` propagation that is already apparent from the diff.
+A VM boot smoke test hasn't been run for this change.
+
+AI assistance: ChatGPT (GPT-5.6-Sol) was used for source review, test design, and patch refinement.
+
+## Why this body is intentionally small
+
+The public body is not the full investigation report. Its job is to let a maintainer answer quickly:
+
+```text
+what was wrong?
+    ↓
+where do failures go now?
+    ↓
+what helper/design choice matters?
+    ↓
+what was actually validated?
+    ↓
+what was not tested?
+```
+
+Detailed Rust explanations, discarded poisoned-lock handling, exact receipts, and scope defenses live in `README.md` and `REFINEMENT.md`.
+
+## Writing decisions retained for later submissions
+
+- PR prose does not need commit-message 72-column wrapping; GitHub renders normal Markdown paragraphs.
+- First person is acceptable when it sounds more natural (`I added ...`).
+- Arrow diagrams earn space when they replace prose and expose control flow immediately.
+- Avoid abstract words when simpler source-level language works. For example, the final opening dropped `fallible` and simply names `unwrap()` / `expect()`.
+- State the evidence ceiling explicitly. `A VM boot smoke test hasn't been run` makes the compile/test matrix more credible, not less.
+- Do not preload every possible scope defense into the PR. `Other internal VMM and table-construction invariants remain unchanged` is enough until a reviewer asks for the detailed taxonomy.
+- Correct factual overclaims even late in drafting. The final opening does not imply that fw_cfg `add_acpi()` previously panicked; that I/O error already propagated and is now re-homed under `acpi::Error`.
