@@ -32,6 +32,30 @@ The upstream PR body explains why `--no-shutdown` is needed: it keeps the VMM/AP
 
 Earlier fork materialization commits and internal interaction surfaces referenced the canonical issue directly, producing noisy GitHub timeline backlinks. Those are historical. `ADAPTIVE_COORDINATION.md` already requires `redirect.github.com` for external GitHub references in interaction surfaces; current live records now follow that rule.
 
+### Cloud Hypervisor — propagate ACPI construction failures
+
+**State:** human-submitted upstream; ready for review.
+
+- Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/issues/8666
+- Upstream PR: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8709
+- Fieldwork issue: `teamleaderleo/linux-fieldwork#444`
+- Submission branch: `teamleaderleo/cloud-hypervisor:fix/8666-acpi-errors`
+- Submitted head: `e9c86bacee14a2fd6fe871dc678c6b3f1ac4012a`
+- Canonical base: `a1fcb9f790616ac615f66de73be540b0b20844b1`
+- Frozen product diff digest: `sha256:76c53e120c22dab4886904a875e3aba86ae6d49130e4080cbcdb46ad3df56466`
+- Primary exact-byte validation run/job: `31367122335` / `93387811635`
+- Validation artifact: `9054647068`
+- Artifact digest: `sha256:bd30f0644818a73f2827a5eed5a497c58210ec87c6e0c2e8abacc934d65c010b`
+- Archived superseded carrier: `teamleaderleo/cloud-hypervisor#3`
+
+The submitted two-file patch is 73 additions / 48 deletions. It gives the private ACPI path its own error type for checked guest-address overflow, missing fw_cfg, fw_cfg ACPI-delivery I/O failures, and guest-memory write failures; the VM wraps these once as `CreatingAcpiTables` and returns them through boot.
+
+The broader first candidate also propagated three poisoned mutexes. That handling was deliberately removed before submission because it introduced a local ACPI mutex-poison policy that the wider VMM does not share. The narrowing also removed FACP/TDX `Result` churn that existed only for poison handling. Fixed SRAT type sizes remain compile-time assertions, and the duplicate runtime size test was removed.
+
+The final validation carrier verifies exact product identity before testing the product commit itself. Nightly rustfmt, the focused address success/overflow unit test, VMM Clippy with warnings denied, x86_64 KVM/MSHV, fw_cfg, TDX, and AArch64 KVM/MSHV passed. A validation-only follow-up at `6cc1559217fb5e7e73246095b2b5d2c10d1c4476` also passed the repository's required RISC-V KVM build without changing product bytes.
+
+A VM boot smoke test was not run and is explicitly disclosed in the upstream PR. Detailed rationale, exact receipts, discarded poison design, Rust learning notes, final PR wording, and packaging lessons live under `investigations/cloud-hypervisor-acpi-error-propagation/`.
+
 ## Proven and ready for human review
 
 ### BuildKit — rootless/rootful reproducibility
@@ -47,34 +71,6 @@ Exact-current matching rootful/rootless native-snapshotter workers reproduced th
 The candidate reuses BuildKit's existing mount-stub ownership cleanup but feeds it the finalized OCI spec after rootless conversion. Strict patch application, focused ownership tests, candidate binary builds, matching rootful/rootless runc/native workers, implicit parity, and explicit-control parity all passed. The remaining caveat is live containerd-worker/runtime coverage; runc/native is proven.
 
 ## Strong candidate — human design review useful
-
-### Cloud Hypervisor — propagate ACPI construction failures
-
-**State:** current source/review boundary saturated; exact stored candidate passes the strengthened focused matrix and is byte-identical to the generated tested diff.
-
-- Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/issues/8666
-- Internal Fieldwork issue: #444
-- Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/acpi-error-propagation`
-- Internal draft PR: `teamleaderleo/cloud-hypervisor#3`
-- Validated product carrier head: `0a2f55acbd23b7f44899a69132a4236ef9240027`
-- Focused run/job: `31349013458` / `93336246241` — success
-- Focused artifact: `9048345416`
-- Artifact digest: `sha256:5335c66d23be38b9a988335061918adf8f7f44b4b4b564bf22a9c736d350e210`
-- Stored/generated product patch digest: `sha256:4d65cdbcb01a72eb09ae3b905a5d4e46b8e140c4cec8d3e1f00380ac5476628d`
-
-The candidate remains a small two-file correctness fix inside the private `vmm::acpi` module. It introduces `acpi::Error` and propagates checked table-address overflow, allocator/GIC/fw_cfg mutex poisoning, missing fw_cfg at the crate-internal helper boundary, guest-memory write failures, and fw_cfg I/O through one VM-level `CreatingAcpiTables` boundary. Poisoned-lock diagnostics retain the resource name.
-
-Source review preserves IORT header/alignment checks, the validated PCI-segment bound, serial lookup consistency, aarch64 controller/VGIC presence, and fw_cfg table-pointer bookkeeping as explicit invariants. Fixed structure-size checks are compile-time assertions.
-
-The focused workflow passes exact source blob verification, `git apply --check`, exact two-file generated scope, `git diff --check`, the repository's actual nightly rustfmt rules, an execution-proven exact unit test with successful-addition and overflow cases, focused Clippy with warnings denied, x86_64 KVM and MSHV compile, fw_cfg compile, TDX compile, and aarch64 KVM and MSHV cross-compile.
-
-Two stronger gates found real refinement work. Focused Clippy rejected the initial `std::result::Result` alias under the repository's denied `clippy::absolute_paths`; the candidate now uses the project-style `result::Result`. Nightly rustfmt then exposed that earlier stable formatting checks had ignored the repository's nightly-only import grouping settings; the runner and workflow now install/use nightly explicitly and the stored patch matches nightly output.
-
-The final workflow generates the product diff, requires `cmp` equality against stored `candidate.patch`, and records SHA-256 for both paths. The artifact records the same `4d65c...` digest for stored and generated patches, so review, application, quality checks, backend/architecture checks, and retained evidence all refer to the same bytes.
-
-Product scope remains 98 insertions and 53 deletions across `vmm/src/acpi.rs` and `vmm/src/vm.rs`; most of the diff is mechanical `Result`/error plumbing.
-
-**Current recommendation:** keep `acpi::Error` with one VM wrapper; keep defensive `MissingFwCfg`; keep the current address-helper test unless a natural second production failure fixture appears; keep the validated/programming invariants explicit. Reopen the product decision for a guarded source-blob change, a canonical fix, a concrete remaining runtime-input panic, a natural second failure fixture, or a supported backend/architecture counterexample.
 
 ### Cloud Hypervisor — propagate AArch64 cache-discovery runtime errors
 
@@ -94,7 +90,7 @@ Product scope remains 98 insertions and 53 deletions across `vmm/src/acpi.rs` an
 
 The candidate preserves the existing missing-cache behavior while turning present-but-unusable host cache metadata into ordinary errors. Missing cache root stays cache-less; missing individual properties retain zero/false defaults; other I/O failures, malformed decimal/cache-size values, and checked byte-size overflow return typed `arch::aarch64::cache::Error` values with path/source context.
 
-Cross-context review found two consumers of `read_cache_topology()`, so the same failure propagates through both PPTT/ACPI and AArch64 FDT system setup. The candidate is deliberately stacked on the exact validated #8666 ACPI patch: the runner verifies the immutable prerequisite carrier commit and patch blob, applies/commits that prerequisite locally, then applies only the two #8097 successor patches.
+Cross-context review found two consumers of `read_cache_topology()`, so the same failure propagates through both PPTT/ACPI and AArch64 FDT system setup. The retained internal candidate was validated while stacked on the earlier broader #8666 ACPI carrier.
 
 Seven named synthetic AArch64 fixtures execute under qemu-user and pass again on an immediate clean rerun: missing root, missing properties/defaults, valid cache metadata, malformed size, malformed decimal, non-`NotFound` read failure, and checked cache-size overflow. Focused AArch64 Clippy passes for `arch` and `vmm`; AArch64 KVM/MSHV and x86_64 KVM compile gates also pass.
 
@@ -102,7 +98,7 @@ After the semantic matrix went green, temporary formatter and Clippy repair laye
 
 Combined successor scope is five files and +333/-118: `arch/src/aarch64/cache.rs` (+305/-108) plus 28 insertions / 10 deletions across `arch/src/aarch64/fdt.rs`, `arch/src/aarch64/mod.rs`, `vmm/src/acpi.rs`, and `vmm/src/cpu.rs`. Most growth is deterministic fixture coverage and typed error plumbing.
 
-**Current recommendation:** keep missing metadata as fallback, keep present malformed/unreadable metadata as errors, and keep both propagation paths. The fixed-index portability concern has since been reproduced and isolated as Fieldwork #541 instead of widening #8097.
+**Current recommendation:** keep missing metadata as fallback, keep present malformed/unreadable metadata as errors, and keep both propagation paths. Before any human upstream packaging, refresh/revalidate the prerequisite stack against the submitted or landed #8666 boundary rather than assuming the earlier broader ACPI carrier remains byte-compatible. The fixed-index portability concern has since been reproduced and isolated as Fieldwork #541 instead of widening #8097.
 
 ### Cloud Hypervisor — validate AArch64 cacheinfo identity before passthrough
 
@@ -203,6 +199,6 @@ Other parked results:
 
 ## External-contact state
 
-`true — Cloud Hypervisor PR #8699 was submitted by the human contributor on 2026-08-07.`
+`true — Cloud Hypervisor PRs #8699 and #8709 were submitted by the human contributor.`
 
-No other canonical upstream pull requests, issue comments, reviews, reactions, emails, or other intentional interactions have been created from this workbench. Historical automatic cross-reference events were generated by direct canonical issue references in fork commits and internal GitHub interaction surfaces; current live records use redirect links to avoid creating additional backlinks.
+No other canonical upstream pull requests, issue comments, reviews, reactions, emails, or other intentional interactions have been created from this workbench. Historical automatic cross-reference events were generated by direct canonical issue references in fork commits and internal GitHub interaction surfaces; current live records use redirect links and keep iterative internal commit messages free of canonical issue references to avoid creating additional backlinks.
