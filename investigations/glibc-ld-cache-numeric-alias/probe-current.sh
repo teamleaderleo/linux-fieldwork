@@ -104,8 +104,6 @@ for path in "$current_ldconfig" "$current_loader" "$testrun"; do
 done
 
 printf 'private_cache_check\n' >"$stage"
-# Prove that this loader was built to consult only the private cache path used by
-# this fixture rather than the hosted runner's /etc/ld.so.cache.
 if ! strings "$current_loader" | grep -Fqx "$etc_dir/ld.so.cache"; then
   printf 'current loader does not contain the expected private cache identity\n' >&2
   exit 65
@@ -134,6 +132,12 @@ int marker(void) { return 301; }
 EOF
 cat >"$work_root/control-b.c" <<'EOF'
 int marker(void) { return 302; }
+EOF
+cat >"$work_root/duplicate-a.c" <<'EOF'
+int marker(void) { return 501; }
+EOF
+cat >"$work_root/duplicate-b.c" <<'EOF'
+int marker(void) { return 502; }
 EOF
 cat >"$work_root/probe.c" <<'EOF'
 #include <dlfcn.h>
@@ -178,6 +182,10 @@ cc -shared -fPIC -Wl,-soname,libcontrol.so.1 \
   "$work_root/control-a.c" -o "$lib_a/libcontrol-a.so.1.0"
 cc -shared -fPIC -Wl,-soname,libcontrol.so.2 \
   "$work_root/control-b.c" -o "$lib_b/libcontrol-b.so.2.0"
+cc -shared -fPIC -Wl,-soname,libdup.so.1 \
+  "$work_root/duplicate-a.c" -o "$lib_a/libdup-a.so.1.0"
+cc -shared -fPIC -Wl,-soname,libdup.so.1 \
+  "$work_root/duplicate-b.c" -o "$lib_b/libdup-b.so.1.0"
 cc -Wall -Wextra -Werror "$work_root/probe.c" -ldl -o "$work_root/probe"
 
 make_cache() {
@@ -244,7 +252,8 @@ for label in ab ba; do
     libalias.so.001 \
     libalias.so.2 \
     libcontrol.so.1 \
-    libcontrol.so.2; do
+    libcontrol.so.2 \
+    libdup.so.1; do
     stderr_file="$work_root/$label-${name//\//_}.stderr"
     result=$(query "$name" "$stderr_file")
     printf '%s\t%s\t%s\n' "$label" "$name" "$result" >>"$summary"
@@ -281,6 +290,8 @@ elif [[ "$ab_one" == 101 \
   classification=exact_identity_preserved
 fi
 
+printf 'duplicate_exact_ab\t%s\n' "$(lookup ab libdup.so.1)" >>"$summary"
+printf 'duplicate_exact_ba\t%s\n' "$(lookup ba libdup.so.1)" >>"$summary"
 printf 'classification\t%s\n' "$classification" >>"$summary"
 printf 'complete\n' >"$stage"
 cat "$summary"
