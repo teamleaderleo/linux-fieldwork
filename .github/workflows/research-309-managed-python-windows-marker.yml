@@ -13,7 +13,7 @@ permissions:
 jobs:
   windows-marker:
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       CANDIDATE_HEAD: 8525cfc69e561adc0b4f71c2c1f02ae457b37b7c
     steps:
@@ -39,7 +39,6 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $path = 'uv-candidate/crates/uv-python/src/managed.rs'
           @'
           from pathlib import Path
           p = Path(r'uv-candidate/crates/uv-python/src/managed.rs')
@@ -70,11 +69,10 @@ jobs:
         run: |
           "marker_unit_outcome=${{ steps.marker-unit.outcome }}" | Set-Content -Encoding utf8 windows-marker-unit-outcome.txt
 
-      - name: Build candidate uv
+      - name: Build clean candidate uv
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # Restore the clean candidate before building the command-level probe.
           git -C uv-candidate reset --hard $env:CANDIDATE_HEAD
           Push-Location uv-candidate
           try {
@@ -84,7 +82,7 @@ jobs:
             Pop-Location
           }
 
-      - name: Exercise Windows managed discovery with marker
+      - name: Prove Windows registry is the clean-candidate bypass
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -97,57 +95,150 @@ jobs:
           $env:UV_PYTHON_BIN_DIR = $bin
           $env:UV_CACHE_DIR = $cache
 
-          & $uv --version
-          & $uv python find --help | Out-File -Encoding utf8 windows-python-find-help.txt
           & $uv python install 3.12.6
           if ($LASTEXITCODE -ne 0) { throw 'managed Python install failed' }
-
           $install = Get-ChildItem -Path $managed -Directory | Where-Object { $_.Name -like 'cpython-3.12.6-*' } | Select-Object -First 1
           if (-not $install) { throw 'managed installation directory not found' }
           $marker = Join-Path $install.FullName '.uv-installing'
-          if (Test-Path $marker) { throw 'successful install unexpectedly retained marker' }
-
-          $beforeList = & $uv python list --only-installed --managed-python 2>&1 | Out-String
-          $beforeList | Out-File -Encoding utf8 windows-list-before-marker.txt
-          if ($beforeList -notmatch [regex]::Escape($install.Name)) { throw 'installed managed Python was not listed before marker' }
-
           Set-Content -Path $marker -Value 'in-progress' -NoNewline
-          if (-not (Test-Path $marker)) { throw 'failed to create marker' }
+
+          $defaultList = & $uv python list --only-installed --managed-python 2>&1 | Out-String
+          $defaultList | Out-File -Encoding utf8 windows-baseline-list-with-marker.txt
+          if ($defaultList -notmatch [regex]::Escape($install.FullName)) {
+            throw 'baseline did not reproduce exact managed root visibility'
+          }
+
+          $env:UV_PYTHON_NO_REGISTRY = '1'
+          try {
+            $noRegistryList = & $uv python list --only-installed --managed-python 2>&1 | Out-String
+          } finally {
+            Remove-Item Env:UV_PYTHON_NO_REGISTRY -ErrorAction SilentlyContinue
+          }
+          $noRegistryList | Out-File -Encoding utf8 windows-baseline-list-with-marker-no-registry.txt
+          if ($noRegistryList -match [regex]::Escape($install.FullName)) {
+            throw 'exact managed root remained visible with Windows registry disabled'
+          }
+          Write-Output 'WINDOWS_REGISTRY_BYPASS=PROVEN'
+          Remove-Item -Force $marker
+
+          "managed=$managed" | Set-Content -Encoding utf8 windows-probe-env.txt
+          "bin=$bin" | Add-Content -Encoding utf8 windows-probe-env.txt
+          "cache=$cache" | Add-Content -Encoding utf8 windows-probe-env.txt
+          "install=$($install.FullName)" | Add-Content -Encoding utf8 windows-probe-env.txt
+
+      - name: Apply cross-source discovery prototype
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          from pathlib import Path
+          import re
+
+          managed = Path(r'uv-candidate/crates/uv-python/src/managed.rs')
+          s = managed.read_text()
+          pattern = re.compile(r'''    /// Try to create a \[`ManagedPythonInstallation`\] from an \[`Interpreter`\]\.\n    ///\n    /// Returns `None` if the interpreter is not a managed installation\.\n    pub fn try_from_interpreter\(interpreter: &Interpreter\) -> Option<Self> \{.*?        Self::from_path\(path\)\.ok\(\)\n    \}''', re.S)
+          replacement = '''    /// Return the managed installation path for an interpreter, if it belongs to uv's managed root.\n    fn path_from_interpreter(interpreter: &Interpreter) -> Option<PathBuf> {\n        let managed_root = ManagedPythonInstallations::from_settings(None).ok()?;\n        let root = managed_root.absolute_root().ok()?;\n\n        // Canonicalize both paths to handle Windows path format differences\n        // (e.g., \\\\?\\ prefix, different casing, junction vs actual path).\n        let sys_base_prefix = dunce::canonicalize(interpreter.sys_base_prefix())\n            .unwrap_or_else(|_| interpreter.sys_base_prefix().to_path_buf());\n        let root = dunce::canonicalize(&root).unwrap_or(root);\n        let suffix = sys_base_prefix.strip_prefix(&root).ok()?;\n        let first_component = suffix.components().next()?;\n        let name = first_component.as_os_str().to_str()?;\n        PythonInstallationKey::from_str(name).ok()?;\n        Some(root.join(name))\n    }\n\n    /// Return whether an interpreter belongs to a published but incomplete managed installation.\n    pub(crate) fn interpreter_is_in_progress(interpreter: &Interpreter) -> Result<bool, Error> {\n        let Some(path) = Self::path_from_interpreter(interpreter) else {\n            return Ok(false);\n        };\n        installation_is_in_progress(&path)\n    }\n\n    /// Try to create a [`ManagedPythonInstallation`] from an [`Interpreter`].\n    ///\n    /// Returns `None` if the interpreter is not a managed installation.\n    pub fn try_from_interpreter(interpreter: &Interpreter) -> Option<Self> {\n        let path = Self::path_from_interpreter(interpreter)?;\n        if installation_is_in_progress(&path).ok()? {\n            return None;\n        }\n        Self::from_path(path).ok()\n    }'''
+          s2, count = pattern.subn(replacement, s, count=1)
+          assert count == 1, count
+          managed.write_text(s2)
+
+          discovery = Path(r'uv-candidate/crates/uv-python/src/discovery.rs')
+          s = discovery.read_text()
+          old_import = 'use crate::managed::{ManagedPythonInstallations, PythonMinorVersionLink};'
+          new_import = 'use crate::managed::{ManagedPythonInstallation, ManagedPythonInstallations, PythonMinorVersionLink};'
+          assert old_import in s
+          s = s.replace(old_import, new_import, 1)
+
+          old_error = '''    #[error("Failed to discover managed Python installations")]\n    ManagedPython(#[from] crate::managed::Error),'''
+          new_error = '''    #[error("Failed to discover managed Python installations")]\n    ManagedPython(#[from] crate::managed::Error),\n\n    #[error("Managed Python installation at `{}` is still being finalized", _0.user_display())]\n    ManagedPythonInstallationInProgress(PathBuf),'''
+          assert old_error in s
+          s = s.replace(old_error, new_error, 1)
+
+          fn_pattern = re.compile(r'''fn python_installation_from_executable\(\n    source: PythonSource,\n    path: PathBuf,\n    cache: &Cache,\n\) -> Result<PythonInstallation, Error> \{.*?\n\}''', re.S)
+          fn_replacement = '''fn python_installation_from_executable(\n    source: PythonSource,\n    path: PathBuf,\n    cache: &Cache,\n) -> Result<PythonInstallation, Error> {\n    let interpreter = Interpreter::query(&path, cache)\n        .map_err(|err| Error::Query(Box::new(err), path.clone(), source))\n        .inspect_err(|err| debug!("{err}"))?;\n\n    if ManagedPythonInstallation::interpreter_is_in_progress(&interpreter)? {\n        let root = interpreter.sys_base_prefix().to_path_buf();\n        debug!(\n            "Skipping incomplete managed Python installation at `{}` discovered from {source}",\n            root.user_display()\n        );\n        return Err(Error::ManagedPythonInstallationInProgress(root));\n    }\n\n    let installation = PythonInstallation { source, interpreter };\n    debug!(\n        "Found `{}` at `{}` ({source})",\n        installation.key(),\n        path.display()\n    );\n    Ok(installation)\n}'''
+          s2, count = fn_pattern.subn(fn_replacement, s, count=1)
+          assert count == 1, count
+          s = s2
+
+          old_critical = '''            Self::VirtualEnv(VirtualEnvError::MissingPyVenvCfg(path)) => {\n                trace!("Skipping broken virtualenv at {}", path.display());\n                false\n            }'''
+          new_critical = '''            Self::ManagedPythonInstallationInProgress(path) => {\n                trace!(\n                    "Skipping incomplete managed Python installation at {}",\n                    path.display()\n                );\n                false\n            }\n            Self::VirtualEnv(VirtualEnvError::MissingPyVenvCfg(path)) => {\n                trace!("Skipping broken virtualenv at {}", path.display());\n                false\n            }'''
+          assert old_critical in s
+          discovery.write_text(s.replace(old_critical, new_critical, 1))
+          '@ | python -
+
+          git -C uv-candidate diff --check
+          git -C uv-candidate diff -- crates/uv-python/src/managed.rs crates/uv-python/src/discovery.rs | Out-File -Encoding utf8 windows-cross-source-prototype.diff
+
+      - name: Build cross-source prototype
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location uv-candidate
+          try {
+            cargo build --locked -p uv --bin uv
+            if ($LASTEXITCODE -ne 0) { throw 'prototype uv build failed' }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Exercise cross-source prototype on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $uv = (Resolve-Path 'uv-candidate/target/debug/uv.exe').Path
+          $pairs = @{}
+          Get-Content windows-probe-env.txt | ForEach-Object {
+            $parts = $_ -split '=',2
+            $pairs[$parts[0]] = $parts[1]
+          }
+          $managed = $pairs['managed']
+          $bin = $pairs['bin']
+          $cache = $pairs['cache']
+          $installPath = $pairs['install']
+          $env:UV_PYTHON_INSTALL_DIR = $managed
+          $env:UV_PYTHON_BIN_DIR = $bin
+          $env:UV_CACHE_DIR = $cache
+          $marker = Join-Path $installPath '.uv-installing'
+          Set-Content -Path $marker -Value 'in-progress' -NoNewline
 
           $markedList = & $uv python list --only-installed --managed-python 2>&1 | Out-String
-          $markedList | Out-File -Encoding utf8 windows-list-with-marker.txt
-          if ($markedList -match [regex]::Escape($install.Name)) { throw 'marker-bearing managed Python remained visible in managed list' }
+          $markedList | Out-File -Encoding utf8 windows-prototype-list-with-marker.txt
+          if ($markedList -match [regex]::Escape($installPath)) {
+            throw 'prototype still exposes marker-bearing managed Python in list'
+          }
 
-          # Add the generated Windows launcher directory to PATH. This is the adjacent bypass
-          # that can rediscover an interpreter without entering find_all(). Request the exact
-          # patch version and assert that any successful result is not the marker-bearing root.
           $env:PATH = "$bin;$env:PATH"
           $findOutput = & $uv python find 3.12.6 2>&1 | Out-String
           $findCode = $LASTEXITCODE
-          $findOutput | Out-File -Encoding utf8 windows-find-with-marker.txt
-          if ($findCode -eq 0 -and $findOutput -match [regex]::Escape($install.FullName)) {
-            throw 'marker-bearing installation was reconstructed through executable discovery'
+          $findOutput | Out-File -Encoding utf8 windows-prototype-find-with-marker.txt
+          if ($findCode -eq 0 -and $findOutput -match [regex]::Escape($installPath)) {
+            throw 'prototype reconstructed marker-bearing installation through discovery'
           }
 
           Remove-Item -Force $marker
           $afterList = & $uv python list --only-installed --managed-python 2>&1 | Out-String
-          $afterList | Out-File -Encoding utf8 windows-list-after-marker.txt
-          if ($afterList -notmatch [regex]::Escape($install.Name)) { throw 'managed Python did not return after marker removal' }
+          $afterList | Out-File -Encoding utf8 windows-prototype-list-after-marker.txt
+          if ($afterList -notmatch [regex]::Escape($installPath)) {
+            throw 'prototype did not rediscover managed Python after marker removal'
+          }
 
           $afterFind = & $uv python find 3.12.6 2>&1 | Out-String
-          $afterFind | Out-File -Encoding utf8 windows-find-after-marker.txt
-          if ($LASTEXITCODE -ne 0) { throw 'exact managed Python was not discoverable after marker removal' }
-          if ($afterFind -notmatch [regex]::Escape($install.FullName)) { throw 'post-marker discovery did not return managed installation' }
+          $afterFind | Out-File -Encoding utf8 windows-prototype-find-after-marker.txt
+          if ($LASTEXITCODE -ne 0) { throw 'prototype exact Python find failed after marker removal' }
+          if ($afterFind -notmatch [regex]::Escape($installPath)) {
+            throw 'prototype exact Python find did not return managed root after marker removal'
+          }
 
           @(
             "candidate=$env:CANDIDATE_HEAD",
-            "install=$($install.FullName)",
+            "install=$installPath",
+            'baseline_registry_bypass_proven=true',
             "find_while_marked_exit=$findCode",
-            'managed_list_hidden_while_marked=true',
-            'managed_find_not_reconstructed_while_marked=true',
-            'rediscovered_after_marker_removal=true'
+            'prototype_list_hidden_while_marked=true',
+            'prototype_find_not_reconstructed_while_marked=true',
+            'prototype_rediscovered_after_marker_removal=true'
           ) | Set-Content -Encoding utf8 windows-marker-summary.txt
-          Write-Output 'WINDOWS_MANAGED_MARKER=PASS'
+          Write-Output 'WINDOWS_CROSS_SOURCE_PROTOTYPE=PASS'
 
       - name: Upload Windows marker receipt
         if: always()
@@ -157,11 +248,12 @@ jobs:
           path: |
             windows-marker-unit.txt
             windows-marker-unit-outcome.txt
-            windows-python-find-help.txt
-            windows-list-before-marker.txt
-            windows-list-with-marker.txt
-            windows-find-with-marker.txt
-            windows-list-after-marker.txt
-            windows-find-after-marker.txt
+            windows-baseline-list-with-marker.txt
+            windows-baseline-list-with-marker-no-registry.txt
+            windows-cross-source-prototype.diff
+            windows-prototype-list-with-marker.txt
+            windows-prototype-find-with-marker.txt
+            windows-prototype-list-after-marker.txt
+            windows-prototype-find-after-marker.txt
             windows-marker-summary.txt
           if-no-files-found: warn
