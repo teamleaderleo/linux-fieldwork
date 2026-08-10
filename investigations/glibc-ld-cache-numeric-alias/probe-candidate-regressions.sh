@@ -72,13 +72,41 @@ if ! make -C "$build" -j"$build_jobs" >"$output_dir/build.log" 2>&1; then
   exit 1
 fi
 
+printf 'testroot_init\n' >"$stage"
+if ! make -C "$build" testroot.pristine/install.stamp \
+  >"$output_dir/testroot.log" 2>&1; then
+  tail -n 160 "$output_dir/testroot.log" >&2 || true
+  exit 1
+fi
+
 run_test() {
   local test_name=$1
+  local test_base=${test_name#elf/}
   local safe_name=${test_name//\//-}
+  local result_file="$build/elf/$test_base.test-result"
+  local out_file="$build/elf/$test_base.out"
+
   printf 'test:%s\n' "$test_name" >"$stage"
-  if ! make -C "$build" test "t=$test_name" \
-    >"$output_dir/$safe_name.log" 2>&1; then
+  rm -f -- "$result_file" "$out_file"
+  set +e
+  make -C "$build" test "t=$test_name" >"$output_dir/$safe_name.log" 2>&1
+  local make_status=$?
+  set -e
+
+  if [[ ! -f "$result_file" ]]; then
+    printf 'glibc did not produce a result for %s (make status %d)\n' \
+      "$test_name" "$make_status" >&2
     tail -n 160 "$output_dir/$safe_name.log" >&2 || true
+    return 1
+  fi
+  cp "$result_file" "$output_dir/$safe_name.test-result.txt"
+  if [[ -f "$out_file" ]]; then
+    cp "$out_file" "$output_dir/$safe_name.out.txt"
+  fi
+  if ! grep -Fqx "PASS: $test_name" "$result_file"; then
+    printf 'glibc regression failed: %s\n' "$test_name" >&2
+    cat "$result_file" >&2
+    tail -n 160 "$out_file" >&2 2>/dev/null || true
     return 1
   fi
 }
