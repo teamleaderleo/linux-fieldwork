@@ -59,6 +59,8 @@ jobs:
           output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-current"
           bash investigations/glibc-ld-cache-numeric-alias/probe-current.sh "$output"
           grep -Fqx $'classification\talias_identity_reproduced' "$output/summary-current.tsv"
+          grep -Fqx $'duplicate_exact_ab\t501' "$output/summary-current.tsv"
+          grep -Fqx $'duplicate_exact_ba\t502' "$output/summary-current.tsv"
 
       - name: Upload current-glibc result
         if: always()
@@ -89,6 +91,8 @@ jobs:
             "$output" \
             investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
           grep -Fqx $'classification\texact_identity_preserved' "$output/summary-current.tsv"
+          grep -Fqx $'duplicate_exact_ab\t501' "$output/summary-current.tsv"
+          grep -Fqx $'duplicate_exact_ba\t502' "$output/summary-current.tsv"
 
       - name: Upload exact-key candidate result
         if: always()
