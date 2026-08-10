@@ -3,8 +3,10 @@
 Updated: 2026-08-10
 
 Upstream PR: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8709
-State: ready for review
+State: maintainer approved; canonical CI / merge pending
 Head: `e9c86bacee14a2fd6fe871dc678c6b3f1ac4012a`
+Review: Rob Bradford — approved with `Thanks!` on 2026-08-10
+Canonical CI run: `31367757232` — in progress at last check
 
 ## Title
 
@@ -71,3 +73,7 @@ Detailed Rust explanations, discarded poisoned-lock handling, exact receipts, an
 - State the evidence ceiling explicitly. `A VM boot smoke test hasn't been run` makes the compile/test matrix more credible, not less.
 - Do not preload every possible scope defense into the PR. `Other internal VMM and table-construction invariants remain unchanged` is enough until a reviewer asks for the detailed taxonomy.
 - Correct factual overclaims even late in drafting. The final opening does not imply that fw_cfg `add_acpi()` previously panicked; that I/O error already propagated and is now re-homed under `acpi::Error`.
+
+## Review outcome so far
+
+The first maintainer review approved the submitted head without requested changes. This is evidence that the final narrowing and concise public explanation were sufficient for initial review; it is not a reason to weaken the retained internal evidence or to assume canonical CI/merge before those events occur.
