@@ -55,6 +55,7 @@ jobs:
           set -euo pipefail
           output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-current"
           bash investigations/glibc-ld-cache-numeric-alias/probe-current.sh "$output"
+          grep -Fqx $'classification\talias_identity_reproduced' "$output/summary-current.tsv"
 
       - name: Upload current-glibc result
         if: always()
@@ -62,5 +63,35 @@ jobs:
         with:
           name: glibc-cache-numeric-alias-current-${{ env.RUN_ID }}
           path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}-current/
+          if-no-files-found: error
+          retention-days: 14
+
+  current-glibc-exact-key-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Build exact-key candidate and execute isolated fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-candidate"
+          bash investigations/glibc-ld-cache-numeric-alias/probe-current.sh \
+            "$output" \
+            investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
+          grep -Fqx $'classification\texact_identity_preserved' "$output/summary-current.tsv"
+
+      - name: Upload exact-key candidate result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-alias-candidate-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}-candidate/
           if-no-files-found: error
           retention-days: 14
