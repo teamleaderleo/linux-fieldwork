@@ -29,6 +29,10 @@ def replace_exact(path: pathlib.Path, old: str, new: str, count: int = 1) -> Non
     path.write_text(text.replace(old, new, count))
 
 
+def exact_key_guard() -> str:
+    return """      const struct file_entry *key_entry\n        = _dl_cache_file_entry (libs, entry_size, index);\n      if (!_dl_cache_verify_ptr (key_entry->key, string_table_size)\n          || strcmp (name, string_table + key_entry->key) != 0)\n        continue;\n\n"""
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit(f"usage: {sys.argv[0]} GLIBC_SOURCE_ROOT")
@@ -46,9 +50,21 @@ def main() -> None:
         "while (end + 1 < (int) nlibs)",
     )
 
-    loop_prefix = """  for (uint32_t index = first; index <= last; ++index)\n    {\n      const char *path;\n      bool named;\n      uint32_t priority;\n      if (!cache_candidate_info (string_table, string_table_size, libs,\n                                 entry_size, index, &path, &named, &priority))\n        continue;\n"""
-    exact_loop_prefix = """  for (uint32_t index = first; index <= last; ++index)\n    {\n      const struct file_entry *lib\n        = _dl_cache_file_entry (libs, entry_size, index);\n      if (!_dl_cache_verify_ptr (lib->key, string_table_size)\n          || strcmp (name, string_table + lib->key) != 0)\n        continue;\n\n      const char *path;\n      bool named;\n      uint32_t priority;\n      if (!cache_candidate_info (string_table, string_table_size, libs,\n                                 entry_size, index, &path, &named, &priority))\n        continue;\n"""
-    replace_exact(dl_cache, loop_prefix, exact_loop_prefix, count=2)
+    count_loop = """  for (uint32_t index = first; index <= last; ++index)\n    {\n      const char *path;\n      bool named;\n      uint32_t priority;\n      if (!cache_candidate_info (string_table, string_table_size, libs,\n                                 entry_size, index, &path, &named, &priority))\n        continue;\n"""
+    count_loop_exact = (
+        "  for (uint32_t index = first; index <= last; ++index)\n    {\n"
+        + exact_key_guard()
+        + """      const char *path;\n      bool named;\n      uint32_t priority;\n      if (!cache_candidate_info (string_table, string_table_size, libs,\n                                 entry_size, index, &path, &named, &priority))\n        continue;\n"""
+    )
+    replace_exact(dl_cache, count_loop, count_loop_exact)
+
+    copy_loop = """  for (uint32_t index = first; index <= last; ++index)\n    {\n      const char *path;\n      bool named;\n      uint32_t priority;\n      if (!cache_candidate_info (string_table, string_table_size, libs,\n                                 entry_size, index, &path, &named, &priority)\n          || !named)\n        continue;\n"""
+    copy_loop_exact = (
+        "  for (uint32_t index = first; index <= last; ++index)\n    {\n"
+        + exact_key_guard()
+        + """      const char *path;\n      bool named;\n      uint32_t priority;\n      if (!cache_candidate_info (string_table, string_table_size, libs,\n                                 entry_size, index, &path, &named, &priority)\n          || !named)\n        continue;\n"""
+    )
+    replace_exact(dl_cache, copy_loop, copy_loop_exact)
 
     old_transfer = """\t      for (size_t index = 0; cached[index] != NULL; ++index)\n\t\t{\n\t\t  bool use_candidate = true;\n"""
     new_transfer = """\t      char *selected = NULL;\n\t      for (size_t index = 0; cached[index] != NULL; ++index)\n\t\t{\n\t\t  bool use_candidate = true;\n"""
