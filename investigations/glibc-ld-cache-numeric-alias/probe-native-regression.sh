@@ -146,12 +146,19 @@ git -C "$src" apply "$candidate_patch"
 git -C "$src" diff --check
 git -C "$src" diff >"$output_dir/candidate-with-regression.diff"
 
-# `make test t=...` rebuilds the test itself but deliberately does not rebuild
-# ordinary library objects. Rebuild the current glibc tree so the changed
-# loader participates in the candidate run.
+# Rebuild the current glibc tree, then refresh the installed test root.  The
+# container tests execute from testroot.pristine, so leaving the baseline
+# install in place would silently rerun the old loader after the source change.
 printf 'candidate_rebuild\n' >"$stage"
 if ! make -C "$build" -j"$build_jobs" >"$output_dir/candidate-build.log" 2>&1; then
   tail -n 160 "$output_dir/candidate-build.log" >&2 || true
+  exit 1
+fi
+
+printf 'candidate_testroot_refresh\n' >"$stage"
+as_root rm -f -- "$testroot_stamp"
+if ! make -C "$build" "$testroot_stamp" >"$output_dir/candidate-testroot.log" 2>&1; then
+  tail -n 160 "$output_dir/candidate-testroot.log" >&2 || true
   exit 1
 fi
 
@@ -170,6 +177,7 @@ fi
   printf 'execution_uid\t%s\n' "$(id -u)"
   printf 'sysconfdir\t/etc\n'
   printf 'baseline_test\tfail_as_expected\n'
+  printf 'candidate_testroot\trefreshed_after_rebuild\n'
   printf 'candidate_test\tpass\n'
 } >"$output_dir/summary.tsv"
 printf 'complete\n' >"$stage"
