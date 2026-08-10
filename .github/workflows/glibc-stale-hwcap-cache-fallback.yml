@@ -1,0 +1,33 @@
+name: glibc stale HWCAP cache fallback
+
+on:
+  pull_request:
+    paths:
+      - "investigations/glibc-stale-hwcap-cache-fallback/**"
+      - ".github/workflows/glibc-stale-hwcap-cache-fallback.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Execute candidate ordering model
+        shell: bash
+        run: |
+          set -euo pipefail
+          output=$(python3 investigations/glibc-stale-hwcap-cache-fallback/candidate_model.py)
+          printf '%s\n' "$output"
+          grep -Fqx $'classification\tcandidate_snapshot_semantics_hold' <<<"$output"
+          grep -Fqx $'candidate_stale_preferred\t20' <<<"$output"
+          grep -Fqx $'candidate_baseline_fallback\t10' <<<"$output"
+          grep -Fqx $'candidate_default_fallback\t90' <<<"$output"
+          grep -Fqx $'snapshot_rebind_safe\ttrue' <<<"$output"
