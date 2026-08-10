@@ -6,6 +6,7 @@ Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/i
 Upstream PR: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8709
 Final upstream head: `e9c86bacee14a2fd6fe871dc678c6b3f1ac4012a`
 Final diff SHA-256: `76c53e120c22dab4886904a875e3aba86ae6d49130e4080cbcdb46ad3df56466`
+Current upstream state: maintainer approved; canonical CI / merge pending
 
 ## What changed after the first green candidate
 
@@ -64,6 +65,12 @@ Do not put canonical issue references into iterative internal commit messages. T
 
 For internal GitHub interaction prose, use `redirect.github.com` for third-party canonical links. Repository Markdown may retain richer technical history without creating those interaction backlinks.
 
+## Upstream review outcome
+
+Rob Bradford approved the final upstream head with `Thanks!` and no requested source changes. Canonical CI run `31367757232` was in progress at the last check.
+
+This approval is a useful confirmation of the narrowing decision: the final patch answered the issue without carrying the neighboring mutex-poison policy into public review.
+
 ## Disposition
 
-The submitted product is frozen pending upstream review. Further source changes should respond to a maintainer request, attributable upstream CI failure, source movement, or a new concrete counterexample—not stylistic preference alone.
+The submitted product is frozen and maintainer-approved. Further source changes should respond to attributable CI failure, merge/rebase requirements, or a new maintainer request—not stylistic preference alone.
