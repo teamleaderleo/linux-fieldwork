@@ -8,7 +8,9 @@ The strongest source-level result from this pass is narrower than “replace the
 
 Linux also prepares the complete recursive mount tree before committing attribute changes. Its selftest deliberately forces a recursive read-only request to fail on an open writer and verifies that every checked mount keeps its previous attributes. That is a useful property for Bubblewrap: the new path can remove the userspace mount-table snapshot/per-submount-remount race while avoiding a half-updated tree on that failure class.
 
-Next action: implement a small compatibility wrapper and differential fixture in an owned Bubblewrap fork or disposable checkout, then compare the existing path and `mount_setattr()` path across `--bind`, `--dev-bind`, and `--ro-bind`, including a forced `ENOSYS` fallback and a recursive failure control.
+A final source cross-check found one compatibility wrinkle that should narrow the first candidate further. `BIND_FAIL_OPEN` is intentionally per-submount: in `--not-a-security-boundary` mode, one failing submount can be skipped while the remaining entries are still remounted. An all-tree `mount_setattr()` failure cannot reproduce that granularity. The lowest-risk first candidate should therefore keep the legacy per-submount path whenever `BIND_FAIL_OPEN` is set, and use `mount_setattr()` only for the normal fail-closed path. That preserves the new option's current behavior without teaching a syscall-wide error new fail-open semantics.
+
+Next action: implement a small compatibility wrapper and differential fixture in an owned Bubblewrap fork or disposable checkout, then compare the existing path and `mount_setattr()` path across `--bind`, `--dev-bind`, and `--ro-bind`, including a forced `ENOSYS` fallback, a forced `EINVAL` negative control, a recursive failure control, and explicit proof that `BIND_FAIL_OPEN` stays on the legacy path.
 
 Internal tracking: `teamleaderleo/linux-fieldwork#562`.
 
@@ -21,6 +23,8 @@ Today it makes a list of all those mounts and changes them one at a time. The li
 Literal example:
 
 `host tree with /work and a mounted /work/cache` → Bubblewrap recursively binds `/work` → asks Linux to add `nosuid,nodev,ro` to the full bound tree → both `/work` and `/work/cache` receive the requested attributes, or the recursive request fails before the tested attributes are committed.
+
+For the explicit non-security mode, Bubblewrap currently wants a different behavior: if one submount refuses the legacy remount, it can warn, skip that submount, and keep processing the rest. The first `mount_setattr()` candidate should leave that mode on the existing loop.
 
 ## Why care
 
@@ -35,10 +39,10 @@ For sandboxing callers, the security consequence is important: `--ro-bind` must 
 
 - State: `EXECUTING`
 - Exact working head: `containers/bubblewrap@2f55bae38468d0c50cf5df87b1e481e882b63acb`
-- Latest authoritative gate or artifact: source/history + Linux syscall/selftest review recorded here
+- Latest authoritative gate or artifact: source/history + Linux syscall/selftest review + fail-open cross-check recorded here
 - First incomplete step: build and execute a differential nested-mount fixture
 - Cleanup state: no runtime state created in this pass
-- Next safe action: implement and run a small candidate on an owned fork or disposable checkout
+- Next safe action: implement and run a fail-closed-only syscall candidate on an owned fork or disposable checkout
 - External-contact state: no upstream interaction authorized or made
 
 ## Intent and precedent
@@ -53,6 +57,8 @@ Relevant upstream records:
 - https://github.com/containers/bubblewrap/issues/653 — rationale for the later `--not-a-security-boundary` mode: sandboxing uses must fail closed when requested mount protections cannot be established; explicitly non-security uses may choose selected fail-open behavior.
 
 The current head includes `--not-a-security-boundary`. Its committed test is a smoke test that proves the option is accepted. It does not execute the actual branch where a recursive submount remount fails and `BIND_FAIL_OPEN` warns and continues.
+
+That branch is also semantically important for issue 754. In the current implementation, `BIND_FAIL_OPEN` is consulted only after a submount remount fails. The destination remount remains mandatory, and later submounts can still be processed. A single recursive syscall has all-tree error granularity, so routing `BIND_FAIL_OPEN` through the new syscall would change the behavior unless a separate design is proven.
 
 ### Linux syscall contract
 
@@ -71,13 +77,13 @@ The kernel selftest directly exercises this property. It creates a nested mount 
 
 ## Question
 
-Can Bubblewrap replace the userspace recursive remount loop with `mount_setattr(AT_RECURSIVE)` on supported kernels while preserving:
+Can Bubblewrap replace the userspace recursive remount loop with `mount_setattr(AT_RECURSIVE)` on supported kernels for the normal fail-closed path while preserving:
 
 - the existing `--bind` attribute contract;
 - the existing `--dev-bind` attribute contract;
 - the existing `--ro-bind` attribute contract;
 - fail-closed security behavior;
-- explicit non-security fail-open semantics where they remain applicable;
+- the existing per-submount `BIND_FAIL_OPEN` behavior by retaining the legacy path for that mode;
 - support for systems whose running kernel or build headers predate `mount_setattr()`?
 
 ## Source
@@ -126,11 +132,13 @@ Existing unrelated mount flags are preserved because the code reads current flag
 
 During the recursive submount loop, `EACCES` is ignored. With `BIND_FAIL_OPEN`, other submount-remount errors produce a warning and the loop continues. Without `BIND_FAIL_OPEN`, the first such error aborts the bind setup.
 
+`BIND_FAIL_OPEN` therefore has finer error granularity than `mount_setattr(AT_RECURSIVE)`: it can accept one submount failure while retaining successful attribute updates elsewhere in the tree.
+
 ## Hypothesis or candidate
 
 ### Candidate mechanism
 
-After the recursive bind has created the destination mount tree, use a zero-filled `struct mount_attr` with only the corresponding `attr_set` bits:
+For recursive binds in the normal fail-closed mode, after the recursive bind has created the destination mount tree, use a zero-filled `struct mount_attr` with only the corresponding `attr_set` bits:
 
 ```c
 struct mount_attr attr = {
@@ -146,6 +154,8 @@ sys_mount_setattr(AT_FDCWD, resolved_dest, AT_RECURSIVE,
 This is design pseudocode only. Names, wrapper placement, includes, compatibility definitions, error typing, and exact call ordering need implementation review.
 
 With `attr_clr == 0`, the operation adds Bubblewrap's required attributes without intentionally clearing unrelated existing attributes. This mirrors the current OR-based behavior for the three relevant bits.
+
+For `options & BIND_FAIL_OPEN`, keep the current userspace remount loop in the first candidate. This gives the new optimization a smaller semantic surface and preserves the existing per-submount warning-and-continue behavior.
 
 ### Compatibility rule
 
@@ -173,15 +183,20 @@ A candidate should adapt the smallest maintainable version of that pattern to Bu
 
 ### Interaction with `--not-a-security-boundary`
 
-On a kernel where `mount_setattr()` succeeds, the current per-submount race disappears from attribute application, reducing the occasions where `BIND_FAIL_OPEN` would be needed for this mechanism.
+The source cross-check changes the initial design recommendation.
 
-A failed `mount_setattr()` needs deliberate policy. The safe initial candidate is:
+`--not-a-security-boundary` currently turns `BIND_FAIL_OPEN` on for bind operations. Inside `bind_mount()`, that policy is only used for failures while remounting individual submounts: Bubblewrap warns, skips that submount, and proceeds with later entries. This is a deliberate behavior added in the current head.
 
-- `ENOSYS` → use the legacy path;
-- success → continue;
-- other errors → preserve fail-closed behavior unless a separately demonstrated non-security policy says that exact error can be relaxed safely.
+A recursive `mount_setattr()` call has all-tree success/error granularity. If one submount blocks the requested change, the syscall can fail before committing the tested attributes. Treating that failure as “continue anyway” would leave a different result from the legacy mode; falling back on every syscall error could also mask genuine implementation errors such as `EINVAL`.
 
-Blindly converting an all-tree syscall failure into “continue anyway” would create a broader semantic change than issue 754 asks for.
+The smallest first candidate is therefore:
+
+- `BIND_FAIL_OPEN` set → use the legacy per-submount path directly;
+- `BIND_FAIL_OPEN` clear and `mount_setattr()` succeeds → continue;
+- `BIND_FAIL_OPEN` clear and `mount_setattr()` returns `ENOSYS` → use the legacy path;
+- any other syscall error → fail closed.
+
+A later optimization for explicit fail-open mode can be considered separately if runtime evidence and a precise policy justify it.
 
 ## Reproduction
 
@@ -230,14 +245,16 @@ Reproduce the issue-650 family in a disposable namespace by repeatedly adding/re
 Compare:
 
 - current userspace path;
-- candidate syscall path;
+- fail-closed candidate syscall path;
 - forced-`ENOSYS` legacy fallback.
 
 The claim should remain bounded to the observed fixture and kernel. A stress run that happens to stay green is evidence, not proof that every mount race is impossible.
 
 ### 6. Non-security mode control
 
-Exercise a deliberately induced legacy submount-remount failure with and without `--not-a-security-boundary` to preserve the existing fail-closed/fail-open distinction on the fallback path. The committed upstream smoke test currently proves only that the option parses.
+Exercise a deliberately induced legacy submount-remount failure with and without `--not-a-security-boundary`.
+
+The first candidate should prove that `--not-a-security-boundary` bypasses the syscall path and retains the current warning/continue behavior. The committed upstream smoke test currently proves only that the option parses.
 
 ## Results
 
@@ -250,6 +267,7 @@ Exercise a deliberately induced legacy submount-remount failure with and without
 5. Bubblewrap issue 754 is an open maintainer-authored `help wanted` direction for `mount_setattr()` with an older-kernel fallback.
 6. A maintainer explicitly preferred issue 754 over the much larger userspace optimization in PR 629 because the latter was difficult to review with high confidence.
 7. The current `--not-a-security-boundary` test exercises argument acceptance, not the actual ignored-remount-failure branch.
+8. `BIND_FAIL_OPEN` currently provides per-submount failure granularity that a single recursive syscall cannot directly reproduce.
 
 ### Demonstrated from Linux source/selftests
 
@@ -270,14 +288,16 @@ None yet. No Bubblewrap candidate was compiled or executed during this pass, and
 
 The source evidence is strong enough to promote this from broad reconnaissance into a focused implementation experiment.
 
-The smallest likely repair boundary is Bubblewrap's recursive bind attribute-application phase, not argument parsing, mount graph modeling, or the complete new mount API family. The initial `MS_BIND | MS_REC` operation can remain. On supported kernels, the subsequent per-mount attribute walk is the part `mount_setattr(AT_RECURSIVE)` can replace.
+The smallest likely repair boundary is Bubblewrap's recursive bind attribute-application phase, not argument parsing, mount graph modeling, or the complete new mount API family. The initial `MS_BIND | MS_REC` operation can remain. On supported kernels, the subsequent per-mount attribute walk is the part `mount_setattr(AT_RECURSIVE)` can replace for normal fail-closed binds.
 
 This has two attractive properties at once:
 
 - fewer userspace operations and no userspace mount-table snapshot for applying the recursive flags;
 - all-tree preparation before attribute commit for the failure class exercised by the Linux selftest.
 
-The most important correction to the issue sketch is fallback classification. An implementation that falls back on any `EINVAL` risks converting a genuine candidate error into legacy behavior. The first candidate should be deliberately boring: feature absence through `ENOSYS`, success through the new path, all other errors surfaced until evidence establishes a narrower exception.
+The first important correction to the issue sketch is fallback classification. An implementation that falls back on any `EINVAL` risks converting a genuine candidate error into legacy behavior. Feature absence through `ENOSYS` gives a cleaner initial boundary.
+
+The second correction is fail-open mode. An all-tree syscall deliberately trades per-entry progress for an atomic preparation/commit model. Bubblewrap's explicit non-security mode currently wants per-submount warning-and-continue. Keeping `BIND_FAIL_OPEN` on the established path avoids mixing those contracts and makes the first candidate easier to review.
 
 ## Evidence boundary
 
@@ -294,8 +314,9 @@ Untested here:
 - performance improvement;
 - interaction with every mount propagation mode;
 - exact `EACCES` behavior equivalence between the legacy per-path remount loop and the kernel tree operation;
-- `--not-a-security-boundary` behavior on the new syscall path;
 - full Bubblewrap test suite.
+
+The initial candidate deliberately leaves `BIND_FAIL_OPEN` on the legacy path, so performance and race improvements in `--not-a-security-boundary` mode remain outside the first claim.
 
 One adjacent semantic question deserves an explicit probe: the legacy loop ignores `EACCES` while walking individual submount paths. `mount_setattr()` traverses the mount tree inside the kernel after resolving the target mount. The runtime fixture should include an access-restricted nested path and compare final attributes and exit status rather than assuming the two mechanisms expose identical errno behavior.
 
@@ -305,7 +326,7 @@ Reopen or widen this question if:
 - a required existing mount property is altered;
 - an old supported kernel/header combination cannot use a clean `ENOSYS` fallback;
 - a recursive failure partially changes the tested tree on a supported kernel;
-- non-security mode needs a broader, separately justified error policy;
+- a future requirement demands syscall-path acceleration for `BIND_FAIL_OPEN` mode;
 - the target project's supported architecture matrix makes a local syscall-number compatibility layer unreasonable.
 
 ## Next step
@@ -314,13 +335,15 @@ Create an owned Bubblewrap fork or disposable executable checkout and implement 
 
 1. minimal `mount_setattr()` compatibility wrapper;
 2. recursive attribute-set helper for `NOSUID`, conditional `NODEV`, conditional `RDONLY`;
-3. `ENOSYS` legacy fallback;
-4. focused nested-mount differential test;
-5. forced `ENOSYS` and `EINVAL` controls;
-6. open-writer recursive failure control;
-7. existing test suite and clean rerun.
+3. use the syscall only when `BIND_FAIL_OPEN` is clear;
+4. `ENOSYS` legacy fallback;
+5. focused nested-mount differential test;
+6. forced `ENOSYS` and `EINVAL` controls;
+7. open-writer recursive failure control;
+8. explicit fail-open legacy-path control;
+9. existing test suite and clean rerun.
 
-If that passes, measure the issue-650 race fixture and a many-bind workload, then inspect the complete diff for compatibility drift. Keep broader new-mount-API work separate.
+If that passes, measure the issue-650 race fixture and a many-bind workload, then inspect the complete diff for compatibility drift. Keep broader new-mount-API work and fail-open syscall optimization separate.
 
 ## Authority
 
