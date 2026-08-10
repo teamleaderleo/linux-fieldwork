@@ -50,30 +50,31 @@ The candidate reuses BuildKit's existing mount-stub ownership cleanup but feeds 
 
 ### Cloud Hypervisor — propagate ACPI construction failures
 
-**State:** final narrowed candidate is green across the focused matrix; human review should decide the error boundary and test sufficiency before materializing a clean production commit.
+**State:** exact stored candidate is green across the focused matrix; review/test/applied product patch are now byte-identical. Human review should decide the final error boundary before eventual squash/sign-off.
 
 - Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/issues/8666
 - Internal Fieldwork issue: #444
 - Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/acpi-error-propagation`
 - Internal draft PR: `teamleaderleo/cloud-hypervisor#3`
-- Validated candidate carrier head: `c8424a39bee350238ca5db747d90b3de14dd3ccf`
-- Focused run/job: `31346100848` / `93328232200` — success
-- Focused artifact: `9047409416`
-- Artifact digest: `sha256:ab966495356c334f421050396dee368fbd1b2126e4dbff5b921bb7ce75b69c51`
-- Generated product patch digest: `sha256:18cbecacd94abc438999ace608cd45b17a9982b96b82af5da7496fad40e6d29d`
-- Final-head broader fork CI: `31346100835`
+- Validated candidate carrier head: `7ed7f9a3c90e8873f88a9b88c0416753272d48c8`
+- Focused run/job: `31347216657` / `93331259891` — success
+- Focused artifact: `9047745419`
+- Artifact digest: `sha256:e96e8d0776b2c3c3bafa0c92d36ff23fb64232750d9428ef8617a1bceac153ab`
+- Stored/generated product patch digest: `sha256:18cbecacd94abc438999ace608cd45b17a9982b96b82af5da7496fad40e6d29d`
 
-The candidate introduces `acpi::Error` and propagates checked table-address overflow, allocator/GIC/fw_cfg mutex poisoning, missing fw_cfg at the public helper boundary, guest-memory write failures, and fw_cfg I/O through one VM-level `CreatingAcpiTables` boundary. Poisoned-lock diagnostics retain the resource name.
+The candidate is a small two-file correctness fix, not an external API redesign: `vmm::acpi` is private to the VMM crate. It introduces `acpi::Error` and propagates checked table-address overflow, allocator/GIC/fw_cfg mutex poisoning, missing fw_cfg at the crate-internal helper boundary, guest-memory write failures, and fw_cfg I/O through one VM-level `CreatingAcpiTables` boundary. Poisoned-lock diagnostics retain the resource name.
 
 Source review preserves IORT header/alignment checks, the validated PCI-segment bound, serial lookup consistency, and aarch64 controller/VGIC presence as explicit invariants. Fixed structure-size checks move to compile-time assertions, matching existing project practice. The complete production panic inventory in `vmm/src/acpi.rs` has been classified into propagated failures or retained invariants.
 
-The final focused workflow passes exact source blob verification, `git apply --check`, exact two-file generated scope, diff check, rustfmt, an execution-proven exact unit test with both a successful address-addition control and overflow case, KVM compile, fw_cfg compile, TDX compile, and aarch64 KVM cross-compile. The test step verifies the named test actually ran and uses `pipefail` so `tee` cannot hide a Cargo failure.
+The focused workflow passes exact source blob verification, `git apply --check`, exact two-file generated scope, diff check, rustfmt verification, an execution-proven exact unit test with successful-addition and overflow cases, KVM compile, fw_cfg compile, TDX compile, and aarch64 KVM cross-compile.
 
-The carrier is cleaned up to one reviewed `candidate.patch` plus an exact-source runner; the superseded source transform is gone and REUSE coverage is green. Earlier reds were separately classified as candidate-transform, missing-backend, missing-cross-compiler, or malformed-patch carrier failures and repaired before rerunning downstream gates.
+The carrier now stores the already-formatted product patch and verifies formatting without mutating it. The retained CI diff was compared byte-for-byte with the stored `candidate.patch`; both are the same `18cbec...` SHA-256 bytes. Earlier reds were separately classified as candidate-transform, missing-backend, missing-cross-compiler, malformed-patch, or truncated-carrier failures and repaired before downstream gates were accepted.
 
-Final-head normal CI has preflight, formatting, REUSE, typos, link/shell checks, package consistency, and stable/1.89 RISC-V builds green at the latest checkpoint, with build/Clippy matrices progressing through green completed steps. `gitlint` and DCO remain carrier-history failures caused by exploratory internal commits; any upstream packet should materialize one clean signed production commit instead of reusing that history.
+Product scope is 98 insertions and 53 deletions across `vmm/src/acpi.rs` and `vmm/src/vm.rs`; most of the diff is mechanical `Result`/error plumbing.
 
-**Human decision:** approve the `acpi::Error` / single VM wrapper boundary, decide whether defensive `MissingFwCfg` belongs in the public helper, and decide whether the address helper test plus compile/Clippy coverage is enough or a second deterministic failure fixture should be added before preparing a production commit.
+**Current recommendation:** keep `acpi::Error` with one VM wrapper; keep defensive `MissingFwCfg` because replacing the existing `expect()` directly serves #8666 and does not alter an external API; keep the current address-helper test unless a natural second failure-path fixture appears.
+
+Internal branches/commits can continue to be rebuilt and iterated freely. The eventual human-owned squashed/signed commit is a later packaging boundary and should be validated as its own immutable SHA before upstream submission.
 
 ### libarchive — deterministic cpio inode identity mapping
 
