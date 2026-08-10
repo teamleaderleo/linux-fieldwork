@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GLIBC_TEST_IMAGE: ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+
 jobs:
   candidate-model:
     runs-on: ubuntu-24.04
@@ -31,3 +34,53 @@ jobs:
           grep -Fqx $'candidate_baseline_fallback\t10' <<<"$output"
           grep -Fqx $'candidate_default_fallback\t90' <<<"$output"
           grep -Fqx $'snapshot_rebind_safe\ttrue' <<<"$output"
+
+  current-glibc-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Build and test candidate in privileged disposable fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-stale-hwcap-cache-fallback/runs/$RUN_ID-candidate"
+          mkdir -p "$output"
+          docker pull "$GLIBC_TEST_IMAGE"
+          docker image inspect --format='{{json .RepoDigests}}' "$GLIBC_TEST_IMAGE" \
+            >"$output/container-image.json"
+          docker run --rm --privileged \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -e RUNNER_TEMP=/tmp \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -e OUTPUT_PATH="$output" \
+            -v "$PWD:/fieldwork" \
+            -w /fieldwork \
+            "$GLIBC_TEST_IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              trap '\''chown -R "$HOST_UID:$HOST_GID" "$OUTPUT_PATH" 2>/dev/null || true'\'' EXIT
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential bison ca-certificates gawk git python3 rsync
+              bash investigations/glibc-stale-hwcap-cache-fallback/probe_candidate.sh \
+                "$OUTPUT_PATH"
+              grep -Fqx $'"'"'classification\tcandidate_native_tests_passed'"'"' \
+                "$OUTPUT_PATH/summary.tsv"
+            '
+
+      - name: Upload candidate result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-stale-hwcap-cache-candidate-${{ env.RUN_ID }}
+          path: investigations/glibc-stale-hwcap-cache-fallback/runs/${{ env.RUN_ID }}-candidate/
+          if-no-files-found: error
+          retention-days: 14
