@@ -7,6 +7,12 @@ on:
     paths:
       - investigations/runc-dynamic-mask-boundaries/maxnode-edge/**
       - .github/workflows/xsys-mempolicy-maxnode-edge.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - investigations/runc-dynamic-mask-boundaries/maxnode-edge/**
+      - .github/workflows/xsys-mempolicy-maxnode-edge.yml
   workflow_dispatch:
 
 permissions:
