@@ -20,7 +20,7 @@ env:
 jobs:
   inactive-virtio-restore:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Check out Fieldwork carrier
         uses: actions/checkout@v4
@@ -40,20 +40,26 @@ jobs:
           set -euo pipefail
           test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CLH_SHA"
           patch="$PWD/fieldwork/investigations/cloud-hypervisor-inactive-virtio-restore/candidate.patch"
+          sha256sum "$patch"
           git -C cloud-hypervisor apply --check "$patch"
           git -C cloud-hypervisor apply "$patch"
+          git -C cloud-hypervisor diff --check
           test "$(git -C cloud-hypervisor diff --name-only)" = "virtio-devices/src/transport/pci_device.rs"
 
-      - name: Record Rust toolchain
+      - name: Install project formatting toolchain
+        run: rustup toolchain install nightly --profile minimal --component rustfmt
+
+      - name: Record Rust toolchains
         shell: bash
         run: |
           rustc --version
           cargo --version
-          rustfmt --version
+          rustc +nightly --version
+          rustfmt +nightly --version
 
-      - name: Check formatting
+      - name: Check project-native formatting
         working-directory: cloud-hypervisor
-        run: cargo fmt --all -- --check
+        run: cargo +nightly fmt --all -- --check
 
       - name: Run inactive queue regression
         working-directory: cloud-hypervisor
@@ -61,8 +67,8 @@ jobs:
         run: |
           set -euo pipefail
           test_name="transport::pci_device::unit_tests::restore_inactive_queue_skips_used_index_read"
-          cargo test -p virtio-devices --lib -- --list | grep -F "$test_name: test"
-          cargo test -p virtio-devices --lib "$test_name" -- --exact
+          cargo test --locked -p virtio-devices --lib -- --list | grep -F "$test_name: test"
+          cargo test --locked -p virtio-devices --lib "$test_name" -- --exact
 
       - name: Run partial multi-queue discriminator
         working-directory: cloud-hypervisor
@@ -70,18 +76,24 @@ jobs:
         run: |
           set -euo pipefail
           test_name="transport::pci_device::unit_tests::restore_partially_enabled_device_skips_unready_queue"
-          cargo test -p virtio-devices --lib -- --list | grep -F "$test_name: test"
-          cargo test -p virtio-devices --lib "$test_name" -- --exact
+          cargo test --locked -p virtio-devices --lib -- --list | grep -F "$test_name: test"
+          cargo test --locked -p virtio-devices --lib "$test_name" -- --exact
 
       - name: KVM Clippy for touched crate
         working-directory: cloud-hypervisor
         env:
           RUSTFLAGS: -D warnings
-        run: cargo clippy -p virtio-devices --all-targets --no-default-features --features kvm -- -D warnings
+        run: cargo clippy --locked -p virtio-devices --all-targets --no-default-features --features kvm -- -D warnings
+
+      - name: MSHV Clippy for touched crate
+        working-directory: cloud-hypervisor
+        env:
+          RUSTFLAGS: -D warnings
+        run: cargo clippy --locked -p virtio-devices --all-targets --no-default-features --features mshv -- -D warnings
 
   sparse-page-granularity:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Check out Fieldwork carrier
         uses: actions/checkout@v4
@@ -101,28 +113,40 @@ jobs:
           set -euo pipefail
           test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CLH_SHA"
           patch="$PWD/fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/candidate.patch"
+          sha256sum "$patch"
           git -C cloud-hypervisor apply --check "$patch"
           git -C cloud-hypervisor apply "$patch"
+          git -C cloud-hypervisor diff --check
           test "$(git -C cloud-hypervisor diff --name-only)" = "vmm/src/sparse.rs"
           test "$(getconf PAGESIZE)" = "4096"
 
-      - name: Record Rust toolchain
+      - name: Install project formatting toolchain
+        run: rustup toolchain install nightly --profile minimal --component rustfmt
+
+      - name: Record Rust toolchains
         shell: bash
         run: |
           rustc --version
           cargo --version
-          rustfmt --version
+          rustc +nightly --version
+          rustfmt +nightly --version
 
-      - name: Check formatting
+      - name: Check project-native formatting
         working-directory: cloud-hypervisor
-        run: cargo fmt --all -- --check
+        run: cargo +nightly fmt --all -- --check
 
       - name: Run sparse unit tests with KVM feature context
         working-directory: cloud-hypervisor
-        run: cargo test -p vmm --lib --no-default-features --features kvm sparse::unit_tests
+        run: cargo test --locked -p vmm --lib --no-default-features --features kvm sparse::unit_tests
 
       - name: KVM Clippy for touched crate
         working-directory: cloud-hypervisor
         env:
           RUSTFLAGS: -D warnings
-        run: cargo clippy -p vmm --lib --no-default-features --features kvm -- -D warnings
+        run: cargo clippy --locked -p vmm --lib --no-default-features --features kvm -- -D warnings
+
+      - name: MSHV Clippy for touched crate
+        working-directory: cloud-hypervisor
+        env:
+          RUSTFLAGS: -D warnings
+        run: cargo clippy --locked -p vmm --lib --no-default-features --features mshv -- -D warnings
