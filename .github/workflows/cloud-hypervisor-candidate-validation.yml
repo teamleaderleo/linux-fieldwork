@@ -73,6 +73,12 @@ jobs:
           cargo test -p virtio-devices --lib -- --list | grep -F "$test_name: test"
           cargo test -p virtio-devices --lib "$test_name" -- --exact
 
+      - name: KVM Clippy for touched crate
+        working-directory: cloud-hypervisor
+        env:
+          RUSTFLAGS: -D warnings
+        run: cargo clippy -p virtio-devices --all-targets --no-default-features --features kvm -- -D warnings
+
   sparse-page-granularity:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -111,6 +117,12 @@ jobs:
         working-directory: cloud-hypervisor
         run: cargo fmt --all -- --check
 
-      - name: Run sparse unit tests
+      - name: Run sparse unit tests with KVM feature context
         working-directory: cloud-hypervisor
-        run: cargo test -p vmm --lib sparse::unit_tests
+        run: cargo test -p vmm --lib --no-default-features --features kvm sparse::unit_tests
+
+      - name: KVM Clippy for touched crate
+        working-directory: cloud-hypervisor
+        env:
+          RUSTFLAGS: -D warnings
+        run: cargo clippy -p vmm --lib --no-default-features --features kvm -- -D warnings
