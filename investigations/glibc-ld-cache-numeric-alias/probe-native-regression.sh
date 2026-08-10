@@ -77,7 +77,10 @@ git -C "$src" diff --check
 git -C "$src" diff >"$output_dir/regression.diff"
 
 printf 'configure\n' >"$stage"
-if ! (cd "$build" && "$src/configure" --prefix=/usr --disable-werror \
+if ! (cd "$build" && "$src/configure" \
+  --prefix=/usr \
+  --sysconfdir=/etc \
+  --disable-werror \
   >"$output_dir/configure.log" 2>&1); then
   tail -n 120 "$output_dir/configure.log" >&2 || true
   exit 1
@@ -165,6 +168,7 @@ fi
   printf 'classification\tnative_regression_distinguishes_candidate\n'
   printf 'glibc_commit\t%s\n' "$glibc_commit"
   printf 'execution_uid\t%s\n' "$(id -u)"
+  printf 'sysconfdir\t/etc\n'
   printf 'baseline_test\tfail_as_expected\n'
   printf 'candidate_test\tpass\n'
 } >"$output_dir/summary.tsv"
