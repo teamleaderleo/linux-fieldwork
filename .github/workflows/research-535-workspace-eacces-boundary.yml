@@ -1,0 +1,172 @@
+name: research-535-workspace-eacces-boundary
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-535-workspace-eacces-boundary.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CURRENT_HEAD: e1c1f30e2537f46a6a3622f825d8da22ed4fbde9
+      UV_PYTHON_DOWNLOADS: never
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare released uv
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/uv-release"
+          curl -LsSf https://github.com/astral-sh/uv/releases/download/0.12.3/uv-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/uv-release" --strip-components=1
+          "$RUNNER_TEMP/uv-release/uv" --version
+
+      - uses: actions/checkout@v4
+        with:
+          repository: astral-sh/uv
+          ref: e1c1f30e2537f46a6a3622f825d8da22ed4fbde9
+          path: uv-main
+          persist-credentials: false
+
+      - name: Build pinned current uv
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/current-target"
+          cargo build --manifest-path uv-main/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv-current"
+          test "$(git -C uv-main rev-parse HEAD)" = "$CURRENT_HEAD"
+          "$RUNNER_TEMP/uv-current" --version
+
+      - name: Execute ancestor-read boundary matrix
+        shell: bash
+        env:
+          UV_OFFLINE: '1'
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/eacces-535"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+          RESULTS="$GITHUB_WORKSPACE/results-535.tsv"
+          printf 'version\tparent_kind\treadable\tcommand\texit\tpermission_denied\tchild_lock\tparent_lock\tvenv_created\tfirst_error\n' > "$RESULTS"
+
+          write_child() {
+            dir="$1"
+            mkdir -p "$dir/child"
+            cat > "$dir/child/pyproject.toml" <<'EOF'
+          [project]
+          name = "child-535"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          dependencies = []
+          EOF
+          }
+
+          write_parent() {
+            dir="$1"; kind="$2"
+            case "$kind" in
+              none) ;;
+              project)
+                cat > "$dir/pyproject.toml" <<'EOF'
+          [project]
+          name = "parent-535"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          dependencies = []
+          EOF
+                ;;
+              workspace)
+                cat > "$dir/pyproject.toml" <<'EOF'
+          [tool.uv.workspace]
+          members = ["child"]
+          EOF
+                ;;
+              *) exit 97 ;;
+            esac
+          }
+
+          verify_eacces_shape() {
+            file="$1"
+            python - "$file" <<'PY'
+          import pathlib, sys
+          p=pathlib.Path(sys.argv[1])
+          st=p.stat()
+          assert p.is_file(), st
+          try:
+              p.read_text()
+          except PermissionError:
+              print('STAT_VISIBLE_READ_EACCES=PASS')
+          else:
+              raise SystemExit('expected PermissionError')
+          PY
+          }
+
+          run_case() {
+            label="$1"; uv_bin="$2"; kind="$3"; readable="$4"; command="$5"
+            dir="$ROOT/$label-$kind-$readable-$command"
+            rm -rf "$dir"
+            mkdir -p "$dir"
+            write_child "$dir"
+            write_parent "$dir" "$kind"
+            if [ "$kind" != none ] && [ "$readable" = false ]; then
+              chmod 000 "$dir/pyproject.toml"
+              verify_eacces_shape "$dir/pyproject.toml"
+            fi
+
+            log="$ROOT/$label-$kind-$readable-$command.log"
+            set +e
+            case "$command" in
+              lock_dry_run)
+                (cd "$dir/child" && "$uv_bin" lock --dry-run --offline) >"$log" 2>&1 ;;
+              workspace_metadata)
+                (cd "$dir/child" && "$uv_bin" workspace metadata) >"$log" 2>&1 ;;
+              venv)
+                (cd "$dir/child" && "$uv_bin" venv .venv) >"$log" 2>&1 ;;
+              *) exit 98 ;;
+            esac
+            code=$?
+            set -e
+
+            if [ "$kind" != none ] && [ "$readable" = false ]; then
+              chmod 644 "$dir/pyproject.toml"
+            fi
+            cat "$log"
+            if grep -Eqi 'Permission denied|os error 13|EACCES' "$log"; then denied=true; else denied=false; fi
+            if [ -f "$dir/child/uv.lock" ]; then child_lock=true; else child_lock=false; fi
+            if [ -f "$dir/uv.lock" ]; then parent_lock=true; else parent_lock=false; fi
+            if [ -d "$dir/child/.venv" ]; then venv=true; else venv=false; fi
+            first=$(grep -m1 -E '^(error:|  ×|  ├─▶|  ╰─▶|Caused by:)' "$log" | tr '\t\r\n' '   ' | cut -c1-220 || true)
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+              "$label" "$kind" "$readable" "$command" "$code" "$denied" "$child_lock" "$parent_lock" "$venv" "$first" >> "$RESULTS"
+            echo "=== RESULT $label $kind readable=$readable $command exit=$code denied=$denied child_lock=$child_lock parent_lock=$parent_lock venv=$venv ==="
+          }
+
+          for pair in "release:$RUNNER_TEMP/uv-release/uv" "current:$RUNNER_TEMP/uv-current"; do
+            label=${pair%%:*}; uv_bin=${pair#*:}
+            for command in lock_dry_run workspace_metadata venv; do
+              run_case "$label" "$uv_bin" none true "$command"
+              run_case "$label" "$uv_bin" project true "$command"
+              run_case "$label" "$uv_bin" project false "$command"
+              run_case "$label" "$uv_bin" workspace true "$command"
+              run_case "$label" "$uv_bin" workspace false "$command"
+            done
+          done
+
+          echo '=== MATRIX ==='
+          column -t -s $'\t' "$RESULTS" || cat "$RESULTS"
+
+      - name: Upload EACCES receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-eacces-boundary-535
+          path: results-535.tsv
+          if-no-files-found: warn
