@@ -25,6 +25,8 @@ fi
 
 readonly glibc_repository=https://github.com/gnutools/glibc.git
 readonly glibc_commit=6288139c32a194e0005593c30af6c79bb698cdf2
+readonly test_name=elf/tst-ld-cache-name-identity
+readonly test_base=tst-ld-cache-name-identity
 
 regression_patch=$(cd "$(dirname "$regression_patch")" && pwd -P)/$(basename "$regression_patch")
 candidate_patch=$(cd "$(dirname "$candidate_patch")" && pwd -P)/$(basename "$candidate_patch")
@@ -76,15 +78,49 @@ if ! make -C "$build" -j"$build_jobs" >"$output_dir/build.log" 2>&1; then
   exit 1
 fi
 
+printf 'testroot_init\n' >"$stage"
+if ! make -C "$build" testroot.pristine/install.stamp \
+  >"$output_dir/testroot.log" 2>&1; then
+  tail -n 160 "$output_dir/testroot.log" >&2 || true
+  exit 1
+fi
+
+run_test() {
+  local label=$1
+  local result_file="$build/elf/$test_base.test-result"
+  local out_file="$build/elf/$test_base.out"
+
+  rm -f -- "$result_file" "$out_file"
+  set +e
+  make -C "$build" test "t=$test_name" >"$output_dir/$label-make.log" 2>&1
+  local make_status=$?
+  set -e
+
+  if [[ ! -f "$result_file" ]]; then
+    printf 'glibc did not produce %s test result (make status %d)\n' \
+      "$label" "$make_status" >&2
+    tail -n 160 "$output_dir/$label-make.log" >&2 || true
+    return 2
+  fi
+
+  cp "$result_file" "$output_dir/$label-test-result.txt"
+  if [[ -f "$out_file" ]]; then
+    cp "$out_file" "$output_dir/$label-test-output.txt"
+  fi
+  printf '%s\tmake_status\t%d\n' "$label" "$make_status" >>"$output_dir/test-status.tsv"
+}
+
+: >"$output_dir/test-status.tsv"
 printf 'baseline_test\n' >"$stage"
-set +e
-make -C "$build" test t=elf/tst-ld-cache-name-identity \
-  >"$output_dir/baseline-test.log" 2>&1
-baseline_status=$?
-set -e
-if [[ "$baseline_status" -eq 0 ]]; then
-  printf 'native regression unexpectedly passed on baseline\n' >&2
-  tail -n 120 "$output_dir/baseline-test.log" >&2 || true
+run_test baseline
+if ! grep -Fqx "FAIL: $test_name" "$output_dir/baseline-test-result.txt"; then
+  printf 'native regression did not fail on baseline\n' >&2
+  cat "$output_dir/baseline-test-result.txt" >&2
+  tail -n 120 "$output_dir/baseline-test-output.txt" >&2 2>/dev/null || true
+  exit 1
+fi
+if grep -Fq 'Cannot create testroot lock' "$output_dir/baseline-test-output.txt" 2>/dev/null; then
+  printf 'baseline failed in container setup instead of the cache identity assertion\n' >&2
   exit 1
 fi
 
@@ -94,21 +130,28 @@ git -C "$src" apply "$candidate_patch"
 git -C "$src" diff --check
 git -C "$src" diff >"$output_dir/candidate-with-regression.diff"
 
-rm -f -- \
-  "$build/elf/tst-ld-cache-name-identity.out" \
-  "$build/elf/tst-ld-cache-name-identity.test-result"
+# `make test t=...` rebuilds the test itself but deliberately does not rebuild
+# ordinary library objects. Rebuild the current glibc tree so the changed
+# loader participates in the candidate run.
+printf 'candidate_rebuild\n' >"$stage"
+if ! make -C "$build" -j"$build_jobs" >"$output_dir/candidate-build.log" 2>&1; then
+  tail -n 160 "$output_dir/candidate-build.log" >&2 || true
+  exit 1
+fi
 
 printf 'candidate_test\n' >"$stage"
-if ! make -C "$build" -j"$build_jobs" test t=elf/tst-ld-cache-name-identity \
-  >"$output_dir/candidate-test.log" 2>&1; then
-  tail -n 160 "$output_dir/candidate-test.log" >&2 || true
+run_test candidate
+if ! grep -Fqx "PASS: $test_name" "$output_dir/candidate-test-result.txt"; then
+  printf 'native regression did not pass with exact-key candidate\n' >&2
+  cat "$output_dir/candidate-test-result.txt" >&2
+  tail -n 160 "$output_dir/candidate-test-output.txt" >&2 2>/dev/null || true
   exit 1
 fi
 
 {
   printf 'classification\tnative_regression_distinguishes_candidate\n'
   printf 'glibc_commit\t%s\n' "$glibc_commit"
-  printf 'baseline_status\t%s\n' "$baseline_status"
+  printf 'baseline_test\tfail_as_expected\n'
   printf 'candidate_test\tpass\n'
 } >"$output_dir/summary.tsv"
 printf 'complete\n' >"$stage"
