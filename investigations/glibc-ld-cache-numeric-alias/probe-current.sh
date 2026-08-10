@@ -9,7 +9,7 @@ if [[ -z "$output_dir" ]]; then
   exit 64
 fi
 
-for command in cc git make bison gawk python3; do
+for command in cc git make bison gawk python3 strings; do
   if ! command -v "$command" >/dev/null 2>&1; then
     printf 'required command is unavailable: %s\n' "$command" >&2
     exit 69
