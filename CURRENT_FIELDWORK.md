@@ -50,31 +50,31 @@ The candidate reuses BuildKit's existing mount-stub ownership cleanup but feeds 
 
 ### Cloud Hypervisor — propagate ACPI construction failures
 
-**State:** exact stored candidate is green across the focused matrix; review/test/applied product patch are now byte-identical. Human review should decide the final error boundary before eventual squash/sign-off.
+**State:** current source/review boundary saturated; exact stored candidate passes the strengthened focused matrix and is byte-identical to the generated tested diff.
 
 - Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/issues/8666
 - Internal Fieldwork issue: #444
 - Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/acpi-error-propagation`
 - Internal draft PR: `teamleaderleo/cloud-hypervisor#3`
-- Validated candidate carrier head: `7ed7f9a3c90e8873f88a9b88c0416753272d48c8`
-- Focused run/job: `31347216657` / `93331259891` — success
-- Focused artifact: `9047745419`
-- Artifact digest: `sha256:e96e8d0776b2c3c3bafa0c92d36ff23fb64232750d9428ef8617a1bceac153ab`
-- Stored/generated product patch digest: `sha256:18cbecacd94abc438999ace608cd45b17a9982b96b82af5da7496fad40e6d29d`
+- Validated product carrier head: `0a2f55acbd23b7f44899a69132a4236ef9240027`
+- Focused run/job: `31349013458` / `93336246241` — success
+- Focused artifact: `9048345416`
+- Artifact digest: `sha256:5335c66d23be38b9a988335061918adf8f7f44b4b4b564bf22a9c736d350e210`
+- Stored/generated product patch digest: `sha256:4d65cdbcb01a72eb09ae3b905a5d4e46b8e140c4cec8d3e1f00380ac5476628d`
 
-The candidate is a small two-file correctness fix, not an external API redesign: `vmm::acpi` is private to the VMM crate. It introduces `acpi::Error` and propagates checked table-address overflow, allocator/GIC/fw_cfg mutex poisoning, missing fw_cfg at the crate-internal helper boundary, guest-memory write failures, and fw_cfg I/O through one VM-level `CreatingAcpiTables` boundary. Poisoned-lock diagnostics retain the resource name.
+The candidate remains a small two-file correctness fix inside the private `vmm::acpi` module. It introduces `acpi::Error` and propagates checked table-address overflow, allocator/GIC/fw_cfg mutex poisoning, missing fw_cfg at the crate-internal helper boundary, guest-memory write failures, and fw_cfg I/O through one VM-level `CreatingAcpiTables` boundary. Poisoned-lock diagnostics retain the resource name.
 
-Source review preserves IORT header/alignment checks, the validated PCI-segment bound, serial lookup consistency, and aarch64 controller/VGIC presence as explicit invariants. Fixed structure-size checks move to compile-time assertions, matching existing project practice. The complete production panic inventory in `vmm/src/acpi.rs` has been classified into propagated failures or retained invariants.
+Source review preserves IORT header/alignment checks, the validated PCI-segment bound, serial lookup consistency, aarch64 controller/VGIC presence, and fw_cfg table-pointer bookkeeping as explicit invariants. Fixed structure-size checks are compile-time assertions. The separate aarch64 cache-topology runtime panic family remains a successor under canonical issue #8097 and Fieldwork #499 instead of silently widening this patch.
 
-The focused workflow passes exact source blob verification, `git apply --check`, exact two-file generated scope, diff check, rustfmt verification, an execution-proven exact unit test with successful-addition and overflow cases, KVM compile, fw_cfg compile, TDX compile, and aarch64 KVM cross-compile.
+The focused workflow now passes exact source blob verification, `git apply --check`, exact two-file generated scope, `git diff --check`, the repository's actual nightly rustfmt rules, an execution-proven exact unit test with successful-addition and overflow cases, focused Clippy with warnings denied, x86_64 KVM and MSHV compile, fw_cfg compile, TDX compile, and aarch64 KVM and MSHV cross-compile.
 
-The carrier now stores the already-formatted product patch and verifies formatting without mutating it. The retained CI diff was compared byte-for-byte with the stored `candidate.patch`; both are the same `18cbec...` SHA-256 bytes. Earlier reds were separately classified as candidate-transform, missing-backend, missing-cross-compiler, malformed-patch, or truncated-carrier failures and repaired before downstream gates were accepted.
+Two stronger gates found real refinement work. Focused Clippy rejected the initial `std::result::Result` alias under the repository's denied `clippy::absolute_paths`; the candidate now uses the project-style `result::Result`. Nightly rustfmt then exposed that earlier stable formatting checks had ignored the repository's nightly-only import grouping settings; the runner and workflow now install/use nightly explicitly and the stored patch matches nightly output.
 
-Product scope is 98 insertions and 53 deletions across `vmm/src/acpi.rs` and `vmm/src/vm.rs`; most of the diff is mechanical `Result`/error plumbing.
+The final workflow generates the product diff, requires `cmp` equality against stored `candidate.patch`, and records SHA-256 for both paths. The artifact records the same `4d65c...` digest for stored and generated patches, so review, application, quality checks, backend/architecture checks, and retained evidence all refer to the same bytes.
 
-**Current recommendation:** keep `acpi::Error` with one VM wrapper; keep defensive `MissingFwCfg` because replacing the existing `expect()` directly serves #8666 and does not alter an external API; keep the current address-helper test unless a natural second failure-path fixture appears.
+Product scope remains 98 insertions and 53 deletions across `vmm/src/acpi.rs` and `vmm/src/vm.rs`; most of the diff is mechanical `Result`/error plumbing.
 
-Internal branches/commits can continue to be rebuilt and iterated freely. The eventual human-owned squashed/signed commit is a later packaging boundary and should be validated as its own immutable SHA before upstream submission.
+**Current recommendation:** keep `acpi::Error` with one VM wrapper; keep defensive `MissingFwCfg`; keep the current address-helper test unless a natural second production failure fixture appears; keep the validated/programming invariants explicit. Reopen the product decision for a guarded source-blob change, a canonical fix, a concrete remaining runtime-input panic, a natural second failure fixture, or a supported backend/architecture counterexample.
 
 ### libarchive — deterministic cpio inode identity mapping
 
