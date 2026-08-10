@@ -2,13 +2,13 @@ diff --git a/elf/Makefile b/elf/Makefile
 index d279a5135c..6f3b193b50 100644
 --- a/elf/Makefile
 +++ b/elf/Makefile
-@@ -271,6 +271,7 @@ tests-container := \
+@@ -271,4 +271,5 @@ tests-container := \
    tst-dl-cache-long-path \
 +  tst-ld-cache-name-identity \
    tst-ldconfig-bad-aux-cache \
    tst-ldconfig-ld_so_conf-update \
    # tests-container
-@@ -823,6 +824,8 @@ modules-names += \
+@@ -823,5 +824,7 @@ modules-names += \
    firstobj \
    globalmod1 \
 +  libcachealias-01 \
@@ -16,7 +16,7 @@ index d279a5135c..6f3b193b50 100644
    libmarkermod1-1 \
    libmarkermod1-2 \
    libmarkermod1-3 \
-@@ -3071,6 +3074,19 @@ glibc-hwcaps-first-subdirs-for-tests = power9 x86-64-v2 z13
+@@ -3071,5 +3074,16 @@ glibc-hwcaps-first-subdirs-for-tests = power9 x86-64-v2 z13
  
  # The test modules are parameterized by preprocessor macros.
 +LDFLAGS-libcachealias-1.so += -Wl,-soname,libcachealias.so.1
@@ -38,7 +38,7 @@ new file mode 100644
 index 0000000000..5856605cd1
 --- /dev/null
 +++ b/elf/tst-ld-cache-name-identity.c
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,88 @@
 +/* Test that ld.so.cache preserves byte-exact library-name identity.
 +   Copyright (C) 2026 Free Software Foundation, Inc.
 +   This file is part of the GNU C Library.
