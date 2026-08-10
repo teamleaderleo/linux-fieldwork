@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import ctypes
-import errno
 import os
 import subprocess
 import sys
@@ -62,6 +61,19 @@ def adopted_children():
     return found
 
 
+def wait_for_zombie(timeout):
+    deadline = time.monotonic() + timeout
+    children = []
+    zombies = []
+    while time.monotonic() < deadline:
+        children = adopted_children()
+        zombies = [row for row in children if row[1].startswith("Z")]
+        if zombies:
+            break
+        time.sleep(0.01)
+    return children, zombies
+
+
 def run_model():
     set_subreaper()
     pid_r, pid_w = os.pipe()
@@ -112,8 +124,7 @@ def run_model():
     return 0 if state == "Z" else 1
 
 
-def run_bwrap(path):
-    set_subreaper()
+def run_short_cases(path):
     cases = [
         ("pid-helper", ["--unshare-pid"]),
         ("as-pid-1-control", ["--unshare-pid", "--as-pid-1"]),
@@ -125,15 +136,7 @@ def run_bwrap(path):
         reap_children()
         cmd = [path, *extra, "--dev-bind", "/", "/", "--", "/bin/true"]
         completed = subprocess.run(cmd, check=False)
-        children = []
-        zombies = []
-        deadline = time.monotonic() + (2.0 if name == "pid-helper" else 0.2)
-        while time.monotonic() < deadline:
-            children = adopted_children()
-            zombies = [row for row in children if row[1].startswith("Z")]
-            if zombies or name != "pid-helper":
-                break
-            time.sleep(0.01)
+        children, zombies = wait_for_zombie(2.0 if name == "pid-helper" else 0.2)
         print(f"{name}: bwrap_rc={completed.returncode} adopted_children={children}")
         reap_children()
 
@@ -144,6 +147,45 @@ def run_bwrap(path):
         elif name != "pid-helper" and zombies:
             rc = max(rc, 1)
 
+    return rc
+
+
+def run_background_case(path):
+    reap_children()
+    cmd = [
+        path,
+        "--unshare-pid",
+        "--dev-bind", "/", "/",
+        "--", "/bin/sh", "-c", "sleep 3 & exit 0",
+    ]
+    started = time.monotonic()
+    completed = subprocess.run(cmd, check=False)
+    elapsed = time.monotonic() - started
+    immediate = adopted_children()
+    live_helpers = [row for row in immediate if not row[1].startswith("Z") and row[2] == "bwrap"]
+    final_children, final_zombies = wait_for_zombie(4.0)
+    print(
+        "background-child: "
+        f"bwrap_rc={completed.returncode} elapsed={elapsed:.3f}s "
+        f"immediate_adopted={immediate} final_adopted={final_children}"
+    )
+    reap_children()
+
+    if completed.returncode != 0:
+        return 2
+    if elapsed >= 1.5:
+        return 1
+    if not live_helpers:
+        return 1
+    if not final_zombies:
+        return 1
+    return 0
+
+
+def run_bwrap(path):
+    set_subreaper()
+    rc = run_short_cases(path)
+    rc = max(rc, run_background_case(path))
     return rc
 
 
