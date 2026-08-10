@@ -64,16 +64,25 @@ func main() {
 	// non-empty user mask onto the task's currently allowed memory nodes.
 	// This lets an ordinary small machine distinguish whether maxnode
 	// includes the final bit without requiring a real node 63.
-	dynamicMask := []uintptr{uintptr(1) << 63}
-	err64 := setRelativeBind(dynamicMask, 64)
+	dynamicRawMask := []uintptr{uintptr(1) << 63}
+	err64 := setRelativeBind(dynamicRawMask, 64)
 	resetAfterSuccess("dynamic maxnode=64", err64)
-	err65 := setRelativeBind(dynamicMask, 65)
+	err65 := setRelativeBind(dynamicRawMask, 65)
 	resetAfterSuccess("dynamic maxnode=65", err65)
+
+	dynamicWrapperMask := unix.NewCPUSet(64)
+	dynamicWrapperMask.Set(63)
+	dynamicWrapperErr := unix.SetMemPolicyDynamic(
+		unix.MPOL_BIND|unix.MPOL_F_RELATIVE_NODES,
+		dynamicWrapperMask,
+	)
+	resetAfterSuccess("dynamic wrapper", dynamicWrapperErr)
 
 	fmt.Printf("word_bits\t%d\n", bits.UintSize)
 	fmt.Printf("dynamic_highest_set_bit\t63\n")
 	fmt.Printf("dynamic_maxnode_64\t%v\n", err64)
 	fmt.Printf("dynamic_maxnode_65\t%v\n", err65)
+	fmt.Printf("dynamic_wrapper\t%v\n", dynamicWrapperErr)
 
 	if !errors.Is(err64, unix.EINVAL) {
 		fmt.Fprintf(os.Stderr, "dynamic maxnode=64 returned %v, want EINVAL for the dropped final bit\n", err64)
@@ -82,6 +91,14 @@ func main() {
 	if err65 != nil {
 		fmt.Fprintf(os.Stderr, "dynamic maxnode=65 returned %v, want success for the included relative bit\n", err65)
 		os.Exit(1)
+	}
+
+	if errors.Is(dynamicWrapperErr, unix.EINVAL) {
+		fmt.Println("dynamic_wrapper_classification\tfinal_bit_dropped")
+	} else if dynamicWrapperErr == nil {
+		fmt.Println("dynamic_wrapper_classification\tfinal_bit_preserved")
+	} else {
+		fmt.Printf("dynamic_wrapper_classification\tother:%v\n", dynamicWrapperErr)
 	}
 
 	// Fixed CPUSet case: current x/sys passes _CPU_SETSIZE (1024). Set
