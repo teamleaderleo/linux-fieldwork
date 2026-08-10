@@ -11,6 +11,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, message=r"This pr
 MARKER_NAME = "FIELDWORK_MARKER"
 OLD_VALUE = "fieldwork-old-marker"
 NEW_VALUE = "fieldwork-new-marker"
+CONTROL_NAME = "FIELDWORK_CONTROL"
+CONTROL_VALUE = "fieldwork-control-kept"
 libc = ctypes.CDLL(None, use_errno=True)
 libc.getenv.restype = ctypes.c_char_p
 
@@ -45,8 +47,10 @@ def run_model_case(kind):
         data = proc_environ()
         line = (
             f"{kind}: getenv={c_getenv(MARKER_NAME)!r} "
+            f"control={c_getenv(CONTROL_NAME)!r} "
             f"proc_old={f'{MARKER_NAME}={OLD_VALUE}'.encode() in data} "
-            f"proc_new={f'{MARKER_NAME}={NEW_VALUE}'.encode() in data}\n"
+            f"proc_new={f'{MARKER_NAME}={NEW_VALUE}'.encode() in data} "
+            f"proc_control={f'{CONTROL_NAME}={CONTROL_VALUE}'.encode() in data}\n"
         )
         os.write(wfd, line.encode())
         os.close(wfd)
@@ -63,15 +67,15 @@ def run_model_case(kind):
 
 
 def run_model():
-    if os.getenv(MARKER_NAME) != OLD_VALUE:
-        print(f"model requires {MARKER_NAME}={OLD_VALUE}", file=sys.stderr)
+    if os.getenv(MARKER_NAME) != OLD_VALUE or os.getenv(CONTROL_NAME) != CONTROL_VALUE:
+        print("model requires both synthetic environment values", file=sys.stderr)
         return 2
 
     outputs = {kind: run_model_case(kind) for kind in ("clearenv", "unsetenv", "setenv")}
     ok = (
-        "getenv=None proc_old=True" in outputs["clearenv"]
-        and "getenv=None proc_old=True" in outputs["unsetenv"]
-        and f"getenv='{NEW_VALUE}' proc_old=True proc_new=False" in outputs["setenv"]
+        "getenv=None control=None proc_old=True proc_new=False proc_control=True" in outputs["clearenv"]
+        and f"getenv=None control='{CONTROL_VALUE}' proc_old=True proc_new=False proc_control=True" in outputs["unsetenv"]
+        and f"getenv='{NEW_VALUE}' control='{CONTROL_VALUE}' proc_old=True proc_new=False proc_control=True" in outputs["setenv"]
     )
     return 0 if ok else 1
 
@@ -81,8 +85,10 @@ def bwrap_case(path, name, env_args, as_pid_1=False):
         "import os; "
         "d=open('/proc/1/environ','rb').read(); "
         f"print('command_value='+repr(os.getenv('{MARKER_NAME}'))); "
+        f"print('command_control='+repr(os.getenv('{CONTROL_NAME}'))); "
         f"print('pid1_old='+str(b'{MARKER_NAME}={OLD_VALUE}' in d)); "
-        f"print('pid1_new='+str(b'{MARKER_NAME}={NEW_VALUE}' in d))"
+        f"print('pid1_new='+str(b'{MARKER_NAME}={NEW_VALUE}' in d)); "
+        f"print('pid1_control='+str(b'{CONTROL_NAME}={CONTROL_VALUE}' in d))"
     )
     cmd = [path, "--unshare-pid"]
     if as_pid_1:
@@ -95,6 +101,7 @@ def bwrap_case(path, name, env_args, as_pid_1=False):
     ]
     env = os.environ.copy()
     env[MARKER_NAME] = OLD_VALUE
+    env[CONTROL_NAME] = CONTROL_VALUE
     completed = subprocess.run(cmd, env=env, text=True, capture_output=True, check=False)
     output = completed.stdout.strip().replace("\n", "; ")
     error = completed.stderr.strip().replace("\n", "; ")
@@ -104,22 +111,31 @@ def bwrap_case(path, name, env_args, as_pid_1=False):
 
 def run_bwrap(path, expect_scrubbed=False):
     helper_old = False if expect_scrubbed else True
+    clear_control = False if expect_scrubbed else True
     cases = [
-        ("clearenv-helper", ["--clearenv"], False, None, helper_old, False),
-        ("unsetenv-helper", ["--unsetenv", MARKER_NAME], False, None, helper_old, False),
-        ("setenv-helper", ["--setenv", MARKER_NAME, NEW_VALUE], False, NEW_VALUE, helper_old, False),
-        ("clearenv-as-pid-1-control", ["--clearenv"], True, None, False, False),
+        ("clearenv-helper", ["--clearenv"], False, None, None, helper_old, False, clear_control),
+        ("unsetenv-helper", ["--unsetenv", MARKER_NAME], False, None, CONTROL_VALUE, helper_old, False, True),
+        ("setenv-helper", ["--setenv", MARKER_NAME, NEW_VALUE], False, NEW_VALUE, CONTROL_VALUE, helper_old, False, True),
+        ("clearenv-as-pid-1-control", ["--clearenv"], True, None, None, False, False, False),
     ]
     rc = 0
-    for name, args, as_pid_1, command_value, expect_old, expect_new in cases:
+    for name, args, as_pid_1, command_value, command_control, expect_old, expect_new, expect_control in cases:
         status, stdout = bwrap_case(path, name, args, as_pid_1)
         if status != 0:
             rc = 2
             continue
         expected_command = f"command_value={command_value!r}"
+        expected_command_control = f"command_control={command_control!r}"
         got_old = "pid1_old=True" in stdout
         got_new = "pid1_new=True" in stdout
-        if expected_command not in stdout or got_old != expect_old or got_new != expect_new:
+        got_control = "pid1_control=True" in stdout
+        if (
+            expected_command not in stdout
+            or expected_command_control not in stdout
+            or got_old != expect_old
+            or got_new != expect_new
+            or got_control != expect_control
+        ):
             rc = max(rc, 1)
     return rc
 
