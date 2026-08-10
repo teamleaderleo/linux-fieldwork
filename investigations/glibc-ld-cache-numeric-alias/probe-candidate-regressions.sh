@@ -50,8 +50,7 @@ output_dir=$(cd "$output_dir" && pwd -P)
 stage="$output_dir/stage.txt"
 src="$work_root/glibc-src"
 build="$work_root/glibc-build"
-etc_dir="$work_root/etc"
-mkdir -p "$src" "$build" "$etc_dir"
+mkdir -p "$src" "$build"
 
 printf 'source_fetch\n' >"$stage"
 git -C "$src" init -q
@@ -70,7 +69,7 @@ git -C "$src" diff -- elf/dl-cache.c >"$output_dir/candidate.diff"
 printf 'configure\n' >"$stage"
 if ! (cd "$build" && "$src/configure" \
   --prefix=/usr \
-  --sysconfdir="$etc_dir" \
+  --sysconfdir=/etc \
   --disable-werror \
   >"$output_dir/configure.log" 2>&1); then
   tail -n 120 "$output_dir/configure.log" >&2 || true
@@ -130,6 +129,7 @@ run_test elf/tst-glibc-hwcaps-prepend-cache
   printf 'classification\tcandidate_regressions_passed\n'
   printf 'glibc_commit\t%s\n' "$glibc_commit"
   printf 'execution_uid\t%s\n' "$(id -u)"
+  printf 'sysconfdir\t/etc\n'
   printf 'test\telf/tst-ldconfig-cache\tpass\n'
   printf 'test\telf/tst-glibc-hwcaps-prepend-cache\tpass\n'
 } >"$output_dir/summary.tsv"
