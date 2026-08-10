@@ -124,7 +124,7 @@ def run_model():
     return 0 if state == "Z" else 1
 
 
-def run_short_cases(path):
+def run_short_cases(path, expect_short_clean=False):
     cases = [
         ("pid-helper", ["--unshare-pid"]),
         ("as-pid-1-control", ["--unshare-pid", "--as-pid-1"]),
@@ -142,7 +142,9 @@ def run_short_cases(path):
 
         if completed.returncode != 0:
             rc = 2
-        elif name == "pid-helper" and not zombies:
+        elif name == "pid-helper" and expect_short_clean and zombies:
+            rc = max(rc, 1)
+        elif name == "pid-helper" and not expect_short_clean and not zombies:
             rc = max(rc, 1)
         elif name != "pid-helper" and zombies:
             rc = max(rc, 1)
@@ -182,9 +184,9 @@ def run_background_case(path):
     return 0
 
 
-def run_bwrap(path):
+def run_bwrap(path, expect_short_clean=False):
     set_subreaper()
-    rc = run_short_cases(path)
+    rc = run_short_cases(path, expect_short_clean=expect_short_clean)
     rc = max(rc, run_background_case(path))
     return rc
 
@@ -194,11 +196,12 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--model", action="store_true")
     group.add_argument("--bwrap", metavar="PATH")
+    parser.add_argument("--expect-short-clean", action="store_true")
     args = parser.parse_args()
 
     if args.model:
         return run_model()
-    return run_bwrap(args.bwrap)
+    return run_bwrap(args.bwrap, expect_short_clean=args.expect_short_clean)
 
 
 if __name__ == "__main__":
