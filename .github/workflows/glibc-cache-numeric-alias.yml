@@ -18,7 +18,7 @@ jobs:
       RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Check out proposed repository state
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
 
@@ -31,7 +31,7 @@ jobs:
 
       - name: Upload result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: glibc-cache-numeric-alias-${{ env.RUN_ID }}
           path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}/
