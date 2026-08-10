@@ -59,9 +59,12 @@ func wrapperProbe(node int) {
 	)
 }
 
-func rawProbe(node int) {
+func rawProbe(node int, plusOne bool) {
 	mask := nodeMask(node)
-	maxnodeBits := len(mask) * bits.UintSize
+	maxnode := len(mask) * bits.UintSize
+	if plusOne && maxnode != 0 {
+		maxnode++
+	}
 	var maskPointer unsafe.Pointer
 	if len(mask) > 0 {
 		maskPointer = unsafe.Pointer(&mask[0])
@@ -71,7 +74,7 @@ func rawProbe(node int) {
 		unix.SYS_SET_MEMPOLICY,
 		uintptr(unix.MPOL_BIND),
 		uintptr(maskPointer),
-		uintptr(maxnodeBits),
+		uintptr(maxnode),
 	)
 
 	var err error
@@ -79,18 +82,19 @@ func rawProbe(node int) {
 		err = errno
 	}
 	fmt.Printf(
-		"raw arch=%s word_bits=%d words=%d maxnode_bits=%d requested_node=%d result=%v\n",
+		"raw arch=%s word_bits=%d words=%d maxnode=%d plus_one=%t requested_node=%d result=%v\n",
 		runtime.GOARCH,
 		bits.UintSize,
 		len(mask),
-		maxnodeBits,
+		maxnode,
+		plusOne,
 		node,
 		err,
 	)
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: probe constructor|wrapper|raw|all")
+	fmt.Fprintln(os.Stderr, "usage: probe constructor|wrapper|raw|raw-plus-one|all")
 }
 
 func main() {
@@ -108,14 +112,17 @@ func main() {
 	case "wrapper":
 		wrapperProbe(7)
 	case "raw":
-		rawProbe(7)
+		rawProbe(7, false)
+	case "raw-plus-one":
+		rawProbe(7, true)
 	case "all":
 		if err := constructorProbe(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		wrapperProbe(7)
-		rawProbe(7)
+		rawProbe(7, false)
+		rawProbe(7, true)
 	default:
 		usage()
 		os.Exit(2)
