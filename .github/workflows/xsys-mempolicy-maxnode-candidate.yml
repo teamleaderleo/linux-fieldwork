@@ -60,6 +60,7 @@ jobs:
           xsys_dir="$GITHUB_WORKSPACE/_xsys-source"
           source_dir="$GITHUB_WORKSPACE/investigations/runc-dynamic-mask-boundaries"
           patch_file="$source_dir/candidate-xsys-mempolicy-maxnode.patch"
+          test_patch_file="$source_dir/candidate-xsys-mempolicy-maxnode-test.patch"
           build_dir="$RUNNER_TEMP/xsys-mempolicy-maxnode-candidate-build"
           artifact_dir="$RUNNER_TEMP/xsys-mempolicy-maxnode-candidate-artifact"
 
@@ -73,19 +74,26 @@ jobs:
           test -z "$(git -C "$xsys_dir" status --porcelain)"
           git -C "$xsys_dir" apply --check "$patch_file"
           git -C "$xsys_dir" apply "$patch_file"
+          git -C "$xsys_dir" apply --check "$test_patch_file"
+          git -C "$xsys_dir" apply "$test_patch_file"
           git -C "$xsys_dir" diff --check
           mapfile -t changed < <(git -C "$xsys_dir" diff --name-only)
-          test "${#changed[@]}" -eq 1
+          test "${#changed[@]}" -eq 2
           test "${changed[0]}" = unix/syscall_linux.go
-          git -C "$xsys_dir" diff -- unix/syscall_linux.go >"$artifact_dir/candidate.diff"
+          test "${changed[1]}" = unix/syscall_linux_test.go
+          git -C "$xsys_dir" diff -- unix/syscall_linux.go unix/syscall_linux_test.go \
+            >"$artifact_dir/candidate.diff"
 
           (
             cd "$xsys_dir"
-            go test ./unix -run '^TestSchedSetaffinityDynamic$' -count=1 -v \
-              | tee "$artifact_dir/affinity-control.log"
+            go test ./unix \
+              -run '^(TestSchedSetaffinityDynamic|TestSetMemPolicyDynamicFinalBit)$' \
+              -count=1 -v | tee "$artifact_dir/xsys-focused-tests.log"
           )
           grep -Fq -- '--- PASS: TestSchedSetaffinityDynamic' \
-            "$artifact_dir/affinity-control.log"
+            "$artifact_dir/xsys-focused-tests.log"
+          grep -Fq -- '--- PASS: TestSetMemPolicyDynamicFinalBit' \
+            "$artifact_dir/xsys-focused-tests.log"
 
           cp -a "$source_dir/." "$build_dir/"
           (
@@ -149,6 +157,7 @@ jobs:
               f"candidate_wrapper_maxnode\t{wrapper}\n"
               f"raw_control_maxnode\t{raw}\n"
               "dynamic_final_bit\tpreserved\n"
+              "xsys_public_regression\tpass\n"
               "affinity_dynamic_control\tpass\n"
           )
           (root / "receipt.tsv").write_text(receipt)
@@ -161,11 +170,11 @@ jobs:
             uname -a
             go version
             strace --version | head -n 1
-            sha256sum "$patch_file"
+            sha256sum "$patch_file" "$test_patch_file"
           } >"$artifact_dir/identity.txt"
           (
             cd "$artifact_dir"
-            sha256sum candidate.diff affinity-control.log wrapper.txt wrapper.strace \
+            sha256sum candidate.diff xsys-focused-tests.log wrapper.txt wrapper.strace \
               raw-plus-one.txt raw-plus-one.strace maxnode-edge.tsv receipt.tsv identity.txt \
               >SHA256SUMS
           )
