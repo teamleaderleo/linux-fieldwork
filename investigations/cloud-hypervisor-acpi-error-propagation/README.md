@@ -295,6 +295,16 @@ Temporary or iterative commit messages should not contain `Fixes #...`, bare `OW
 
 Repository Markdown files do not create the same GitHub issue-reference backlinks, but using redirect links here too keeps the intent obvious.
 
+## Successor prerequisite note
+
+The retained AArch64 cache-error and cache-topology candidates were validated on an internal stack that used the earlier broader #8666 candidate with poison handling. The final upstream #8666 submission is narrower.
+
+Before preparing #8097 or later cache successors for upstream, rebuild/revalidate their prerequisite chain on the current canonical source plus the submitted/landed #8666 boundary. Do not assume the old internal ACPI patch blob remains the correct prerequisite merely because the successor logic itself did not depend on `PoisonedLock`.
+
+This is exactly the kind of distinction the product/validation separation is meant to preserve: historical evidence remains valid for the stack it tested, but future submission packaging must refresh onto the actual upstream dependency.
+
+Reusable process lessons from this submission also live at `notes/processes/2026-08-10-upstream-pr-packaging-and-review-loop.md`.
+
 ## Current disposition
 
 `SUBMITTED UPSTREAM — REVIEW PENDING.`
