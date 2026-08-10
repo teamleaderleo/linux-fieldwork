@@ -1,0 +1,130 @@
+name: Research 318 uv remove locked rollback parity
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [research/318-remove-locked-rollback]
+
+permissions:
+  contents: read
+
+jobs:
+  rollback-parity:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: 1881d30773386da77017f2ad5ceaf160535d65da
+          path: uv-src
+          persist-credentials: false
+
+      - name: Build exact controlled uv main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C uv-src rev-parse HEAD)" = 1881d30773386da77017f2ad5ceaf160535d65da
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/uv318-target"
+          cargo build --manifest-path uv-src/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv318"
+          "$RUNNER_TEMP/uv318" --version
+
+      - name: Compare add and remove rollback on locked mismatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          UV="$RUNNER_TEMP/uv318"
+          ROOT="$RUNNER_TEMP/rollback-parity"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+
+          make_child() {
+            case_dir="$1"
+            mkdir -p "$case_dir/child/child"
+            cat > "$case_dir/child/pyproject.toml" <<'EOF'
+          [project]
+          name = "child"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          dependencies = []
+          EOF
+            touch "$case_dir/child/child/__init__.py"
+          }
+
+          # Control: uv add snapshots the original declaration + lock and should
+          # restore them when --locked rejects the now-stale lock.
+          ADD="$ROOT/add"
+          mkdir -p "$ADD"
+          make_child "$ADD"
+          cat > "$ADD/pyproject.toml" <<'EOF'
+          [project]
+          name = "root-add"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          dependencies = []
+          EOF
+          (cd "$ADD" && "$UV" lock)
+          cp "$ADD/pyproject.toml" "$ADD/pyproject.before.toml"
+          cp "$ADD/uv.lock" "$ADD/uv.before.lock"
+
+          set +e
+          (cd "$ADD" && "$UV" add ./child --locked --no-sync) >"$ADD/add.log" 2>&1
+          add_code=$?
+          set -e
+          cat "$ADD/add.log"
+          echo "ADD_EXIT=$add_code"
+          test "$add_code" -ne 0
+          cmp -s "$ADD/pyproject.toml" "$ADD/pyproject.before.toml"
+          cmp -s "$ADD/uv.lock" "$ADD/uv.before.lock"
+          echo "ADD_ROLLBACK=byte-identical"
+
+          # Subject: uv remove currently writes the edited declaration before
+          # LockMode::Locked and has no snapshot/revert path in remove.rs.
+          REMOVE="$ROOT/remove"
+          mkdir -p "$REMOVE"
+          make_child "$REMOVE"
+          cat > "$REMOVE/pyproject.toml" <<'EOF'
+          [project]
+          name = "root-remove"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          dependencies = ["child"]
+
+          [tool.uv.sources]
+          child = { path = "child" }
+          EOF
+          (cd "$REMOVE" && "$UV" lock)
+          cp "$REMOVE/pyproject.toml" "$REMOVE/pyproject.before.toml"
+          cp "$REMOVE/uv.lock" "$REMOVE/uv.before.lock"
+
+          set +e
+          (cd "$REMOVE" && "$UV" remove child --locked --no-sync) >"$REMOVE/remove.log" 2>&1
+          remove_code=$?
+          set -e
+          cat "$REMOVE/remove.log"
+          echo "REMOVE_EXIT=$remove_code"
+          test "$remove_code" -ne 0
+
+          # Lock must remain the old lock, while the declaration is expected to
+          # remain modified under current source behavior.
+          cmp -s "$REMOVE/uv.lock" "$REMOVE/uv.before.lock"
+          if cmp -s "$REMOVE/pyproject.toml" "$REMOVE/pyproject.before.toml"; then
+            echo "REMOVE_ROLLBACK=byte-identical"
+            echo "Source-reading hypothesis was disproven: remove restored pyproject.toml"
+            exit 1
+          fi
+          echo "REMOVE_ROLLBACK=not-restored"
+          echo "--- before pyproject ---"
+          cat "$REMOVE/pyproject.before.toml"
+          echo "--- after failed remove ---"
+          cat "$REMOVE/pyproject.toml"
+
+          python - "$REMOVE/pyproject.toml" <<'PY'
+          import pathlib, sys, tomllib
+          data = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
+          assert data["project"]["dependencies"] == [], data
+          assert "sources" not in data.get("tool", {}).get("uv", {}) or "child" not in data["tool"]["uv"]["sources"], data
+          PY
+
+          echo "PROBE_RESULT=confirmed-add-remove-rollback-asymmetry"
