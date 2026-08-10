@@ -60,7 +60,7 @@ diff --git a/vmm/src/sparse.rs b/vmm/src/sparse.rs
  
          // Pre-fill dst with a sentinel byte so we can verify that
          // write_region_sparse only wrote where the source had data: any
-@@ -288,56 +299,60 @@
+@@ -288,56 +299,76 @@
          // filesystem reports holes after a partial write).
          let tmp = tempfile::NamedTempFile::new().unwrap();
          let dst = tmp.reopen().unwrap();
@@ -76,7 +76,11 @@ diff --git a/vmm/src/sparse.rs b/vmm/src/sparse.rs
 -        assert!(buf[4096 * 3..4096 * 5].iter().all(|&b| b == 0x42));
 -        assert!(buf[4096 * 5..].iter().all(|&b| b == 0xFE));
 +        assert!(buf[..page_usize * 3].iter().all(|&b| b == 0xFE));
-+        assert!(buf[page_usize * 3..page_usize * 5].iter().all(|&b| b == 0x42));
++        assert!(
++            buf[page_usize * 3..page_usize * 5]
++                .iter()
++                .all(|&b| b == 0x42)
++        );
 +        assert!(buf[page_usize * 5..].iter().all(|&b| b == 0xFE));
      }
  
@@ -111,8 +115,16 @@ diff --git a/vmm/src/sparse.rs b/vmm/src/sparse.rs
 +        assert!(buf[..page_usize].iter().all(|&b| b == 0));
 +        assert!(buf[page_usize..page_usize * 3].iter().all(|&b| b == 0xAA));
 +        assert!(buf[page_usize * 3..page_usize * 16].iter().all(|&b| b == 0));
-+        assert!(buf[page_usize * 16..page_usize * 21].iter().all(|&b| b == 0));
-+        assert!(buf[page_usize * 21..page_usize * 24].iter().all(|&b| b == 0xBB));
++        assert!(
++            buf[page_usize * 16..page_usize * 21]
++                .iter()
++                .all(|&b| b == 0)
++        );
++        assert!(
++            buf[page_usize * 21..page_usize * 24]
++                .iter()
++                .all(|&b| b == 0xBB)
++        );
 +        assert!(buf[page_usize * 24..].iter().all(|&b| b == 0));
      }
  
@@ -138,12 +150,16 @@ diff --git a/vmm/src/sparse.rs b/vmm/src/sparse.rs
 -        assert!(buf[4096 * 4..4096 * 6].iter().all(|&b| b == 0x77));
 -        assert!(buf[4096 * 6..].iter().all(|&b| b == 0));
 +        assert!(buf[..page_usize * 4].iter().all(|&b| b == 0));
-+        assert!(buf[page_usize * 4..page_usize * 6].iter().all(|&b| b == 0x77));
++        assert!(
++            buf[page_usize * 4..page_usize * 6]
++                .iter()
++                .all(|&b| b == 0x77)
++        );
 +        assert!(buf[page_usize * 6..].iter().all(|&b| b == 0));
      }
  
      /// Round-trip: write two regions sparsely into a snapshot file, then
-@@ -346,24 +361,26 @@
+@@ -346,24 +361,38 @@
      /// the original content including holes.
      #[test]
      fn round_trip_sparse_write_then_read() {
@@ -176,7 +192,7 @@ diff --git a/vmm/src/sparse.rs b/vmm/src/sparse.rs
          let mut restored = vec![0u8; total as usize];
  
          for &(file_cursor, region_len) in &regions {
-@@ -388,10 +405,10 @@
+@@ -388,10 +405,22 @@
          assert_eq!(restored, dense);
  
          // Verify the actual data landed in the right places.
@@ -186,9 +202,21 @@ diff --git a/vmm/src/sparse.rs b/vmm/src/sparse.rs
 -        assert!(restored[4096 * 26..4096 * 30].iter().all(|&b| b == 0xBB));
 -        assert!(restored[4096 * 30..].iter().all(|&b| b == 0));
 +        assert!(restored[..page_usize * 2].iter().all(|&b| b == 0));
-+        assert!(restored[page_usize * 2..page_usize * 5].iter().all(|&b| b == 0xAA));
-+        assert!(restored[page_usize * 5..page_usize * 26].iter().all(|&b| b == 0));
-+        assert!(restored[page_usize * 26..page_usize * 30].iter().all(|&b| b == 0xBB));
++        assert!(
++            restored[page_usize * 2..page_usize * 5]
++                .iter()
++                .all(|&b| b == 0xAA)
++        );
++        assert!(
++            restored[page_usize * 5..page_usize * 26]
++                .iter()
++                .all(|&b| b == 0)
++        );
++        assert!(
++            restored[page_usize * 26..page_usize * 30]
++                .iter()
++                .all(|&b| b == 0xBB)
++        );
 +        assert!(restored[page_usize * 30..].iter().all(|&b| b == 0));
      }
  }
