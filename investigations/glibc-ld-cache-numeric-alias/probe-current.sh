@@ -4,8 +4,9 @@ set -euo pipefail
 umask 077
 
 output_dir=${1:-}
+candidate_patch=${2:-}
 if [[ -z "$output_dir" ]]; then
-  printf 'usage: %s OUTPUT_DIR\n' "$0" >&2
+  printf 'usage: %s OUTPUT_DIR [CANDIDATE_PATCH]\n' "$0" >&2
   exit 64
 fi
 
@@ -19,6 +20,14 @@ done
 if [[ $(uname -m) != x86_64 ]]; then
   printf 'this current-head fixture is intentionally x86_64-only\n' >&2
   exit 77
+fi
+
+if [[ -n "$candidate_patch" ]]; then
+  candidate_patch=$(cd "$(dirname "$candidate_patch")" && pwd -P)/$(basename "$candidate_patch")
+  if [[ ! -f "$candidate_patch" ]]; then
+    printf 'candidate patch is unavailable\n' >&2
+    exit 66
+  fi
 fi
 
 readonly glibc_repository=https://github.com/gnutools/glibc.git
@@ -54,6 +63,15 @@ observed_commit=$(git -C "$src" rev-parse HEAD)
 if [[ "$observed_commit" != "$glibc_commit" ]]; then
   printf 'glibc source identity mismatch\n' >&2
   exit 65
+fi
+
+candidate=false
+if [[ -n "$candidate_patch" ]]; then
+  printf 'candidate_apply\n' >"$stage"
+  git -C "$src" apply --check "$candidate_patch"
+  git -C "$src" apply "$candidate_patch"
+  git -C "$src" diff --check
+  candidate=true
 fi
 
 printf 'configure\n' >"$stage"
@@ -97,6 +115,7 @@ fi
   printf 'uname=%s\n' "$(uname -a)"
   printf 'glibc_repository=%s\n' "$glibc_repository"
   printf 'glibc_commit=%s\n' "$observed_commit"
+  printf 'candidate=%s\n' "$candidate"
   printf 'cc=%s\n' "$(cc --version | head -n 1)"
   printf 'make=%s\n' "$(make --version | head -n 1)"
   printf 'build_jobs=%s\n' "$build_jobs"
