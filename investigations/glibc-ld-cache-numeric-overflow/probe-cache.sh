@@ -52,8 +52,11 @@ EOF
 cat >"$work_root/one.c" <<'EOF'
 int marker(void) { return 101; }
 EOF
-cat >"$work_root/wide.c" <<'EOF'
+cat >"$work_root/int-over.c" <<'EOF'
 int marker(void) { return 102; }
+EOF
+cat >"$work_root/u32-wrap.c" <<'EOF'
+int marker(void) { return 103; }
 EOF
 cat >"$work_root/control.c" <<'EOF'
 int marker(void) { return 401; }
@@ -95,6 +98,7 @@ mkdir -p \
   "$base/opt/a" \
   "$base/opt/b" \
   "$base/opt/c" \
+  "$base/opt/d" \
   "$base/runtime-libs" \
   "$base/lib64" \
   "$base/var/cache/ldconfig"
@@ -104,7 +108,9 @@ cc -shared -fPIC -Wl,-soname,libwide.so.0 \
 cc -shared -fPIC -Wl,-soname,libwide.so.1 \
   "$work_root/one.c" -o "$base/opt/b/libwide-one.so.1.0"
 cc -shared -fPIC -Wl,-soname,libwide.so.2147483648 \
-  "$work_root/wide.c" -o "$base/opt/c/libwide-wide.so.2147483648.0"
+  "$work_root/int-over.c" -o "$base/opt/c/libwide-int-over.so.2147483648.0"
+cc -shared -fPIC -Wl,-soname,libwide.so.4294967296 \
+  "$work_root/u32-wrap.c" -o "$base/opt/d/libwide-u32-wrap.so.4294967296.0"
 cc -shared -fPIC -Wl,-soname,libcontrol.so.1 \
   "$work_root/control.c" -o "$base/opt/a/libcontrol.so.1.0"
 cc -Wall -Wextra -Werror "$work_root/probe.c" -ldl -o "$base/probe"
@@ -132,8 +138,8 @@ make_root() {
   printf '%s\n' "$root"
 }
 
-root_abc=$(make_root abc /opt/a /opt/b /opt/c)
-root_cba=$(make_root cba /opt/c /opt/b /opt/a)
+root_abcd=$(make_root abcd /opt/a /opt/b /opt/c /opt/d)
+root_dcba=$(make_root dcba /opt/d /opt/c /opt/b /opt/a)
 
 query() {
   local root=$1
@@ -165,17 +171,19 @@ query() {
 }
 
 printf 'root\trequest\tresult\n' >"$summary"
-for label in abc cba; do
-  if [[ "$label" == abc ]]; then
-    root=$root_abc
+for label in abcd dcba; do
+  if [[ "$label" == abcd ]]; then
+    root=$root_abcd
   else
-    root=$root_cba
+    root=$root_dcba
   fi
 
   for name in \
     libwide.so.0 \
     libwide.so.1 \
     libwide.so.2147483648 \
+    libwide.so.4294967296 \
+    libwide.so.8589934592 \
     libwide.so.2 \
     libcontrol.so.1; do
     stderr_file="$work_root/$label-${name//\//_}.stderr"
@@ -193,27 +201,34 @@ lookup() {
 
 # The unrelated short control must remain usable in both roots.  If this fails,
 # the private-root harness did not reach the intended cache comparison boundary.
-for label in abc cba; do
+for label in abcd dcba; do
   [[ $(lookup "$label" libcontrol.so.1) == 401 ]]
 done
 
 classification=cache_lookup_stable_under_fixture
-for label in abc cba; do
+for label in abcd dcba; do
   [[ $(lookup "$label" libwide.so.0) == 100 ]] \
-    || classification=cache_generation_or_lookup_instability_reproduced
+    || classification=overflow_cache_identity_or_lookup_effect_reproduced
   [[ $(lookup "$label" libwide.so.1) == 101 ]] \
-    || classification=cache_generation_or_lookup_instability_reproduced
+    || classification=overflow_cache_identity_or_lookup_effect_reproduced
   [[ $(lookup "$label" libwide.so.2147483648) == 102 ]] \
-    || classification=cache_generation_or_lookup_instability_reproduced
+    || classification=overflow_cache_identity_or_lookup_effect_reproduced
+  [[ $(lookup "$label" libwide.so.4294967296) == 103 ]] \
+    || classification=overflow_cache_identity_or_lookup_effect_reproduced
+  [[ $(lookup "$label" libwide.so.8589934592) == MISSING ]] \
+    || classification=overflow_cache_identity_or_lookup_effect_reproduced
   [[ $(lookup "$label" libwide.so.2) == MISSING ]] \
-    || classification=cache_generation_or_lookup_instability_reproduced
-
+    || classification=overflow_cache_identity_or_lookup_effect_reproduced
 done
 
-for label in abc cba; do
-  for name in libwide.so.0 libwide.so.1 libwide.so.2147483648; do
+for label in abcd dcba; do
+  for name in \
+    libwide.so.0 \
+    libwide.so.1 \
+    libwide.so.2147483648 \
+    libwide.so.4294967296; do
     if ! grep -Fq "$name " "$output_dir/cache-$label.txt"; then
-      classification=cache_generation_or_lookup_instability_reproduced
+      classification=overflow_cache_identity_or_lookup_effect_reproduced
     fi
   done
 done
