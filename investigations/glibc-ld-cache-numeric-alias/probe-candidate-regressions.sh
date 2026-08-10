@@ -73,8 +73,8 @@ if ! make -C "$build" -j"$build_jobs" >"$output_dir/build.log" 2>&1; then
 fi
 
 printf 'testroot_init\n' >"$stage"
-if ! make -C "$build" testroot.pristine/install.stamp \
-  >"$output_dir/testroot.log" 2>&1; then
+testroot_stamp="$build/testroot.pristine/install.stamp"
+if ! make -C "$build" "$testroot_stamp" >"$output_dir/testroot.log" 2>&1; then
   tail -n 160 "$output_dir/testroot.log" >&2 || true
   exit 1
 fi
