@@ -2,14 +2,16 @@
 """Apply and tighten the first stale-cache candidate transform.
 
 This wrapper keeps the first transform as retained design history, then fixes
-three review findings before any candidate is compiled:
+four review/build findings before any candidate is compiled:
 
 * only byte-exact cache keys are eligible, so fallback cannot widen the
   numeric-name alias behavior tracked separately by Linux Fieldwork #502;
 * the generated range walk has an explicit signed bound matching its `int`
   cursor;
 * successful pathname ownership is transferred without inserting an interior
-  NULL into the candidate vector, so later copied candidates are still freed.
+  NULL into the candidate vector, so later copied candidates are still freed;
+* the new candidate lookup sees declarations for the existing static cache
+  reload helpers before it calls them.
 """
 
 from __future__ import annotations
@@ -43,6 +45,20 @@ def main() -> None:
 
     dl_cache = root / "elf/dl-cache.c"
     dl_load = root / "elf/dl-load.c"
+
+    replace_exact(
+        dl_cache,
+        "\nstruct cache_candidate_copy\n",
+        """
++/* These helpers are defined later in this file.  The candidate lookup is
++   inserted before their definitions, so retain their existing static linkage
++   and make the call order explicit.  */
++static bool _dl_check_ldsocache_needs_loading (void);
++static void _dl_maybe_load_ldsocache (void);
++
++struct cache_candidate_copy
++""".replace("+", ""),
+    )
 
     replace_exact(
         dl_cache,
