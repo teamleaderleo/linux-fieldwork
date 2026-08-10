@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  GLIBC_TEST_IMAGE: ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+
 jobs:
   noble-x86-64:
     runs-on: ubuntu-24.04
@@ -113,8 +116,8 @@ jobs:
           set -euo pipefail
           output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-regressions"
           mkdir -p "$output"
-          docker pull ubuntu:24.04
-          docker image inspect --format='{{json .RepoDigests}}' ubuntu:24.04 \
+          docker pull "$GLIBC_TEST_IMAGE"
+          docker image inspect --format='{{json .RepoDigests}}' "$GLIBC_TEST_IMAGE" \
             >"$output/container-image.json"
           docker run --rm --privileged \
             -e DEBIAN_FRONTEND=noninteractive \
@@ -124,9 +127,10 @@ jobs:
             -e OUTPUT_PATH="$output" \
             -v "$PWD:/fieldwork" \
             -w /fieldwork \
-            ubuntu:24.04 \
+            "$GLIBC_TEST_IMAGE" \
             bash -lc '
               set -euo pipefail
+              trap '\''chown -R "$HOST_UID:$HOST_GID" "$OUTPUT_PATH" 2>/dev/null || true'\'' EXIT
               apt-get update
               apt-get install -y --no-install-recommends \
                 build-essential bison ca-certificates gawk git python3 rsync
@@ -135,7 +139,6 @@ jobs:
                 investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
               grep -Fqx $'"'"'classification\tcandidate_regressions_passed'"'"' \
                 "$OUTPUT_PATH/summary.tsv"
-              chown -R "$HOST_UID:$HOST_GID" "$OUTPUT_PATH"
             '
 
       - name: Upload candidate regression result
@@ -164,8 +167,8 @@ jobs:
           set -euo pipefail
           output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-native"
           mkdir -p "$output"
-          docker pull ubuntu:24.04
-          docker image inspect --format='{{json .RepoDigests}}' ubuntu:24.04 \
+          docker pull "$GLIBC_TEST_IMAGE"
+          docker image inspect --format='{{json .RepoDigests}}' "$GLIBC_TEST_IMAGE" \
             >"$output/container-image.json"
           docker run --rm --privileged \
             -e DEBIAN_FRONTEND=noninteractive \
@@ -175,9 +178,10 @@ jobs:
             -e OUTPUT_PATH="$output" \
             -v "$PWD:/fieldwork" \
             -w /fieldwork \
-            ubuntu:24.04 \
+            "$GLIBC_TEST_IMAGE" \
             bash -lc '
               set -euo pipefail
+              trap '\''chown -R "$HOST_UID:$HOST_GID" "$OUTPUT_PATH" 2>/dev/null || true'\'' EXIT
               apt-get update
               apt-get install -y --no-install-recommends \
                 build-essential bison ca-certificates gawk git python3 rsync
@@ -187,7 +191,6 @@ jobs:
                 investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
               grep -Fqx $'"'"'classification\tnative_regression_distinguishes_candidate'"'"' \
                 "$OUTPUT_PATH/summary.tsv"
-              chown -R "$HOST_UID:$HOST_GID" "$OUTPUT_PATH"
             '
 
       - name: Upload native regression result
