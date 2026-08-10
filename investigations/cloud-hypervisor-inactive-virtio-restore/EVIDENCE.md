@@ -38,10 +38,7 @@ Observed green jobs include:
 - x86_64 quality/Clippy across KVM, MSHV, and feature combinations;
 - AArch64 quality/Clippy across stable/beta and GNU/musl targets.
 
-This separates two questions cleanly:
-
-1. the closed attempt compiled and passed the canonical CI matrix;
-2. maintainer review rejected the oversized/comment-heavy presentation and asked for a small conditional plus one `used_idx` read.
+Maintainer review explicitly agreed the bug is genuine and described the desired repair as a simple conditional plus hoisting the duplicated `used_idx` read. The oversized test/comment presentation was the rejected part.
 
 ## Discriminator against the closed attempt
 
@@ -64,29 +61,35 @@ The device-wide flag cannot prove every sibling queue was enabled. The saved per
 
 Virtio 1.3's PCI common configuration describes `queue_enable` per queue and requires the driver to configure the other virtqueue fields before enabling that queue. This aligns with using the saved queue readiness state as the restore guard.
 
-## Retained minimal candidate
+## Retained reduced candidate
 
 Tracked patch:
 `candidate.patch`
 
 Latest Fieldwork patch commit:
-`0d57b4dc12125fe1fa46db1bfb4b48b05e0baddc`
+`723d0f701465213ff700c577f6375eb3655f7c33`
 
 Patch blob:
-`ca5ccfd0b9f09a1ec41f107ae8b64ef0a256b062`
+`f797ca01982c6db198295f1176f198da6d581378`
 
-The retained candidate does four things:
+The retained source change stays intentionally small:
 
-1. restores ring indexes only when `queue.ready()` is true;
-2. reads `used_idx()` once;
-3. propagates a ready queue's invalid used-ring read through `CreateVirtioPciDevice` instead of panicking;
-4. adds four compact regressions: inactive queue, partially enabled multi-queue device, ready valid queue, and ready queue with an unmapped used ring.
+1. restore ring indexes only when `queue.ready()` is true;
+2. read `used_idx()` once;
+3. propagate a ready queue's invalid used-ring read through `CreateVirtioPciDevice` instead of panicking.
 
-The partial multi-queue test is the negative control that distinguishes this candidate from a device-level guard.
+The regression surface is now reduced to two tests:
+
+- an inactive queue with zero ring addresses, reproducing the canonical crash precondition;
+- a partially enabled two-queue device, proving that device-wide activation is insufficient and that queue readiness is the correct guard.
+
+The second test also carries the positive control: its ready queue contains a real used index and must restore that index while the unready sibling remains untouched.
+
+This removes the two redundant standalone tests from the previous carrier and better matches the maintainer's request for a small repair.
 
 ## Patch carrier validation
 
-The retained unified diff was checked as a patch carrier against a synthetic file containing the exact current-source contexts and line positions used by all three hunks.
+After the reduction, the unified diff was checked again against a synthetic file containing the exact current-source contexts from canonical blob `0c1593f...` at all three hunks.
 
 Executed locally in the analysis environment:
 
@@ -95,18 +98,16 @@ git apply --check candidate.patch -> 0
 git apply candidate.patch         -> 0
 ```
 
-After application, both the `queue.ready()` guard and the partial-multi-queue regression were present in the resulting file.
-
-This proves the retained patch is syntactically/applicatively coherent at its recorded source contexts. It is not a Cargo or runtime result.
+This proves the reduced patch is a coherent unified-diff carrier for the recorded current-source contexts. It is not a Cargo or runtime result.
 
 ## Execution state
 
-The retained patch has not yet been applied to the current-base source branch and has not received a fresh Fieldwork Cargo/CI execution receipt. The connector environment used for this continuation could read and write exact Git objects but could not perform a network clone for local Cargo execution.
+The retained patch has not yet been applied to the current-base source branch and has not received a fresh Fieldwork Cargo/CI execution receipt.
 
 Do not promote the retained patch from candidate design to proven product until all of these occur on the current-base source carrier:
 
 1. patch application and exact one-file diff review;
-2. focused restore unit tests, including the partial multi-queue discriminator;
+2. the two focused restore regressions;
 3. immediate clean rerun;
 4. nightly rustfmt;
 5. focused `virtio-devices` Clippy/build gate;
