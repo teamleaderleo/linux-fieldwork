@@ -1,0 +1,175 @@
+name: Research 521 compound stub normalization
+
+on:
+  push:
+    branches: [research/521-compound-stub-normalization]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: 64f94a41fd7c472224d340337dd4b6cab2a7d3fd
+          path: uv-src
+          persist-credentials: false
+
+      - name: Build exact current candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C uv-src rev-parse HEAD)" = 64f94a41fd7c472224d340337dd4b6cab2a7d3fd
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/uv82-target"
+          cargo build --manifest-path uv-src/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv82"
+          "$RUNNER_TEMP/uv82" --version
+
+      - name: Record current compound-name behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          UV="$RUNNER_TEMP/uv82"
+          ROOT="$RUNNER_TEMP/compound-as-is"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+
+          init_one() {
+            label="$1"
+            backend="$2"
+            mkdir -p "$ROOT/$label"
+            if [ -n "$backend" ]; then
+              (cd "$ROOT/$label" && "$UV" init --package --name foo-bar-stubs --build-backend "$backend" --no-workspace --vcs none)
+            else
+              (cd "$ROOT/$label" && "$UV" init --package --name foo-bar-stubs --no-workspace --vcs none)
+            fi
+            find "$ROOT/$label" -maxdepth 4 -type f -print | sort
+            cat "$ROOT/$label/pyproject.toml"
+
+            set +e
+            (cd "$ROOT/$label" && "$UV" build --wheel --out-dir dist) >"$ROOT/$label.build.log" 2>&1
+            code=$?
+            set -e
+            echo "CURRENT_RESULT $label exit=$code"
+            cat "$ROOT/$label.build.log"
+            if compgen -G "$ROOT/$label/dist/*.whl" >/dev/null; then
+              python - "$ROOT/$label" <<'PY'
+          import pathlib, sys, zipfile
+          project = pathlib.Path(sys.argv[1])
+          for wheel in sorted((project / "dist").glob("*.whl")):
+              with zipfile.ZipFile(wheel) as zf:
+                  print("CURRENT_WHEEL", project.name, wheel.name, sorted(zf.namelist()))
+          PY
+            fi
+          }
+
+          init_one uv ""
+          init_one hatch hatchling
+          init_one poetry poetry
+          init_one flit flit
+          init_one pdm pdm
+          init_one setuptools setuptools
+
+          # These two rows independently derive the module name from project.name,
+          # so the current candidate's literal foo-bar-stubs directory must disagree.
+          grep -F 'CURRENT_RESULT uv exit=' <(grep 'CURRENT_RESULT uv' <(true)) 2>/dev/null || true
+          test -f "$ROOT/uv/src/foo-bar-stubs/__init__.pyi"
+          test ! -e "$ROOT/uv/src/foo_bar-stubs/__init__.pyi"
+          test -f "$ROOT/flit/src/foo-bar-stubs/__init__.pyi"
+          test ! -e "$ROOT/flit/src/foo_bar-stubs/__init__.pyi"
+
+      - name: Apply only shared module-directory correction and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          UV="$RUNNER_TEMP/uv82"
+          ROOT="$RUNNER_TEMP/compound-corrected"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+
+          init_and_correct() {
+            label="$1"
+            backend="$2"
+            mkdir -p "$ROOT/$label"
+            if [ -n "$backend" ]; then
+              (cd "$ROOT/$label" && "$UV" init --package --name foo-bar-stubs --build-backend "$backend" --no-workspace --vcs none)
+            else
+              (cd "$ROOT/$label" && "$UV" init --package --name foo-bar-stubs --no-workspace --vcs none)
+            fi
+
+            mv "$ROOT/$label/src/foo-bar-stubs" "$ROOT/$label/src/foo_bar-stubs"
+            python - "$ROOT/$label/pyproject.toml" <<'PY'
+          from pathlib import Path
+          import sys
+          p = Path(sys.argv[1])
+          text = p.read_text()
+          text = text.replace('src/foo-bar-stubs', 'src/foo_bar-stubs')
+          text = text.replace('include = "foo-bar-stubs"', 'include = "foo_bar-stubs"')
+          p.write_text(text)
+          PY
+
+            echo "=== corrected $label ==="
+            cat "$ROOT/$label/pyproject.toml"
+            find "$ROOT/$label/src" -maxdepth 3 -type f -print | sort
+            (cd "$ROOT/$label" && "$UV" build --wheel --out-dir dist)
+          }
+
+          init_and_correct uv ""
+          init_and_correct hatch hatchling
+          init_and_correct poetry poetry
+          init_and_correct flit flit
+          init_and_correct pdm pdm
+          init_and_correct setuptools setuptools
+
+          python - "$ROOT" <<'PY'
+          import configparser
+          import io
+          import pathlib
+          import sys
+          import tomllib
+          import zipfile
+
+          root = pathlib.Path(sys.argv[1])
+          labels = ["uv", "hatch", "poetry", "flit", "pdm", "setuptools"]
+          for label in labels:
+              project = root / label
+              data = tomllib.loads((project / "pyproject.toml").read_text())
+              assert data["project"]["name"] == "foo-bar-stubs"
+              assert "scripts" not in data["project"], (label, data["project"])
+              assert (project / "src/foo_bar-stubs/__init__.pyi").is_file(), label
+              assert not (project / "src/foo-bar-stubs").exists(), label
+
+              wheels = list((project / "dist").glob("*.whl"))
+              assert len(wheels) == 1, (label, wheels)
+              with zipfile.ZipFile(wheels[0]) as zf:
+                  names = sorted(zf.namelist())
+                  assert "foo_bar-stubs/__init__.pyi" in names, (label, names)
+                  assert "foo-bar-stubs/__init__.pyi" not in names, (label, names)
+                  console = []
+                  for name in names:
+                      if not name.endswith(".dist-info/entry_points.txt"):
+                          continue
+                      parser = configparser.ConfigParser()
+                      parser.optionxform = str
+                      parser.read_file(io.StringIO(zf.read(name).decode()))
+                      if parser.has_section("console_scripts"):
+                          console.extend(parser.options("console_scripts"))
+                  assert not console, (label, console)
+              print(f"CORRECTED_PASS {label}: {wheels[0].name}")
+
+          expected = {
+              "hatch": '[tool.hatch.build.targets.wheel]\npackages = ["src/foo_bar-stubs"]',
+              "poetry": '[tool.poetry]\npackages = [{ include = "foo_bar-stubs", from = "src" }]',
+              "flit": 'requires = ["flit_core>=4,<5"]',
+              "pdm": '[tool.pdm.build]\nincludes = ["src/foo_bar-stubs"]',
+              "setuptools": '[tool.setuptools.package-data]\n"*" = ["*.pyi"]',
+          }
+          for label, snippet in expected.items():
+              text = (root / label / "pyproject.toml").read_text()
+              assert snippet in text, (label, snippet, text)
+          PY
