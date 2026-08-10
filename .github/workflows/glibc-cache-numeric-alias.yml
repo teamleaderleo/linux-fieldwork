@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Check out proposed repository state
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Execute isolated cache lookup fixture
         shell: bash
