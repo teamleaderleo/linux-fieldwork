@@ -1,0 +1,48 @@
+From: Linux Fieldwork
+Subject: [CANDIDATE, NOT UPSTREAM-VALIDATED] sandbox: preserve bind semantic identity
+
+Source boundary: systemd/mkosi f7401bdc8d23486bb346790dc92508381a062f3b
+Status: design sketch only; do not submit upstream without runtime validation and explicit authorization.
+
+--- a/mkosi/sandbox.py
++++ b/mkosi/sandbox.py
+@@
+             if not any(
+                 m != n
+                 and m.readonly == n.readonly
+                 and m.required == n.required
++                and m.foreign == n.foreign
+                 and m.relative == n.relative
+                 and m.nofollow == n.nofollow
+                 and is_relative_to(m.src, n.src)
+                 and is_relative_to(m.dst, n.dst)
+                 and os.path.relpath(m.src, n.src) == os.path.relpath(m.dst, n.dst)
+@@
+ class BindOperation(FSOperation):
+@@
+-    def __hash__(self) -> int:
+-        return hash((splitpath(self.src), splitpath(self.dst), self.readonly, self.required, self.nofollow))
++    def identity(self) -> tuple[object, ...]:
++        return (
++            splitpath(self.src),
++            splitpath(self.dst),
++            self.readonly,
++            self.required,
++            self.foreign,
++            self.relative,
++            self.nofollow,
++        )
++
++    def __hash__(self) -> int:
++        return hash(self.identity())
+ 
+     def __eq__(self, other: object) -> bool:
+-        return isinstance(other, BindOperation) and self.__hash__() == other.__hash__()
++        return isinstance(other, BindOperation) and self.identity() == other.identity()
+
+Notes:
+- `foreign` is requested execution semantics and must distinguish nested redundancy.
+- `relative` is requested execution semantics and must distinguish dictionary identity.
+- `nofollow` already participates in both places in current upstream and is retained.
+- `mappedfd` is acquired runtime state and intentionally remains outside identity.
+- Naming of `identity()` is provisional; an inline tuple or private `_identity()` may better match upstream style.
