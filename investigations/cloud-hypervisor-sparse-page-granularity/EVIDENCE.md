@@ -16,7 +16,7 @@ Current blob:
 Owned-fork source carrier:
 `teamleaderleo/cloud-hypervisor:linux-fieldwork/sparse-page-granularity`
 
-The branch was created directly from the current canonical head. No product or test bytes have been committed to it yet.
+The branch was created directly from the current canonical head. No source bytes have been applied to it yet.
 
 ## Canonical failure
 
@@ -48,111 +48,116 @@ That gives the exact discriminator for the 16 KiB report:
 - `SEEK_DATA` can therefore still report that page as data;
 - the two touched 16 KiB pages collapse into the observed `[0, 32768)` data extent.
 
-This is stronger than the earlier abstract quantization model because it identifies the kernel operation that performs the rounding.
+## Refined candidate boundary
 
-Primary references retained in the investigation:
+Tracked patch:
+`candidate.patch`
 
-- Linux `fallocate(2)` deallocation semantics: partial blocks zeroed, whole blocks removed;
-- Linux shmem `shmem_fallocate()` implementation: full-hole interior rounded to `PAGE_SIZE`;
-- Linux tmpfs/shmem documentation: tmpfs lives in the page cache and current kernels can use large folios/multi-size THP.
+Fieldwork patch commit:
+`fb9dbb1574d5099c5bfa7fb36af91eaac602b2ce`
 
-## Relationship to the prior upstream hardening
+Patch blob:
+`0f7217609d9a66df3af5a1fa94c9fbaee626c219`
 
-Cloud Hypervisor commit `68ae56eb74b1a7e7c5fa6938b3e06712f941ee41` already fixed a different allocation assumption. Before that change, writing a few bytes into a shmem fixture could allocate a large folio and make untouched pages appear as data. The accepted repair introduced `sparse_layout()` and explicitly punched every gap.
+The candidate is test-only and changes only tests that manufacture holes through `sparse_layout()`.
 
-That repair correctly moved the test toward an explicit deallocation operation, but it kept every synthetic coordinate at a fixed 4096-byte quantum. Its claim that the resulting `SEEK_DATA` / `SEEK_HOLE` layout matches the requested extents regardless of backing behavior therefore still depends on those punched gaps containing full deallocatable units.
-
-The 16 KiB report is the adjacent counterexample.
-
-## Current test audit
-
-The fixed 4096-byte unit appears throughout the sparse unit suite:
-
-- empty memfd length;
-- written-page extent locations and expected extents;
-- enumeration window;
-- dense-file size;
-- named-temp sparse extent fixture;
-- source and sentinel windows in `single_extent_at_zero_offset`;
-- both sources and destination offsets in the two-region test;
-- non-zero source-offset test;
-- both sources, snapshot regions, and final content assertions in the round-trip test.
-
-Several of those tests use memfd sources. Some named temporary files may also live on tmpfs depending on `TMPDIR`/host configuration. Fixing only the two reported assertions would leave sibling 4 KiB assumptions in the same helper family.
-
-## Candidate boundary
-
-Keep production code unchanged.
-
-Add one test helper that reads the host base page size through `sysconf(_SC_PAGESIZE)` and rejects an invalid result. Express synthetic fixture sizes, offsets, lengths, expected extents, destination offsets, and byte-range assertions as multiples of that value.
-
-Conceptually:
+It adds:
 
 ```rust
 fn test_page_size() -> u64 {
     let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-    assert!(page_size > 0);
+    assert!(page_size > 0, "sysconf(_SC_PAGESIZE) failed");
     page_size as u64
 }
 ```
 
-Each test then preserves its current logical layout in pages:
+The synthetic sparse layouts then keep their existing topology in host-page units.
 
-```text
-old: 4096 * 2, 4096 * 1, 4096 * 5, 4096 * 2
-new: page * 2, page * 1, page * 5, page * 2
-```
+### Deliberately unchanged 4 KiB controls
 
-This keeps the same relative topology while ensuring the memfd/shmem gaps can contain complete base pages on 4 KiB and 16 KiB kernels.
+Three tests retain fixed 4096-byte coordinates:
+
+- `empty_memfd_has_no_data_extents`;
+- `enumeration_respects_window`;
+- `dense_file_yields_single_extent`.
+
+This is intentional.
+
+Those tests do not depend on `PUNCH_HOLE` deallocating a synthetic gap. In particular, `enumeration_respects_window` keeps a 4 KiB start and end inside a fully populated file. On a 16 KiB host that remains a sub-page byte window, so the test continues to prove that production `next_data_extent()` clamps to arbitrary byte ranges instead of inheriting the fixture page quantum.
+
+This is a stronger candidate than blindly replacing every 4096 constant.
+
+### Scaled sparse-layout tests
+
+The candidate scales:
+
+- `written_pages_show_as_data_extents`;
+- `sparse_file_yields_extents_at_written_positions`;
+- `single_extent_at_zero_offset`;
+- `two_regions_in_same_destination_file_at_dst_offset`;
+- `extent_at_non_zero_src_offset`;
+- `round_trip_sparse_write_then_read`.
+
+For each one, source data islands, punched gaps, destination offsets, expected extents, and byte-content assertions move together.
 
 ## Compatibility / donut checks
 
 ### Sentinel over-copy check
 
-Keep `single_extent_at_zero_offset` pre-filling the destination with `0xFE`. Scale its byte windows by the host page size. This continues to distinguish the correct sparse write from a dense/over-wide copy whose extra bytes happen to be zero.
+`single_extent_at_zero_offset` still pre-fills the destination with `0xFE`. Only the intended page-scaled source data window may change. This continues to catch an over-wide sparse copy even when the extra bytes would otherwise read as zero.
 
-### Window semantics
+### Arbitrary-byte window
 
-`enumeration_respects_window` should keep the same logical four-page window inside a fully populated file. Scaling the coordinates must preserve the `SEEK_DATA`/`SEEK_HOLE` window-clamping contract rather than merely making the sparse fixtures pass.
+`enumeration_respects_window` remains fixed at 4 KiB units and is outside the candidate diff. This guards the byte-oriented production API while the sparse fixture generator becomes page-aware.
 
 ### Non-zero source offset
 
-Scale both the source data location and the requested source window. The expected destination-relative location must remain four pages into the selected window.
+The source data location, selected source window, and expected destination-relative content all scale together. The data remains four logical pages into the selected region.
 
 ### Multi-region destination offsets
 
-Scale the destination offset between the two copied regions as well as source fixtures. This protects the translation `dst_offset + (data_off - src_offset)` rather than only source extent discovery.
+Both source fixtures and the second destination offset scale together, preserving the translation `dst_offset + (data_off - src_offset)`.
 
 ### Round trip
 
-Scale source fixtures, region table, destination length, and final byte-content assertions together. Preserve the dense-read oracle.
+Source layouts, region table, snapshot length, and final byte assertions scale together. The dense-read oracle remains unchanged.
 
-### Named temporary files
+## Patch carrier validation
 
-Using base-page multiples is safe for the current intended Linux filesystems and keeps tmpfs-backed `TMPDIR` cases aligned with the shmem rule that owns the reported failure. A future filesystem with a different hole-punch allocation unit would be a separate discriminator rather than justification to weaken extent assertions.
+The tracked unified diff was generated from exact current test bytes and checked against a synthetic file retaining the exact affected source contexts and line positions.
 
-## Stop condition
+Local analysis result:
 
-The test-only candidate remains the leading answer while:
+```text
+git apply --check candidate.patch -> 0
+```
 
-1. page-sized fixtures pass the ordinary 4 KiB environment;
-2. a real 16 KiB kernel reproduces the old fixture failure and passes the page-sized candidate;
-3. production sparse helpers remain unchanged;
-4. sentinel, offset, and round-trip controls retain their distinguishing power.
+The applied synthetic result confirms:
 
-If a real 16 KiB run still produces incorrect extents with base-page-aligned fixtures, split the resulting production/filesystem behavior into a successor instead of broadening this candidate blindly.
+- production-prefix bytes are unchanged;
+- `test_page_size()` is present;
+- sparse-layout coordinates use the page quantum;
+- the fixed 4 KiB arbitrary-window control remains present.
+
+This is patch-carrier validation only. No Rust compiler or rustfmt executable is available in the current local execution environment, so no Cargo/rustfmt result is claimed.
 
 ## Required execution
 
 Before promotion:
 
-1. apply the test-only change to the current-base source carrier;
+1. apply the patch to the current-base source carrier;
 2. run focused sparse unit tests on a normal 4 KiB host;
 3. run them again immediately as a clean rerun;
-4. run nightly rustfmt;
+4. run nightly rustfmt and the appropriate VMM quality gate;
 5. execute the old and candidate fixtures on a real 16 KiB-page kernel;
-6. confirm the source diff changes only test code in `vmm/src/sparse.rs`;
-7. retain exact current head, job/artifact identity, and evidence limits.
+6. confirm the old fixture reproduces the reported collapse while the page-sized candidate passes;
+7. retain exact source, run, job, and artifact identities.
+
+## Stop / split condition
+
+If a real 16 KiB run still produces incorrect extents with base-page-aligned `sparse_layout()` fixtures, split the resulting filesystem/production behavior into a successor.
+
+If a named filesystem-backed test fails because its deallocation unit exceeds the host page size, treat that as its own filesystem discriminator instead of weakening expected extents globally.
 
 ## External-contact state
 
