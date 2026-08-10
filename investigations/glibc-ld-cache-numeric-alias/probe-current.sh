@@ -38,6 +38,8 @@ summary="$output_dir/summary-current.tsv"
 environment="$output_dir/environment-current.txt"
 cache_listing_ab="$output_dir/cache-current-ab.txt"
 cache_listing_ba="$output_dir/cache-current-ba.txt"
+stage="$output_dir/stage-current.txt"
+printf 'source_fetch\n' >"$stage"
 
 src="$work_root/glibc-src"
 build="$work_root/glibc-build"
@@ -54,17 +56,21 @@ if [[ "$observed_commit" != "$glibc_commit" ]]; then
   exit 65
 fi
 
-if ! "$src/configure" \
+printf 'configure\n' >"$stage"
+if ! (cd "$build" && "$src/configure" \
   --prefix=/usr \
   --sysconfdir="$etc_dir" \
   --disable-werror \
-  >"$work_root/configure.log" 2>&1; then
+  >"$work_root/configure.log" 2>&1); then
+  cp "$work_root/configure.log" "$output_dir/configure-current.log" || true
   tail -n 120 "$work_root/configure.log" >&2 || true
   exit 1
 fi
 
+printf 'build\n' >"$stage"
 build_jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '2')
 if ! make -C "$build" -j"$build_jobs" >"$work_root/build.log" 2>&1; then
+  cp "$work_root/build.log" "$output_dir/build-current.log" || true
   tail -n 160 "$work_root/build.log" >&2 || true
   exit 1
 fi
@@ -79,6 +85,7 @@ for path in "$current_ldconfig" "$current_loader" "$testrun"; do
   fi
 done
 
+printf 'private_cache_check\n' >"$stage"
 # Prove that this loader was built to consult only the private cache path used by
 # this fixture rather than the hosted runner's /etc/ld.so.cache.
 if ! strings "$current_loader" | grep -Fqx "$etc_dir/ld.so.cache"; then
@@ -96,6 +103,7 @@ fi
   printf 'private_cache_bound=true\n'
 } >"$environment"
 
+printf 'fixture_build\n' >"$stage"
 cat >"$work_root/alias-a.c" <<'EOF'
 int marker(void) { return 101; }
 EOF
@@ -202,6 +210,7 @@ lookup() {
     '$1 == label && $2 == name { print $3; exit }' "$summary"
 }
 
+printf 'cache_matrix\n' >"$stage"
 printf 'root\trequest\tresult\n' >"$summary"
 for label in ab ba; do
   if [[ "$label" == ab ]]; then
@@ -254,6 +263,7 @@ elif [[ "$ab_one" == 101 \
 fi
 
 printf 'classification\t%s\n' "$classification" >>"$summary"
+printf 'complete\n' >"$stage"
 cat "$summary"
 
 if [[ "$classification" == unexpected ]]; then
