@@ -1,0 +1,151 @@
+name: Research 531 uv tool receipt recovery
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [research/531-tool-receipt-recovery]
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-matrix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: 1881d30773386da77017f2ad5ceaf160535d65da
+          path: uv-src
+          persist-credentials: false
+
+      - name: Build exact controlled uv main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C uv-src rev-parse HEAD)" = 1881d30773386da77017f2ad5ceaf160535d65da
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/uv531-target"
+          cargo build --manifest-path uv-src/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv531"
+          "$RUNNER_TEMP/uv531" --version
+
+      - name: Build local wheel fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/fixture"
+          mkdir -p "$ROOT"
+          python - "$ROOT" <<'PY'
+          from pathlib import Path
+          import zipfile
+          root = Path(__import__('sys').argv[1])
+          wheel = root / 'fieldwork_tool-0.1.0-py3-none-any.whl'
+          files = {
+              'fieldwork_tool/__init__.py': '',
+              'fieldwork_tool/cli.py': 'def main():\n    print("fieldwork-ok")\n',
+              'fieldwork_tool-0.1.0.dist-info/METADATA': (
+                  'Metadata-Version: 2.3\n'
+                  'Name: fieldwork-tool\n'
+                  'Version: 0.1.0\n'
+                  'Requires-Python: >=3.12\n'
+              ),
+              'fieldwork_tool-0.1.0.dist-info/WHEEL': (
+                  'Wheel-Version: 1.0\n'
+                  'Generator: fieldwork\n'
+                  'Root-Is-Purelib: true\n'
+                  'Tag: py3-none-any\n'
+              ),
+              'fieldwork_tool-0.1.0.dist-info/entry_points.txt': (
+                  '[console_scripts]\n'
+                  'fieldwork-tool = fieldwork_tool.cli:main\n'
+              ),
+          }
+          record = '\n'.join(f'{name},,' for name in [*files, 'fieldwork_tool-0.1.0.dist-info/RECORD']) + '\n'
+          files['fieldwork_tool-0.1.0.dist-info/RECORD'] = record
+          with zipfile.ZipFile(wheel, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+              for name, contents in files.items():
+                  zf.writestr(name, contents)
+          print(wheel)
+          PY
+          unzip -l "$ROOT/fieldwork_tool-0.1.0-py3-none-any.whl"
+
+      - name: Exercise valid and malformed receipt recovery paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          UV="$RUNNER_TEMP/uv531"
+          WHEEL="$RUNNER_TEMP/fixture/fieldwork_tool-0.1.0-py3-none-any.whl"
+          ROOT="$RUNNER_TEMP/recovery"
+          mkdir -p "$ROOT"
+
+          install_case() {
+            case_name="$1"
+            export UV_TOOL_DIR="$ROOT/$case_name/tools"
+            export XDG_BIN_HOME="$ROOT/$case_name/bin"
+            mkdir -p "$UV_TOOL_DIR" "$XDG_BIN_HOME"
+            "$UV" tool install "$WHEEL" --offline --no-cache
+            TOOL="$UV_TOOL_DIR/fieldwork-tool"
+            EXE="$XDG_BIN_HOME/fieldwork-tool"
+            RECEIPT="$TOOL/uv-receipt.toml"
+            test -d "$TOOL"
+            test -f "$RECEIPT"
+            test -L "$EXE"
+            test -e "$EXE"
+            test "$("$EXE")" = fieldwork-ok
+            grep -F 'fieldwork-tool' "$RECEIPT"
+            echo "BEFORE $case_name env=present receipt=valid exe=live target=$(readlink "$EXE")"
+          }
+
+          # Control: with a valid receipt, uninstall should remove both the managed
+          # environment and its global executable projection.
+          install_case valid
+          "$UV" tool uninstall fieldwork-tool
+          test ! -e "$ROOT/valid/tools/fieldwork-tool"
+          test ! -e "$ROOT/valid/bin/fieldwork-tool"
+          test ! -L "$ROOT/valid/bin/fieldwork-tool"
+          "$UV" tool list >"$ROOT/valid/list.log" 2>&1
+          cat "$ROOT/valid/list.log"
+          echo "VALID_RESULT=env-removed-exe-removed"
+
+          # Named malformed-receipt recovery: current source propagates ReceiptRead.
+          install_case named
+          printf 'invalid\n' > "$ROOT/named/tools/fieldwork-tool/uv-receipt.toml"
+          "$UV" tool list >"$ROOT/named/list-before.log" 2>&1
+          cat "$ROOT/named/list-before.log"
+          set +e
+          "$UV" tool uninstall fieldwork-tool >"$ROOT/named/uninstall.log" 2>&1
+          named_code=$?
+          set -e
+          cat "$ROOT/named/uninstall.log"
+          echo "NAMED_EXIT=$named_code"
+          test "$named_code" -ne 0
+          test -d "$ROOT/named/tools/fieldwork-tool"
+          test -L "$ROOT/named/bin/fieldwork-tool"
+          test -e "$ROOT/named/bin/fieldwork-tool"
+          test "$("$ROOT/named/bin/fieldwork-tool")" = fieldwork-ok
+          echo "NAMED_RESULT=env-remains-exe-remains-live"
+
+          # --all malformed-receipt recovery: current source can delete the dangling
+          # environment without parsing the receipt, but then lacks entrypoint ownership.
+          install_case all
+          ALL_TARGET="$(readlink "$ROOT/all/bin/fieldwork-tool")"
+          printf 'invalid\n' > "$ROOT/all/tools/fieldwork-tool/uv-receipt.toml"
+          "$UV" tool uninstall --all >"$ROOT/all/uninstall.log" 2>&1
+          cat "$ROOT/all/uninstall.log"
+          test ! -e "$ROOT/all/tools/fieldwork-tool"
+          test -L "$ROOT/all/bin/fieldwork-tool"
+          test ! -e "$ROOT/all/bin/fieldwork-tool"
+          test "$(readlink "$ROOT/all/bin/fieldwork-tool")" = "$ALL_TARGET"
+          "$UV" tool list >"$ROOT/all/list.log" 2>&1
+          cat "$ROOT/all/list.log"
+          set +e
+          "$ROOT/all/bin/fieldwork-tool" >"$ROOT/all/exe.log" 2>&1
+          all_exe_code=$?
+          set -e
+          cat "$ROOT/all/exe.log"
+          echo "ALL_EXE_EXIT=$all_exe_code"
+          test "$all_exe_code" -ne 0
+          echo "ALL_RESULT=env-removed-exe-dangling"
+
+          echo "PROBE_RESULT=confirmed-receipt-is-entrypoint-cleanup-authority"
