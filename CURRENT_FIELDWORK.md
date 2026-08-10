@@ -76,83 +76,104 @@ The candidate reuses BuildKit's existing mount-stub ownership cleanup but feeds 
 
 ### Cloud Hypervisor — propagate AArch64 cache-discovery runtime errors
 
-**State:** current runtime-error boundary saturated; exact parser and propagation patches pass executable AArch64 fixtures, backend/quality gates, and automatic byte-identity checks.
+**State:** submitted-ACPI restack complete; exact parser and propagation patches pass executable AArch64 fixtures, backend/quality gates, and stable full-index byte identity.
 
 - Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/issues/8097
 - Internal Fieldwork issue: #499
 - Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/cache-runtime-errors`
 - Internal draft PR: `teamleaderleo/cloud-hypervisor#6`
 - Exact canonical base: `a1fcb9f790616ac615f66de73be540b0b20844b1`
-- Validated product carrier head: `044a728ddf5d9dbb00eba04a6df6679e84521441`
-- Focused run/job: `31351617608` / `93343416995` — success
-- Focused artifact: `9049185049`
-- Artifact digest: `sha256:810949828cb8d1a0fd8816f6390acf15a5b8f339f08e94d3561513edd94388ff`
-- Parser stored/generated digest: `sha256:6b521032579139478e272d39f5fee89e004bbaf8cea97ef0c68f4c1e200ceb67`
-- Propagation stored/generated digest: `sha256:9eadc8528c391a59c40f5507b37487fb8a528bf1a0b5f95d8c0ce961541107f5`
+- Submitted ACPI prerequisite: `e9c86bacee14a2fd6fe871dc678c6b3f1ac4012a`
+- Validated product carrier head: `a696e285eaece00335e106acdfb5a651ccb2261f`
+- Focused run/job: `31383431370` / `93438452796` — success
+- Focused artifact: `9060813988`
+- Artifact digest: `sha256:8aa69452ae02c872ecc7e3c89551c5eb6b554a5d1678d6227a53ff7e5c479576`
+- Parser stored/generated digest: `sha256:223c3d5af488b47de2e092316ee1f63d609d3fcc65b955579431e3c3f74ce1d1`
+- Propagation stored/generated digest: `sha256:2b5f2269c4f36c92931954c2befc20b23fe6867fcf08a2370416b8d7344bc4a4`
 
 The candidate preserves the existing missing-cache behavior while turning present-but-unusable host cache metadata into ordinary errors. Missing cache root stays cache-less; missing individual properties retain zero/false defaults; other I/O failures, malformed decimal/cache-size values, and checked byte-size overflow return typed `arch::aarch64::cache::Error` values with path/source context.
 
-Cross-context review found two consumers of `read_cache_topology()`, so the same failure propagates through both PPTT/ACPI and AArch64 FDT system setup. The retained internal candidate was validated while stacked on the earlier broader #8666 ACPI carrier.
+Both consumers are covered: failures propagate through PPTT/ACPI and AArch64 FDT system setup. The refreshed carrier reconstructs the exact submitted ACPI two-file prerequisite, applies the five-file cache successor, and verifies exact full-index stored/generated patch identity so Git object-abbreviation length cannot mutate the receipt.
 
-Seven named synthetic AArch64 fixtures execute under qemu-user and pass again on an immediate clean rerun: missing root, missing properties/defaults, valid cache metadata, malformed size, malformed decimal, non-`NotFound` read failure, and checked cache-size overflow. Focused AArch64 Clippy passes for `arch` and `vmm`; AArch64 KVM/MSHV and x86_64 KVM compile gates also pass.
+Seven named synthetic AArch64 fixtures execute under qemu-user and pass twice: missing root, missing properties/defaults, valid cache metadata, malformed size, malformed decimal, non-`NotFound` read failure, and checked cache-size overflow. Nightly rustfmt, AArch64 `arch` + `vmm` Clippy, AArch64 KVM/MSHV, and x86_64 KVM VMM Clippy all pass.
 
-After the semantic matrix went green, temporary formatter and Clippy repair layers were removed. The final carrier stores only `candidate.patch` for cache parsing/tests and `propagation.patch` for FDT/CPU/ACPI propagation. The final workflow regenerates each diff, requires `cmp` equality against each stored patch, and records matching SHA-256 values.
-
-Combined successor scope is five files and +333/-118: `arch/src/aarch64/cache.rs` (+305/-108) plus 28 insertions / 10 deletions across `arch/src/aarch64/fdt.rs`, `arch/src/aarch64/mod.rs`, `vmm/src/acpi.rs`, and `vmm/src/cpu.rs`. Most growth is deterministic fixture coverage and typed error plumbing.
-
-**Current recommendation:** keep missing metadata as fallback, keep present malformed/unreadable metadata as errors, and keep both propagation paths. Before any human upstream packaging, refresh/revalidate the prerequisite stack against the submitted or landed #8666 boundary rather than assuming the earlier broader ACPI carrier remains byte-compatible. The fixed-index portability concern has since been reproduced and isolated as Fieldwork #541 instead of widening #8097.
+**Current recommendation:** keep missing metadata as fallback, keep present malformed/unreadable metadata as errors, and keep both propagation paths. Treat `a696e285...` / run `31383431370` as the packaging baseline. Cache identity, sharing, and affinity are now proven in the separate successor candidates below.
 
 ### Cloud Hypervisor — validate AArch64 cacheinfo identity before passthrough
 
-**State:** fixed-index defect reproduced; exact one-file conservative candidate passes runtime/quality/backend gates and automatic byte identity.
+**State:** fixed-index defect reproduced; refreshed one-file candidate passes 17 runtime fixtures, quality/backend gates, and stable semantic patch identity on the final prerequisite chain.
 
 - Internal Fieldwork issue: #541
 - Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/cache-index-portability`
 - Internal draft PR: `teamleaderleo/cloud-hypervisor#7`
 - Exact canonical base: `a1fcb9f790616ac615f66de73be540b0b20844b1`
-- Baseline head: `06f6343cbf3762095b8d808aa8b6a09a30537414`
-- Baseline run/job: `31353310424` / `93348082267` — success
-- Baseline artifact: `9049729478`
-- Baseline artifact digest: `sha256:4e922bac17707e84b836e195d14b7a1253107e56b50b4451d2a6a2b5e2f28658`
-- Validated product carrier head: `7713a59e21c48262843da100087454dae3c0772d`
-- Final run/job: `31353819973` / `93349565675` — success
-- Final artifact: `9049940543`
-- Final artifact digest: `sha256:30312c669c81beac2c59cb4b3ce353d94a019934ac550e033095be432c412a00`
-- Stored/generated patch digest: `sha256:d54bf458a609eddaf5b7d6de350fb2c1d770b61e254d494df58c6dd43a8be074`
+- Validated product carrier head: `8dfd55a96b0cbf3d6891c25735455b8b793133e9`
+- Final run/job: `31384297689` / `93441155201` — success
+- Final artifact: `9061137258`
+- Final artifact digest: `sha256:6010ea690bdc8e8a9376f337b69f584520802204b27ce82ccc70067329be4f9a`
+- Stored patch digest: `sha256:c3c0b19e8025fa8b1f90d9b2378165676f877fe2572c52b62e3ab1871e13e1e9`
+- Regenerated full-index digest: `sha256:ee57a555a56792604f7128304fe5658f7ff6198b2f3e9961b41a1fff515d89fe`
+- Stable patch ID: `ebb2816be4e0969b2385d5fe155f3b50359b04b9`
 
-The baseline proves Linux AArch64 cache sysfs indices identify discovered cache leaves rather than fixed architectural levels. The current mapping works for split L1 Data/Instruction plus unified L2/L3, while synthetic Linux-consistent unified-L1 and split-L2 layouts make Cloud Hypervisor assign cache bytes to the wrong guest fields.
+The baseline defect is unchanged: Linux AArch64 cache sysfs indices identify discovered cache leaves rather than fixed architectural levels. The candidate maps leaves by exported `level` + `type`, preserves representable split-L1/unified-L2/L3, tolerates higher levels without shifting lower mappings, and omits valid <=L3 layouts the current guest model cannot faithfully encode.
 
-The one-file candidate validates each leaf's exported `level` and `type` before filling the existing guest model. It preserves the representable split-L1/unified-L2/L3 path and returns the existing cache-less `None` path with one warning for valid layouts the current FDT/PPTT model cannot faithfully encode, including unified L1, split L2, gaps, and extra cache levels.
+All 17 AArch64 cache tests execute under qemu-user and pass twice. Nightly rustfmt, AArch64 `arch` Clippy, AArch64 KVM/MSHV, and x86_64 KVM VMM Clippy pass. Product scope remains only `arch/src/aarch64/cache.rs`.
 
-All 11 AArch64 cache tests execute under qemu-user and pass twice. Nightly rustfmt, focused AArch64 Clippy, AArch64 KVM/MSHV, x86_64 KVM regression, and stored/generated `cmp` all pass on the exact patch bytes. Product scope is only `arch/src/aarch64/cache.rs`; most of the +177 lines are identity helpers and deterministic fixtures.
+The retained historical patch uses abbreviated Git object IDs while the regenerated receipt uses full IDs; both are pinned and produce the same stable patch ID, proving identical product hunks without rewriting the frozen patch for presentation metadata.
 
-**Current recommendation:** keep the conservative recognition/omission boundary. A generic cache-leaf guest model is a separate future design if faithful unified-L1, split-L2, L4+, or heterogeneous topology passthrough becomes desirable.
+**Current recommendation:** keep the conservative recognition/omission boundary. A generic cache-leaf guest model remains a separate future design.
 
 ### Cloud Hypervisor — align PPTT with shared-L2 FDT policy
 
-**State:** real-host-backed FDT/PPTT divergence reproduced; exact 8+/2- PPTT-only candidate passes the full focused matrix and byte identity.
+**State:** real-host-backed FDT/PPTT divergence reproduced; refreshed one-file PPTT-only candidate passes 19 fixtures, policy, quality/backend gates, and stable semantic patch identity.
 
 - Internal Fieldwork issue: #542
 - Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/cache-sharing-pptt`
 - Internal draft PR: `teamleaderleo/cloud-hypervisor#8`
 - Exact canonical base: `a1fcb9f790616ac615f66de73be540b0b20844b1`
-- Baseline head: `5984c730f13cc624aa4afc7c571cc1820b990286`
-- Baseline run/job: `31354589117` / `93351815736` — success
-- Baseline artifact: `9050195795`
-- Baseline artifact digest: `sha256:6cde182b9d479b25b7d20de6fd969c4b65316584607b157f7e3806ad091e07a0`
-- Validated product carrier head: `b3c66237ed59f6d7ac521d821f2f9bf138868ead`
-- Final run/job: `31354957658` / `93352819836` — success
-- Final artifact: `9050335649`
-- Final artifact digest: `sha256:fda9508233172888806dd8cc24ebd48578c026723aebdfba2641ce8d58084577`
-- Stored/generated patch digest: `sha256:f25ed351643d03097878b96a8899eaa0d92498adce6c1f37f3f1941f316ca1a4`
+- Validated product carrier head: `32cde9c6849c9744e2945f6900c8e4035f7ccf03`
+- Final run/job: `31385048099` / `93443487858` — success
+- Final artifact: `9061406751`
+- Final artifact digest: `sha256:aa71ae99ffd2426dc929c21f6522834765c0c92e0160456b159d3167748b79cb`
+- Stored patch digest: `sha256:8729ff3d3c106768b536fbfb674f6cdbb0771d133c62e3d2c05de47012eed014`
+- Regenerated full-index digest: `sha256:dced58b28add79c073c1c87901e3340d44337306c9e19a5966c8bc019689c9e7`
+- Stable patch ID: `cb1de5b90d10f17f7157ba013bf8fa4d247388ac`
 
-Historical Cloud Hypervisor review already records an ARMv8 host with L2 `shared_cpu_list=0,4,8,12` and the migration-aware rationale for avoiding a guessed guest L2 sharing relationship. The test-only baseline reproduces the modern discrepancy: the exact stacked cache reader returns `l2_cache_shared=true`, FDT omits L2/L3 for that metadata, while PPTT ignores the flag and retains its private-L2 chain.
+Historical Cloud Hypervisor review records an ARMv8 host with shared L2 and a migration-aware reason to avoid guessing a guest L2 sharing relationship. The candidate consumes `l2_cache_shared` in PPTT construction, leaves L1 untouched, and suppresses L2/L3 when host L2 is shared. This restores FDT/PPTT parity without changing cache discovery, error policy, identity recognition, or affinity.
 
-The candidate consumes `l2_cache_shared` only in PPTT construction, leaves L1 untouched, and suppresses L2/L3 when host L2 is shared. This restores parity with the established FDT caution without changing cache discovery, error policy, identity recognition, or vCPU affinity.
+The policy discriminator converges for shared-L2 and private-L3 cases. All 19 AArch64 cache fixtures pass twice; nightly rustfmt, AArch64 VMM Clippy, AArch64 KVM/MSHV, and x86_64 KVM VMM Clippy pass. Product scope remains `vmm/src/cpu.rs`, +8/-2.
 
-All 12 AArch64 cache fixtures execute under qemu-user and pass twice. The FDT/PPTT policy discriminator converges to L1-only for shared-L2 hosts; nightly rustfmt, focused AArch64 VMM Clippy, AArch64 KVM/MSHV, x86_64 KVM regression, and exact stored/generated `cmp` all pass. Product scope is `vmm/src/cpu.rs`, +8/-2.
+**Current recommendation:** keep the PPTT-only correction. Per-vCPU heterogeneous cache domains and richer migration semantics belong outside this candidate.
 
-**Current recommendation:** keep the PPTT-only correction. A fuller shared-cache model should wait for stable vCPU-to-host grouping semantics instead of deriving a guest sharing group from CPU0 metadata.
+### Cloud Hypervisor — select cache topology from eligible vCPU host CPUs
+
+**State:** refreshed six-file v3 candidate and matching negative control pass on one final prerequisite lineage; exact v3 stored/generated bytes converge.
+
+- Internal Fieldwork issue: #543
+- Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/cache-affinity-selection`
+- Internal draft PR: `teamleaderleo/cloud-hypervisor#9`
+- Exact canonical base: `a1fcb9f790616ac615f66de73be540b0b20844b1`
+- Refreshed negative-control head: `d7d7ce4e686d1b8995c4acf6d1547d5f8fddfbf5`
+- Baseline run/job: `31386883339` / `93449175645` — success
+- Baseline artifact: `9062095139`
+- Baseline artifact digest: `sha256:40c67563008483b72eee25e236283a0f466b4bb4173ebb65f1a3997f3d8d7140`
+- Validated candidate head: `9775f648653ee495aa1a44aacaf64f656720eb13`
+- Candidate run/job: `31386771082` / `93448827517` — success
+- Candidate artifact: `9062114230`
+- Candidate artifact digest: `sha256:77e47ee076b4ef3d65f83b34be0233a065feb4d491a61eec6aab1eca7aa305fc`
+- v3 patch blob: `c1d99cfc6166efaa7871b0648e119c0a434a157f`
+- Stored/generated v3 digest: `sha256:aec77fdcb31df5667bfbea0c688e00ea07a9750f5cdd1c9cdc9b1d67404939a0`
+- Stable patch ID: `e802917e7fb7320d5d99b05ec1902666e18b73f5`
+
+The negative control proves two valid eligible host CPU roots can expose different representable private-cache geometry. The candidate derives the eligible host CPU set from explicit CpuManager affinity plus inherited scheduler affinity for unpinned vCPUs, includes hotpluggable vCPUs through `max_vcpus`, supports dynamically sized affinity masks including high CPU IDs, and requires one common representable topology across the full eligible set.
+
+FDT and PPTT receive the same selected topology. If eligible host CPUs disagree, the existing cache-less path is used. The shared-L2/private-L3 omission policy remains intact. AArch64 filesystem restrictions grant read-only `/sys/devices/system/cpu` access so dynamically selected `cpuN/cache` trees remain readable.
+
+The v2 -> v3 refresh changed no production policy. Frozen v2 was three-way restacked over the final cache-identity implementation; only twelve calls in two new cache-root tests required helper-syntax adaptation because final #541 split identity and `size` writes. The mechanically refreshed result then passed the complete matrix and was frozen as v3.
+
+Candidate validation passes exact six-file scope, selector/Landlock policy, nightly rustfmt, matching/differing root tests, four CpuManager affinity selectors including CPU ID 1300 and hotpluggable vCPUs, full AArch64 cache regression, AArch64 `arch` + `vmm` Clippy, AArch64 KVM/MSHV, x86_64 KVM VMM compile, and literal full-index stored/generated byte equality.
+
+**Current recommendation:** treat v3 as the end of this cache-passthrough chain unless a supported-host counterexample appears or a deliberate richer per-vCPU guest cache-domain/migration design is chosen. Issue #544 is closed as a duplicate of #542.
 
 ### libarchive — deterministic cpio inode identity mapping
 
@@ -177,7 +198,7 @@ CIFuzz run `31047099243` is not candidate evidence: the OSS-Fuzz integration fet
 
 ## Active investigation
 
-No other active candidate currently outranks the strong-candidate review queue above. Further AArch64 cache work should require a concrete supported-host counterexample or a deliberate decision to build a richer guest cache model; the obvious adjacent PPTT descriptor-reuse hypothesis was retired after ACPI specification review.
+No other active candidate currently outranks the strong-candidate review queue above. Further AArch64 cache work should require a concrete supported-host counterexample or a deliberate decision to build a richer guest cache model; the cache runtime-error, identity, sharing, and affinity chain is now revalidated on the submitted ACPI boundary.
 
 ## Parked or negative results
 
