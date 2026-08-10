@@ -1,0 +1,197 @@
+name: x/sys dynamic mempolicy maxnode candidate
+
+on:
+  push:
+    branches:
+      - research/runc-dynamic-mask-boundaries-2026-08-05
+    paths:
+      - investigations/runc-dynamic-mask-boundaries/**
+      - .github/workflows/xsys-mempolicy-maxnode-candidate.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - investigations/runc-dynamic-mask-boundaries/**
+      - .github/workflows/xsys-mempolicy-maxnode-candidate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      XSYS_SHA: 9e7e939dcafac07e8ab4cffa6e5fc74908413f00
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out exact Fieldwork state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Check out exact x/sys source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: golang/sys
+          ref: 9e7e939dcafac07e8ab4cffa6e5fc74908413f00
+          path: _xsys-source
+          persist-credentials: false
+          clean: true
+
+      - name: Set up declared Go toolchain
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: _xsys-source/go.mod
+          cache: false
+          check-latest: false
+
+      - name: Install syscall tracer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends strace
+
+      - name: Apply complete candidate and run controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          xsys_dir="$GITHUB_WORKSPACE/_xsys-source"
+          source_dir="$GITHUB_WORKSPACE/investigations/runc-dynamic-mask-boundaries"
+          patch_file="$source_dir/candidate-xsys-mempolicy-maxnode.patch"
+          build_dir="$RUNNER_TEMP/xsys-mempolicy-maxnode-candidate-build"
+          artifact_dir="$RUNNER_TEMP/xsys-mempolicy-maxnode-candidate-artifact"
+
+          rm -rf -- "$build_dir" "$artifact_dir"
+          mkdir -p "$build_dir" "$artifact_dir"
+          printf 'BUILD_DIR=%s\n' "$build_dir" >>"$GITHUB_ENV"
+          printf 'ARTIFACT_DIR=%s\n' "$artifact_dir" >>"$GITHUB_ENV"
+          printf 'XSYS_DIR=%s\n' "$xsys_dir" >>"$GITHUB_ENV"
+
+          test "$(git -C "$xsys_dir" rev-parse HEAD)" = "$XSYS_SHA"
+          test -z "$(git -C "$xsys_dir" status --porcelain)"
+          git -C "$xsys_dir" apply --check "$patch_file"
+          git -C "$xsys_dir" apply "$patch_file"
+          git -C "$xsys_dir" diff --check
+          mapfile -t changed < <(git -C "$xsys_dir" diff --name-only)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = unix/syscall_linux.go
+          git -C "$xsys_dir" diff -- unix/syscall_linux.go >"$artifact_dir/candidate.diff"
+
+          (
+            cd "$xsys_dir"
+            go test ./unix -run '^TestSchedSetaffinityDynamic$' -count=1 -v \
+              | tee "$artifact_dir/affinity-control.log"
+          )
+          grep -Fq -- '--- PASS: TestSchedSetaffinityDynamic' \
+            "$artifact_dir/affinity-control.log"
+
+          cp -a "$source_dir/." "$build_dir/"
+          (
+            cd "$build_dir"
+            go mod edit -replace="golang.org/x/sys=$xsys_dir"
+            go test ./...
+            go build -trimpath -o probe .
+          )
+
+          strace -qq -f -e trace=set_mempolicy \
+            -o "$artifact_dir/wrapper.strace" \
+            "$build_dir/probe" wrapper | tee "$artifact_dir/wrapper.txt"
+          strace -qq -f -e trace=set_mempolicy \
+            -o "$artifact_dir/raw-plus-one.strace" \
+            "$build_dir/probe" raw-plus-one | tee "$artifact_dir/raw-plus-one.txt"
+          (
+            cd "$build_dir"
+            go run ./maxnode-edge | tee "$artifact_dir/maxnode-edge.tsv"
+          )
+
+          python3 - "$artifact_dir" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+
+          def maxnode(path: pathlib.Path) -> int:
+              lines = [line for line in path.read_text().splitlines() if "set_mempolicy(" in line]
+              if not lines:
+                  raise SystemExit(f"no set_mempolicy call in {path}")
+              match = re.search(r",\s*(0x[0-9a-fA-F]+|[0-9]+)\)\s*=", lines[-1])
+              if match is None:
+                  raise SystemExit(f"could not parse maxnode from {lines[-1]!r}")
+              return int(match.group(1), 0)
+
+          wrapper_text = (root / "wrapper.txt").read_text()
+          match = re.search(r"word_bits=([0-9]+)", wrapper_text)
+          if match is None:
+              raise SystemExit("wrapper output did not record word_bits")
+          word_bits = int(match.group(1))
+          want = word_bits + 1
+          wrapper = maxnode(root / "wrapper.strace")
+          raw = maxnode(root / "raw-plus-one.strace")
+          edge = (root / "maxnode-edge.tsv").read_text()
+
+          if wrapper != want:
+              raise SystemExit(f"candidate wrapper maxnode={wrapper}, want {want}")
+          if raw != want:
+              raise SystemExit(f"raw control maxnode={raw}, want {want}")
+          if "dynamic_wrapper_classification\tfinal_bit_preserved\n" not in edge:
+              raise SystemExit("candidate public wrapper did not preserve the final dynamic bit")
+          if "dynamic_maxnode_64\tinvalid argument\n" not in edge:
+              raise SystemExit("64-bit negative control did not reject the dropped final bit")
+          if "dynamic_maxnode_65\t<nil>\n" not in edge:
+              raise SystemExit("65-bit positive control did not preserve the final bit")
+
+          receipt = (
+              "classification\tcomplete_dynamic_maxnode_candidate_passed\n"
+              f"word_bits\t{word_bits}\n"
+              f"candidate_wrapper_maxnode\t{wrapper}\n"
+              f"raw_control_maxnode\t{raw}\n"
+              "dynamic_final_bit\tpreserved\n"
+              "affinity_dynamic_control\tpass\n"
+          )
+          (root / "receipt.tsv").write_text(receipt)
+          print(receipt, end="")
+          PY
+
+          {
+            printf 'xsys_commit=%s\n' "$XSYS_SHA"
+            printf 'fieldwork_commit=%s\n' "$GITHUB_SHA"
+            uname -a
+            go version
+            strace --version | head -n 1
+            sha256sum "$patch_file"
+          } >"$artifact_dir/identity.txt"
+          (
+            cd "$artifact_dir"
+            sha256sum candidate.diff affinity-control.log wrapper.txt wrapper.strace \
+              raw-plus-one.txt raw-plus-one.strace maxnode-edge.tsv receipt.tsv identity.txt \
+              >SHA256SUMS
+          )
+
+      - name: Verify Fieldwork checkout stayed clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
+
+      - name: Publish candidate receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: xsys-mempolicy-maxnode-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prove cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf -- \
+            "${BUILD_DIR:-$RUNNER_TEMP/xsys-mempolicy-maxnode-candidate-build}" \
+            "${ARTIFACT_DIR:-$RUNNER_TEMP/xsys-mempolicy-maxnode-candidate-artifact}" \
+            "${XSYS_DIR:-$GITHUB_WORKSPACE/_xsys-source}"
+          test -z "$(git status --porcelain)"
