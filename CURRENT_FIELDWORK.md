@@ -48,6 +48,33 @@ The candidate reuses BuildKit's existing mount-stub ownership cleanup but feeds 
 
 ## Strong candidate — human design review useful
 
+### Cloud Hypervisor — propagate ACPI construction failures
+
+**State:** final narrowed candidate is green across the focused matrix; human review should decide the error boundary and test sufficiency before materializing a clean production commit.
+
+- Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/issues/8666
+- Internal Fieldwork issue: #444
+- Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/acpi-error-propagation`
+- Internal draft PR: `teamleaderleo/cloud-hypervisor#3`
+- Validated candidate carrier head: `c8424a39bee350238ca5db747d90b3de14dd3ccf`
+- Focused run/job: `31346100848` / `93328232200` — success
+- Focused artifact: `9047409416`
+- Artifact digest: `sha256:ab966495356c334f421050396dee368fbd1b2126e4dbff5b921bb7ce75b69c51`
+- Generated product patch digest: `sha256:18cbecacd94abc438999ace608cd45b17a9982b96b82af5da7496fad40e6d29d`
+- Final-head broader fork CI: `31346100835`
+
+The candidate introduces `acpi::Error` and propagates checked table-address overflow, allocator/GIC/fw_cfg mutex poisoning, missing fw_cfg at the public helper boundary, guest-memory write failures, and fw_cfg I/O through one VM-level `CreatingAcpiTables` boundary. Poisoned-lock diagnostics retain the resource name.
+
+Source review preserves IORT header/alignment checks, the validated PCI-segment bound, serial lookup consistency, and aarch64 controller/VGIC presence as explicit invariants. Fixed structure-size checks move to compile-time assertions, matching existing project practice. The complete production panic inventory in `vmm/src/acpi.rs` has been classified into propagated failures or retained invariants.
+
+The final focused workflow passes exact source blob verification, `git apply --check`, exact two-file generated scope, diff check, rustfmt, an execution-proven exact unit test with both a successful address-addition control and overflow case, KVM compile, fw_cfg compile, TDX compile, and aarch64 KVM cross-compile. The test step verifies the named test actually ran and uses `pipefail` so `tee` cannot hide a Cargo failure.
+
+The carrier is cleaned up to one reviewed `candidate.patch` plus an exact-source runner; the superseded source transform is gone and REUSE coverage is green. Earlier reds were separately classified as candidate-transform, missing-backend, missing-cross-compiler, or malformed-patch carrier failures and repaired before rerunning downstream gates.
+
+Final-head normal CI has preflight, formatting, REUSE, typos, link/shell checks, package consistency, and stable/1.89 RISC-V builds green at the latest checkpoint, with build/Clippy matrices progressing through green completed steps. `gitlint` and DCO remain carrier-history failures caused by exploratory internal commits; any upstream packet should materialize one clean signed production commit instead of reusing that history.
+
+**Human decision:** approve the `acpi::Error` / single VM wrapper boundary, decide whether defensive `MissingFwCfg` belongs in the public helper, and decide whether the address helper test plus compile/Clippy coverage is enough or a second deterministic failure fixture should be added before preparing a production commit.
+
 ### libarchive — deterministic cpio inode identity mapping
 
 **State:** baseline defect proven; production candidate focused tests, normal CI, and lint are green. Main remaining question is compatibility policy, not basic correctness.
@@ -71,26 +98,7 @@ CIFuzz run `31047099243` is not candidate evidence: the OSS-Fuzz integration fet
 
 ## Active investigation
 
-### Cloud Hypervisor — propagate ACPI construction failures
-
-**State:** narrowed candidate is green across the focused test and default, fw_cfg, TDX, and aarch64 compile surfaces. Cleanup and broader fork CI review remain before promotion.
-
-- Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/issues/8666
-- Internal Fieldwork issue: #444
-- Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/acpi-error-propagation`
-- Internal draft PR: `teamleaderleo/cloud-hypervisor#3`
-- Candidate semantic head: `fd25b6848a7ebe676c86985533954e623db4b31e`
-- Validated carrier head: `df48ecb3f7c0c23746ecbdf7efc8fbdc384147c0`
-- Focused run/job: `31344505710` / `93323825124` — success
-- Focused artifact: `9046890513`
-- Artifact digest: `sha256:3749e5022ac5aad2cafd713e00a42a1813e04ca82d1c6e7246cb9103d5df676e`
-- Broader fork CI: `31344505713` — in progress at last check
-
-Source review narrowed the error boundary before the successful run. Checked table-address overflow, allocator/GIC/fw_cfg mutex poisoning, guest-memory writes, fw_cfg presence at the helper boundary, and fw_cfg I/O are propagated. IORT layout checks, the validated PCI-segment bound, serial lookup consistency, and aarch64 controller/VGIC presence remain explicit invariants.
-
-The focused workflow passes exact-source application, two-file generated scope, diff check, rustfmt, the deterministic overflow unit test, KVM compile, fw_cfg compile, TDX compile, and aarch64 KVM cross-compile. The previous aarch64 red belonged to the harness: `ring` could not find `aarch64-linux-gnu-gcc`; installing `gcc-aarch64-linux-gnu` repaired that gate without changing candidate semantics.
-
-The retained generated diff was reviewed in full and changes only `vmm/src/acpi.rs` and `vmm/src/vm.rs`. The remaining carrier cleanup is to fold the proven narrowing now performed by `run_candidate.py` into the canonical `apply_candidate.py` transform, rerun the same focused matrix, and then classify the broader fork CI independently.
+No other active candidate currently outranks the strong-candidate review queue above.
 
 ## Parked or negative results
 
