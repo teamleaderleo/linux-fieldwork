@@ -12,6 +12,17 @@ targets:
       - filesystems-images
       - services-resources
 
+  runc:
+    title: runc
+    state: active
+    canonical_repository: https://redirect.github.com/opencontainers/runc
+    map_path: targets/runc/map.md
+    programmes:
+      - rootless-execution
+      - services-resources
+      - security-networking
+      - ecosystem-contributions
+
   dpkg:
     title: dpkg
     state: inbox
