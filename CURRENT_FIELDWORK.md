@@ -64,9 +64,9 @@ The candidate reuses BuildKit's existing mount-stub ownership cleanup but feeds 
 
 The candidate remains a small two-file correctness fix inside the private `vmm::acpi` module. It introduces `acpi::Error` and propagates checked table-address overflow, allocator/GIC/fw_cfg mutex poisoning, missing fw_cfg at the crate-internal helper boundary, guest-memory write failures, and fw_cfg I/O through one VM-level `CreatingAcpiTables` boundary. Poisoned-lock diagnostics retain the resource name.
 
-Source review preserves IORT header/alignment checks, the validated PCI-segment bound, serial lookup consistency, aarch64 controller/VGIC presence, and fw_cfg table-pointer bookkeeping as explicit invariants. Fixed structure-size checks are compile-time assertions. The separate aarch64 cache-topology runtime panic family remains a successor under canonical issue #8097 and Fieldwork #499 instead of silently widening this patch.
+Source review preserves IORT header/alignment checks, the validated PCI-segment bound, serial lookup consistency, aarch64 controller/VGIC presence, and fw_cfg table-pointer bookkeeping as explicit invariants. Fixed structure-size checks are compile-time assertions.
 
-The focused workflow now passes exact source blob verification, `git apply --check`, exact two-file generated scope, `git diff --check`, the repository's actual nightly rustfmt rules, an execution-proven exact unit test with successful-addition and overflow cases, focused Clippy with warnings denied, x86_64 KVM and MSHV compile, fw_cfg compile, TDX compile, and aarch64 KVM and MSHV cross-compile.
+The focused workflow passes exact source blob verification, `git apply --check`, exact two-file generated scope, `git diff --check`, the repository's actual nightly rustfmt rules, an execution-proven exact unit test with successful-addition and overflow cases, focused Clippy with warnings denied, x86_64 KVM and MSHV compile, fw_cfg compile, TDX compile, and aarch64 KVM and MSHV cross-compile.
 
 Two stronger gates found real refinement work. Focused Clippy rejected the initial `std::result::Result` alias under the repository's denied `clippy::absolute_paths`; the candidate now uses the project-style `result::Result`. Nightly rustfmt then exposed that earlier stable formatting checks had ignored the repository's nightly-only import grouping settings; the runner and workflow now install/use nightly explicitly and the stored patch matches nightly output.
 
@@ -75,6 +75,34 @@ The final workflow generates the product diff, requires `cmp` equality against s
 Product scope remains 98 insertions and 53 deletions across `vmm/src/acpi.rs` and `vmm/src/vm.rs`; most of the diff is mechanical `Result`/error plumbing.
 
 **Current recommendation:** keep `acpi::Error` with one VM wrapper; keep defensive `MissingFwCfg`; keep the current address-helper test unless a natural second production failure fixture appears; keep the validated/programming invariants explicit. Reopen the product decision for a guarded source-blob change, a canonical fix, a concrete remaining runtime-input panic, a natural second failure fixture, or a supported backend/architecture counterexample.
+
+### Cloud Hypervisor — propagate AArch64 cache-discovery runtime errors
+
+**State:** current runtime-error boundary saturated; exact parser and propagation patches pass executable AArch64 fixtures, backend/quality gates, and automatic byte-identity checks.
+
+- Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/issues/8097
+- Internal Fieldwork issue: #499
+- Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/cache-runtime-errors`
+- Internal draft PR: `teamleaderleo/cloud-hypervisor#6`
+- Exact canonical base: `a1fcb9f790616ac615f66de73be540b0b20844b1`
+- Validated product carrier head: `044a728ddf5d9dbb00eba04a6df6679e84521441`
+- Focused run/job: `31351617608` / `93343416995` — success
+- Focused artifact: `9049185049`
+- Artifact digest: `sha256:810949828cb8d1a0fd8816f6390acf15a5b8f339f08e94d3561513edd94388ff`
+- Parser stored/generated digest: `sha256:6b521032579139478e272d39f5fee89e004bbaf8cea97ef0c68f4c1e200ceb67`
+- Propagation stored/generated digest: `sha256:9eadc8528c391a59c40f5507b37487fb8a528bf1a0b5f95d8c0ce961541107f5`
+
+The candidate preserves the existing missing-cache behavior while turning present-but-unusable host cache metadata into ordinary errors. Missing cache root stays cache-less; missing individual properties retain zero/false defaults; other I/O failures, malformed decimal/cache-size values, and checked byte-size overflow return typed `arch::aarch64::cache::Error` values with path/source context.
+
+Cross-context review found two consumers of `read_cache_topology()`, so the same failure propagates through both PPTT/ACPI and AArch64 FDT system setup. The candidate is deliberately stacked on the exact validated #8666 ACPI patch: the runner verifies the immutable prerequisite carrier commit and patch blob, applies/commits that prerequisite locally, then applies only the two #8097 successor patches.
+
+Seven named synthetic AArch64 fixtures execute under qemu-user and pass again on an immediate clean rerun: missing root, missing properties/defaults, valid cache metadata, malformed size, malformed decimal, non-`NotFound` read failure, and checked cache-size overflow. Focused AArch64 Clippy passes for `arch` and `vmm`; AArch64 KVM/MSHV and x86_64 KVM compile gates also pass.
+
+After the semantic matrix went green, temporary formatter and Clippy repair layers were removed. The final carrier stores only `candidate.patch` for cache parsing/tests and `propagation.patch` for FDT/CPU/ACPI propagation. The final workflow regenerates each diff, requires `cmp` equality against each stored patch, and records matching SHA-256 values.
+
+Combined successor scope is five files and +333/-118: `arch/src/aarch64/cache.rs` (+305/-108) plus 28 insertions / 10 deletions across `arch/src/aarch64/fdt.rs`, `arch/src/aarch64/mod.rs`, `vmm/src/acpi.rs`, and `vmm/src/cpu.rs`. Most growth is deterministic fixture coverage and typed error plumbing.
+
+**Current recommendation:** keep missing metadata as fallback, keep present malformed/unreadable metadata as errors, and keep both propagation paths. The remaining fixed sysfs `index0..index3` cache-level mapping is a distinct portability question and should be investigated separately rather than folded into #8097.
 
 ### libarchive — deterministic cpio inode identity mapping
 
@@ -99,7 +127,7 @@ CIFuzz run `31047099243` is not candidate evidence: the OSS-Fuzz integration fet
 
 ## Active investigation
 
-No other active candidate currently outranks the strong-candidate review queue above.
+No other active candidate currently outranks the strong-candidate review queue above. The next Cloud Hypervisor successor worth probing is the AArch64 cache sysfs index-to-level mapping, kept separate from #8097.
 
 ## Parked or negative results
 
