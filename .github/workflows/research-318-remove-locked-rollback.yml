@@ -1,4 +1,4 @@
-name: Research 318 uv remove locked rollback parity
+name: Research 318 uv project mutation rollback parity
 
 on:
   pull_request:
@@ -30,7 +30,7 @@ jobs:
           cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv318"
           "$RUNNER_TEMP/uv318" --version
 
-      - name: Compare add and remove rollback on locked mismatch
+      - name: Compare add remove and version rollback on locked mismatch
         shell: bash
         run: |
           set -euo pipefail
@@ -79,7 +79,7 @@ jobs:
           cmp -s "$ADD/uv.lock" "$ADD/uv.before.lock"
           echo "ADD_ROLLBACK=byte-identical"
 
-          # Subject: uv remove currently writes the edited declaration before
+          # Subject one: uv remove currently writes the edited declaration before
           # LockMode::Locked and has no snapshot/revert path in remove.rs.
           REMOVE="$ROOT/remove"
           mkdir -p "$REMOVE"
@@ -105,9 +105,6 @@ jobs:
           cat "$REMOVE/remove.log"
           echo "REMOVE_EXIT=$remove_code"
           test "$remove_code" -ne 0
-
-          # Lock must remain the old lock, while the declaration is expected to
-          # remain modified under current source behavior.
           cmp -s "$REMOVE/uv.lock" "$REMOVE/uv.before.lock"
           if cmp -s "$REMOVE/pyproject.toml" "$REMOVE/pyproject.before.toml"; then
             echo "REMOVE_ROLLBACK=byte-identical"
@@ -115,11 +112,6 @@ jobs:
             exit 1
           fi
           echo "REMOVE_ROLLBACK=not-restored"
-          echo "--- before pyproject ---"
-          cat "$REMOVE/pyproject.before.toml"
-          echo "--- after failed remove ---"
-          cat "$REMOVE/pyproject.toml"
-
           python - "$REMOVE/pyproject.toml" <<'PY'
           import pathlib, sys, tomllib
           data = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
@@ -127,4 +119,39 @@ jobs:
           assert "sources" not in data.get("tool", {}).get("uv", {}) or "child" not in data["tool"]["uv"]["sources"], data
           PY
 
-          echo "PROBE_RESULT=confirmed-add-remove-rollback-asymmetry"
+          # Subject two: project version mutation has the same write-before-lock
+          # shape and is grouped with add/remove in upstream locking tracker #13883.
+          VERSION="$ROOT/version"
+          mkdir -p "$VERSION"
+          cat > "$VERSION/pyproject.toml" <<'EOF'
+          [project]
+          name = "root-version"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          dependencies = []
+          EOF
+          (cd "$VERSION" && "$UV" lock)
+          cp "$VERSION/pyproject.toml" "$VERSION/pyproject.before.toml"
+          cp "$VERSION/uv.lock" "$VERSION/uv.before.lock"
+
+          set +e
+          (cd "$VERSION" && "$UV" version --bump patch --locked --no-sync) >"$VERSION/version.log" 2>&1
+          version_code=$?
+          set -e
+          cat "$VERSION/version.log"
+          echo "VERSION_EXIT=$version_code"
+          test "$version_code" -ne 0
+          cmp -s "$VERSION/uv.lock" "$VERSION/uv.before.lock"
+          if cmp -s "$VERSION/pyproject.toml" "$VERSION/pyproject.before.toml"; then
+            echo "VERSION_ROLLBACK=byte-identical"
+            echo "Source-reading hypothesis was disproven: version restored pyproject.toml"
+            exit 1
+          fi
+          echo "VERSION_ROLLBACK=not-restored"
+          python - "$VERSION/pyproject.toml" <<'PY'
+          import pathlib, sys, tomllib
+          data = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
+          assert data["project"]["version"] == "0.1.1", data
+          PY
+
+          echo "PROBE_RESULT=confirmed-project-mutation-rollback-asymmetry"
