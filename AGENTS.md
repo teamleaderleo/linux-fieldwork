@@ -2,6 +2,12 @@
 
 Read [`README.md`](README.md), [`START_HERE.md`](START_HERE.md), [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md), [`FIELD_GUIDE.md`](FIELD_GUIDE.md), and [`SOURCE_BRANCH_HYGIENE.md`](SOURCE_BRANCH_HYGIENE.md) before doing repository or owned-fork source work.
 
+## Upstream greenlight
+
+Upstream contact remains deliberate by default. When the human says `upstream greenlight`, treat that natural-language phrase as explicit authorization for the current upstream repository and interaction reasonably clear from the conversation. Capitalization and an exact template are not required. If the repository or action is genuinely ambiguous or materially broader than the surrounding context supports, ask before acting.
+
+A greenlight is bounded to that upstream interaction. It does not imply merge, release, deployment, credentials, spending, private-data access, or unrelated authority. A later human instruction can narrow or revoke it.
+
 ## Source branch guardrails
 
 These rules are mandatory for owned-fork candidates that may later be offered upstream:
