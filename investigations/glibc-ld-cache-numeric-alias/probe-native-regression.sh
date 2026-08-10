@@ -11,7 +11,7 @@ if [[ -z "$output_dir" || -z "$regression_patch" || -z "$candidate_patch" ]]; th
   exit 64
 fi
 
-for command in git make bison gawk python3 sudo; do
+for command in git make bison gawk python3; do
   if ! command -v "$command" >/dev/null 2>&1; then
     printf 'required command is unavailable: %s\n' "$command" >&2
     exit 69
@@ -22,6 +22,17 @@ if [[ $(uname -m) != x86_64 ]]; then
   printf 'this current-head fixture is intentionally x86_64-only\n' >&2
   exit 77
 fi
+
+as_root() {
+  if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo -E "$@"
+  else
+    printf 'root-capable test execution is unavailable\n' >&2
+    return 69
+  fi
+}
 
 readonly glibc_repository=https://github.com/gnutools/glibc.git
 readonly glibc_commit=6288139c32a194e0005593c30af6c79bb698cdf2
@@ -39,8 +50,8 @@ done
 
 work_root=$(mktemp -d "${RUNNER_TEMP:-/tmp}/glibc-cache-alias-native.XXXXXX")
 cleanup() {
-  sudo chmod -R u+rwX "$work_root" 2>/dev/null || true
-  sudo chown -R "$(id -u):$(id -g)" "$work_root" 2>/dev/null || true
+  as_root chmod -R u+rwX "$work_root" 2>/dev/null || true
+  as_root chown -R "$(id -u):$(id -g)" "$work_root" 2>/dev/null || true
   rm -rf -- "$work_root"
 }
 trap cleanup EXIT INT TERM
@@ -91,9 +102,9 @@ run_test() {
   local result_file="$build/elf/$test_base.test-result"
   local out_file="$build/elf/$test_base.out"
 
-  sudo rm -f -- "$result_file" "$out_file"
+  as_root rm -f -- "$result_file" "$out_file"
   set +e
-  sudo -E make -C "$build" test "t=$test_name" >"$output_dir/$label-make.log" 2>&1
+  as_root make -C "$build" test "t=$test_name" >"$output_dir/$label-make.log" 2>&1
   local make_status=$?
   set -e
 
@@ -120,7 +131,7 @@ if ! grep -Fqx "FAIL: $test_name" "$output_dir/baseline-test-result.txt"; then
   tail -n 120 "$output_dir/baseline-test-output.txt" >&2 2>/dev/null || true
   exit 1
 fi
-if grep -Eq 'Cannot create testroot lock|could not create a private mount namespace|unable to unshare' \
+if grep -Eq 'Cannot create testroot lock|could not create a private mount namespace|unable to unshare|can.t mount' \
   "$output_dir/baseline-test-output.txt" 2>/dev/null; then
   printf 'baseline failed in container setup instead of the cache identity assertion\n' >&2
   exit 1
@@ -153,7 +164,7 @@ fi
 {
   printf 'classification\tnative_regression_distinguishes_candidate\n'
   printf 'glibc_commit\t%s\n' "$glibc_commit"
-  printf 'privilege\thosted_disposable_root_for_container_namespace_only\n'
+  printf 'execution_uid\t%s\n' "$(id -u)"
   printf 'baseline_test\tfail_as_expected\n'
   printf 'candidate_test\tpass\n'
 } >"$output_dir/summary.tsv"
