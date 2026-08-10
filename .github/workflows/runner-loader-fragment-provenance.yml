@@ -1,0 +1,70 @@
+name: runner loader fragment provenance
+
+on:
+  pull_request:
+    paths:
+      - "investigations/runner-loader-fragment-provenance/**"
+      - ".github/workflows/runner-loader-fragment-provenance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  x86-64:
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [a, b]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-x86-${{ matrix.replica }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Observe package and loader-fragment provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/runner-loader-fragment-provenance/runs/$RUN_ID"
+          bash investigations/runner-loader-fragment-provenance/probe.sh "$output"
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runner-loader-fragment-${{ env.RUN_ID }}
+          path: investigations/runner-loader-fragment-provenance/runs/${{ env.RUN_ID }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 8
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-arm64
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Observe package and loader-fragment provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/runner-loader-fragment-provenance/runs/$RUN_ID"
+          bash investigations/runner-loader-fragment-provenance/probe.sh "$output"
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runner-loader-fragment-${{ env.RUN_ID }}
+          path: investigations/runner-loader-fragment-provenance/runs/${{ env.RUN_ID }}/
+          if-no-files-found: error
+          retention-days: 14
