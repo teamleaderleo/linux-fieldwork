@@ -34,11 +34,25 @@ jobs:
           Write-Output "CANDIDATE_HEAD=$head"
 
       - name: Run marker enumeration invariant on Windows
+        id: marker-unit
+        continue-on-error: true
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $path = 'uv-candidate/crates/uv-python/src/managed.rs'
-          python -c "from pathlib import Path; p=Path(r'$path'); s=p.read_text(); old='    #[test]\n    #[cfg(unix)]\n    fn find_all_skips_in_progress_installations() {'; new='    #[test]\n    fn find_all_skips_in_progress_installations() {'; assert old in s; p.write_text(s.replace(old,new,1))"
+          @'
+          from pathlib import Path
+          p = Path(r'uv-candidate/crates/uv-python/src/managed.rs')
+          s = p.read_text()
+          old_cfg = '''    #[test]\n    #[cfg(unix)]\n    fn find_all_skips_in_progress_installations() {'''
+          new_cfg = '''    #[test]\n    fn find_all_skips_in_progress_installations() {'''
+          assert old_cfg in s
+          s = s.replace(old_cfg, new_cfg, 1)
+          old_temp = '''        let installations = ManagedPythonInstallations::temp().unwrap().init().unwrap();'''
+          new_temp = '''        let temp = tempfile::tempdir().unwrap();\n        let installations = ManagedPythonInstallations::from_settings(Some(temp.path().join("python")))\n            .unwrap()\n            .init()\n            .unwrap();'''
+          assert old_temp in s
+          p.write_text(s.replace(old_temp, new_temp, 1))
+          '@ | python -
           Push-Location uv-candidate
           try {
             cargo test --locked -p uv-python managed::tests::find_all_skips_in_progress_installations -- --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:GITHUB_WORKSPACE/windows-marker-unit.txt"
@@ -49,6 +63,12 @@ jobs:
           Select-String -Path windows-marker-unit.txt -SimpleMatch 'running 1 test' | Out-Null
           Select-String -Path windows-marker-unit.txt -SimpleMatch 'test managed::tests::find_all_skips_in_progress_installations ... ok' | Out-Null
           Write-Output 'WINDOWS_MARKER_UNIT=PASS'
+
+      - name: Record marker unit outcome
+        if: always()
+        shell: pwsh
+        run: |
+          "marker_unit_outcome=${{ steps.marker-unit.outcome }}" | Set-Content -Encoding utf8 windows-marker-unit-outcome.txt
 
       - name: Build candidate uv
         shell: pwsh
@@ -136,6 +156,7 @@ jobs:
           name: managed-python-marker-windows-309
           path: |
             windows-marker-unit.txt
+            windows-marker-unit-outcome.txt
             windows-python-find-help.txt
             windows-list-before-marker.txt
             windows-list-with-marker.txt
