@@ -1,0 +1,159 @@
+name: research-525-malformed-metadata-package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-525-malformed-metadata-package.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CURRENT_HEAD: 1881d30773386da77017f2ad5ceaf160535d65da
+      UV_PYTHON_DOWNLOADS: never
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare released uv
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/uv-release"
+          curl -LsSf https://github.com/astral-sh/uv/releases/download/0.12.3/uv-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/uv-release" --strip-components=1
+          "$RUNNER_TEMP/uv-release/uv" --version
+
+      - uses: actions/checkout@v4
+        with:
+          repository: astral-sh/uv
+          ref: 1881d30773386da77017f2ad5ceaf160535d65da
+          path: uv-main
+          persist-credentials: false
+
+      - name: Build pinned current uv
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/current-target"
+          cargo build --manifest-path uv-main/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv-current"
+          test "$(git -C uv-main rev-parse HEAD)" = "$CURRENT_HEAD"
+          "$RUNNER_TEMP/uv-current" --version
+
+      - name: Execute metadata fallback matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/metadata-525"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+          RESULTS="$GITHUB_WORKSPACE/results-525.tsv"
+          printf 'version\tcase\texit\tbuild_disabled\tparse_signal\tfirst_error\n' > "$RESULTS"
+
+          write_project() {
+            dir="$1"; dep="$2"; package_mode="$3"; no_build="$4"; backend="$5"
+            rm -rf "$dir"
+            mkdir -p "$dir"
+            {
+              echo '[project]'
+              echo 'name = "dep-playground"'
+              echo 'version = "0.1.0"'
+              echo 'requires-python = ">=3.12,<3.14"'
+              if [ "$dep" = NONE ]; then
+                echo 'dependencies = []'
+              else
+                printf 'dependencies = ["%s"]\n' "$dep"
+              fi
+              if [ "$backend" = unusable ]; then
+                echo
+                echo '[build-system]'
+                echo 'requires = []'
+                echo 'build-backend = "fieldwork.nonexistent_backend"'
+              fi
+              if [ "$package_mode" != unset ] || [ "$no_build" = true ]; then
+                echo
+                echo '[tool.uv]'
+                if [ "$package_mode" != unset ]; then
+                  printf 'package = %s\n' "$package_mode"
+                fi
+                if [ "$no_build" = true ]; then
+                  echo 'no-build = true'
+                fi
+              fi
+            } > "$dir/pyproject.toml"
+          }
+
+          run_case() {
+            label="$1"; uv_bin="$2"; case_name="$3"; dep="$4"; package_mode="$5"; no_build="$6"; backend="$7"
+            dir="$ROOT/$label-$case_name"
+            write_project "$dir" "$dep" "$package_mode" "$no_build" "$backend"
+            log="$ROOT/$label-$case_name.log"
+            set +e
+            (cd "$dir" && "$uv_bin" lock --offline) >"$log" 2>&1
+            code=$?
+            set -e
+            cat "$log"
+            if grep -qi 'Building source distributions.*disabled\|building source distributions.*disabled' "$log"; then bd=true; else bd=false; fi
+            if grep -Eqi 'parse|parser|invalid.*requirement|expected.*version|unexpected.*version|pep 508|position [0-9]+' "$log"; then ps=true; else ps=false; fi
+            first=$(grep -m1 -E '^(error:|  ×|  ├─▶|  ╰─▶|Caused by:)' "$log" | tr '\t\r\n' '   ' | cut -c1-220 || true)
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$label" "$case_name" "$code" "$bd" "$ps" "$first" >> "$RESULTS"
+            echo "=== RESULT $label $case_name exit=$code build_disabled=$bd parse_signal=$ps ==="
+          }
+
+          run_requirements_control() {
+            label="$1"; uv_bin="$2"
+            dir="$ROOT/$label-requirements"
+            mkdir -p "$dir"
+            printf 'numpy<2.6>\n' > "$dir/requirements.in"
+            log="$ROOT/$label-requirements.log"
+            set +e
+            (cd "$dir" && "$uv_bin" pip compile --no-index requirements.in -o requirements.txt) >"$log" 2>&1
+            code=$?
+            set -e
+            cat "$log"
+            if grep -qi 'Building source distributions.*disabled\|building source distributions.*disabled' "$log"; then bd=true; else bd=false; fi
+            if grep -Eqi 'parse|parser|invalid.*requirement|expected.*version|unexpected.*version|pep 508|position [0-9]+' "$log"; then ps=true; else ps=false; fi
+            first=$(grep -m1 -E '^(error:|  ×|  ├─▶|  ╰─▶|Caused by:)' "$log" | tr '\t\r\n' '   ' | cut -c1-220 || true)
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$label" requirements_control "$code" "$bd" "$ps" "$first" >> "$RESULTS"
+          }
+
+          for pair in "release:$RUNNER_TEMP/uv-release/uv" "current:$RUNNER_TEMP/uv-current"; do
+            label=${pair%%:*}
+            uv_bin=${pair#*:}
+            run_case "$label" "$uv_bin" reported 'numpy<2.6>' false true none
+            run_case "$label" "$uv_bin" package_false_only 'numpy<2.6>' false false none
+            run_case "$label" "$uv_bin" no_build_only 'numpy<2.6>' unset true none
+            run_case "$label" "$uv_bin" defaults 'numpy<2.6>' unset false none
+            run_case "$label" "$uv_bin" package_false_unusable_backend 'numpy<2.6>' false true unusable
+            run_case "$label" "$uv_bin" valid_package_false_unusable_backend NONE false true unusable
+            run_requirements_control "$label" "$uv_bin"
+          done
+
+          echo '=== MATRIX ==='
+          column -t -s $'\t' "$RESULTS" || cat "$RESULTS"
+
+          # The positive control must prove package=false/no-build can lock while an unusable
+          # declared backend is ignored. Other cases are observational and must not abort the carrier.
+          python - "$RESULTS" <<'PY'
+          import csv, sys
+          rows=list(csv.DictReader(open(sys.argv[1]), delimiter='\t'))
+          for version in ('release','current'):
+              row=next(r for r in rows if r['version']==version and r['case']=='valid_package_false_unusable_backend')
+              assert row['exit']=='0', row
+          print('PACKAGE_FALSE_VALID_CONTROL=PASS')
+          PY
+
+      - name: Upload metadata fallback receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: malformed-metadata-package-525
+          path: |
+            results-525.tsv
+          if-no-files-found: warn
