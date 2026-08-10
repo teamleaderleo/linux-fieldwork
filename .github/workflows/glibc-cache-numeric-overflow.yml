@@ -153,3 +153,34 @@ jobs:
           path: investigations/glibc-ld-cache-numeric-overflow/runs/${{ env.RUN_ID }}-current-candidate/
           if-no-files-found: error
           retention-days: 14
+
+  cache-current-glibc-mixed-generation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Query legacy-sorted cache with overflow-safe candidate loader
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-overflow/runs/$RUN_ID-mixed-generation"
+          bash investigations/glibc-ld-cache-numeric-overflow/probe-mixed-generation-cache.sh \
+            "$output" \
+            investigations/glibc-ld-cache-numeric-overflow/unbounded-decimal-candidate.patch
+          grep -Eq $'classification\tlegacy_cache_(compatible|incompatible)_with_candidate' \
+            "$output/mixed-generation-summary.tsv"
+
+      - name: Upload mixed-generation result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-overflow-mixed-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-overflow/runs/${{ env.RUN_ID }}-mixed-generation/
+          if-no-files-found: error
+          retention-days: 14
