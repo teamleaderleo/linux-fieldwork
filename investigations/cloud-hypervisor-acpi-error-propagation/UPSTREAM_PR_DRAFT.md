@@ -34,6 +34,8 @@ Testing covers:
 - AArch64 KVM and MSHV cross-builds;
 - nightly rustfmt and diff checks.
 
+AI assistance: ChatGPT (GPT-5.6 Sol) was used for source review, test design, and patch refinement.
+
 ## Internal drafting notes
 
 The upstream body intentionally stays concise. Detailed rationale for each error variant, retained invariant, call-site propagation step, and validation boundary lives in the adjacent `README.md`.
