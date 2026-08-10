@@ -125,3 +125,35 @@ jobs:
           path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}-regressions/
           if-no-files-found: error
           retention-days: 14
+
+  current-glibc-native-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Prove glibc-native regression fails before and passes after candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-native"
+          bash investigations/glibc-ld-cache-numeric-alias/probe-native-regression.sh \
+            "$output" \
+            investigations/glibc-ld-cache-numeric-alias/glibc-native-regression.patch \
+            investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
+          grep -Fqx $'classification\tnative_regression_distinguishes_candidate' \
+            "$output/summary.tsv"
+
+      - name: Upload native regression result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-alias-native-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}-native/
+          if-no-files-found: error
+          retention-days: 14
