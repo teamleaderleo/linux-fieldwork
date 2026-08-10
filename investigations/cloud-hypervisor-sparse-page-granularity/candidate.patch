@@ -159,7 +159,7 @@ diff --git a/vmm/src/sparse.rs b/vmm/src/sparse.rs
      }
  
      /// Round-trip: write two regions sparsely into a snapshot file, then
-@@ -346,24 +361,38 @@
+@@ -346,24 +361,26 @@
      /// the original content including holes.
      #[test]
      fn round_trip_sparse_write_then_read() {
