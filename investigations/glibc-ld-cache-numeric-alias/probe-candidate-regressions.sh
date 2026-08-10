@@ -10,12 +10,23 @@ if [[ -z "$output_dir" || -z "$patch_file" ]]; then
   exit 64
 fi
 
-for command in git make bison gawk python3 sudo; do
+for command in git make bison gawk python3; do
   if ! command -v "$command" >/dev/null 2>&1; then
     printf 'required command is unavailable: %s\n' "$command" >&2
     exit 69
   fi
 done
+
+as_root() {
+  if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo -E "$@"
+  else
+    printf 'root-capable test execution is unavailable\n' >&2
+    return 69
+  fi
+}
 
 readonly glibc_repository=https://github.com/gnutools/glibc.git
 readonly glibc_commit=6288139c32a194e0005593c30af6c79bb698cdf2
@@ -28,8 +39,8 @@ fi
 
 work_root=$(mktemp -d "${RUNNER_TEMP:-/tmp}/glibc-cache-alias-regressions.XXXXXX")
 cleanup() {
-  sudo chmod -R u+rwX "$work_root" 2>/dev/null || true
-  sudo chown -R "$(id -u):$(id -g)" "$work_root" 2>/dev/null || true
+  as_root chmod -R u+rwX "$work_root" 2>/dev/null || true
+  as_root chown -R "$(id -u):$(id -g)" "$work_root" 2>/dev/null || true
   rm -rf -- "$work_root"
 }
 trap cleanup EXIT INT TERM
@@ -88,9 +99,9 @@ run_test() {
   local out_file="$build/elf/$test_base.out"
 
   printf 'test:%s\n' "$test_name" >"$stage"
-  sudo rm -f -- "$result_file" "$out_file"
+  as_root rm -f -- "$result_file" "$out_file"
   set +e
-  sudo -E make -C "$build" test "t=$test_name" >"$output_dir/$safe_name.log" 2>&1
+  as_root make -C "$build" test "t=$test_name" >"$output_dir/$safe_name.log" 2>&1
   local make_status=$?
   set -e
 
@@ -118,7 +129,7 @@ run_test elf/tst-glibc-hwcaps-prepend-cache
 {
   printf 'classification\tcandidate_regressions_passed\n'
   printf 'glibc_commit\t%s\n' "$glibc_commit"
-  printf 'privilege\thosted_disposable_root_for_container_namespace_only\n'
+  printf 'execution_uid\t%s\n' "$(id -u)"
   printf 'test\telf/tst-ldconfig-cache\tpass\n'
   printf 'test\telf/tst-glibc-hwcaps-prepend-cache\tpass\n'
 } >"$output_dir/summary.tsv"
