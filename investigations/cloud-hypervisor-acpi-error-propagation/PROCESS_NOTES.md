@@ -28,6 +28,8 @@ write final commit once
 open/iterate PR prose
     ↓
 ready for review
+    ↓
+maintainer approval
 ```
 
 The important observation is that the largest improvement after the first green result came from **scope review**, not from another implementation idea.
@@ -103,8 +105,14 @@ what evidence do I actually have?
 
 That is different from endless aesthetic editing.
 
+## Initial upstream outcome
+
+Upstream PR https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8709 was marked ready at head `e9c86bacee14a2fd6fe871dc678c6b3f1ac4012a` and Rob Bradford approved it with `Thanks!` without requesting source changes.
+
+That does not prove every stylistic choice is universally optimal, but it is useful evidence for the process: the final narrowed patch and concise PR gave the maintainer enough information to approve without forcing the internal tutorial/evidence volume onto the public surface.
+
+Canonical CI remains a separate gate; run `31367757232` was in progress at the last check.
+
 ## Current stop condition
 
-Upstream PR https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8709 is ready for review at head `e9c86bacee14a2fd6fe871dc678c6b3f1ac4012a`.
-
-Do not proactively alter product bytes for further stylistic preferences. Respond to actual maintainer review, upstream CI, source movement, or a concrete new counterexample.
+The product is maintainer-approved. Do not proactively alter product bytes for further stylistic preferences. Respond only to attributable CI failure, merge/rebase requirements, or a new maintainer request.
