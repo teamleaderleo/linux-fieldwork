@@ -1,0 +1,146 @@
+name: research-309-managed-python-windows-marker
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-309-managed-python-windows-marker.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-marker:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CANDIDATE_HEAD: 8525cfc69e561adc0b4f71c2c1f02ae457b37b7c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: 8525cfc69e561adc0b4f71c2c1f02ae457b37b7c
+          path: uv-candidate
+          persist-credentials: false
+
+      - name: Verify candidate identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $head = git -C uv-candidate rev-parse HEAD
+          if ($head -ne $env:CANDIDATE_HEAD) { throw "unexpected head $head" }
+          git -C uv-candidate diff --check
+          Write-Output "CANDIDATE_HEAD=$head"
+
+      - name: Run marker enumeration invariant on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = 'uv-candidate/crates/uv-python/src/managed.rs'
+          python -c "from pathlib import Path; p=Path(r'$path'); s=p.read_text(); old='    #[test]\n    #[cfg(unix)]\n    fn find_all_skips_in_progress_installations() {'; new='    #[test]\n    fn find_all_skips_in_progress_installations() {'; assert old in s; p.write_text(s.replace(old,new,1))"
+          Push-Location uv-candidate
+          try {
+            cargo test --locked -p uv-python managed::tests::find_all_skips_in_progress_installations -- --exact --nocapture 2>&1 | Tee-Object -FilePath "$env:GITHUB_WORKSPACE/windows-marker-unit.txt"
+            if ($LASTEXITCODE -ne 0) { throw "marker unit test failed" }
+          } finally {
+            Pop-Location
+          }
+          Select-String -Path windows-marker-unit.txt -SimpleMatch 'running 1 test' | Out-Null
+          Select-String -Path windows-marker-unit.txt -SimpleMatch 'test managed::tests::find_all_skips_in_progress_installations ... ok' | Out-Null
+          Write-Output 'WINDOWS_MARKER_UNIT=PASS'
+
+      - name: Build candidate uv
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Restore the clean candidate before building the command-level probe.
+          git -C uv-candidate reset --hard $env:CANDIDATE_HEAD
+          Push-Location uv-candidate
+          try {
+            cargo build --locked -p uv --bin uv
+            if ($LASTEXITCODE -ne 0) { throw 'uv build failed' }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Exercise Windows managed discovery with marker
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $uv = (Resolve-Path 'uv-candidate/target/debug/uv.exe').Path
+          $managed = Join-Path $env:RUNNER_TEMP 'managed-python-309'
+          $bin = Join-Path $env:RUNNER_TEMP 'managed-bin-309'
+          $cache = Join-Path $env:RUNNER_TEMP 'uv-cache-309'
+          New-Item -ItemType Directory -Force -Path $managed,$bin,$cache | Out-Null
+          $env:UV_PYTHON_INSTALL_DIR = $managed
+          $env:UV_PYTHON_BIN_DIR = $bin
+          $env:UV_CACHE_DIR = $cache
+
+          & $uv --version
+          & $uv python find --help | Out-File -Encoding utf8 windows-python-find-help.txt
+          & $uv python install 3.12.6
+          if ($LASTEXITCODE -ne 0) { throw 'managed Python install failed' }
+
+          $install = Get-ChildItem -Path $managed -Directory | Where-Object { $_.Name -like 'cpython-3.12.6-*' } | Select-Object -First 1
+          if (-not $install) { throw 'managed installation directory not found' }
+          $marker = Join-Path $install.FullName '.uv-installing'
+          if (Test-Path $marker) { throw 'successful install unexpectedly retained marker' }
+
+          $beforeList = & $uv python list --only-installed --managed-python 2>&1 | Out-String
+          $beforeList | Out-File -Encoding utf8 windows-list-before-marker.txt
+          if ($beforeList -notmatch [regex]::Escape($install.Name)) { throw 'installed managed Python was not listed before marker' }
+
+          Set-Content -Path $marker -Value 'in-progress' -NoNewline
+          if (-not (Test-Path $marker)) { throw 'failed to create marker' }
+
+          $markedList = & $uv python list --only-installed --managed-python 2>&1 | Out-String
+          $markedList | Out-File -Encoding utf8 windows-list-with-marker.txt
+          if ($markedList -match [regex]::Escape($install.Name)) { throw 'marker-bearing managed Python remained visible in managed list' }
+
+          # Add the generated Windows launcher directory to PATH. This is the adjacent bypass
+          # that can rediscover an interpreter without entering find_all(). Request the exact
+          # patch version and assert that any successful result is not the marker-bearing root.
+          $env:PATH = "$bin;$env:PATH"
+          $findOutput = & $uv python find 3.12.6 2>&1 | Out-String
+          $findCode = $LASTEXITCODE
+          $findOutput | Out-File -Encoding utf8 windows-find-with-marker.txt
+          if ($findCode -eq 0 -and $findOutput -match [regex]::Escape($install.FullName)) {
+            throw 'marker-bearing installation was reconstructed through executable discovery'
+          }
+
+          Remove-Item -Force $marker
+          $afterList = & $uv python list --only-installed --managed-python 2>&1 | Out-String
+          $afterList | Out-File -Encoding utf8 windows-list-after-marker.txt
+          if ($afterList -notmatch [regex]::Escape($install.Name)) { throw 'managed Python did not return after marker removal' }
+
+          $afterFind = & $uv python find 3.12.6 2>&1 | Out-String
+          $afterFind | Out-File -Encoding utf8 windows-find-after-marker.txt
+          if ($LASTEXITCODE -ne 0) { throw 'exact managed Python was not discoverable after marker removal' }
+          if ($afterFind -notmatch [regex]::Escape($install.FullName)) { throw 'post-marker discovery did not return managed installation' }
+
+          @(
+            "candidate=$env:CANDIDATE_HEAD",
+            "install=$($install.FullName)",
+            "find_while_marked_exit=$findCode",
+            'managed_list_hidden_while_marked=true',
+            'managed_find_not_reconstructed_while_marked=true',
+            'rediscovered_after_marker_removal=true'
+          ) | Set-Content -Encoding utf8 windows-marker-summary.txt
+          Write-Output 'WINDOWS_MANAGED_MARKER=PASS'
+
+      - name: Upload Windows marker receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-python-marker-windows-309
+          path: |
+            windows-marker-unit.txt
+            windows-python-find-help.txt
+            windows-list-before-marker.txt
+            windows-list-with-marker.txt
+            windows-find-with-marker.txt
+            windows-list-after-marker.txt
+            windows-find-after-marker.txt
+            windows-marker-summary.txt
+          if-no-files-found: warn
