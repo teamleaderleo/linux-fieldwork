@@ -41,6 +41,34 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  comparator-candidate-x86-64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Execute overflow-safe comparator candidate fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-overflow/runs/$RUN_ID-comparator-candidate"
+          bash investigations/glibc-ld-cache-numeric-overflow/probe-candidate-comparator.sh "$output"
+          grep -Fqx $'classification\tcandidate_ordering_restored' "$output/summary.tsv"
+
+      - name: Upload comparator candidate result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-overflow-comparator-candidate-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-overflow/runs/${{ env.RUN_ID }}-comparator-candidate/
+          if-no-files-found: error
+          retention-days: 14
+
   cache-noble-x86-64:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -85,6 +113,7 @@ jobs:
           set -euo pipefail
           output="investigations/glibc-ld-cache-numeric-overflow/runs/$RUN_ID-current-cache"
           bash investigations/glibc-ld-cache-numeric-overflow/probe-current-cache.sh "$output"
+          grep -Fqx $'classification\toverflow_cache_identity_or_lookup_effect_reproduced' "$output/current-cache-summary.tsv"
 
       - name: Upload current-glibc cache result
         if: always()
@@ -92,5 +121,35 @@ jobs:
         with:
           name: glibc-cache-numeric-overflow-current-${{ env.RUN_ID }}
           path: investigations/glibc-ld-cache-numeric-overflow/runs/${{ env.RUN_ID }}-current-cache/
+          if-no-files-found: error
+          retention-days: 14
+
+  cache-current-glibc-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Build overflow-safe candidate and execute wide-number cache fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-overflow/runs/$RUN_ID-current-candidate"
+          bash investigations/glibc-ld-cache-numeric-overflow/probe-current-cache.sh \
+            "$output" \
+            investigations/glibc-ld-cache-numeric-overflow/unbounded-decimal-candidate.patch
+          grep -Fqx $'classification\tcache_lookup_stable_under_fixture' "$output/current-cache-summary.tsv"
+
+      - name: Upload current-glibc candidate result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-overflow-current-candidate-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-overflow/runs/${{ env.RUN_ID }}-current-candidate/
           if-no-files-found: error
           retention-days: 14
