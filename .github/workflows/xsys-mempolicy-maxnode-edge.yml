@@ -1,0 +1,85 @@
+name: x/sys mempolicy maxnode final-bit edge
+
+on:
+  push:
+    branches:
+      - research/runc-dynamic-mask-boundaries-2026-08-05
+    paths:
+      - investigations/runc-dynamic-mask-boundaries/maxnode-edge/**
+      - .github/workflows/xsys-mempolicy-maxnode-edge.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  final-bit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out exact Fieldwork state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Set up declared Go toolchain
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: investigations/runc-dynamic-mask-boundaries/go.mod
+          cache: false
+          check-latest: false
+
+      - name: Run highest-bit discriminator
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_dir="$GITHUB_WORKSPACE/investigations/runc-dynamic-mask-boundaries"
+          artifact_dir="$RUNNER_TEMP/xsys-mempolicy-maxnode-edge"
+          rm -rf -- "$artifact_dir"
+          mkdir -p "$artifact_dir"
+          printf 'ARTIFACT_DIR=%s\n' "$artifact_dir" >>"$GITHUB_ENV"
+
+          (
+            cd "$source_dir"
+            go test ./...
+            go run ./maxnode-edge | tee "$artifact_dir/receipt.tsv"
+          )
+          grep -Fqx $'classification\tbits_plus_one_includes_final_bit' \
+            "$artifact_dir/receipt.tsv"
+
+          {
+            printf 'fieldwork_commit=%s\n' "$GITHUB_SHA"
+            printf 'xsys_module=%s\n' "$(cd "$source_dir" && go list -m golang.org/x/sys)"
+            uname -a
+            go version
+          } >"$artifact_dir/identity.txt"
+          (
+            cd "$artifact_dir"
+            sha256sum receipt.tsv identity.txt >SHA256SUMS
+          )
+
+      - name: Verify checkout stayed clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
+
+      - name: Publish receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: xsys-mempolicy-maxnode-edge-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Prove cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf -- "${ARTIFACT_DIR:-$RUNNER_TEMP/xsys-mempolicy-maxnode-edge}"
+          test -z "$(git status --porcelain)"
