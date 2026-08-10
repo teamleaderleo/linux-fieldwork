@@ -1,0 +1,199 @@
+name: research-528-conditional-sources-conflicts
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-528-conditional-sources-conflicts.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CURRENT_HEAD: 1881d30773386da77017f2ad5ceaf160535d65da
+      UV_PYTHON_DOWNLOADS: never
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare released uv
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/uv-release"
+          curl -LsSf https://github.com/astral-sh/uv/releases/download/0.12.3/uv-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/uv-release" --strip-components=1
+          "$RUNNER_TEMP/uv-release/uv" --version
+
+      - uses: actions/checkout@v4
+        with:
+          repository: astral-sh/uv
+          ref: 1881d30773386da77017f2ad5ceaf160535d65da
+          path: uv-main
+          persist-credentials: false
+
+      - name: Build pinned current uv
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/current-target"
+          cargo build --manifest-path uv-main/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv-current"
+          test "$(git -C uv-main rev-parse HEAD)" = "$CURRENT_HEAD"
+          "$RUNNER_TEMP/uv-current" --version
+
+      - name: Create local source fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/source-conflicts-528"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+
+          make_foo() {
+            dir="$1"; version="$2"
+            mkdir -p "$ROOT/$dir"
+            cat > "$ROOT/$dir/pyproject.toml" <<EOF
+          [project]
+          name = "foo-uv-528"
+          version = "$version"
+          requires-python = ">=3.12"
+          dependencies = []
+          EOF
+          }
+          make_foo foo-base 1.0.0
+          make_foo foo-local 2.0.0
+          make_foo foo-remote 3.0.0
+
+          make_case() {
+            case_name="$1"; mode="$2"
+            dir="$ROOT/$case_name"
+            mkdir -p "$dir"
+            cat > "$dir/pyproject.toml" <<'EOF'
+          [project]
+          name = "bar-uv-528"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          dependencies = ["foo-uv-528"]
+
+          [project.optional-dependencies]
+          local = ["foo-uv-528"]
+          remote = ["foo-uv-528"]
+          EOF
+            case "$mode" in
+              single)
+                cat >> "$dir/pyproject.toml" <<'EOF'
+
+          [tool.uv.sources]
+          "foo-uv-528" = [
+            { extra = "local", path = "../foo-local", editable = true },
+          ]
+          EOF
+                ;;
+              conflict)
+                cat >> "$dir/pyproject.toml" <<'EOF'
+
+          [tool.uv]
+          conflicts = [
+            [ { extra = "local" }, { extra = "remote" } ],
+          ]
+
+          [tool.uv.sources]
+          "foo-uv-528" = [
+            { extra = "local", path = "../foo-local", editable = true },
+            { extra = "remote", path = "../foo-remote", editable = true },
+          ]
+          EOF
+                ;;
+              base_conflict)
+                cat >> "$dir/pyproject.toml" <<'EOF'
+
+          [tool.uv]
+          conflicts = [
+            [ { extra = "local" }, { extra = "remote" } ],
+          ]
+
+          [tool.uv.sources]
+          "foo-uv-528" = [
+            { path = "../foo-base", editable = true },
+            { extra = "local", path = "../foo-local", editable = true },
+            { extra = "remote", path = "../foo-remote", editable = true },
+          ]
+          EOF
+                ;;
+              *) exit 99 ;;
+            esac
+          }
+
+          make_case single-conditional single
+          make_case conflict-no-base conflict
+          make_case base-plus-conflict base_conflict
+
+          echo "FIXTURE_ROOT=$ROOT" >> "$GITHUB_ENV"
+
+      - name: Execute project-vs-pip matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULTS="$GITHUB_WORKSPACE/results-528.tsv"
+          printf 'version\tcase\tcommand\texit\tfoo_base\tfoo_local\tfoo_remote\tregistry_missing\tconflicting_urls\tfirst_error\n' > "$RESULTS"
+
+          run_one() {
+            label="$1"; uv_bin="$2"; case_name="$3"; command="$4"
+            dir="$FIXTURE_ROOT/$case_name"
+            rm -f "$dir/uv.lock" "$dir/out.txt"
+            log="$RUNNER_TEMP/528-$label-$case_name-$command.log"
+            set +e
+            case "$command" in
+              lock)
+                (cd "$dir" && "$uv_bin" lock --offline) >"$log" 2>&1 ;;
+              sync_local)
+                (cd "$dir" && "$uv_bin" sync --extra local --dry-run --offline) >"$log" 2>&1 ;;
+              sync_remote)
+                (cd "$dir" && "$uv_bin" sync --extra remote --dry-run --offline) >"$log" 2>&1 ;;
+              pip_compile_local)
+                (cd "$dir" && "$uv_bin" pip compile --no-index --extra local pyproject.toml -o out.txt) >"$log" 2>&1 ;;
+              pip_compile_remote)
+                (cd "$dir" && "$uv_bin" pip compile --no-index --extra remote pyproject.toml -o out.txt) >"$log" 2>&1 ;;
+              pip_compile_base)
+                (cd "$dir" && "$uv_bin" pip compile --no-index pyproject.toml -o out.txt) >"$log" 2>&1 ;;
+              *) exit 98 ;;
+            esac
+            code=$?
+            set -e
+            cat "$log"
+            combined=$(cat "$log"; [ -f "$dir/uv.lock" ] && cat "$dir/uv.lock"; [ -f "$dir/out.txt" ] && cat "$dir/out.txt" || true)
+            if grep -Fq '../foo-base' <<<"$combined"; then base=true; else base=false; fi
+            if grep -Fq '../foo-local' <<<"$combined"; then local=true; else local=false; fi
+            if grep -Fq '../foo-remote' <<<"$combined"; then remote=true; else remote=false; fi
+            if grep -qi 'not found in the package registry\|no versions of foo-uv-528' "$log"; then missing=true; else missing=false; fi
+            if grep -qi 'conflicting URLs' "$log"; then urls=true; else urls=false; fi
+            first=$(grep -m1 -E '^(error:|  ×|  ├─▶|  ╰─▶)' "$log" | tr '\t\r\n' '   ' | cut -c1-220 || true)
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+              "$label" "$case_name" "$command" "$code" "$base" "$local" "$remote" "$missing" "$urls" "$first" >> "$RESULTS"
+            echo "=== RESULT $label $case_name $command exit=$code base=$base local=$local remote=$remote missing=$missing urls=$urls ==="
+          }
+
+          for pair in "release:$RUNNER_TEMP/uv-release/uv" "current:$RUNNER_TEMP/uv-current"; do
+            label=${pair%%:*}; uv_bin=${pair#*:}
+            for case_name in single-conditional conflict-no-base base-plus-conflict; do
+              for command in lock sync_local sync_remote pip_compile_base pip_compile_local pip_compile_remote; do
+                run_one "$label" "$uv_bin" "$case_name" "$command"
+              done
+            done
+          done
+
+          echo '=== MATRIX ==='
+          column -t -s $'\t' "$RESULTS" || cat "$RESULTS"
+
+      - name: Upload conditional source receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conditional-sources-conflicts-528
+          path: results-528.tsv
+          if-no-files-found: warn
