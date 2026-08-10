@@ -57,11 +57,21 @@ jobs:
 
       - name: Run inactive queue regression
         working-directory: cloud-hypervisor
-        run: cargo test -p virtio-devices --lib restore_inactive_queue_skips_used_index_read -- --exact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_name="transport::pci_device::unit_tests::restore_inactive_queue_skips_used_index_read"
+          cargo test -p virtio-devices --lib -- --list | grep -F "$test_name: test"
+          cargo test -p virtio-devices --lib "$test_name" -- --exact
 
       - name: Run partial multi-queue discriminator
         working-directory: cloud-hypervisor
-        run: cargo test -p virtio-devices --lib restore_partially_enabled_device_skips_unready_queue -- --exact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_name="transport::pci_device::unit_tests::restore_partially_enabled_device_skips_unready_queue"
+          cargo test -p virtio-devices --lib -- --list | grep -F "$test_name: test"
+          cargo test -p virtio-devices --lib "$test_name" -- --exact
 
   sparse-page-granularity:
     runs-on: ubuntu-24.04
