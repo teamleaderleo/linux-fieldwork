@@ -41,8 +41,9 @@ jobs:
           p.write_text(s.replace(old,new,1))
           PY
           git -C uv-prototype diff --check
-          rustup component add rustfmt
-          (cd uv-prototype && cargo fmt --all -- --check) || (cd uv-prototype && cargo fmt --all)
+          rustup component add --toolchain 1.97.1-x86_64-unknown-linux-gnu rustfmt
+          (cd uv-prototype && cargo fmt --all)
+          (cd uv-prototype && cargo fmt --all -- --check)
           git -C uv-prototype diff --check
           git -C uv-prototype diff -- crates/uv-workspace/src/workspace.rs > "$GITHUB_WORKSPACE/eacces-boundary-prototype.diff"
 
