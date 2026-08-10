@@ -1,6 +1,6 @@
 # Current Fieldwork
 
-Updated: 2026-08-07
+Updated: 2026-08-10
 
 This is the live operational board for the strongest current investigations. Detailed evidence remains in the linked fork branches, internal pull requests, Fieldwork issues, and retained CI artifacts.
 
@@ -73,20 +73,24 @@ CIFuzz run `31047099243` is not candidate evidence: the OSS-Fuzz integration fet
 
 ### Cloud Hypervisor — propagate ACPI construction failures
 
-**State:** error-boundary design remains plausible; latest focused run exposed one candidate transform bug plus one test-feature configuration problem. Not ready for human review yet.
+**State:** narrowed candidate is green across the focused test and default, fw_cfg, TDX, and aarch64 compile surfaces. Cleanup and broader fork CI review remain before promotion.
 
 - Canonical issue: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/issues/8666
 - Internal Fieldwork issue: #444
 - Branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/acpi-error-propagation`
 - Internal draft PR: `teamleaderleo/cloud-hypervisor#3`
-- Latest focused run/job: `31046631486` / `92443620996`
+- Candidate semantic head: `fd25b6848a7ebe676c86985533954e623db4b31e`
+- Validated carrier head: `df48ecb3f7c0c23746ecbdf7efc8fbdc384147c0`
+- Focused run/job: `31344505710` / `93323825124` — success
+- Focused artifact: `9046890513`
+- Artifact digest: `sha256:3749e5022ac5aad2cafd713e00a42a1813e04ca82d1c6e7246cb9103d5df676e`
+- Broader fork CI: `31344505713` — in progress at last check
 
-Latest run passed exact-source application, generated-scope checks, and rustfmt. The focused test build then found:
+Source review narrowed the error boundary before the successful run. Checked table-address overflow, allocator/GIC/fw_cfg mutex poisoning, guest-memory writes, fw_cfg presence at the helper boundary, and fw_cfg I/O are propagated. IORT layout checks, the validated PCI-segment bound, serial lookup consistency, and aarch64 controller/VGIC presence remain explicit invariants.
 
-1. a real aarch64 transform bug: the generated code attempted to lock `interrupt_controller` without first binding it from `device_manager.get_interrupt_controller()`;
-2. a separate test invocation problem: building VMM tests without a hypervisor backend produced unrelated uninhabited-hypervisor/VFIO errors.
+The focused workflow passes exact-source application, two-file generated scope, diff check, rustfmt, the deterministic overflow unit test, KVM compile, fw_cfg compile, TDX compile, and aarch64 KVM cross-compile. The previous aarch64 red belonged to the harness: `ring` could not find `aarch64-linux-gnu-gcc`; installing `gcc-aarch64-linux-gnu` repaired that gate without changing candidate semantics.
 
-Next gate: restore the missing interrupt-controller binding, run the unit test with a real backend feature, then execute default, fw_cfg, TDX, and aarch64 compile surfaces.
+The retained generated diff was reviewed in full and changes only `vmm/src/acpi.rs` and `vmm/src/vm.rs`. The remaining carrier cleanup is to fold the proven narrowing now performed by `run_candidate.py` into the canonical `apply_candidate.py` transform, rerun the same focused matrix, and then classify the broader fork CI independently.
 
 ## Parked or negative results
 
