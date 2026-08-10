@@ -102,11 +102,12 @@ def bwrap_case(path, name, env_args, as_pid_1=False):
     return completed.returncode, completed.stdout
 
 
-def run_bwrap(path):
+def run_bwrap(path, expect_scrubbed=False):
+    helper_old = False if expect_scrubbed else True
     cases = [
-        ("clearenv-helper", ["--clearenv"], False, None, True, False),
-        ("unsetenv-helper", ["--unsetenv", MARKER_NAME], False, None, True, False),
-        ("setenv-helper", ["--setenv", MARKER_NAME, NEW_VALUE], False, NEW_VALUE, True, False),
+        ("clearenv-helper", ["--clearenv"], False, None, helper_old, False),
+        ("unsetenv-helper", ["--unsetenv", MARKER_NAME], False, None, helper_old, False),
+        ("setenv-helper", ["--setenv", MARKER_NAME, NEW_VALUE], False, NEW_VALUE, helper_old, False),
         ("clearenv-as-pid-1-control", ["--clearenv"], True, None, False, False),
     ]
     rc = 0
@@ -128,10 +129,11 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--model", action="store_true")
     group.add_argument("--bwrap", metavar="PATH")
+    parser.add_argument("--expect-scrubbed", action="store_true")
     args = parser.parse_args()
     if args.model:
         return run_model()
-    return run_bwrap(args.bwrap)
+    return run_bwrap(args.bwrap, expect_scrubbed=args.expect_scrubbed)
 
 
 if __name__ == "__main__":
