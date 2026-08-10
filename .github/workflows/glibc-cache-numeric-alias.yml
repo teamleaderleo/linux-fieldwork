@@ -95,3 +95,33 @@ jobs:
           path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}-candidate/
           if-no-files-found: error
           retention-days: 14
+
+  current-glibc-candidate-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Build candidate and run existing cache tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-regressions"
+          bash investigations/glibc-ld-cache-numeric-alias/probe-candidate-regressions.sh \
+            "$output" \
+            investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
+          grep -Fqx $'classification\tcandidate_regressions_passed' "$output/summary.tsv"
+
+      - name: Upload candidate regression result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-alias-regressions-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}-regressions/
+          if-no-files-found: error
+          retention-days: 14
