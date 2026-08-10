@@ -9,7 +9,7 @@ Final upstream head: `e9c86bacee14a2fd6fe871dc678c6b3f1ac4012a`
 Canonical base used for the submitted commit: `a1fcb9f790616ac615f66de73be540b0b20844b1`
 Final product scope: `vmm/src/acpi.rs`, `vmm/src/vm.rs`; 73 insertions / 48 deletions
 Frozen product diff SHA-256: `76c53e120c22dab4886904a875e3aba86ae6d49130e4080cbcdb46ad3df56466`
-Submission state: ready for upstream review
+Submission state: maintainer approved; canonical CI / merge pending
 
 ## One-sentence version
 
@@ -211,6 +211,8 @@ The commit includes:
 
 The PR body is intentionally shorter and more human-facing than this record. It uses a small control-flow diagram, names the helper/error boundary, states the validation evidence and the boot-test ceiling, and leaves source archaeology and discarded designs here.
 
+Rob Bradford approved the submitted head on 2026-08-10 with `Thanks!` and no requested source changes. Canonical CI run `31367757232` was in progress at the last check.
+
 ## Rust learning notes
 
 ### `unwrap()`
@@ -287,6 +289,8 @@ Examples:
 
 The stop rule became: once exact product bytes are green, independent review converges, the PR is factually accurate, and remaining objections are stylistic, stop proactively changing the commit. Further product changes should come from a concrete maintainer comment, CI failure, source movement, or new counterexample.
 
+The first maintainer review approved the final narrowed head without requested changes. That is useful process evidence: the smaller public explanation plus retained internal detail was sufficient for initial maintainer review.
+
 ## Backlink hygiene learned the hard way
 
 GitHub interaction surfaces can create backlinks into canonical repositories. Internal issue/PR prose should use `redirect.github.com` for third-party issue/PR/commit links.
@@ -307,12 +311,11 @@ Reusable process lessons from this submission also live at `notes/processes/2026
 
 ## Current disposition
 
-`SUBMITTED UPSTREAM — REVIEW PENDING.`
+`UPSTREAM APPROVED — CI / MERGE PENDING.`
 
-Do not change the submitted product proactively for stylistic cleanup. Reopen product work for:
+Do not change the approved product proactively for stylistic cleanup. Reopen product work for:
 
+- an upstream CI failure attributable to this patch;
 - a maintainer-requested code change;
-- upstream CI failure attributable to this patch;
 - canonical source movement requiring rebase/repair;
-- a concrete counterexample to the chosen error boundary;
-- a distinct remaining runtime panic that belongs in this issue rather than a successor.
+- a concrete counterexample to the chosen error boundary.
