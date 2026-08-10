@@ -1,0 +1,14 @@
+diff --git a/unix/syscall_linux.go b/unix/syscall_linux.go
+--- a/unix/syscall_linux.go
++++ b/unix/syscall_linux.go
+@@ -2649,5 +2649,9 @@ func SetMemPolicy(mode int, mask *CPUSet) error {
+ }
+ 
+ func SetMemPolicyDynamic(mode int, mask CPUSetDynamic) error {
+-	return setMemPolicy(mode, mask.pointer(), mask.size())
++	maxnode := uintptr(len(mask) * _NCPUBITS)
++	if maxnode != 0 {
++		maxnode++
++	}
++	return setMemPolicy(mode, mask.pointer(), maxnode)
+ }
