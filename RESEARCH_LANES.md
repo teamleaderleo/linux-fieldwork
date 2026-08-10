@@ -2,7 +2,7 @@
 
 ## In simple words
 
-This is the short working index for choosing active Linux Fieldwork lanes. The full historical inventory remains in [`programmes/registry.yml`](programmes/registry.yml), and the dated portfolio view is [`CURRENT.md`](CURRENT.md).
+This is the short working index for choosing active Linux Fieldwork lanes. The full historical inventory remains in [`programmes/registry.yml`](programmes/registry.yml), and the live operational view is [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md).
 
 Owner direction on `2026-08-03`: Debian and mmdebstrap work is parked. Open Debian carriers remain evidence, not an active task queue. Start new work from the non-Debian lanes below unless the owner explicitly reopens one exact Debian unit.
 
