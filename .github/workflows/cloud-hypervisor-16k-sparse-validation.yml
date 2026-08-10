@@ -1,0 +1,218 @@
+name: Cloud Hypervisor real 16K sparse validation
+
+on:
+  pull_request:
+    paths:
+      - "investigations/cloud-hypervisor-sparse-page-granularity/candidate.patch"
+      - "investigations/cloud-hypervisor-sparse-page-granularity/16k-init.c"
+      - ".github/workflows/cloud-hypervisor-16k-sparse-validation.yml"
+
+permissions:
+  contents: read
+
+env:
+  CLH_SHA: a658c9f9fd0c4e0363004361d73ac8733fa24fd0
+  LINUX_SHA: d58772d8520c7ef247c4b95c9bd76d3a25da9ff5
+  CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+
+jobs:
+  real-16k-kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CLH_SHA }}
+          path: cloud-hypervisor
+
+      - name: Check out exact Linux source
+        uses: actions/checkout@v4
+        with:
+          repository: torvalds/linux
+          ref: ${{ env.LINUX_SHA }}
+          path: linux
+
+      - name: Install cross-build and emulation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison cpio e2fsprogs flex gcc-aarch64-linux-gnu \
+            libc6-dev-arm64-cross libelf-dev libssl-dev make \
+            qemu-system-arm qemu-user xz-utils
+          rustup target add aarch64-unknown-linux-gnu
+
+      - name: Verify exact source identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CLH_SHA"
+          test "$(git -C linux rev-parse HEAD)" = "$LINUX_SHA"
+          sha256sum fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/candidate.patch
+          sha256sum fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/16k-init.c
+
+      - name: Cross-build baseline and candidate sparse test binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd cloud-hypervisor
+
+          build_test_binary() {
+            local json_out="$1"
+            cargo test --locked -p vmm --lib \
+              --target aarch64-unknown-linux-gnu \
+              --no-default-features --features kvm \
+              --no-run --message-format=json > "$json_out"
+            python3 - "$json_out" <<'PY'
+          import json, os, sys
+          found = []
+          for line in open(sys.argv[1], encoding="utf-8"):
+              try:
+                  obj = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if obj.get("reason") != "compiler-artifact":
+                  continue
+              target = obj.get("target", {})
+              profile = obj.get("profile", {})
+              exe = obj.get("executable")
+              if target.get("name") == "vmm" and profile.get("test") and exe:
+                  found.append(exe)
+          if len(found) != 1:
+              raise SystemExit(f"expected one vmm test executable, got {found!r}")
+          print(os.path.abspath(found[0]))
+          PY
+          }
+
+          baseline_exe="$(build_test_binary baseline.json | tail -n1)"
+          cp "$baseline_exe" ../baseline-vmm-tests
+
+          patch="$PWD/../fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/candidate.patch"
+          git apply --check "$patch"
+          git apply "$patch"
+          git diff --check
+          test "$(git diff --name-only)" = "vmm/src/sparse.rs"
+
+          candidate_exe="$(build_test_binary candidate.json | tail -n1)"
+          cp "$candidate_exe" ../candidate-vmm-tests
+
+          cd ..
+          file baseline-vmm-tests candidate-vmm-tests
+          aarch64-linux-gnu-readelf -h baseline-vmm-tests | grep -F 'Machine:'
+          aarch64-linux-gnu-readelf -h candidate-vmm-tests | grep -F 'Machine:'
+
+      - name: Build a real AArch64 16 KiB-page Linux kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd linux
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+
+          scripts/config \
+            --disable MODULES \
+            --disable ARM64_4K_PAGES \
+            --enable ARM64_16K_PAGES \
+            --enable BLK_DEV_INITRD \
+            --enable DEVTMPFS \
+            --enable DEVTMPFS_MOUNT \
+            --enable TMPFS \
+            --enable MEMFD_CREATE \
+            --enable VIRTIO \
+            --enable VIRTIO_MMIO \
+            --enable VIRTIO_BLK \
+            --enable EXT4_FS \
+            --enable SERIAL_AMBA_PL011 \
+            --enable SERIAL_AMBA_PL011_CONSOLE
+
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -Fx 'CONFIG_ARM64_16K_PAGES=y' .config
+          grep -Fx 'CONFIG_VIRTIO_MMIO=y' .config
+          grep -Fx 'CONFIG_VIRTIO_BLK=y' .config
+          grep -Fx 'CONFIG_EXT4_FS=y' .config
+          make -j2 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image
+
+      - name: Build initramfs and 4 KiB-block scratch filesystem
+        shell: bash
+        run: |
+          set -euo pipefail
+          rootfs="$PWD/rootfs-16k"
+          rm -rf "$rootfs"
+          mkdir -p "$rootfs"/{dev,proc,tmp,lib/aarch64-linux-gnu}
+
+          aarch64-linux-gnu-gcc -O2 -static \
+            fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/16k-init.c \
+            -o "$rootfs/init"
+          cp baseline-vmm-tests "$rootfs/baseline-vmm-tests"
+          cp candidate-vmm-tests "$rootfs/candidate-vmm-tests"
+
+          cp -a /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 "$rootfs/lib/ld-linux-aarch64.so.1"
+          for lib in /usr/aarch64-linux-gnu/lib/*.so*; do
+            [ -e "$lib" ] || continue
+            cp -a "$lib" "$rootfs/lib/aarch64-linux-gnu/"
+          done
+          libgcc="$(find /usr/lib/gcc-cross/aarch64-linux-gnu -name libgcc_s.so.1 -print -quit)"
+          test -n "$libgcc"
+          cp -a "$libgcc" "$rootfs/lib/aarch64-linux-gnu/libgcc_s.so.1"
+
+          sudo mknod "$rootfs/dev/console" c 5 1
+          sudo mknod "$rootfs/dev/null" c 1 3
+          sudo chmod 600 "$rootfs/dev/console"
+          sudo chmod 666 "$rootfs/dev/null"
+
+          (
+            cd "$rootfs"
+            find . -print0 | sort -z | cpio --null -o --format=newc --owner=0:0
+          ) | gzip -9 > initramfs-16k.cpio.gz
+
+          truncate -s 128M scratch-ext4.img
+          mkfs.ext4 -q -F -b 4096 scratch-ext4.img
+          dumpe2fs -h scratch-ext4.img 2>/dev/null | grep -F 'Block size:'
+
+      - name: Boot 16 KiB kernel and execute exact baseline plus candidate tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          timeout 240s qemu-system-aarch64 \
+            -machine virt,accel=tcg \
+            -cpu max \
+            -smp 2 \
+            -m 1024 \
+            -nographic \
+            -no-reboot \
+            -kernel linux/arch/arm64/boot/Image \
+            -initrd initramfs-16k.cpio.gz \
+            -append 'console=ttyAMA0 rdinit=/init panic=-1' \
+            -drive if=none,file=scratch-ext4.img,format=raw,id=scratch \
+            -device virtio-blk-device,drive=scratch \
+            2>&1 | tee serial-16k.log
+          qemu_rc=${PIPESTATUS[0]}
+          set -e
+          echo "QEMU_RC=$qemu_rc"
+
+          grep -Fx 'PAGE_SIZE=16384' serial-16k.log
+          grep -E '^BASELINE_RC=[1-9][0-9]*$' serial-16k.log
+          grep -Fx 'CANDIDATE_RC=0' serial-16k.log
+          grep -Fx 'REAL_16K_PASS' serial-16k.log
+          grep -F 'sparse::unit_tests::written_pages_show_as_data_extents' serial-16k.log
+          grep -F 'sparse::unit_tests::single_extent_at_zero_offset' serial-16k.log
+          grep -F 'test result: ok. 9 passed; 0 failed' serial-16k.log
+
+      - name: Upload real 16K receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-hypervisor-sparse-real-16k
+          path: |
+            serial-16k.log
+            linux/.config
+          if-no-files-found: warn
+          retention-days: 30
