@@ -1,0 +1,36 @@
+diff --git a/unix/syscall_linux_test.go b/unix/syscall_linux_test.go
+--- a/unix/syscall_linux_test.go
++++ b/unix/syscall_linux_test.go
+@@ -664,6 +664,31 @@ func TestSchedSetaffinityDynamic(t *testing.T) {
+ 	}
+ }
+ 
++func TestSetMemPolicyDynamicFinalBit(t *testing.T) {
++	if runtime.GOOS == "android" {
++		t.Skip("set_mempolicy test is not supported on android")
++	}
++
++	runtime.LockOSThread()
++	defer runtime.UnlockOSThread()
++
++	// Use the last bit in one 64-bit-sized dynamic set. With
++	// MPOL_F_RELATIVE_NODES, a non-empty mask is folded onto the task's
++	// allowed memory nodes, so this does not require a machine with node 63.
++	mask := unix.NewCPUSet(64)
++	mask.Set(63)
++	err := unix.SetMemPolicyDynamic(unix.MPOL_BIND|unix.MPOL_F_RELATIVE_NODES, mask)
++	if err == unix.ENOSYS || err == unix.EPERM {
++		t.Skipf("set_mempolicy syscall is not available: %v", err)
++	}
++	if err != nil {
++		t.Fatalf("SetMemPolicyDynamic with final mask bit: %v", err)
++	}
++
++	if err := unix.SetMemPolicyDynamic(unix.MPOL_DEFAULT, nil); err != nil {
++		t.Fatalf("reset SetMemPolicyDynamic: %v", err)
++	}
++}
++
+ func TestStatx(t *testing.T) {
+ 	var stx unix.Statx_t
+ 	err := unix.Statx(unix.AT_FDCWD, ".", 0, 0, &stx)
