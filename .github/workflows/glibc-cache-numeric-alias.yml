@@ -1,0 +1,37 @@
+name: glibc cache numeric alias
+
+on:
+  pull_request:
+    paths:
+      - "investigations/glibc-ld-cache-numeric-alias/**"
+      - ".github/workflows/glibc-cache-numeric-alias.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  noble-x86-64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Execute isolated cache lookup fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID"
+          bash investigations/glibc-ld-cache-numeric-alias/probe.sh "$output"
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: glibc-cache-numeric-alias-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}/
+          if-no-files-found: error
+          retention-days: 14
