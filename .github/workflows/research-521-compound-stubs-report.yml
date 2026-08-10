@@ -1,0 +1,161 @@
+name: Research 521 compound stub artifact receipt
+
+on:
+  push:
+    branches: [research/521-compound-stub-normalization]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  matrix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: 64f94a41fd7c472224d340337dd4b6cab2a7d3fd
+          path: uv-src
+          persist-credentials: false
+
+      - name: Build exact UV candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C uv-src rev-parse HEAD)" = 64f94a41fd7c472224d340337dd4b6cab2a7d3fd
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/uv82-target"
+          cargo build --manifest-path uv-src/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv82"
+          "$RUNNER_TEMP/uv82" --version
+
+      - name: Prove current candidate disagrees with name-derived backends
+        shell: bash
+        run: |
+          set -euo pipefail
+          UV="$RUNNER_TEMP/uv82"
+          ROOT="$RUNNER_TEMP/as-is"
+          mkdir -p "$ROOT"
+
+          for spec in 'uv:' 'flit:flit'; do
+            label="${spec%%:*}"
+            backend="${spec#*:}"
+            mkdir -p "$ROOT/$label"
+            if [ -n "$backend" ]; then
+              (cd "$ROOT/$label" && "$UV" init --package --name foo-bar-stubs --build-backend "$backend" --no-workspace --vcs none)
+            else
+              (cd "$ROOT/$label" && "$UV" init --package --name foo-bar-stubs --no-workspace --vcs none)
+            fi
+            test -f "$ROOT/$label/src/foo-bar-stubs/__init__.pyi"
+            test ! -e "$ROOT/$label/src/foo_bar-stubs/__init__.pyi"
+            set +e
+            (cd "$ROOT/$label" && "$UV" build --wheel --out-dir dist) >"$ROOT/$label.log" 2>&1
+            code=$?
+            set -e
+            cat "$ROOT/$label.log"
+            test "$code" -ne 0
+          done
+
+          grep -F 'src/foo_bar-stubs/__init__.pyi' "$ROOT/uv.log"
+          grep -F 'foo_bar-stubs' "$ROOT/flit.log"
+
+      - name: Correct only module directory and explicit selectors
+        shell: bash
+        run: |
+          set -euo pipefail
+          UV="$RUNNER_TEMP/uv82"
+          ROOT="$RUNNER_TEMP/corrected"
+          mkdir -p "$ROOT"
+
+          init_correct_build() {
+            label="$1"
+            backend="$2"
+            mkdir -p "$ROOT/$label"
+            if [ -n "$backend" ]; then
+              (cd "$ROOT/$label" && "$UV" init --package --name foo-bar-stubs --build-backend "$backend" --no-workspace --vcs none)
+            else
+              (cd "$ROOT/$label" && "$UV" init --package --name foo-bar-stubs --no-workspace --vcs none)
+            fi
+            mv "$ROOT/$label/src/foo-bar-stubs" "$ROOT/$label/src/foo_bar-stubs"
+            python - "$ROOT/$label/pyproject.toml" <<'PY'
+          from pathlib import Path
+          import sys
+          p = Path(sys.argv[1])
+          text = p.read_text()
+          text = text.replace('src/foo-bar-stubs', 'src/foo_bar-stubs')
+          text = text.replace('include = "foo-bar-stubs"', 'include = "foo_bar-stubs"')
+          p.write_text(text)
+          PY
+            (cd "$ROOT/$label" && "$UV" build --wheel --out-dir dist)
+          }
+
+          init_correct_build uv ""
+          init_correct_build hatch hatchling
+          init_correct_build poetry poetry
+          init_correct_build flit flit
+          init_correct_build pdm pdm
+          init_correct_build setuptools setuptools
+
+          python - "$ROOT" <<'PY'
+          import configparser
+          import io
+          import pathlib
+          import sys
+          import tomllib
+          import zipfile
+
+          root = pathlib.Path(sys.argv[1])
+          labels = ["uv", "hatch", "poetry", "flit", "pdm", "setuptools"]
+          for label in labels:
+              project = root / label
+              data = tomllib.loads((project / "pyproject.toml").read_text())
+              assert data["project"]["name"] == "foo-bar-stubs"
+              assert "scripts" not in data["project"], (label, data["project"])
+              assert (project / "src/foo_bar-stubs/__init__.pyi").is_file(), label
+              wheels = list((project / "dist").glob("*.whl"))
+              assert len(wheels) == 1, (label, wheels)
+              with zipfile.ZipFile(wheels[0]) as zf:
+                  names = sorted(zf.namelist())
+                  assert "foo_bar-stubs/__init__.pyi" in names, (label, names)
+                  assert "foo-bar-stubs/__init__.pyi" not in names, (label, names)
+                  console = []
+                  for name in names:
+                      if name.endswith(".dist-info/entry_points.txt"):
+                          parser = configparser.ConfigParser()
+                          parser.optionxform = str
+                          parser.read_file(io.StringIO(zf.read(name).decode()))
+                          if parser.has_section("console_scripts"):
+                              console.extend(parser.options("console_scripts"))
+                  assert not console, (label, console)
+              print(f"PASS {label}: {wheels[0].name}")
+
+          checks = {
+              "hatch": 'packages = ["src/foo_bar-stubs"]',
+              "poetry": 'packages = [{ include = "foo_bar-stubs", from = "src" }]',
+              "flit": 'requires = ["flit_core>=4,<5"]',
+              "pdm": 'includes = ["src/foo_bar-stubs"]',
+              "setuptools": '"*" = ["*.pyi"]',
+          }
+          for label, snippet in checks.items():
+              assert snippet in (root / label / "pyproject.toml").read_text(), label
+          PY
+
+      - name: Report receipt to Fieldwork issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          cat >"$RUNNER_TEMP/receipt.md" <<EOF
+          Compound-name artifact check: **success**.
+
+          - exact candidate: \`teamleaderleo/uv@64f94a41fd7c472224d340337dd4b6cab2a7d3fd\`
+          - workflow run: \`${{ github.run_id }}\`
+          - job: \`${{ github.job }}\`
+          - fixture distribution: \`foo-bar-stubs\`
+          - current candidate generated \`src/foo-bar-stubs/__init__.pyi\`; both \`uv_build\` and Flit 4 rejected that tree because they derive \`foo_bar-stubs\` from the project name
+          - after changing only the generated module directory to \`src/foo_bar-stubs/__init__.pyi\` and updating explicit Hatch/Poetry/PDM selectors, all six supported Python backend rows built successfully
+          - every corrected wheel contains \`foo_bar-stubs/__init__.pyi\` and no generated runtime console command
+
+          Conclusion: the reopen is a shared **module-directory derivation** defect in #82, not a new backend-policy disagreement. The candidate should derive one \`simple_stub_module_dir\` matching \`uv_build\`/Flit semantics and reuse it for source generation and explicit backend selectors.
+          EOF
+          gh issue comment 521 --repo teamleaderleo/linux-fieldwork --body-file "$RUNNER_TEMP/receipt.md"
