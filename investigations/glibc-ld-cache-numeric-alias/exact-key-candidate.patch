@@ -2,7 +2,7 @@ diff --git a/elf/dl-cache.c b/elf/dl-cache.c
 index c6820a9f41..5d1a2e3b4c 100644
 --- a/elf/dl-cache.c
 +++ b/elf/dl-cache.c
-@@ -276,6 +276,14 @@ search_cache (const char *string_table, uint32_t string_table_size,
+@@ -276,6 +276,12 @@ search_cache (const char *string_table, uint32_t string_table_size,
  			  != 0)))
  		break;
  
