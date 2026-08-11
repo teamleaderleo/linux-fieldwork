@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  CLH_SHA: a658c9f9fd0c4e0363004361d73ac8733fa24fd0
+  CLH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
   LINUX_SHA: d58772d8520c7ef247c4b95c9bd76d3a25da9ff5
   CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
@@ -262,6 +262,7 @@ jobs:
             -m 1024 \
             -nographic \
             -no-reboot \
+            -nic none \
             -kernel kernel-artifact/Image \
             -initrd initramfs-16k.cpio.gz \
             -append 'console=ttyAMA0 rdinit=/init panic=-1' \
