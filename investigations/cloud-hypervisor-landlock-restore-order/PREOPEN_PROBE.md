@@ -6,7 +6,8 @@ Parent: `investigations/cloud-hypervisor-landlock-restore-order/README.md`
 Receive-migration comparison: `RECEIVE_MIGRATION_COMPARISON.md`
 Internal validation PR: `teamleaderleo/cloud-hypervisor#29`
 Exact upstream base: `1af93ac7035cda77cd87b0c18b1134ebb0928052`
-Exact probe head: `832ab0cbf40ad1e4542a3f229068c3e3b300a5ac`
+Current exact probe head: `d12c8667e6062a221e1fc92a664c421a51a5a531`
+Initial probe head retained in history: `832ab0cbf40ad1e4542a3f229068c3e3b300a5ac`
 External-contact state: **disabled / no upstream contact performed**
 
 ## Question
@@ -37,6 +38,8 @@ The child thread then:
 
 The Landlock restriction is confined to the child thread. After it exits, the unrestricted parent retains both temporary directories, so cleanup is not blocked by the ruleset.
 
+The second carrier commit only imports `ErrorKind` instead of spelling `std::io::ErrorKind` inline. That preserves the test logic while satisfying the repository's `clippy::absolute_paths` policy.
+
 ## Why this is the right negative/positive control
 
 The test distinguishes three states using the same ruleset:
@@ -55,10 +58,11 @@ That result does not depend on QCOW parsing, KVM, guest boot, or snapshot serial
 
 The internal PR is a **validation carrier**, not a candidate product patch.
 
-At creation time:
+Current carrier state:
 
-- the test is source-reviewed and isolated to one file;
-- CI has not yet completed;
+- the test is source-reviewed and isolated to one product file;
+- DCO trailers match the actual Git author identity;
+- repository CI is running on the current exact head;
 - repository CI compiles/clippies test targets but may not execute this unit test;
 - therefore a green PR proves build/quality compatibility, not the runtime Landlock result by itself.
 
