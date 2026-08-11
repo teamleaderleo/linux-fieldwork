@@ -92,6 +92,40 @@ jobs:
             bash -lc 'apt-get update >/dev/null && apt-get install -y python3 libcap2 libselinux1 >/dev/null && cd /fieldwork && python3 investigations/bubblewrap-unshare-pid-zombie/repro_subreaper_zombie.py --bwrap /tmp/bubblewrap-candidate/_build/bwrap --expect-short-clean' \
             | tee investigations/bubblewrap-unshare-pid-zombie/candidate-runtime.txt
 
+      - name: Run upstream baseline and candidate test suites
+        run: |
+          docker run --privileged --rm \
+            -v /tmp/bubblewrap:/baseline \
+            -v /tmp/bubblewrap-candidate:/candidate \
+            -v "$GITHUB_WORKSPACE":/fieldwork \
+            ubuntu:24.04 \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update >/dev/null
+              apt-get install -y --no-install-recommends \
+                build-essential meson ninja-build libcap-dev libselinux1-dev \
+                libcap2-bin python3 strace procps util-linux >/dev/null
+              overall=0
+              for label in baseline candidate; do
+                tree="/$label"
+                log="/fieldwork/investigations/bubblewrap-unshare-pid-zombie/${label}-upstream-tests.txt"
+                rm -rf "$tree/_suite"
+                meson setup "$tree/_suite" "$tree" -Dman=disabled -Dtests=true
+                meson compile -C "$tree/_suite"
+                set +e
+                meson test -C "$tree/_suite" --print-errorlogs >"$log" 2>&1
+                rc=$?
+                set -e
+                cat "$log"
+                echo "${label}_upstream_test_rc=$rc" | tee -a "$log"
+                if [ "$rc" -ne 0 ]; then
+                  overall=1
+                fi
+              done
+              exit "$overall"
+            '
+
       - name: Retain runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -104,4 +138,6 @@ jobs:
             investigations/bubblewrap-unshare-pid-zombie/exact-current-runtime.txt
             investigations/bubblewrap-unshare-pid-zombie/candidate-runtime.txt
             investigations/bubblewrap-unshare-pid-zombie/candidate-applied.diff
+            investigations/bubblewrap-unshare-pid-zombie/baseline-upstream-tests.txt
+            investigations/bubblewrap-unshare-pid-zombie/candidate-upstream-tests.txt
           if-no-files-found: warn
