@@ -1,20 +1,35 @@
 diff --git a/bubblewrap.c b/bubblewrap.c
 --- a/bubblewrap.c
 +++ b/bubblewrap.c
-@@ -590,8 +590,15 @@ do_init (int event_fd, pid_t initial_pid)
-       if (child == initial_pid)
+@@ -615,14 +615,24 @@ do_init (int event_fd, pid_t initial_pid)
          {
            initial_exit_status = propagate_exit_status (status);
-+
-+          /* Reap any children that have already exited before deciding
-+           * whether the outer monitor needs an early exit notification.
-+           * If no descendants remain, let pid 1 exit normally so that the
-+           * monitor's SIGCHLD path can reap it. */
-+          while ((child = TEMP_FAILURE_RETRY (waitpid (-1, &status, WNOHANG))) > 0)
-+            ;
  
 -          if(event_fd != -1)
-+          if (child == 0 && event_fd != -1)
++          if (event_fd != -1)
              {
-               uint64_t val;
-               int res UNUSED;
+-              uint64_t val;
+-              int res UNUSED;
++              /* Reap any children that have already exited before deciding
++               * whether the outer monitor needs an early exit notification.
++               * If no descendants remain, let pid 1 exit normally so that the
++               * monitor's SIGCHLD path can reap it. */
++              while ((child = TEMP_FAILURE_RETRY (waitpid (-1, &status, WNOHANG))) > 0)
++                ;
+ 
+-              val = initial_exit_status + 1;
+-              res = TEMP_FAILURE_RETRY (write (event_fd, &val, 8));
+-              /* Ignore res, if e.g. the parent died and closed event_fd
+-                 we don't want to error out here */
++              if (child == 0)
++                {
++                  uint64_t val;
++                  int res UNUSED;
++
++                  val = initial_exit_status + 1;
++                  res = TEMP_FAILURE_RETRY (write (event_fd, &val, 8));
++                  /* Ignore res, if e.g. the parent died and closed event_fd
++                     we don't want to error out here */
++                }
+             }
+         }
