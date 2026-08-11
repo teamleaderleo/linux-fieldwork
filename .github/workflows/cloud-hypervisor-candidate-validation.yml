@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CLH_SHA: a658c9f9fd0c4e0363004361d73ac8733fa24fd0
+  CLH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
 
 jobs:
   inactive-virtio-restore:
