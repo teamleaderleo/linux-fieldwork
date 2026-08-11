@@ -2,53 +2,50 @@
 
 ## TL;DR
 
-Source review of current BusyBox master at commit `7473045ad3504db9b421427a452fd9b146346306` found a bounded in-place-edit finalization concern in `editors/sed.c`.
+Current BusyBox master at `7473045ad3504db9b421427a452fd9b146346306` has a bounded `sed -i` finalization defect: the in-place path calls `fflush()`, checks `ferror()`, ignores the return from `fclose()`, then renames the temporary output over the input.
 
-For `sed -i`, BusyBox writes transformed output to a temporary file, calls `fflush()`, checks `ferror()`, then calls `fclose()` without checking its return value. It immediately renames the temporary output over the input file. A close-time I/O failure can therefore be reported by the C/POSIX stream layer without changing the publication decision.
+A targeted local probe on Debian BusyBox 1.37.0 reproduced the error-handling consequence. The shim let the real temporary-output close complete, then made that `fclose()` report `EOF`/`EIO`. BusyBox `sed -i` still exited `0` and published the transformed output. `sed -i.bak` behaved the same while retaining the old file in the requested backup. BusyBox `dos2unix`, which checks output `fclose()` before rename, rejected the identical injected close result, exited `1`, and preserved the original.
 
-This is a source-level finding. No close-only fault-injection execution has been run yet. The next useful action is a local synthetic probe that makes the final `fclose()` report failure after the preceding `fflush()` succeeds, then observes whether BusyBox still replaces the input.
+Full commands, shim source, outputs, controls, and limits are in [`RESULTS.md`](RESULTS.md).
+
+The remaining practical-consequence question is narrower: the synthetic seam proves that `sed -i` ignores a reported close error, while a filesystem-backed delayed close failure is still needed to demonstrate damaged persisted bytes under a real storage failure.
 
 ## Explain like I'm five
 
-`sed -i` edits a copy first and swaps the copy into place at the end. BusyBox checks whether writing the copy failed, which is good. But closing the copy is also allowed to report a late write error. BusyBox currently ignores that final answer and swaps the copy into place anyway.
+`sed -i` edits a temporary copy and swaps it into the original filename. BusyBox checks whether flushing that copy failed, but closing the copy can also report a late write error. Current `sed` ignores that final answer and performs the swap anyway.
 
-Another BusyBox applet, `dos2unix`, handles the same temp-file pattern more conservatively: it checks `fclose(out)` and deletes the temporary file on close failure before any rename.
+BusyBox `dos2unix` already uses the safer rule for an analogous in-place conversion: if closing its temporary output fails, it deletes the temp and leaves the original alone.
 
 ## Why care
 
-A stream close can be the point where delayed write errors become visible. On filesystems or storage paths where the final close reports an error after an earlier flush appeared successful, `sed -i` can replace the known input with output whose finalization was reported unsuccessful.
+Linux permits some write and finalization failures to become visible at close time. A command that replaces the old file after `fclose()` reported failure can report success even though the output stream's final result was failure.
 
-The strongest current claim is narrow: **BusyBox `sed -i` does not gate replacement on successful `fclose()` completion.** This record does not claim that such close-only failures are common, and it does not yet establish persisted-byte damage in a concrete filesystem fixture.
+The confirmed claim is:
 
-## Source boundary
+> BusyBox `sed -i` ignores a reported `fclose()` failure for its temporary output and can continue to rename that output over the input while returning success.
+
+The evidence does **not** yet claim a particular real filesystem produces truncated or corrupt output in this sequence.
+
+## Source and execution boundary
 
 - Project: BusyBox
-- Official source browser points to: `https://github.com/vda-linux/busybox_mirror`
-- Reviewed revision: `7473045ad3504db9b421427a452fd9b146346306`
-- Current release observed during this pass: BusyBox 1.38.0, released 2026-05-13
-- Primary file: `editors/sed.c`
+- Official source mirror: `https://github.com/vda-linux/busybox_mirror`
+- Reviewed current-master revision: `7473045ad3504db9b421427a452fd9b146346306`
+- Primary source: `editors/sed.c`
 - Internal comparison: `coreutils/dos2unix.c`
-- Existing test file: `testsuite/sed.tests`
-- Historical fix reviewed: 2024 `sed: check errors writing file with sed -i`, which added `fflush()` plus `ferror()` handling but left `fclose()` unchecked
+- Existing tests: `testsuite/sed.tests`
+- Current release observed during this pass: BusyBox 1.38.0, released 2026-05-13
+- Runtime model: `/usr/bin/busybox` 1.37.0, Debian `1:1.37.0-6+b8`, dynamically linked with glibc
+- Exact-current execution: blocked because the local runtime could not resolve GitHub for cloning; source review remained available through the GitHub connector
 - Upstream contact: **not authorized and not performed**
 
 ## Bounded question
 
-Does BusyBox `sed -i` preserve the invariant that the original pathname is replaced only after the complete temporary output stream has finalized successfully?
+Does BusyBox `sed -i` preserve the invariant that the original pathname is replaced only after the complete temporary output stream has finalized without a reported error?
 
-## Invariant
+## Source observation
 
-An in-place transformation should keep the original file as the surviving input unless every required output step, including final stream close, has completed without a reported write/finalization error.
-
-## Operation owner
-
-`sed_main()` in `editors/sed.c` owns the temporary output, write-finalization check, optional backup rename, and final replacement rename.
-
-## Source observations
-
-### 1. `sed -i` checks flush state, then ignores `fclose()`
-
-At the reviewed head, the in-place path executes:
+At the reviewed current head, `sed -i` executes:
 
 ```c
 process_files();
@@ -61,7 +58,7 @@ fclose(G.nonstdout);
 G.nonstdout = stdout;
 ```
 
-It then proceeds to the optional backup and final replacement:
+Then it performs the optional backup and replacement:
 
 ```c
 if (opt_i) {
@@ -72,23 +69,13 @@ if (opt_i) {
 xrename(G.outname, *argv);
 ```
 
-The return value from `fclose(G.nonstdout)` does not influence either rename.
+The `fclose()` return does not affect either rename.
 
-### 2. This is distinct from the write-error class fixed in 2024
+This is distinct from the write-error class fixed in 2024. That BusyBox change added `fflush()` plus `ferror()` so flush-visible errors such as ordinary ENOSPC stop before rename. A close-only error still has no branch.
 
-The historical BusyBox fix for `sed -i` write errors added the explicit `fflush()` and `ferror()` test. That closes the common buffered-write hole where ENOSPC appears while flushing userspace buffers.
+## Internal negative control
 
-The remaining question is narrower: a final `fclose()` may itself report an error after the preceding `fflush()` did not set the stream error indicator. Current source ignores that result.
-
-### 3. Close-time errors are a real interface contract
-
-Linux/POSIX stream semantics allow `fclose()` to fail because flushing or closing the underlying descriptor failed. Linux `close(2)` documentation specifically warns that errors such as I/O failure, quota exhaustion, or NFS-delayed write errors may become visible at close time.
-
-That does not establish frequency for BusyBox users. It establishes that the unchecked return is semantically meaningful rather than dead error handling.
-
-### 4. BusyBox already uses the stronger rule in `dos2unix`
-
-At the same reviewed head, `coreutils/dos2unix.c` performs another in-place temp-file conversion and gates rename on both input and output close success:
+At the same reviewed head, `coreutils/dos2unix.c` gates an analogous temp-file replacement on close success:
 
 ```c
 if (fclose(in) < 0 || fclose(out) < 0) {
@@ -98,148 +85,76 @@ if (fclose(in) < 0 || fclose(out) < 0) {
 xrename(temp_fn, resolved_fn);
 ```
 
-This is a useful internal negative control: BusyBox already treats an output `fclose()` failure as sufficient reason to discard the temporary result and avoid replacement in a closely related workflow.
+This proves BusyBox already treats output-close failure as a publication blocker in a closely related path.
 
-### 5. The existing sed test suite does not exercise close failure
+## Runtime reproduction
 
-`testsuite/sed.tests` contains several `-i` cases, including ordinary in-place transformations and EOF/newline behavior. The inspected test file has no deterministic close-failure injection or assertion that the original survives a failed finalization.
+The local shim targeted only the adjacent temporary output stream. It called the real `fclose()` first and, after a successful real close, returned `EOF` with `errno=EIO` to the BusyBox caller. That isolates the handling of the close result from byte-persistence effects.
 
-### 6. The existing fatal-cleanup hook can support a small repair
+Observed matrix:
 
-When `-i` is enabled, `sed_main()` installs `cleanup_outname` as `die_func`. `cleanup_outname()` unlinks `G.outname` when a fatal path is taken.
+| Case | Injected temp close error | Exit | Transformed output published | Old content retained |
+|---|---:|---:|---:|---:|
+| `sed -i` | yes | 0 | yes | no explicit backup |
+| `sed -i.bak` | yes | 0 | yes | yes, `.bak` |
+| `dos2unix FILE` | yes | 1 | no | yes, original pathname |
+| normal `sed -i` | no | 0 | yes | n/a |
 
-That means a close failure can plausibly reuse the existing fatal cleanup behavior rather than requiring a new recovery mechanism. Exact patch design still needs execution and review.
+See [`RESULTS.md`](RESULTS.md) for exact commands and outputs.
 
-## What evidence could make this intentional?
+## Existing-test boundary
 
-This pass looked for evidence that a successful `fflush()` is intended to make later `fclose()` errors irrelevant for BusyBox `sed -i`.
+`testsuite/sed.tests` contains ordinary `-i` cases, including newline and EOF behavior. This pass found no deterministic close-failure injection or assertion that the original survives failed finalization.
 
-- The 2024 fix treats write-finalization errors as important enough to preserve the original file and return failure.
-- Standard stream semantics give `fclose()` its own failure result.
-- BusyBox `dos2unix` checks output `fclose()` before rename in an analogous in-place conversion.
-- Current `sed.c` contains no comment documenting a deliberate choice to ignore close errors.
-- Targeted source/history searches in this pass did not surface a later close-specific fix.
+## Repair boundary
 
-No source evidence found in this pass explains why a close failure should still permit publication.
+A candidate should stay local to the `sed -i` finalization path:
 
-## Cross-context pass
+1. check the result of `fclose(G.nonstdout)` before any backup or final rename;
+2. use the existing write-error exit code (`4`);
+3. leave state safe for the existing `cleanup_outname` fatal cleanup hook, which is installed for `-i` and removes `G.outname`;
+4. preserve successful rename order;
+5. add a deterministic close-error regression test;
+6. measure BusyBox code-size delta.
 
-### Plain `-i` vs `-iSUFFIX`
+No source candidate has been committed yet.
 
-**Discriminator:** whether an explicit backup suffix is requested.
+## Cross-context result
 
-- Plain `-i`: the final `xrename(G.outname, *argv)` replaces the input pathname directly after unchecked close.
-- `-iSUFFIX`: BusyBox first renames the old input to the backup name, then renames the temporary output into the original pathname. The backup changes the recovery consequence, but the close error is still ignored and the temporary output is still published.
+Plain `-i` and `-iSUFFIX` both ignore the close result. Backup mode retains the old bytes under the suffix, but still publishes the temporary output and reports success.
 
-The finding therefore survives both modes, while the amount of surviving old data differs.
+The important discriminator is flush-visible versus close-only failure:
 
-### Write/flush failure vs close-only failure
+- flush-visible failure: existing 2024 guard exits before rename;
+- close-only failure: current source and runtime model continue to rename.
 
-**Discriminator:** whether `fflush()`/`ferror()` observes the error before `fclose()`.
-
-- Write/flush failure: the 2024 guard exits with an error before rename.
-- Close-only failure: current source has no corresponding branch and proceeds to rename.
-
-This is the key distinguishing test pair.
-
-### `sed -i` vs `dos2unix FILE`
-
-**Discriminator:** whether the in-place applet checks output `fclose()`.
-
-- `sed -i`: unchecked close, then rename.
-- `dos2unix FILE`: checked close; failure unlinks temp and exits before rename.
-
-This comparison helps separate a general BusyBox policy from a local `sed` omission.
-
-## Distinguishing probe to run next
-
-Use only disposable local files.
-
-### Probe A: deterministic close-only failure
-
-1. Build the exact reviewed BusyBox head with `sed` enabled.
-2. Create a disposable input file with recognizable original content.
-3. Run a normal `sed -i` transformation as the passing control and verify replacement succeeds.
-4. Add a test-only close-failure seam, preferably a link-time or tightly scoped wrapper around `fclose()` that:
-   - targets only the `sed -i` temporary output stream;
-   - allows the real close to occur;
-   - makes that final `fclose()` report `EOF` with an I/O-style errno;
-   - leaves the preceding explicit `fflush()` successful.
-5. Run the same transformation.
-6. Record:
-   - BusyBox exit status;
-   - stderr;
-   - original pathname content and inode identity;
-   - temporary-path survival;
-   - optional backup content for an `-iSUFFIX` run.
-7. Immediate clean rerun after the injected failure.
-
-Expected current-source outcome: despite the injected `fclose()` failure, `sed` proceeds to `xrename(G.outname, *argv)` and returns success if no later operation fails.
-
-A wrapper-induced return error proves the control-flow bug class, but it does not prove that a particular real filesystem loses bytes. Keep those claims separate.
-
-### Probe B: filesystem-backed delayed close error, if practical
-
-If a safe local NFS/FUSE/fault-injection fixture can produce a real close-reported write error after successful `fflush()`, repeat the same old-file-survival check without the wrapper.
-
-Do not make this broader fixture a prerequisite for confirming that the close return is ignored; it answers a separate reachability/practical-consequence question.
-
-## Expected distinguishing outcomes
-
-### Outcome A: close failure is ignored and replacement occurs
-
-- explicit flush succeeds;
-- wrapped or filesystem-backed `fclose()` reports failure;
-- BusyBox still renames the temp output over the input;
-- exit status remains success unless a later operation fails.
-
-**Disposition:** promote to confirmed defect; prepare a minimal close-check candidate and regression fixture.
-
-### Outcome B: another mechanism prevents publication
-
-For example, the test seam reveals an already-active fatal path or cleanup behavior that source reading missed.
-
-**Disposition:** retain the disproving execution result and narrow or close the claim.
-
-## Candidate repair boundary if reproduced
-
-Keep the repair local to the `sed -i` finalization sequence:
-
-- check the result of `fclose(G.nonstdout)`;
-- on failure, set the same write-error exit code used by the existing `fflush()`/`ferror()` path;
-- ensure `G.nonstdout` is left in a safe state before invoking fatal cleanup;
-- let the existing `cleanup_outname` hook remove the temporary file;
-- preserve the current rename order for successful operation;
-- add one deterministic close-failure regression test and keep the existing write/flush failure behavior unchanged.
-
-BusyBox is size-sensitive, so compare code size and avoid a broad helper unless it reduces or preserves cost across callers.
-
-No source patch has been prepared in this pass.
+`dos2unix` provides the same-project counterexample where close-only failure blocks publication.
 
 ## Evidence boundary
 
-Established by source/history review:
+Established:
 
-- exact current `sed -i` control flow at `7473045ad3504db9b421427a452fd9b146346306`;
-- explicit `fflush()` plus `ferror()` handling exists;
-- `fclose(G.nonstdout)` return is ignored;
-- replacement rename occurs afterward;
-- `dos2unix` checks output close before analogous rename;
-- current `sed.tests` includes normal `-i` behavior but no close-failure injection;
-- the 2024 write-error fix addressed the flush-visible class, not the close-return class.
+- exact current-master source sequence;
+- unchecked temporary-output `fclose()` before replacement;
+- current tests lack a close-failure case;
+- installed BusyBox 1.37.0 reproduces replacement plus exit `0` after targeted reported close failure;
+- backup mode behaves the same with the old content retained in `.bak`;
+- `dos2unix` rejects the same close failure and preserves the original;
+- normal `sed -i` control succeeds.
 
-Not established yet:
+Still open:
 
-- a runtime reproduction at the exact reviewed head;
-- a concrete real filesystem that triggers this close-only sequence in the test environment;
-- whether the output bytes are incomplete under any particular real failure mode;
-- how often BusyBox deployments encounter delayed close errors;
-- a reviewed source patch or code-size result;
-- whether maintainers have an unindexed/private report or candidate.
+- exact-current binary execution at `7473045ad3504db9b421427a452fd9b146346306`;
+- a real filesystem-backed delayed-close failure;
+- persisted-byte consequence under that real failure;
+- candidate compilation, tests, and code-size result;
+- upstream maintainer interpretation or prior unindexed discussion.
 
-## Stop condition
+## Next action
 
-Stop this investigation as a source-only retained result if a deterministic test seam cannot distinguish `fflush` success from `fclose` failure without changing the publication path itself. Otherwise, execute the bounded probe and either promote the defect or record the disproof.
+Prepare and execute the smallest local current-master candidate once an exact source checkout is available. The first gate should be the deterministic close-return test, followed by normal `sed -i`, backup mode, existing `sed.tests`, and code-size comparison.
+
+A filesystem-backed close-error experiment can follow as a consequence/reachability test; it is a separate question from whether the current code ignores the error result.
 
 ## External-contact state
 
