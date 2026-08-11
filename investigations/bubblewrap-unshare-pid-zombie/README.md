@@ -2,55 +2,60 @@
 
 ## TL;DR
 
-Current Bubblewrap main (`2f55bae38468d0c50cf5df87b1e481e882b63acb`) contains the process ordering reported in upstream issue #697: the outer monitor returns as soon as sandbox PID 1 reports that the initial command exited, while sandbox PID 1 deliberately remains alive until every process in the PID namespace is gone. If the outer monitor exits first, PID 1 is orphaned; a host init or subreaper that does not reap adopted children can retain it as a zombie after PID 1 exits.
+Exact-current Bubblewrap main (`2f55bae38468d0c50cf5df87b1e481e882b63acb`, Bubblewrap 0.12.0) reproduces the helper-zombie symptom reported in upstream issue #697. With `--unshare-pid`, sandbox PID 1 reports the initial command's status through an eventfd and continues reaping. The outer monitor prioritizes that eventfd and can return before its SIGCHLD path reaps PID 1. Under a non-reaping adopter, the later PID 1 exit remains visible as a `[bwrap]` zombie.
 
-A synthetic Linux subreaper model reproduced that ordering consequence locally and observed the delayed inner init in `Z` state. Exact-current Bubblewrap binary execution remains the first incomplete gate. The prepared probe has `--as-pid-1` and no-PID-namespace controls.
+A narrow candidate is proven on the exact source. After PID 1 reaps the initial command, and only on the existing eventfd PID-namespace path, it non-blockingly drains children that have already exited. If no descendants remain, PID 1 exits normally and the outer monitor reaps it. If a live descendant remains, the existing early-return behavior is preserved.
 
-The tempting repair, blocking in the outer monitor until sandbox PID 1 exits, changes an old Bubblewrap behavior: PID 1 is intentionally allowed to outlive the initial process so it can reap background or daemonized children. Candidate work therefore needs an explicit lifetime-policy decision or a narrower mechanism that preserves the desired initial-process exit contract.
+Final product-evidence head: `teamleaderleo/linux-fieldwork@7fc5f3c9a3a8ee89d2432f0ae5e760fdd14a6e1e`.
 
-Internal Fieldwork issue: #553.
+Authoritative run/job: `31490203503` / `93774626736` — success.
+
+Artifact: `9101208976`, digest `sha256:d56d009dadd12382a1db02f8f5e370474ae9417ff2aef5966272309a50e06799`.
+
+Internal Fieldwork issue: #553. Internal review PR: #557.
 
 ## Explain like I'm five
 
 Bubblewrap creates a small helper as process 1 inside a new PID namespace. That helper watches the program the user actually asked to run.
 
-Literal example:
-
 ```text
 input:  bwrap --unshare-pid --dev-bind / / -- /bin/true
-action: /bin/true exits; sandbox PID 1 sends its exit code to outer bwrap
-result: outer bwrap can exit before sandbox PID 1 finishes its own final wait/exit
+action: /bin/true exits; helper PID 1 reports success to outer bwrap
+baseline result: outer bwrap exits first; helper exits next and can remain as a zombie
+candidate result: with no remaining child, helper exits first and outer bwrap reaps it
 ```
 
-If another process adopts the helper and never calls `wait()` for it, the helper can finish and remain as a zombie entry.
+When a real background child is still running, the candidate leaves the old behavior alone: outer `bwrap` returns immediately and helper PID 1 stays alive to reap the descendant.
 
 ## Why care
 
-The surviving object is a Bubblewrap helper process. Upstream #697 reports `[bwrap]` remaining as a zombie after a short `--unshare-pid` invocation and gives a no-`--unshare-pid` negative control. A later report on the same issue names Firefox/Glycin use of `--unshare-all`, which implies `--unshare-pid`, so the lifecycle edge reaches ordinary desktop callers as well as minimal containers.
+The surviving object is a Bubblewrap helper process. Upstream #697 reports `[bwrap]` remaining as a zombie after a short `--unshare-pid` invocation and gives a no-`--unshare-pid` control. A later report on that issue names Firefox/Glycin use of `--unshare-all`, which implies `--unshare-pid`, so the lifecycle edge reaches ordinary desktop callers as well as minimal containers.
 
-The repair boundary also affects process semantics. Bubblewrap has historically allowed sandbox PID 1 to keep reaping descendants after the initial process exits because the initial process might merely be a launcher that forks the real application. Waiting for PID 1 in the outer monitor can make `bwrap` stay alive until those descendants finish.
+The repair boundary has compatibility consequences. Bubblewrap has long allowed PID 1 to stay alive after the initial process exits because that initial process might be a launcher that forks a real application or daemon. A blocking outer wait would change that contract. The retained candidate fixes the no-descendant case without coupling outer-bwrap lifetime to a remaining descendant.
 
 ## Current state
 
-- State: `EXECUTING`
-- Exact working head: `containers/bubblewrap@2f55bae38468d0c50cf5df87b1e481e882b63acb`
-- Fieldwork branch base: `teamleaderleo/linux-fieldwork@bcb922d8934abb91a498b8b48115d58ae585cb6b`
-- Probe commit: `d9ecd93c8cee76951f39fe0f8654f9a9ed38e4bd`
-- Latest authoritative gate or artifact: local synthetic model passed and observed `state_after_outer_exit=Z`
-- First incomplete step: run the prepared probe against a binary built from exact upstream head `2f55bae38468d0c50cf5df87b1e481e882b63acb`
-- Cleanup state: synthetic adopted zombie was explicitly reaped; no retained child from the model
-- Next safe action: exact-current runtime probe, then background-child discriminator before any product patch
+- State: `REVIEW`
+- Exact upstream source: `containers/bubblewrap@2f55bae38468d0c50cf5df87b1e481e882b63acb`
+- Upstream version: `0.12.0`
+- Final product-evidence Fieldwork head: `7fc5f3c9a3a8ee89d2432f0ae5e760fdd14a6e1e`
+- Authoritative focused run/job: `31490203503` / `93774626736` — success
+- Artifact: `9101208976`
+- Artifact digest: `sha256:d56d009dadd12382a1db02f8f5e370474ae9417ff2aef5966272309a50e06799`
+- General Fieldwork CI on the product-evidence head: success
+- Cleanup state: adopted fixture children are explicitly reaped after observation; privileged Docker fixtures use `--rm`
+- Next safe action: human review of the bounded lifetime policy and candidate
 - External-contact state: no upstream contact authorized or made
 
 ## Intent and precedent
 
-### Observation: current source deliberately has two lifetimes
+### Current source has two completion boundaries
 
-At the exact source head, `event_fd` is created when `--unshare-pid` is active and `--as-pid-1` is absent. The raw clone enters the new PID namespace. Later, Bubblewrap forks once more: the parent of that fork becomes sandbox PID 1 and runs `do_init()`, while the child execs the requested command as PID 2.
+At the exact source head, `event_fd` is created when `--unshare-pid` is active and `--as-pid-1` is absent. After namespace setup, Bubblewrap forks the command: the parent becomes sandbox PID 1 and runs `do_init()`, while the child execs the requested command as PID 2.
 
-`do_init()` waits for children. When the initial command exits, it records that exit status and writes `initial_exit_status + 1` to `event_fd`. It then continues its wait loop. Only `ECHILD` ends the loop and lets sandbox PID 1 exit.
+`do_init()` waits for children. When the initial command exits, it stores that exit status and writes `initial_exit_status + 1` to `event_fd`. It then continues waiting until no children remain.
 
-The outer `monitor_child()` polls both the eventfd and a SIGCHLD signalfd. Its comment explicitly says the eventfd is read first to preserve the real PID 2 exit status when PID 1 also exits around the same time. When an eventfd value is available, `monitor_child()` reports the command exit status and returns immediately. The later SIGCHLD/waitpid path is skipped in that iteration.
+The outer `monitor_child()` polls the eventfd and a SIGCHLD signalfd. It deliberately reads the eventfd first so the initial command's result wins if command and PID 1 exits happen close together. When the eventfd supplies a value, the monitor returns immediately. The later SIGCHLD/`waitpid()` path is therefore skipped on that return path.
 
 Primary source:
 
@@ -58,199 +63,219 @@ Primary source:
 - `bubblewrap.c::monitor_child()`
 - `bubblewrap.c::do_init()`
 
-### Observation: upstream report matches this owner
+### Upstream runtime report matches this owner
 
-Upstream issue #697 reports Bubblewrap 0.11.0 leaving a `[bwrap]` zombie after:
-
-```sh
-bwrap --unshare-pid --dev-bind / / -- echo hi
-```
-
-inside a privileged Alpine Docker container whose PID 1 is `sleep`. The reporter says the same command without `--unshare-pid` cleans up. The issue remains open.
+Upstream issue #697 reports Bubblewrap 0.11.0 leaving a `[bwrap]` zombie after a short `--unshare-pid` command in a privileged Alpine container whose PID 1 does not reap the orphan. The issue remains open.
 
 - https://redirect.github.com/containers/bubblewrap/issues/697
 
-### Observation: waiting for PID 1 has a compatibility cost
+### Background descendants are an intentional compatibility boundary
 
-An older lifecycle issue asked Bubblewrap to kill background processes when the foreground process exits. Alexander Larsson explained that Flatpak-originated behavior cannot in general know whether the initial process is the application or a launcher that forks one; with `--unshare-pid`, PID 1 could optionally exit when the initial process exits, but doing so is a distinct feature choice.
+Older lifecycle discussion in issue #105 explains why Bubblewrap cannot assume the initial process is the whole application. With `--unshare-pid`, sandbox PID 1 may need to remain alive to reap descendants after the initial process exits.
 
 - https://redirect.github.com/containers/bubblewrap/issues/105
 
-This history is evidence against treating `waitpid(child_pid)` as a mechanical cleanup fix. A blocking wait couples outer-bwrap lifetime to every remaining process in the namespace. Exiting PID 1 at the initial command boundary instead kills the remaining PID namespace by kernel semantics. Both choices alter existing behavior.
+That precedent rules out treating a blocking `waitpid()` in the outer monitor as a mechanical cleanup fix. The candidate instead distinguishes “no descendants remain” from “a live descendant remains.”
 
 ## Question
 
-At exact current Bubblewrap main, does the eventfd-first monitor path leave the sandbox PID 1 helper as an adopted zombie when the caller is a non-reaping subreaper/init, with `--as-pid-1` and no PID namespace distinguishing the helper path?
+Can exact-current Bubblewrap avoid orphaning the namespace PID 1 helper after a short `--unshare-pid` command while preserving the established immediate outer return when a real descendant remains, and while preserving the initial command's exit-status representation?
 
 ## Source
 
 - Project: `containers/bubblewrap`
-- Requested revision or package version: current default branch at investigation start
+- Requested revision: current default branch at final verification
 - Resolved commit: `2f55bae38468d0c50cf5df87b1e481e882b63acb`
-- Candidate source commit: none
-- Local source path: none; exact source read through the GitHub connector
-- Import metadata: source files and history fetched by exact Git ref; no upstream fork or branch created
+- Version: `0.12.0`
+- Candidate patch: `0001-delay-exit-event-while-no-descendants-remain.patch`
+- Upstream tree identity was fetched and checked by exact Git SHA in CI
+- No upstream fork branch or upstream interaction was created
+
+A final upstream commit search after candidate validation still returned `2f55bae38468d0c50cf5df87b1e481e882b63acb` as current main.
 
 ## Environment
 
-Synthetic model execution environment:
+Authoritative hosted execution:
 
-- Distribution and release: Debian GNU/Linux 13 (trixie)
-- Kernel and architecture: Linux 6.18.35, x86_64
-- Shell: bash for invocation; Python 3.13.5 for fixture
-- Privileges: uid 0 in the disposable runner
-- Container, virtual machine, or host context: disposable container runner
-- Relevant tool versions: Python 3.13.5
-- Bubblewrap runtime: absent in this runner, so exact-current product execution is pending
+- Host runner: Ubuntu 24.04.4 LTS, x86_64
+- Host kernel: `6.17.0-1020-azure`
+- Docker client/server: `28.0.4` / `28.0.4`
+- Product fixture: privileged disposable `ubuntu:24.04` container
+- Compiler: GCC 13.3.0
+- Meson: 1.3.2
+- Bubblewrap: 0.12.0 built from exact upstream SHA
+- Python fixture: Python 3
+
+The ordinary hosted runner has `kernel.unprivileged_userns_clone=1` and `user.max_user_namespaces=63838`, but Bubblewrap still stops at `setting up uid map: Permission denied`. That result is retained as a capability boundary. The authoritative product execution therefore runs inside the privileged disposable container.
 
 ## Baseline behavior
 
-The current source sequence is:
-
-1. `--unshare-pid` without `--as-pid-1` creates `event_fd`.
-2. `raw_clone()` creates the sandbox-side process in the new PID namespace.
-3. After setup, that process forks the command. The parent becomes the namespace reaper and runs `do_init()`.
-4. The command exits.
-5. `do_init()` reaps the command and writes its exit status to `event_fd`.
-6. `do_init()` continues waiting for any other children until `wait()` returns `ECHILD`.
-7. The outer monitor reads `event_fd` before servicing SIGCHLD and immediately returns the command exit status.
-8. If namespace PID 1 is still alive at step 7, the outer monitor exits while its direct child remains.
-9. Namespace PID 1 is adopted by the nearest host subreaper/init. When it exits, a non-reaping adopter can retain it in zombie state.
-
-The source already supplies two useful controls:
-
-- without `--unshare-pid`, there is no sandbox PID 1 helper path;
-- with `--unshare-pid --as-pid-1`, Bubblewrap does not create the exit-status eventfd and does not fork the `do_init()` helper, so the outer monitor's SIGCHLD path owns the command directly.
-
-## Hypothesis or candidate
-
-### Hypothesis
-
-The #697 zombie is an ownership/lifetime race produced by the eventfd-first return boundary, rather than a mount-namespace or Docker-specific failure.
-
-Predicted exact-current result under a subreaper harness:
+Exact current source under the synthetic subreaper harness:
 
 ```text
---unshare-pid                 -> outer bwrap returns; adopted bwrap PID 1 can become Z
---unshare-pid --as-pid-1      -> no adopted helper zombie
-(no --unshare-pid)            -> no adopted helper zombie
+pid-helper: bwrap_rc=0 adopted_children=[(2536, 'Z (zombie)', 'bwrap')]
+as-pid-1-control: bwrap_rc=0 adopted_children=[]
+no-pidns-control: bwrap_rc=0 adopted_children=[]
+exit-42: bwrap_rc=42 expected_rc=42 adopted_children=[(2543, 'Z (zombie)', 'bwrap')]
+signal-term: bwrap_rc=143 expected_rc=143 adopted_children=[(2546, 'Z (zombie)', 'bwrap')]
+background-child: bwrap_rc=0 elapsed=0.002s immediate_adopted=[(2549, 'S (sleeping)', 'bwrap')] final_adopted=[(2549, 'Z (zombie)', 'bwrap')]
 ```
 
-### Candidate boundary
+The controls distinguish the helper/eventfd path. The exit-status cases also show that the zombie is independent of whether the initial command exits zero, exits nonzero, or terminates by signal.
 
-No product candidate is selected yet.
+## Candidate
 
-Any repair must state which lifetime it promises after the initial command exits:
+The candidate changes only the existing `event_fd != -1` path in `do_init()`.
 
-- outer bwrap returns immediately while descendant processes may continue;
-- outer bwrap waits for namespace PID 1 and therefore for remaining descendants;
-- namespace PID 1 exits at the initial-command boundary, terminating the rest of the PID namespace;
-- another ownership mechanism reaps the helper while preserving immediate outer return.
+After PID 1 reaps the initial command:
 
-The last option would preserve the most existing behavior, but this investigation has not established a viable implementation yet.
+1. call `waitpid(-1, ..., WNOHANG)` until no already-exited child remains;
+2. if `waitpid()` returns `0`, a live descendant remains, so write the existing eventfd notification and preserve immediate outer return;
+3. if the drain reaches `ECHILD`, no descendants remain, so omit the eventfd write and let PID 1 return normally;
+4. the outer monitor then receives SIGCHLD, calls `waitpid()` for PID 1, and returns the already-preserved initial exit status.
+
+Scoping the drain inside `event_fd != -1` leaves `do_init()` paths used only for `--lock-file` or `--sync-fd` in their original ordering.
+
+The candidate deliberately leaves the later orphan-helper outcome open when a real descendant outlives outer `bwrap`. Eliminating that outcome while retaining immediate outer return requires a different ownership policy.
 
 ## Reproduction
 
-Tracked probe:
+Synthetic ordering model:
 
 ```sh
 python3 investigations/bubblewrap-unshare-pid-zombie/repro_subreaper_zombie.py --model
 ```
 
-Observed locally before recording the probe:
-
-```text
-model: init_pid=539 state_after_outer_exit=Z
-```
-
-The model sets itself as a Linux child subreaper, creates an outer-monitor process, creates an inner-init process, lets inner init reap a short command and signal the outer monitor, then delays inner-init exit slightly. The outer monitor exits on the signal. The original subreaper adopts inner init and observes it in `Z` state after inner init exits. The fixture then explicitly reaps it.
-
-Exact-current Bubblewrap probe, prepared and still pending:
+Exact Bubblewrap baseline:
 
 ```sh
 python3 investigations/bubblewrap-unshare-pid-zombie/repro_subreaper_zombie.py \
-  --bwrap /path/to/bubblewrap-built-from-2f55bae38468d0c50cf5df87b1e481e882b63acb
+  --bwrap /path/to/exact-current/bwrap
 ```
 
-The probe runs three cases:
+Candidate expectation:
 
-```text
-pid-helper          --unshare-pid
-as-pid-1-control    --unshare-pid --as-pid-1
-no-pidns-control    no PID namespace option
+```sh
+python3 investigations/bubblewrap-unshare-pid-zombie/repro_subreaper_zombie.py \
+  --bwrap /path/to/candidate/bwrap \
+  --expect-short-clean
 ```
 
-It becomes a subreaper, waits for the outer Bubblewrap process, inspects adopted children through `/proc`, reports zombie state, and reaps retained children before moving to the next case.
+The hosted workflow builds both exact trees, runs the probes in privileged disposable containers, then runs Bubblewrap's upstream test suite against baseline and candidate under the same fixture.
 
 ## Results
 
-### Exact-current source review
+### Synthetic model
 
-Established:
+The standalone Linux subreaper model repeatedly observes the delayed helper as `Z` after the outer process exits, then explicitly reaps it.
 
-- the helper PID 1 exists only on the relevant `--unshare-pid` / non-`--as-pid-1` path;
-- PID 1 writes the initial command status before its own `ECHILD` termination condition;
-- `monitor_child()` explicitly prioritizes the eventfd and returns immediately after reading it;
-- the SIGCHLD branch is the branch that calls `waitpid()` on the outer monitor's child;
-- therefore the eventfd branch can bypass reaping of sandbox PID 1 when the two exits are ordered command first, PID 1 second.
+### Exact-current reproduction
 
-### Synthetic execution
+The short `--unshare-pid` path reproduces the adopted `[bwrap]` zombie. `--as-pid-1` and no-PID-namespace controls remain clean.
 
-The standalone ownership model produced:
+### Candidate short-command result
 
 ```text
-model: init_pid=539 state_after_outer_exit=Z
+pid-helper: bwrap_rc=0 adopted_children=[]
+as-pid-1-control: bwrap_rc=0 adopted_children=[]
+no-pidns-control: bwrap_rc=0 adopted_children=[]
 ```
 
-The retained zombie was reaped by the fixture after observation.
+The no-descendant helper is reaped before outer `bwrap` returns.
 
-### Upstream runtime evidence
+### Exit-status and signal representation
 
-Issue #697 independently reports the corresponding product symptom on Bubblewrap 0.11.0 with a no-`--unshare-pid` control. That evidence predates the exact source head used here, so it supports the mechanism while leaving exact-current runtime status open.
+Candidate:
 
-### Test-suite review
+```text
+exit-42: bwrap_rc=42 expected_rc=42 adopted_children=[]
+signal-term: bwrap_rc=143 expected_rc=143 adopted_children=[]
+```
 
-Current `tests/test-run.sh` exercises `--die-with-parent` with and without `--unshare-pid` and checks that a lock is released after the caller shell dies. It does not place a short `--unshare-pid` invocation under a non-reaping subreaper and inspect the helper after normal command exit.
+The candidate preserves ordinary nonzero exit status and Bubblewrap's `128 + signal` representation.
+
+### Background-descendant discriminator
+
+Candidate:
+
+```text
+background-child: bwrap_rc=0 elapsed=0.003s immediate_adopted=[(2549, 'S (sleeping)', 'bwrap')] final_adopted=[(2549, 'Z (zombie)', 'bwrap')]
+```
+
+The outer process still returns immediately while `sleep 3` remains. Sandbox PID 1 remains alive to reap it. After that descendant exits, the helper can still become an adopted zombie under the synthetic non-reaping parent. This is the explicitly retained compatibility boundary.
+
+### Upstream suite comparison
+
+Baseline and candidate both produced:
+
+```text
+test-utils                OK   26 subtests passed
+test-seccomp.py           SKIP
+test-run.sh               OK   56 subtests passed
+test-specifying-pidns.sh  OK
+test-specifying-userns.sh OK
+
+Ok:      4
+Fail:    0
+Skipped: 1
+```
+
+The seccomp test is skipped in this fixture for both baseline and candidate.
+
+### Gate-owner corrections during investigation
+
+Two failed hosted gates were evidence/fixture problems rather than candidate failures:
+
+- the first patch carrier had invalid unified-diff hunk counts and failed `git apply`; the carrier was repaired without changing candidate behavior;
+- the first upstream-suite container lacked `pkg-config`; adding that build dependency allowed unchanged baseline/candidate suite logic to run and pass.
+
+Both failures were classified before product code was changed.
 
 ## Interpretation
 
-The source-level owner is `monitor_child()` / `do_init()` lifetime coordination.
+The current defect is a lifecycle ownership gap between command completion and helper reap completion.
 
-The key distinction is between **command completion** and **helper reap completion**. Bubblewrap currently uses the first boundary as the outer process's return point, while the helper uses the second boundary as its own return point. On a conventional host init that promptly reaps orphans, the difference is usually invisible. Under a caller/container/subreaper that adopts the helper and fails to reap it, the difference becomes a persistent zombie record.
+The candidate repairs the bounded no-descendant case at the owning PID 1/eventfd boundary. It makes the eventfd early-return path conditional on a reason for early return: at least one live descendant still exists. If no descendants exist, allowing PID 1 to finish first gives the outer monitor an ordinary child it can reap without delaying any useful descendant.
 
-The synthetic model proves the Linux process-ordering consequence. Upstream #697 proves that a Bubblewrap release has exhibited the symptom. Exact-current binary execution is still needed to join those two evidence classes into one current-runtime claim.
+The result is narrower than “always wait for PID 1” and narrower than “kill the PID namespace when the initial command exits.” Those alternatives change established descendant behavior.
 
-The straightforward blocking-wait repair remains unselected because it changes descendant lifetime behavior documented by long-standing Bubblewrap discussion. This is a lifecycle contract problem as well as a missing reap.
+Inside the tested premises, the candidate survives the distinguishing controls, exit-status cases, background-child lifetime discriminator, exact-source build, cleanup/rerun behavior, and Bubblewrap's upstream suite.
 
 ## Evidence boundary
 
-This record establishes current-source control flow and a generic Linux subreaper consequence. It does not yet establish the symptom by executing a binary built from `2f55bae38468d0c50cf5df87b1e481e882b63acb`.
+Established:
+
+- exact-current Bubblewrap main at `2f55bae38468d0c50cf5df87b1e481e882b63acb` reproduces the short-command helper zombie under a non-reaping subreaper;
+- the relevant owner is `do_init()` / `monitor_child()` eventfd lifecycle coordination;
+- the candidate eliminates the no-descendant adopted helper zombie;
+- ordinary exit `42` and SIGTERM representation `143` are preserved;
+- immediate outer return with a live background descendant is preserved;
+- baseline and candidate upstream suites match in the authoritative fixture.
 
 Limits:
 
-- no exact-current Bubblewrap build/run in this runner;
-- no alternate kernel or architecture execution;
-- no Flatpak, Glycin, Firefox, Steam, or desktop integration execution;
-- no test of real daemonizing/background-child workloads under a candidate;
-- no product patch;
-- no claim that every host retains the helper as a zombie; the observable consequence depends on who adopts and reaps the orphan;
-- no upstream interaction.
+- one hosted x86_64 Ubuntu kernel family was executed;
+- no AArch64 runtime execution;
+- no Flatpak, Glycin, Firefox, Steam, Bottles, or other desktop integration execution;
+- the seccomp test is skipped in the suite fixture for both baseline and candidate;
+- the candidate intentionally does not eliminate the eventual helper zombie after a real descendant outlives outer `bwrap`;
+- no claim is made that every host exposes the zombie, because visibility depends on the orphan adopter's reaping behavior;
+- no upstream interaction occurred.
 
-Reopen or widen after the exact-current probe if any of these occur:
+Reopen this bounded decision if a new result shows that the eventfd drain changes descendant lifetime, exit status, signal representation, lock/sync behavior, or another supported PID-namespace mode inside these premises.
 
-- `pid-helper` does not produce an adopted helper zombie under the synthetic subreaper;
-- either control produces the same zombie;
-- the helper is already reaped through a path missed in source review;
-- a candidate alters initial-command exit timing or background-child lifetime.
+A separate successor question is warranted if the desired policy becomes “outer bwrap returns immediately and no helper can ever become an orphan after descendants finish.” That requires a different ownership mechanism.
 
 ## Next step
 
-1. Build exact `containers/bubblewrap@2f55bae38468d0c50cf5df87b1e481e882b63acb` on a disposable Linux runner with PID namespaces available.
-2. Run the tracked `--bwrap` probe twice and retain exact stdout, kernel, build configuration, and binary identity.
-3. Add a second discriminator where the initial command forks a longer-lived child. Measure whether baseline outer bwrap returns at initial-command exit while sandbox PID 1 persists.
-4. Only after those two gates, compare candidate policies. A candidate that fixes the zombie while silently changing the background-child case is a regression candidate, not a completed repair.
+Human review should choose whether the bounded policy is the desired one:
 
-If the exact-current runtime probe matches the hypothesis, promote #553 from source-level diagnosis to a reproducible current defect and prepare a focused candidate/test branch for human design review.
+- retain the candidate as the local fix for the no-descendant case;
+- request another compatibility discriminator;
+- choose a broader lifetime policy as a separate design;
+- prepare an upstream packet only after explicit authorization.
+
+Current recommendation: retain this narrow candidate for review. The exact-current defect, repair mechanism, compatibility boundary, and remaining limitation are all explicit in the retained evidence.
 
 ## Authority
 
