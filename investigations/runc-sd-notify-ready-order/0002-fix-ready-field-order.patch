@@ -1,0 +1,10 @@
+diff --git a/notify_socket.go b/notify_socket.go
+--- a/notify_socket.go
++++ b/notify_socket.go
+@@ -1,5 +1,5 @@
+ 			for line := range bytes.SplitSeq(got, []byte{'\n'}) {
+-				if bytes.HasPrefix(got, []byte("READY=")) {
++				if bytes.HasPrefix(line, []byte("READY=")) {
+ 					fileChan <- line
+ 					return
+ 				}
