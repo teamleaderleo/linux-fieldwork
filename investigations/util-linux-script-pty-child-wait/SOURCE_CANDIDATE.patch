@@ -1,0 +1,59 @@
+diff --git a/lib/pty-session.c b/lib/pty-session.c
+--- a/lib/pty-session.c
++++ b/lib/pty-session.c
+@@
+ void ul_pty_wait_for_child(struct ul_pty *pty)
+ {
+ 	int status;
+ 	pid_t pid;
+-	int options = 0;
++	int options;
+ 
+ 	if (pty->child == (pid_t) -1)
+ 		return;
+ 
+ 	DBG(SIG, ul_debug("waiting for child [child=%d]", (int) pty->child));
+ 
+-	if (ul_pty_is_running(pty)) {
+-		/* wait for specific child */
+-		options = WNOHANG;
+-		for (;;) {
+-			pid = waitpid(pty->child, &status, options);
+-			DBG(SIG, ul_debug(" waitpid done [rc=%d]", (int) pid));
+-			if (pid != (pid_t) - 1) {
+-				if (pty->callbacks.child_die)
+-					pty->callbacks.child_die(
+-							pty->callback_data,
+-							pty->child, status);
+-				ul_pty_set_child(pty, (pid_t) -1);
+-			} else
+-				break;
+-		}
+-	} else {
+-		/* final wait */
+-		while ((pid = waitpid(-1, &status, options)) > 0) {
+-			DBG(SIG, ul_debug(" waitpid done [rc=%d]", (int) pid));
+-			if (pid == pty->child) {
+-				if (pty->callbacks.child_die)
+-					pty->callbacks.child_die(
+-							pty->callback_data,
+-							pty->child, status);
+-				ul_pty_set_child(pty, (pid_t) -1);
+-			}
+-		}
++	options = ul_pty_is_running(pty) ? WNOHANG : 0;
++
++	do {
++		pid = waitpid(pty->child, &status, options);
++	} while (pid < 0 && errno == EINTR);
++
++	DBG(SIG, ul_debug(" waitpid done [rc=%d]", (int) pid));
++
++	if (pid == pty->child) {
++		if (pty->callbacks.child_die)
++			pty->callbacks.child_die(
++						pty->callback_data,
++						pty->child, status);
++		ul_pty_set_child(pty, (pid_t) -1);
+ 	}
+ }
