@@ -2,41 +2,47 @@
 
 ## TL;DR
 
-At upstream runc commit `0c87c02ff02123f1bc2cd1b3f850f94e5b8de983`, `notifySocket.run` splits an sd_notify datagram into newline-separated fields but tests `READY=` against the whole datagram instead of the current field. A reduced executable probe reproduces the distinction: `READY=1\nSTATUS=ok` is recognized, while the equally valid `STATUS=ok\nREADY=1` is missed.
+At exact-current upstream runc commit `7495faeac77318158e6d5faece1b0b0d53e6ced4`, `notifySocket.run()` splits an sd_notify datagram into newline-separated fields but tests `READY=` against the complete datagram (`got`) instead of the current field (`line`). The retained reduced probe already showed the consequence on the earlier source head: READY is recognized first and missed second.
 
-History makes this look like a regression rather than a deliberate restriction. The original proxy checked each `line`; the 2018 create/start refactor changed the check to `got` while retaining the line loop. The next step is a focused runc test that proves both field orders, followed by the smallest restoration from `got` to `line` if the full source test reproduces the reduced result.
+The current source still contains the same predicate. This investigation is now executing a full-source Unix-datagram discriminator with three cases: READY first, READY second, and no READY. The candidate remains the one-line restoration from `got` to `line`.
+
+Internal Fieldwork issue: #596.
 
 ## Explain like I'm five
 
-A program can tell systemd several things in one message:
+A container can send several status facts to systemd in one message:
 
 ```text
 STATUS=warming up
 READY=1
 ```
 
-runc reads those lines one at a time. Today it asks whether the entire message starts with `READY=`. That means readiness is seen only when `READY=` happens to be the first field.
-
-Literal example:
+runc reads those facts one line at a time. Current code asks whether the whole message begins with `READY=`. That makes the answer depend on which valid field came first.
 
 ```text
 READY=1\nSTATUS=ok -> readiness found
-STATUS=ok\nREADY=1 -> readiness missed
+STATUS=ok\nREADY=1 -> current code misses readiness
 ```
+
+The candidate asks whether the current line begins with `READY=`.
 
 ## Why care
 
-The runc sd_notify proxy sits between a container and the host service manager. A valid readiness notification can be ignored solely because another valid assignment appears first in the same datagram, leaving the host waiting for readiness until another notification arrives or the watched process exits.
+The runc sd_notify proxy sits between a container and the host service manager. A valid readiness notification can be ignored solely because another valid assignment appears first in the same datagram. The host can then keep waiting until another READY notification arrives or the watched process exits.
 
 ## Current state
 
-- State: `SCOPING`
-- Exact working head: upstream runc `0c87c02ff02123f1bc2cd1b3f850f94e5b8de983`; owned fork `teamleaderleo/runc` matches this head
-- Latest authoritative gate or artifact: reduced executable parser probe, 2026-08-11
-- First incomplete step: reproduce with a focused test inside the full runc source tree
-- Cleanup state: disposable probe files only; no external state changed
-- Next safe action: add a fork-only failing test covering `STATUS=...\nREADY=1` and a negative control without READY
-- External-contact state: none authorized or made
+- State: `EXECUTING`
+- Exact current upstream head: `opencontainers/runc@7495faeac77318158e6d5faece1b0b0d53e6ced4`
+- Upstream source owner: `notify_socket.go::notifySocket.run()`
+- Internal Fieldwork issue: #596
+- Fieldwork branch: `fieldwork/runc-sd-notify-ready-order`
+- Distinguishing test carrier: `0001-test-ready-field-order.patch`
+- Candidate carrier: `0002-fix-ready-field-order.patch`
+- First incomplete step: hosted full-source baseline/candidate execution
+- Cleanup state: test uses temporary Unix sockets and a short disposable `sleep` process
+- Next safe action: execute the exact-source workflow and classify the first failure owner if any gate stops
+- External-contact state: no upstream contact authorized or made
 
 ## Intent and precedent
 
@@ -50,10 +56,38 @@ for _, line := range bytes.Split(buf[0:r], []byte{'\n'}) {
 }
 ```
 
-[runc PR 1807](https://redirect.github.com/opencontainers/runc/pull/1807) refactored create/start notification handling. In that change the loop remained field-oriented, but the predicate became:
+[runc PR 1807](https://redirect.github.com/opencontainers/runc/pull/1807) refactored create/start notification handling. The loop remained field-oriented, while the predicate changed to the complete datagram. That form remains on current main, now using `bytes.SplitSeq`.
+
+systemd's sd_notify payload is a newline-separated list of variable assignments. `READY=1` and `STATUS=...` are both defined assignments; the payload contract does not require READY to be the first assignment.
+
+## Question
+
+Does current runc fail to proxy a valid sd_notify readiness datagram when `READY=...` follows another assignment, and does changing the predicate receiver from `got` to `line` restore field-order independence without accepting a datagram that has no READY assignment?
+
+## Source
+
+- Project: `opencontainers/runc`
+- Original scout head: `0c87c02ff02123f1bc2cd1b3f850f94e5b8de983`
+- Refreshed exact current head: `7495faeac77318158e6d5faece1b0b0d53e6ced4`
+- Relevant paths: `notify_socket.go`, `notify_socket_test.go`
+- Current `go.mod`: Go 1.25.0
+- Owned fork `teamleaderleo/runc` remains at the older scout head and is not being mutated for this gate
+
+Current overlap search found no runc issue or pull request specifically carrying the READY-field ordering repair. Refresh again before any publication decision.
+
+## Baseline behavior
+
+The retained reduced parser probe established:
+
+```text
+ordering current first="READY=1" second=""
+ordering intended first="READY=1" second="READY=1"
+```
+
+Current source refresh confirms the same expression remains:
 
 ```go
-for _, line := range bytes.Split(got, []byte{'\n'}) {
+for line := range bytes.SplitSeq(got, []byte{'\n'}) {
     if bytes.HasPrefix(got, []byte("READY=")) {
         fileChan <- line
         return
@@ -61,57 +95,7 @@ for _, line := range bytes.Split(got, []byte{'\n'}) {
 }
 ```
 
-That form persists through current main, now using `bytes.SplitSeq`.
-
-systemd's `sd_notify` contract describes the state payload as a newline-separated list of variable assignments. `READY=1` and `STATUS=...` are both defined assignments. The source contract does not give READY a required first-field position.
-
-## Question
-
-Does current runc fail to proxy a valid sd_notify readiness datagram when `READY=...` appears after another assignment in the same datagram?
-
-## Source
-
-- Project: opencontainers/runc
-- Requested revision: current upstream `main` during this scout
-- Resolved commit: `0c87c02ff02123f1bc2cd1b3f850f94e5b8de983`
-- Candidate source commit: none yet
-- Relevant paths: `notify_socket.go`, `notify_socket_test.go`
-- Owned fork: `teamleaderleo/runc`, `main` at the same resolved commit
-- Historical carriers:
-  - [runc PR 1308](https://redirect.github.com/opencontainers/runc/pull/1308)
-  - [runc PR 1807](https://redirect.github.com/opencontainers/runc/pull/1807)
-  - [runc PR 3291](https://redirect.github.com/opencontainers/runc/pull/3291)
-
-## Environment
-
-Reduced source-level probe:
-
-- Platform: Linux amd64 execution sandbox
-- Go: `go1.23.2 linux/amd64`
-- Privileges: ordinary local process; no container runtime or systemd required
-- Full runc integration environment: not yet executed
-
-## Baseline behavior
-
-A standalone Go probe copied the current field loop exactly and compared it with the historical field predicate.
-
-Observed output:
-
-```text
-ordering current first="READY=1" second=""
-ordering intended first="READY=1" second="READY=1"
-```
-
-Where:
-
-```text
-first  = READY=1\nSTATUS=ok
-second = STATUS=ok\nREADY=1
-```
-
-The current predicate therefore depends on datagram ordering.
-
-## Hypothesis or candidate
+## Candidate
 
 Minimal candidate:
 
@@ -120,61 +104,90 @@ Minimal candidate:
 + if bytes.HasPrefix(line, []byte("READY=")) {
 ```
 
-This restores the original proxy behavior and leaves the larger policy untouched: runc still selects the READY assignment to forward and continues to let systemd interpret its value.
+The candidate restores the historical field predicate. It does not alter the larger proxy policy: runc still forwards the READY assignment, sets MAINPID, performs the sd_notify barrier, and leaves interpretation of the READY value to the host service manager.
 
-### Distinguishing test
+## Full-source discriminator
 
-The focused test should cover at least:
+The test carrier adds `TestNotifySocketReadyOrder` as a new test file in the real runc `package main`.
 
-1. `READY=1\nSTATUS=ok` -> READY is found;
-2. `STATUS=ok\nREADY=1` -> READY is found;
-3. `STATUS=ok` -> no READY is found.
+It creates two local Unix datagram sockets:
 
-The third case is the negative control so the parser cannot simply treat every datagram as ready.
+- one acts as the container-side `NOTIFY_SOCKET` consumed by `notifySocket.run()`;
+- one acts as the host notification socket consumed by `notifyHost()`.
+
+A short `sleep` process supplies a real watched PID so the missing-READY path terminates cleanly after the process exits.
+
+Cases:
+
+1. `READY=1\nSTATUS=ok` -> expect `READY=1`, MAINPID, and barrier;
+2. `STATUS=ok\nREADY=1` -> expect the same result;
+3. `STATUS=ok` -> expect no host notification.
+
+The workflow first runs cases 1 and 3 on baseline as controls. It then requires the complete baseline test to fail specifically in `ready-second`. The candidate must pass all three cases and the complete root package test.
 
 ## Reproduction
 
-Reduced probe logic:
+The hosted workflow:
 
-```go
-func currentReady(got []byte) []byte {
-    for _, line := range bytes.Split(got, []byte{'\n'}) {
-        if bytes.HasPrefix(got, []byte("READY=")) {
-            return line
-        }
-    }
-    return nil
-}
+```text
+.github/workflows/runc-sd-notify-ready-order.yml
 ```
 
-Run the same inputs through a version whose predicate uses `line` to obtain the losing comparison above.
+It performs:
+
+```text
+clone exact opencontainers/runc@7495fae...
+create baseline and candidate worktrees
+apply the test patch to both
+apply the one-line source patch only to candidate
+check patch whitespace and test gofmt
+run baseline controls
+require targeted baseline READY-second failure
+run candidate focused test
+run candidate root package test
+retain logs and exact candidate diff
+```
 
 ## Results
 
-Demonstrated at the reduced parser level:
+### Reduced parser level
 
-- a datagram beginning with READY is recognized;
-- the same READY field after STATUS is missed;
-- changing only the predicate receiver from the whole datagram to the current field removes the ordering dependence.
+Already demonstrated on the earlier exact source:
 
-Source history independently shows that the original implementation used the current field and the 2018 refactor introduced the whole-datagram predicate.
+- READY first is recognized;
+- READY second is missed;
+- using `line` removes the order dependence.
+
+### Current full-source level
+
+Queued. The current-source workflow is the authoritative promotion gate.
 
 ## Interpretation
 
-This is a high-confidence regression candidate. The implementation has a loop variable whose sole purpose is to inspect individual assignments, while the predicate reads a different variable. The historical implementation and the sd_notify payload contract agree on field-oriented parsing.
+Source and history point to a narrow regression candidate. The loop variable exists to inspect assignments individually, the historical implementation checked that field, and the sd_notify payload contract is field-oriented.
 
-The strongest repair boundary appears to be the predicate itself. A larger parser redesign would add risk without improving the bounded contract under test.
+The real-source test is important because it exercises the complete local path rather than only the parser expression: Unix datagram receive, READY extraction, host forwarding, MAINPID, barrier, watched-process lifetime, and the no-READY control.
 
 ## Evidence boundary
 
-The reduced probe executes the exact parsing expression and proves its order dependence. It does not yet run runc's real Unix datagram loop, a container, or a systemd service. Timing, PID-liveness behavior, and host notification forwarding remain outside this claim.
+The reduced probe and source history make the mechanism high-confidence, but the current-runtime claim remains bounded until the hosted full-source test completes.
 
-No upstream issue or pull request search found a current carrier specifically for READY field ordering during the 2026-08-11 scout, but repository search is not proof that no overlapping work exists. Refresh before any publication decision.
+The current test does not require a systemd daemon or a container runtime. It uses the actual runc notification code with local Unix sockets and mocks the host side of the sd_notify protocol, including barrier acknowledgment.
+
+Outside the current claim:
+
+- real systemd service activation;
+- container integration;
+- sender credential filtering or PID identity policy;
+- detached versus attached process lifetime;
+- barrier descriptor lifetime;
+- alternate sd_notify assignments beyond the three selected cases;
+- upstream interaction.
 
 ## Next step
 
-Add a focused test on the owned runc fork from exact head `0c87c02f...` that sends both field orders through the real `notifySocket.run` path or through a minimal extracted parser helper. Require the baseline to fail on READY-second and the negative control to remain non-ready. Then test the one-line candidate.
+Execute the exact-current workflow. If baseline controls pass, READY-second fails, candidate passes, and the root package remains green, promote the record to a reproducible current defect with a proven one-line candidate and request human review.
 
 ## Authority
 
-No upstream contact is authorized or made. All work remains local or in `teamleaderleo/*` repositories unless a human explicitly authorizes publication.
+No upstream issue, pull request, email, comment, review, or patch submission was created by this investigation. Existing upstream history was read only. External contact remains unauthorized pending an explicit human decision.
