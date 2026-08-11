@@ -1,7 +1,7 @@
 diff --git a/bubblewrap.c b/bubblewrap.c
 --- a/bubblewrap.c
 +++ b/bubblewrap.c
-@@ -590,6 +590,14 @@ do_init (int event_fd, pid_t initial_pid)
+@@ -590,8 +590,15 @@ do_init (int event_fd, pid_t initial_pid)
        if (child == initial_pid)
          {
            initial_exit_status = propagate_exit_status (status);
