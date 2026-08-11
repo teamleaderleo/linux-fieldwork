@@ -16,9 +16,9 @@ env:
   CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
 jobs:
-  real-16k-kernel:
+  build-rust-tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 25
     steps:
       - name: Check out Fieldwork carrier
         uses: actions/checkout@v4
@@ -32,39 +32,24 @@ jobs:
           ref: ${{ env.CLH_SHA }}
           path: cloud-hypervisor
 
-      - name: Check out exact Linux source
-        uses: actions/checkout@v4
-        with:
-          repository: torvalds/linux
-          ref: ${{ env.LINUX_SHA }}
-          path: linux
-
-      - name: Install cross-build and emulation dependencies
+      - name: Install AArch64 cross compiler
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            bc bison cpio e2fsprogs flex gcc-aarch64-linux-gnu \
-            libc6-dev-arm64-cross libelf-dev libssl-dev make \
-            qemu-system-arm qemu-user xz-utils
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross
           rustup target add aarch64-unknown-linux-gnu
 
-      - name: Verify exact source identities
+      - name: Verify source identity and cross-build exact test binaries
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CLH_SHA"
-          test "$(git -C linux rev-parse HEAD)" = "$LINUX_SHA"
-          sha256sum fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/candidate.patch
-          sha256sum fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/16k-init.c
+          patch="$PWD/fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/candidate.patch"
+          sha256sum "$patch"
 
-      - name: Cross-build baseline and candidate sparse test binaries
-        shell: bash
-        run: |
-          set -euo pipefail
           cd cloud-hypervisor
-
           build_test_binary() {
             local json_out="$1"
             cargo test --locked -p vmm --lib \
@@ -95,7 +80,6 @@ jobs:
           baseline_exe="$(build_test_binary baseline.json | tail -n1)"
           cp "$baseline_exe" ../baseline-vmm-tests
 
-          patch="$PWD/../fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/candidate.patch"
           git apply --check "$patch"
           git apply "$patch"
           git diff --check
@@ -103,19 +87,50 @@ jobs:
 
           candidate_exe="$(build_test_binary candidate.json | tail -n1)"
           cp "$candidate_exe" ../candidate-vmm-tests
-
           cd ..
+
           file baseline-vmm-tests candidate-vmm-tests
           aarch64-linux-gnu-readelf -h baseline-vmm-tests | grep -F 'Machine:'
           aarch64-linux-gnu-readelf -h candidate-vmm-tests | grep -F 'Machine:'
+          aarch64-linux-gnu-readelf -l baseline-vmm-tests | grep -F 'Requesting program interpreter'
+          aarch64-linux-gnu-readelf -d baseline-vmm-tests | grep -F '(NEEDED)'
 
-      - name: Build a real AArch64 16 KiB-page Linux kernel
+      - name: Upload exact AArch64 test binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-hypervisor-sparse-aarch64-tests
+          path: |
+            baseline-vmm-tests
+            candidate-vmm-tests
+          if-no-files-found: error
+          retention-days: 30
+
+  build-16k-kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact Linux source
+        uses: actions/checkout@v4
+        with:
+          repository: torvalds/linux
+          ref: ${{ env.LINUX_SHA }}
+          path: linux
+
+      - name: Install kernel build dependencies
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex gcc-aarch64-linux-gnu libelf-dev libssl-dev make
+
+      - name: Build exact AArch64 16 KiB-page Linux kernel
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(git -C linux rev-parse HEAD)" = "$LINUX_SHA"
           cd linux
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
-
           scripts/config \
             --disable MODULES \
             --disable ARM64_4K_PAGES \
@@ -131,50 +146,109 @@ jobs:
             --enable EXT4_FS \
             --enable SERIAL_AMBA_PL011 \
             --enable SERIAL_AMBA_PL011_CONSOLE
-
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           grep -Fx 'CONFIG_ARM64_16K_PAGES=y' .config
           grep -Fx 'CONFIG_VIRTIO_MMIO=y' .config
           grep -Fx 'CONFIG_VIRTIO_BLK=y' .config
           grep -Fx 'CONFIG_EXT4_FS=y' .config
-          make -j2 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image
+          make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image
+          mkdir -p ../kernel-artifact
+          cp arch/arm64/boot/Image ../kernel-artifact/Image
+          cp .config ../kernel-artifact/config-16k
 
-      - name: Build initramfs and 4 KiB-block scratch filesystem
+      - name: Upload exact 16 KiB kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-16k-kernel
+          path: kernel-artifact
+          if-no-files-found: error
+          retention-days: 30
+
+  run-real-16k:
+    needs:
+      - build-rust-tests
+      - build-16k-kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+
+      - name: Download exact AArch64 test binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: cloud-hypervisor-sparse-aarch64-tests
+          path: rust-tests
+
+      - name: Download exact 16 KiB kernel
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-arm64-16k-kernel
+          path: kernel-artifact
+
+      - name: Install guest-packaging and emulation dependencies
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cpio e2fsprogs gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-system-arm
+
+      - name: Inspect downloaded artifacts
+        shell: bash
+        run: |
+          set -euxo pipefail
+          find rust-tests kernel-artifact -maxdepth 3 -type f -printf '%p %s bytes\n'
+          test -s rust-tests/baseline-vmm-tests
+          test -s rust-tests/candidate-vmm-tests
+          test -s kernel-artifact/Image
+          test -s kernel-artifact/config-16k
+          grep -Fx 'CONFIG_ARM64_16K_PAGES=y' kernel-artifact/config-16k
+          chmod +x rust-tests/baseline-vmm-tests rust-tests/candidate-vmm-tests
+          file rust-tests/baseline-vmm-tests rust-tests/candidate-vmm-tests kernel-artifact/Image
+          aarch64-linux-gnu-readelf -l rust-tests/baseline-vmm-tests | grep -F 'Requesting program interpreter'
+          aarch64-linux-gnu-readelf -d rust-tests/baseline-vmm-tests | grep -F '(NEEDED)'
+
+      - name: Build diagnostic initramfs and 4 KiB-block scratch filesystem
+        shell: bash
+        run: |
+          set -euxo pipefail
           rootfs="$PWD/rootfs-16k"
           rm -rf "$rootfs"
-          mkdir -p "$rootfs"/{dev,proc,tmp,lib/aarch64-linux-gnu}
+          mkdir -p "$rootfs"/dev "$rootfs"/proc "$rootfs"/tmp "$rootfs"/lib/aarch64-linux-gnu
+          chmod 1777 "$rootfs/tmp"
 
+          test -f /usr/aarch64-linux-gnu/lib/libc.a
           aarch64-linux-gnu-gcc -O2 -static \
             fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/16k-init.c \
             -o "$rootfs/init"
-          cp baseline-vmm-tests "$rootfs/baseline-vmm-tests"
-          cp candidate-vmm-tests "$rootfs/candidate-vmm-tests"
+          file "$rootfs/init"
+          aarch64-linux-gnu-readelf -l "$rootfs/init" | grep -F 'Requesting program interpreter' && exit 1 || true
 
-          cp -a /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 "$rootfs/lib/ld-linux-aarch64.so.1"
+          cp rust-tests/baseline-vmm-tests "$rootfs/baseline-vmm-tests"
+          cp rust-tests/candidate-vmm-tests "$rootfs/candidate-vmm-tests"
+          chmod 0755 "$rootfs/init" "$rootfs/baseline-vmm-tests" "$rootfs/candidate-vmm-tests"
+
+          test -e /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1
+          cp -aL /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 "$rootfs/lib/ld-linux-aarch64.so.1"
           for lib in /usr/aarch64-linux-gnu/lib/*.so*; do
             [ -e "$lib" ] || continue
-            cp -a "$lib" "$rootfs/lib/aarch64-linux-gnu/"
+            cp -aL "$lib" "$rootfs/lib/aarch64-linux-gnu/$(basename "$lib")"
           done
-          libgcc="$(find /usr/lib/gcc-cross/aarch64-linux-gnu -name libgcc_s.so.1 -print -quit)"
-          test -n "$libgcc"
-          cp -a "$libgcc" "$rootfs/lib/aarch64-linux-gnu/libgcc_s.so.1"
-
-          sudo mknod "$rootfs/dev/console" c 5 1
-          sudo mknod "$rootfs/dev/null" c 1 3
-          sudo chmod 600 "$rootfs/dev/console"
-          sudo chmod 666 "$rootfs/dev/null"
+          find "$rootfs/lib" -maxdepth 2 -type f -printf '%p %s bytes\n' | sort
 
           (
             cd "$rootfs"
             find . -print0 | sort -z | cpio --null -o --format=newc --owner=0:0
           ) | gzip -9 > initramfs-16k.cpio.gz
+          test -s initramfs-16k.cpio.gz
+          gzip -t initramfs-16k.cpio.gz
 
           truncate -s 128M scratch-ext4.img
           mkfs.ext4 -q -F -b 4096 scratch-ext4.img
-          dumpe2fs -h scratch-ext4.img 2>/dev/null | grep -F 'Block size:'
+          dumpe2fs -h scratch-ext4.img 2>/dev/null | grep -F 'Block size:' | grep -F '4096'
 
       - name: Boot 16 KiB kernel and execute exact baseline plus candidate tests
         shell: bash
@@ -188,7 +262,7 @@ jobs:
             -m 1024 \
             -nographic \
             -no-reboot \
-            -kernel linux/arch/arm64/boot/Image \
+            -kernel kernel-artifact/Image \
             -initrd initramfs-16k.cpio.gz \
             -append 'console=ttyAMA0 rdinit=/init panic=-1' \
             -drive if=none,file=scratch-ext4.img,format=raw,id=scratch \
@@ -213,6 +287,6 @@ jobs:
           name: cloud-hypervisor-sparse-real-16k
           path: |
             serial-16k.log
-            linux/.config
+            kernel-artifact/config-16k
           if-no-files-found: warn
           retention-days: 30
