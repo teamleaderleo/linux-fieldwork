@@ -152,6 +152,29 @@ def run_short_cases(path, expect_short_clean=False):
     return rc
 
 
+def run_exit_status_cases(path):
+    cases = [
+        ("exit-42", ["/bin/sh", "-c", "exit 42"], 42),
+        ("signal-term", ["/bin/sh", "-c", "kill -TERM $$"], 143),
+    ]
+    rc = 0
+
+    for name, command, expected in cases:
+        reap_children()
+        cmd = [path, "--unshare-pid", "--dev-bind", "/", "/", "--", *command]
+        completed = subprocess.run(cmd, check=False)
+        children, _ = wait_for_zombie(0.5)
+        print(
+            f"{name}: bwrap_rc={completed.returncode} expected_rc={expected} "
+            f"adopted_children={children}"
+        )
+        reap_children()
+        if completed.returncode != expected:
+            rc = 1
+
+    return rc
+
+
 def run_background_case(path):
     reap_children()
     cmd = [
@@ -187,6 +210,7 @@ def run_background_case(path):
 def run_bwrap(path, expect_short_clean=False):
     set_subreaper()
     rc = run_short_cases(path, expect_short_clean=expect_short_clean)
+    rc = max(rc, run_exit_status_cases(path))
     rc = max(rc, run_background_case(path))
     return rc
 
