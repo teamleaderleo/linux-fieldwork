@@ -61,14 +61,16 @@ mod raw_range_probe_tests {
     fn tdvf_bfv_range_past_eof_is_accepted_baseline() {
         let mut file = fixture(0x180, 0x20);
         let (sections, guid_found) = parse_tdvf_sections(&mut file).unwrap();
+        let data_offset = sections[0].data_offset;
+        let data_size = sections[0].data_size;
+        let section_type = sections[0].r#type;
         println!(
-            "TDVF_RAW_BASELINE file_len=0x{FILE_LEN:x} data_offset=0x{:x} data_size=0x{:x} guid_found={guid_found}",
-            sections[0].data_offset, sections[0].data_size
+            "TDVF_RAW_BASELINE file_len=0x{FILE_LEN:x} data_offset=0x{data_offset:x} data_size=0x{data_size:x} guid_found={guid_found}"
         );
         assert_eq!(sections.len(), 1);
-        assert!(matches!(sections[0].r#type, TdvfSectionType::Bfv));
-        assert_eq!(sections[0].data_offset, 0x180);
-        assert_eq!(sections[0].data_size, 0x20);
+        assert!(matches!(section_type, TdvfSectionType::Bfv));
+        assert_eq!(data_offset, 0x180);
+        assert_eq!(data_size, 0x20);
     }
 
     #[test]
@@ -83,12 +85,14 @@ mod raw_range_probe_tests {
     fn tdvf_bfv_range_inside_file_is_valid() {
         let mut file = fixture(0x40, 0x20);
         let (sections, _) = parse_tdvf_sections(&mut file).unwrap();
+        let data_offset = sections[0].data_offset;
+        let data_size = sections[0].data_size;
+        let section_type = sections[0].r#type;
         println!(
-            "TDVF_RAW_CONTROL file_len=0x{FILE_LEN:x} data_offset=0x{:x} data_size=0x{:x}",
-            sections[0].data_offset, sections[0].data_size
+            "TDVF_RAW_CONTROL file_len=0x{FILE_LEN:x} data_offset=0x{data_offset:x} data_size=0x{data_size:x}"
         );
         assert_eq!(sections.len(), 1);
-        assert!(matches!(sections[0].r#type, TdvfSectionType::Bfv));
+        assert!(matches!(section_type, TdvfSectionType::Bfv));
     }
 }
 
