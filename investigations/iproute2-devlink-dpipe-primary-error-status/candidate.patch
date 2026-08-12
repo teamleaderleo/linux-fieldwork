@@ -1,0 +1,31 @@
+--- a/devlink/devlink.c
++++ b/devlink/devlink.c
+@@
+ 	flags = NLM_F_REQUEST | NLM_F_ACK;
+ 	nlh = mnlu_gen_socket_cmd_prepare(&dl->nlg, DEVLINK_CMD_DPIPE_TABLE_GET, flags);
+ 	dl_opts_put(nlh, dl);
+ 
+ 	pr_out_section_start(dl, "table");
+-	mnlu_gen_socket_sndrcv(&dl->nlg, nlh, cmd_dpipe_table_show_cb, &dpipe_ctx);
++	err = mnlu_gen_socket_sndrcv(&dl->nlg, nlh, cmd_dpipe_table_show_cb,
++				     &dpipe_ctx);
+ 	pr_out_section_end(dl);
+ 
+ 	resource_ctx_fini(&resource_ctx);
+ 	dpipe_ctx_fini(&dpipe_ctx);
+-	return 0;
++	return err;
+@@
+ 	flags = NLM_F_REQUEST | NLM_F_ACK;
+ 	nlh = mnlu_gen_socket_cmd_prepare(&dl->nlg, DEVLINK_CMD_DPIPE_ENTRIES_GET, flags);
+ 	dl_opts_put(nlh, dl);
+ 
+ 	pr_out_section_start(dl, "table_entry");
+-	mnlu_gen_socket_sndrcv(&dl->nlg, nlh, cmd_dpipe_table_entry_dump_cb, &ctx);
++	err = mnlu_gen_socket_sndrcv(&dl->nlg, nlh,
++				     cmd_dpipe_table_entry_dump_cb, &ctx);
+ 	pr_out_section_end(dl);
+ out:
+ 	dpipe_ctx_fini(&ctx);
+ 	return err;
+ }
