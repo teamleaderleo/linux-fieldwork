@@ -1,0 +1,226 @@
+name: Cloud Hypervisor TDVF section allocation R590A
+
+on:
+  push:
+    branches: [research/ch-tdvf-section-allocation-r590a]
+    paths:
+      - .github/workflows/ch-tdvf-section-allocation-r590a.yml
+      - investigations/cloud-hypervisor-tdvf-section-allocation/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-section-allocation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: arch/tdx,arch/kvm,hypervisor/tdx,hypervisor/kvm
+      CONTROL: x86_64::tdx::unit_tests::tdvf_section_table_in_file_control
+      INVARIANT: x86_64::tdx::unit_tests::tdvf_truncated_section_table_should_reject_before_read
+      ALLOC_WITNESS: x86_64::tdx::unit_tests::tdvf_giant_truncated_section_table_allocation_baseline
+      CANDIDATE_TEST: x86_64::tdx::unit_tests::tdvf_truncated_section_table_rejected_before_allocation
+      CANDIDATE_CONTROL: x86_64::tdx::unit_tests::tdvf_section_table_range_valid_control
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../tdvf-alloc-rust-version.txt
+          rustc +nightly --version | tee ../tdvf-alloc-nightly-version.txt
+          git rev-parse HEAD | tee ../tdvf-alloc-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Apply and format baseline probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-section-allocation/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-alloc-probe.diff
+
+      - name: Build and discover baseline probes
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib --no-run
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib -- --list | tee ../tdvf-alloc-test-list.txt
+          grep -F "$CONTROL: test" ../tdvf-alloc-test-list.txt
+          grep -F "$INVARIANT: test" ../tdvf-alloc-test-list.txt
+          grep -F "$ALLOC_WITNESS: test" ../tdvf-alloc-test-list.txt
+          ARCH_TEST_BIN=$(find target/debug/deps -maxdepth 1 -type f -perm -111 -name 'arch-*' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)
+          test -n "$ARCH_TEST_BIN"
+          printf '%s\n' "$ARCH_TEST_BIN" | tee ../tdvf-alloc-arch-test-bin.txt
+
+      - name: Baseline valid section-table control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-alloc-baseline-control.log
+          grep -F "TDVF_ALLOC_CONTROL sections=1" ../tdvf-alloc-baseline-control.log
+
+      - name: Prove pre-read invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$INVARIANT" -- --exact --nocapture \
+            > ../tdvf-alloc-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_ALLOC_BASELINE_INVARIANT_RC=$rc" | tee ../tdvf-alloc-baseline-invariant-status.txt
+          cat ../tdvf-alloc-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F "TDVF_ALLOC_INVARIANT result=Err(ReadDescriptor" ../tdvf-alloc-baseline-invariant.log
+          grep -F "truncated section table must be rejected before allocating/reading advertised entries" ../tdvf-alloc-baseline-invariant.log
+
+      - name: Prove giant baseline allocation attempt under address-space cap
+        id: baseline_alloc_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ARCH_TEST_BIN=$(cat ../tdvf-alloc-arch-test-bin.txt)
+          test -x "$ARCH_TEST_BIN"
+          set +e
+          (
+            ulimit -v 524288
+            "$ARCH_TEST_BIN" "$ALLOC_WITNESS" --ignored --exact --nocapture
+          ) > ../tdvf-alloc-baseline-allocation.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_ALLOC_BASELINE_SUBPROCESS_RC=$rc" | tee ../tdvf-alloc-baseline-allocation-status.txt
+          cat ../tdvf-alloc-baseline-allocation.log
+          test "$rc" -ne 0
+          grep -F "TDVF_ALLOC_BASELINE_REQUEST num_sections=33554432 section_bytes=1073741824" ../tdvf-alloc-baseline-allocation.log
+          grep -F "memory allocation of 1073741824 bytes failed" ../tdvf-alloc-baseline-allocation.log
+
+      - name: Restore exact source after baseline probe
+        id: restore
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git checkout -- arch/src/x86_64/tdx/mod.rs
+          test -z "$(git status --short)"
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply pre-allocation table-range candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-section-allocation/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-alloc-candidate-only.diff
+          sha256sum ../tdvf-alloc-candidate-only.diff | tee ../tdvf-alloc-candidate-diff-sha256.txt
+          grep -F "InvalidDescriptorRange" arch/src/x86_64/tdx/mod.rs
+          grep -F "section_table_start" arch/src/x86_64/tdx/mod.rs
+
+      - name: Candidate focused range matrix
+        id: candidate_focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-alloc-candidate-invalid.log
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CANDIDATE_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-alloc-candidate-control.log
+          grep -F "TDVF_ALLOC_CANDIDATE invalid_result=InvalidDescriptorRange" ../tdvf-alloc-candidate-invalid.log
+          grep -F "TDVF_ALLOC_CANDIDATE control_sections=1" ../tdvf-alloc-candidate-control.log
+
+      - name: Full arch and hypervisor TDX KVM tests
+        id: broad_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib \
+            2>&1 | tee ../tdvf-alloc-broad-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p arch -p hypervisor --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables \
+            2>&1 | tee ../tdvf-alloc-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-alloc-final-status.txt
+          git diff --stat | tee ../tdvf-alloc-final-diff-stat.txt
+          git diff -- arch/src/x86_64/tdx/mod.rs | tee ../tdvf-alloc-final-candidate.diff
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "features=$FEATURES"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "baseline_giant_allocation_witness=${{ steps.baseline_alloc_witness.outcome }}"
+            echo "restore_exact_source=${{ steps.restore.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "broad_tests=${{ steps.broad_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdvf-alloc-baseline-invariant-status.txt && cat tdvf-alloc-baseline-invariant-status.txt
+            test -f tdvf-alloc-baseline-allocation-status.txt && cat tdvf-alloc-baseline-allocation-status.txt
+            test -f tdvf-alloc-candidate-diff-sha256.txt && cat tdvf-alloc-candidate-diff-sha256.txt
+          } | tee tdvf-alloc-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-section-allocation-r590a
+          if-no-files-found: warn
+          path: |
+            tdvf-alloc-*.txt
+            tdvf-alloc-*.log
+            tdvf-alloc-*.diff
