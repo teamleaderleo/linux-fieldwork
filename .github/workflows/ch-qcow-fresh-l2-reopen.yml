@@ -159,3 +159,4 @@ jobs:
             qcow-clippy.log
             qcow-probe.diff
             qcow-candidate.diff
+            cloud-hypervisor/block/src/formats/qcow/metadata.rs
