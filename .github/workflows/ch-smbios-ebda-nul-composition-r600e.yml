@@ -1,0 +1,165 @@
+name: Cloud Hypervisor SMBIOS EBDA + NUL composition R600E
+
+on:
+  push:
+    branches:
+      - research/ch-smbios-ebda-exec-r600e
+    paths:
+      - .github/workflows/ch-smbios-ebda-nul-composition-r600e.yml
+      - investigations/cloud-hypervisor-smbios-ebda-exec/apply_candidate.py
+      - investigations/cloud-hypervisor-smbios-ebda-exec/apply_nul_candidate.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  composition:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      EBDA_TEST: x86_64::smbios::unit_tests::smbios_payload_cannot_cross_into_high_ram
+      NUL_TEST: x86_64::smbios::unit_tests::smbios_embedded_nul_string_is_rejected
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../composition-rust-version.txt
+          rustc +nightly --version | tee ../composition-nightly-version.txt
+          git rev-parse HEAD | tee ../composition-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+          cp arch/src/x86_64/smbios.rs ../composition-upstream.rs
+
+      - name: Apply #600 EBDA candidate
+        id: ebda_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-smbios-ebda-exec/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          cp arch/src/x86_64/smbios.rs ../composition-ebda.rs
+          diff -u ../composition-upstream.rs arch/src/x86_64/smbios.rs \
+            > ../composition-ebda-only.diff || test "$?" = 1
+
+      - name: Apply separate #595 embedded-NUL candidate
+        id: nul_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-smbios-ebda-exec/apply_nul_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          diff -u ../composition-ebda.rs arch/src/x86_64/smbios.rs \
+            > ../composition-nul-only.diff || test "$?" = 1
+          diff -u ../composition-upstream.rs arch/src/x86_64/smbios.rs \
+            > ../composition-combined.diff || test "$?" = 1
+          sha256sum ../composition-ebda-only.diff | tee ../composition-ebda-sha256.txt
+          sha256sum ../composition-nul-only.diff | tee ../composition-nul-sha256.txt
+          sha256sum ../composition-combined.diff | tee ../composition-combined-sha256.txt
+
+      - name: Discover and run both focused regressions
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --lib -- --list | tee ../composition-test-list.txt
+          grep -F "$EBDA_TEST: test" ../composition-test-list.txt
+          grep -F "$NUL_TEST: test" ../composition-test-list.txt
+          cargo test --locked -p arch --lib "$EBDA_TEST" -- --exact --nocapture \
+            2>&1 | tee ../composition-ebda-test.log
+          cargo test --locked -p arch --lib "$NUL_TEST" -- --exact --nocapture \
+            2>&1 | tee ../composition-nul-test.log
+
+      - name: Full arch tests
+        id: arch_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch 2>&1 | tee ../composition-arch-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p arch --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables \
+            2>&1 | tee ../composition-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../composition-final-status.txt
+          git diff --stat | tee ../composition-final-diff-stat.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "ebda_apply=${{ steps.ebda_apply.outcome }}"
+            echo "nul_apply=${{ steps.nul_apply.outcome }}"
+            echo "focused=${{ steps.focused.outcome }}"
+            echo "arch_tests=${{ steps.arch_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f composition-ebda-sha256.txt && cat composition-ebda-sha256.txt
+            test -f composition-nul-sha256.txt && cat composition-nul-sha256.txt
+            test -f composition-combined-sha256.txt && cat composition-combined-sha256.txt
+          } | tee composition-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-smbios-ebda-nul-composition-r600e
+          if-no-files-found: warn
+          path: |
+            composition-receipt.txt
+            composition-source-sha.txt
+            composition-rust-version.txt
+            composition-nightly-version.txt
+            composition-test-list.txt
+            composition-ebda-only.diff
+            composition-nul-only.diff
+            composition-combined.diff
+            composition-ebda-sha256.txt
+            composition-nul-sha256.txt
+            composition-combined-sha256.txt
+            composition-ebda-test.log
+            composition-nul-test.log
+            composition-arch-tests.log
+            composition-clippy.log
+            composition-final-status.txt
+            composition-final-diff-stat.txt
