@@ -6,8 +6,8 @@ on:
       - research/ch-migration-rollback-probes
     paths:
       - .github/workflows/ch-migration-truncated-payload.yml
-      - investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-probe.patch
-      - investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-candidate.patch
+      - investigations/cloud-hypervisor-migration-receive-liveness/apply_truncated_payload_probe.py
+      - investigations/cloud-hypervisor-migration-receive-liveness/apply_truncated_payload_candidate.py
   workflow_dispatch:
 
 permissions:
@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 35
     env:
       CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
-      TEST_NAME: migration::transport::tests::receive_memory_ranges_rejects_truncated_payload
+      TEST_NAME: migration::transport::truncated_payload_tests::receive_memory_ranges_rejects_truncated_payload
     steps:
       - name: Check out Fieldwork carrier
         uses: actions/checkout@v4
@@ -47,8 +47,7 @@ jobs:
       - name: Apply the regression probe only
         working-directory: cloud-hypervisor
         run: |
-          git apply --check ../fieldwork/investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-probe.patch
-          git apply ../fieldwork/investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-probe.patch
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-receive-liveness/apply_truncated_payload_probe.py
           git diff --check
           git diff -- vmm/src/migration/transport.rs > ../probe.diff
 
@@ -76,8 +75,7 @@ jobs:
       - name: Apply the minimal zero-progress candidate
         working-directory: cloud-hypervisor
         run: |
-          git apply --check ../fieldwork/investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-candidate.patch
-          git apply ../fieldwork/investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-candidate.patch
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-receive-liveness/apply_truncated_payload_candidate.py
           git diff --check
           git diff -- vmm/src/migration/transport.rs > ../candidate.diff
           cargo fmt --all -- --check
