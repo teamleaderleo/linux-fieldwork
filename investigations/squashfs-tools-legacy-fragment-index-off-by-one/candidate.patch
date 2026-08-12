@@ -1,0 +1,12 @@
+--- a/squashfs-tools/unsquash-2.c
++++ b/squashfs-tools/unsquash-2.c
+@@
+-	if(fragment > sBlk.s.fragments)
++	if(fragment >= sBlk.s.fragments)
+ 		EXIT_UNSQUASH("File system corrupted - fragment index in inode too large (fragment: %u)\n", fragment);
+--- a/squashfs-tools/unsquash-3.c
++++ b/squashfs-tools/unsquash-3.c
+@@
+-	if(fragment > sBlk.s.fragments)
++	if(fragment >= sBlk.s.fragments)
+ 		EXIT_UNSQUASH("File system corrupted - fragment index in inode too large (fragment: %u)\n", fragment);
