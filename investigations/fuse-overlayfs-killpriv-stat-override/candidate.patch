@@ -1,0 +1,10 @@
+--- a/src/overlay.rs
++++ b/src/overlay.rs
+@@
+                 | InitFlags::FUSE_SPLICE_WRITE
+                 | InitFlags::FUSE_SPLICE_MOVE
+                 | InitFlags::FUSE_PARALLEL_DIROPS
+-                | InitFlags::FUSE_HANDLE_KILLPRIV
+                 | InitFlags::FUSE_CACHE_SYMLINKS
+                 | InitFlags::FUSE_DO_READDIRPLUS
+                 | InitFlags::FUSE_READDIRPLUS_AUTO,
