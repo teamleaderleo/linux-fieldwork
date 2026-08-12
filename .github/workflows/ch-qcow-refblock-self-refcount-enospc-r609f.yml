@@ -19,6 +19,7 @@ jobs:
     env:
       CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
       TEST_NAME: formats::qcow::metadata::unit_tests::refblock_recursive_ownership_enospc_reopen_reuses_live_block
+      REALISM_TEST: formats::qcow::metadata::unit_tests::refblock_recursive_enospc_from_parser_free_list
     steps:
       - name: Check out Fieldwork carrier
         uses: actions/checkout@v4
@@ -50,20 +51,21 @@ jobs:
           git status --short | tee ../refblock-source-status-before.txt
           test ! -s ../refblock-source-status-before.txt
 
-      - name: Apply exact-current discriminator only
+      - name: Apply exact-current discriminators only
         id: probe
         working-directory: cloud-hypervisor
         shell: bash
         run: |
           set -euxo pipefail
           python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-self-refcount-enospc/apply_probe.py
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-self-refcount-enospc/apply_realism_probe.py
           cargo fmt --all
           cargo fmt --all -- --check
           git diff --check
           git diff -- block/src/formats/qcow/metadata.rs > ../refblock-probe.diff
           test "$(git diff --name-only | tr '\n' ' ')" = "block/src/formats/qcow/metadata.rs "
 
-      - name: Build and discover focused test
+      - name: Build and discover focused tests
         id: discover
         working-directory: cloud-hypervisor
         shell: bash
@@ -72,6 +74,7 @@ jobs:
           cargo test --locked -p block --lib --no-run
           cargo test --locked -p block --lib -- --list | tee ../refblock-test-list.txt
           grep -F "$TEST_NAME: test" ../refblock-test-list.txt
+          grep -F "$REALISM_TEST: test" ../refblock-test-list.txt
 
       - name: Execute recursive-refblock ENOSPC witness
         id: focused
@@ -85,6 +88,19 @@ jobs:
           grep -F "REFBLOCK_OWNERSHIP_FAIL reopened" ../refblock-focused.log
           grep -F "REFBLOCK_OWNERSHIP_FAIL allocator_reuse" ../refblock-focused.log
           grep -F "REFBLOCK_OWNERSHIP_FAIL second_reopen" ../refblock-focused.log
+
+      - name: Execute parser-free-list realism control
+        id: realism
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$REALISM_TEST" -- --exact --nocapture \
+            2>&1 | tee ../refblock-realism.log
+          grep -F "REFBLOCK_REALISM parser_free" ../refblock-realism.log
+          grep -F "REFBLOCK_REALISM pre_close" ../refblock-realism.log
+          grep -F "REFBLOCK_REALISM reopened" ../refblock-realism.log
+          grep -F "REFBLOCK_REALISM allocator_reuse" ../refblock-realism.log
 
       - name: Final hygiene
         id: hygiene
@@ -107,6 +123,7 @@ jobs:
             echo "probe_gate=${{ steps.probe.outcome }}"
             echo "discover_gate=${{ steps.discover.outcome }}"
             echo "focused_gate=${{ steps.focused.outcome }}"
+            echo "realism_gate=${{ steps.realism.outcome }}"
             echo "hygiene_gate=${{ steps.hygiene.outcome }}"
             test -f refblock-source-sha.txt && cat refblock-source-sha.txt
             test -f refblock-rust-version.txt && cat refblock-rust-version.txt
@@ -127,4 +144,5 @@ jobs:
             refblock-probe.diff
             refblock-test-list.txt
             refblock-focused.log
+            refblock-realism.log
             refblock-final-status.txt
