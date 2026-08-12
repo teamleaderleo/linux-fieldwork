@@ -8,32 +8,24 @@ External-contact state: false; none occurred
 
 ## TL;DR
 
-The truncated-memory-payload failure is now reproduced on exact current Cloud Hypervisor source with a focused in-tree unit probe.
+The truncated-memory-payload failure is reproduced on exact current Cloud Hypervisor source with a focused in-tree unit probe.
 
-A `Command::Memory` payload whose table is valid but whose memory bytes end early leaves the current `receive_memory_ranges()` loop making zero progress. The focused baseline was terminated by the harness deadline with exit status `124` while the single test was still running.
+A `Command::Memory` payload whose table is valid but whose memory bytes end early leaves current `receive_memory_ranges()` making zero progress. The focused baseline remained running until the five-second harness deadline terminated it with exit status `124`.
 
-A one-branch candidate that treats `bytes_read == 0` as an incomplete-payload receive error makes the same exact test return normally with an error, and the focused candidate test passes.
-
-The first candidate run's Clippy command was not authoritative because shell piping through `tee` masked a nonzero Clippy exit. The underlying Clippy failure was an unrelated pre-existing `unfulfilled-lint-expectations` error in `vmm/src/lib.rs`, not the changed migration transport path. A corrected workflow is queued with `pipefail` and only that known baseline warning suppressed while all other warnings remain denied.
+A minimal candidate that treats `bytes_read == 0` as an incomplete-payload receive error makes the same test return normally with an ordinary error. The candidate test, rustfmt, and an authoritative Clippy gate are green.
 
 ## Exact execution
 
-Workflow:
+Authoritative run / job:
 
 ```text
-Cloud Hypervisor truncated migration payload
+31550880817 / 93973144031
 ```
 
-Run / job:
+Exact source / toolchain:
 
 ```text
-31550372469 / 93971577711
-```
-
-Runner:
-
-```text
-Ubuntu 24.04
+cloud-hypervisor/cloud-hypervisor@1af93ac7035cda77cd87b0c18b1134ebb0928052
 rustc 1.89.0 (29483883e 2025-08-04)
 ```
 
@@ -43,9 +35,16 @@ Exact test:
 migration::transport::truncated_payload_tests::receive_memory_ranges_rejects_truncated_payload
 ```
 
-### Baseline
+Artifact:
 
-The test was built and discovered by exact full name, then run under a five-second outer deadline.
+```text
+ID: 9124468956
+SHA-256: 0a3a742d2039e666c28568a003bcbe406ae8c806ab7954cded75d6956c776f1d
+```
+
+## Baseline
+
+The fixture writes a syntactically valid `MemoryRangeTable`, writes only 32 bytes of a declared 256-byte memory payload, then closes the peer socket.
 
 Observed:
 
@@ -56,18 +55,27 @@ running 1 test
 
 The test did not return before the harness killed it.
 
-### Candidate
+The exact dependency/source mechanism is:
+
+```text
+vm-memory ReadVolatile may return Ok(0) on EOF
+receive_memory_ranges() adds bytes_read to offset
+bytes_read == 0 leaves offset unchanged
+loop condition remains true forever
+```
+
+## Candidate
 
 Candidate behavior is deliberately local to the existing partial-read loop:
 
 ```text
-read_volatile_from(...)
+bytes_read = read_volatile_from(...)?
 if bytes_read == 0:
-    return ordinary migration receive error
+    return ordinary MigrateReceive incomplete-payload error
 offset += bytes_read
 ```
 
-Observed focused result:
+Observed:
 
 ```text
 running 1 test
@@ -75,48 +83,54 @@ test migration::transport::truncated_payload_tests::receive_memory_ranges_reject
 1 passed; 0 failed
 ```
 
-Rustfmt check passed on the candidate carrier.
+## Quality gates
 
-## Clippy correction
+`cargo fmt --all -- --check` passed.
 
-The run uploaded artifact `9124049135`, but its generated text receipt incorrectly said `candidate_clippy=pass` because the workflow used:
-
-```text
-cargo clippy ... | tee ...
-```
-
-without `pipefail`.
-
-The actual Clippy process exited nonzero on an unrelated current-source lint expectation in `vmm/src/lib.rs`:
+The authoritative Clippy command used shell `pipefail` and denied all warnings while suppressing only one known unrelated exact-current lint-owner mismatch in `vmm/src/lib.rs`:
 
 ```text
-this lint expectation is unfulfilled
-#[expect(clippy::collapsible_match)]
+cargo clippy -p vmm --features kvm --lib --tests -- \
+  -D warnings -A unfulfilled-lint-expectations
 ```
 
-This is a carrier/quality-gate accounting error, not a product result. Do not use the first artifact's Clippy line as evidence.
+Result: passed.
 
-Corrected workflow run `31550880817` is queued with:
+The suppression is limited to `unfulfilled-lint-expectations`; all other warnings remained denied. The earlier artifact `9124049135` is superseded because its `cargo clippy | tee` pipeline masked the unrelated nonzero Clippy exit.
 
-- `set -o pipefail`;
-- all warnings denied;
-- only `unfulfilled-lint-expectations` allowed to fence the known unrelated baseline owner.
+## Interpretation
 
-Update this receipt when that run completes.
+This closes one bounded subquestion under #580:
+
+> A truncated/closed migration memory payload must not leave the receiver in a zero-progress loop.
+
+The candidate is smaller than a general cancellation redesign and should remain separable from other receive-liveness work.
+
+## Remaining #580 boundaries
+
+Still open and distinct:
+
+- connected-but-idle peer during an in-progress payload: explicit cancellation cannot currently interrupt the blocking read;
+- TCP/TLS accept/handshake failures can bypass the normal receive failure event/finalizer;
+- direct request-read / response-write I/O errors can bypass receiver state cleanup;
+- a live-idle TLS handshake has no bounded handshake deadline after TCP accept;
+- explicit `Abandon` is available in the protocol but is not a substitute for transport-failure finalization.
 
 ## Evidence boundary
 
-Established by exact-current execution:
+Established:
 
-- the focused truncated-payload baseline hangs until the harness deadline;
-- the local zero-progress candidate makes the focused test return an ordinary error;
-- candidate rustfmt passes.
+- exact-current truncated-payload baseline hangs under the focused fixture;
+- minimal zero-progress detection returns an ordinary error;
+- candidate focused test passes;
+- rustfmt passes;
+- focused VMM Clippy passes with only the known unrelated unfulfilled-expectation lint category suppressed.
 
-Pending at this checkpoint:
+Not established here:
 
-- corrected authoritative Clippy result;
-- connected-but-idle mid-payload cancellation behavior;
-- TLS event/finalization matrix;
-- KVM or end-to-end live migration.
+- connected-but-stalled cancellation;
+- TLS failure/event behavior;
+- full live-migration/KVM behavior;
+- upstream acceptance of the candidate.
 
-No guest, KVM VM, external service, or upstream interaction was used for this proof.
+No guest, KVM VM, external target, or upstream interaction was used.
