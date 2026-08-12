@@ -47,7 +47,7 @@ old_write = '''                    mem.write_slice(
                     .unwrap();
 '''
 new_write = '''                    Self::write_tdx_payload_param(
-                        mem,
+                        &mem,
                         cmdline.as_cstring().unwrap().as_bytes_with_nul(),
                         section.address,
                     )?;
