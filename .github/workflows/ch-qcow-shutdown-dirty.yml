@@ -1,0 +1,121 @@
+name: Cloud Hypervisor QCOW shutdown DIRTY
+
+on:
+  push:
+    branches:
+      - research/ch-migration-rollback-probes
+    paths:
+      - .github/workflows/ch-qcow-shutdown-dirty.yml
+      - investigations/cloud-hypervisor-qcow-shutdown-dirty/apply_probe.py
+      - investigations/cloud-hypervisor-qcow-shutdown-dirty/apply_candidate.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qcow-shutdown-dirty:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      TEST_NAME: formats::qcow::metadata::unit_tests::failed_metadata_flush_must_keep_dirty_bit_set
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin Rust 1.89.0
+        working-directory: cloud-hypervisor
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../dirty-rust-version.txt
+          git rev-parse HEAD | tee ../dirty-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply failed-shutdown regression probe
+        working-directory: cloud-hypervisor
+        run: |
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-shutdown-dirty/apply_probe.py
+          git diff --check
+          cargo fmt --all -- --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../dirty-probe.diff
+
+      - name: Build and discover exact test
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test -p block --lib --no-run
+          cargo test -p block --lib -- --list | tee ../dirty-test-list.txt
+          grep -F "$TEST_NAME: test" ../dirty-test-list.txt
+
+      - name: Prove current shutdown clears DIRTY after sync failure
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test -p block --lib "$TEST_NAME" -- --exact --nocapture \
+            > ../dirty-baseline.log 2>&1
+          rc=$?
+          set -e
+          echo "BASELINE_RC=$rc" | tee ../dirty-baseline-status.txt
+          cat ../dirty-baseline.log
+          test "$rc" -ne 0
+          grep -F "failed metadata flush must not be advertised as a clean QCOW shutdown" ../dirty-baseline.log
+
+      - name: Apply conditional DIRTY-clear candidate
+        working-directory: cloud-hypervisor
+        run: |
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-shutdown-dirty/apply_candidate.py
+          git diff --check
+          cargo fmt --all -- --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../dirty-candidate.diff
+
+      - name: Prove candidate preserves DIRTY after flush failure
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test -p block --lib "$TEST_NAME" -- --exact --nocapture \
+            | tee ../dirty-candidate-test.log
+          cargo clippy -p block --lib --tests -- -D warnings \
+            | tee ../dirty-candidate-clippy.log
+
+      - name: Write receipt
+        shell: bash
+        run: |
+          {
+            echo "source=$CH_SHA"
+            cat dirty-rust-version.txt
+            cat dirty-baseline-status.txt
+            echo "test=$TEST_NAME"
+            echo "candidate_test=pass"
+            echo "candidate_clippy=pass"
+          } | tee dirty-receipt.txt
+
+      - name: Upload receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-qcow-shutdown-dirty-receipt
+          path: |
+            dirty-receipt.txt
+            dirty-source-sha.txt
+            dirty-rust-version.txt
+            dirty-test-list.txt
+            dirty-baseline-status.txt
+            dirty-baseline.log
+            dirty-candidate-test.log
+            dirty-candidate-clippy.log
+            dirty-probe.diff
+            dirty-candidate.diff
