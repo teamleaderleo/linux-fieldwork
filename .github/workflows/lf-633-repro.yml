@@ -1,0 +1,272 @@
+name: lf-633 large-file block-count reproducer
+
+on:
+  push:
+    branches:
+      - lf-633-repro-exec
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build exact-current readers and crafted v3/v4 images
+        shell: bash
+        env:
+          UPSTREAM_HEAD: 5436ec0e5bf50dd8f7fe182d9ffd92b0861cb491
+          V3_GENERATOR_HEAD: 26c9d659049def8288455ad8e4766337b721388b
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang zlib1g-dev liblzma-dev liblzo2-dev liblz4-dev libzstd-dev
+
+          rm -rf /tmp/sq /tmp/sq-v3 /tmp/evidence /tmp/src-v3 /tmp/src-v4
+          mkdir -p /tmp/evidence /tmp/src-v3 /tmp/src-v4
+
+          uname -a | tee /tmp/evidence/environment.txt
+          clang --version | tee -a /tmp/evidence/environment.txt
+          gcc --version | head -1 | tee -a /tmp/evidence/environment.txt
+          git --version | tee -a /tmp/evidence/environment.txt
+
+          git clone https://github.com/plougher/squashfs-tools.git /tmp/sq
+          git -C /tmp/sq checkout --detach "$UPSTREAM_HEAD"
+          test "$(git -C /tmp/sq rev-parse HEAD)" = "$UPSTREAM_HEAD"
+          git -C /tmp/sq show -s --format='%H %cI %s' HEAD | tee /tmp/evidence/upstream-head.txt
+
+          make -C /tmp/sq/squashfs-tools -j2 mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-current
+          /tmp/mksquashfs-current -version 2>&1 | tee /tmp/evidence/mksquashfs-v4-version.txt || true
+
+          make -C /tmp/sq/squashfs-tools clean
+          SAN='-O1 -g -fsanitize=address,undefined,implicit-integer-truncation,implicit-integer-sign-change -fno-sanitize-recover=all -fno-omit-frame-pointer'
+          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$SAN" EXTRA_LDFLAGS='-fsanitize=address,undefined,implicit-integer-truncation,implicit-integer-sign-change' unsquashfs
+          cp /tmp/sq/squashfs-tools/unsquashfs /tmp/unsquashfs-sanitized
+          /tmp/unsquashfs-sanitized -version 2>&1 | tee /tmp/evidence/unsquashfs-version.txt || true
+
+          git clone https://github.com/plougher/squashfs-tools.git /tmp/sq-v3
+          git -C /tmp/sq-v3 checkout --detach "$V3_GENERATOR_HEAD"
+          test "$(git -C /tmp/sq-v3 rev-parse HEAD)" = "$V3_GENERATOR_HEAD"
+          git -C /tmp/sq-v3 show -s --format='%H %cI %s' HEAD | tee /tmp/evidence/v3-generator-head.txt
+          OLD_CFLAGS='-I. -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE -D_GNU_SOURCE -O2 -fcommon -include sys/sysmacros.h'
+          make -C /tmp/sq-v3/squashfs-tools clean || true
+          make -C /tmp/sq-v3/squashfs-tools CFLAGS="$OLD_CFLAGS" mksquashfs
+          cp /tmp/sq-v3/squashfs-tools/mksquashfs /tmp/mksquashfs-v3
+          /tmp/mksquashfs-v3 -version 2>&1 | tee /tmp/evidence/mksquashfs-v3-version.txt || true
+
+          cat > /tmp/layout-v4.c <<'EOF'
+          #include <errno.h>
+          #include <stddef.h>
+          #include <stdint.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include "squashfs_fs.h"
+
+          int main(int argc, char **argv)
+          {
+              FILE *f;
+              struct squashfs_super_block sb;
+              unsigned short mh;
+              unsigned int len;
+              unsigned char *buf;
+              struct squashfs_base_inode_header *base;
+              struct squashfs_lreg_inode_header *inode;
+
+              if(argc != 2) return 2;
+              f = fopen(argv[1], "rb");
+              if(!f) { perror("fopen"); return 2; }
+              if(fread(&sb, sizeof(sb), 1, f) != 1) return 3;
+              if(fseeko(f, sb.inode_table_start, SEEK_SET) != 0) return 4;
+              if(fread(&mh, sizeof(mh), 1, f) != 1) return 5;
+              if((mh & 0x8000) == 0) {
+                  fprintf(stderr, "v4 inode metadata unexpectedly compressed: 0x%04x\n", mh);
+                  return 6;
+              }
+              len = mh & 0x7fff;
+              buf = malloc(len);
+              if(!buf) return 7;
+              if(fread(buf, 1, len, f) != len) return 8;
+              base = (struct squashfs_base_inode_header *) buf;
+              if(base->inode_type != SQUASHFS_LREG_TYPE) {
+                  fprintf(stderr, "v4 first inode type %u, expected LREG %u\n", base->inode_type, SQUASHFS_LREG_TYPE);
+                  return 9;
+              }
+              inode = (struct squashfs_lreg_inode_header *) buf;
+              printf("VERSION=v4\n");
+              printf("BLOCK_SIZE=%u\n", sb.block_size);
+              printf("INODE_TABLE_START=%lld\n", (long long) sb.inode_table_start);
+              printf("META_HEADER=0x%04x\n", mh);
+              printf("META_LEN=%u\n", len);
+              printf("INODE_TYPE=%u\n", base->inode_type);
+              printf("LREG_SIZE=%zu\n", sizeof(*inode));
+              printf("FILE_SIZE_FIELD_OFFSET=%zu\n", offsetof(struct squashfs_lreg_inode_header, file_size));
+              printf("FILE_SIZE_ABS=%lld\n", (long long) sb.inode_table_start + 2 + (long long) offsetof(struct squashfs_lreg_inode_header, file_size));
+              printf("ORIGINAL_FILE_SIZE=%lld\n", (long long) inode->file_size);
+              printf("FRAGMENT=%u\n", inode->fragment);
+              printf("NLINK=%u\n", inode->nlink);
+              free(buf);
+              fclose(f);
+              return 0;
+          }
+          EOF
+
+          cat > /tmp/layout-v3.c <<'EOF'
+          #include <stddef.h>
+          #include <stdint.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include "squashfs_fs.h"
+          #include "squashfs_compat.h"
+
+          int main(int argc, char **argv)
+          {
+              FILE *f;
+              squashfs_super_block_3 sb;
+              unsigned short mh;
+              unsigned int len;
+              unsigned char *buf;
+              squashfs_base_inode_header_3 *base;
+              squashfs_lreg_inode_header_3 *inode;
+
+              if(argc != 2) return 2;
+              f = fopen(argv[1], "rb");
+              if(!f) { perror("fopen"); return 2; }
+              if(fread(&sb, sizeof(sb), 1, f) != 1) return 3;
+              if(fseeko(f, sb.inode_table_start, SEEK_SET) != 0) return 4;
+              if(fread(&mh, sizeof(mh), 1, f) != 1) return 5;
+              if((mh & 0x8000) == 0) {
+                  fprintf(stderr, "v3 inode metadata unexpectedly compressed: 0x%04x\n", mh);
+                  return 6;
+              }
+              len = mh & 0x7fff;
+              buf = malloc(len);
+              if(!buf) return 7;
+              if(fread(buf, 1, len, f) != len) return 8;
+              base = (squashfs_base_inode_header_3 *) buf;
+              if(base->inode_type != SQUASHFS_LREG_TYPE) {
+                  fprintf(stderr, "v3 first inode type %u, expected LREG %u\n", base->inode_type, SQUASHFS_LREG_TYPE);
+                  return 9;
+              }
+              inode = (squashfs_lreg_inode_header_3 *) buf;
+              printf("VERSION=v3\n");
+              printf("BLOCK_SIZE=%u\n", sb.block_size);
+              printf("INODE_TABLE_START=%lld\n", (long long) sb.inode_table_start);
+              printf("META_HEADER=0x%04x\n", mh);
+              printf("META_LEN=%u\n", len);
+              printf("INODE_TYPE=%u\n", base->inode_type);
+              printf("LREG_SIZE=%zu\n", sizeof(*inode));
+              printf("FILE_SIZE_FIELD_OFFSET=%zu\n", offsetof(squashfs_lreg_inode_header_3, file_size));
+              printf("FILE_SIZE_ABS=%lld\n", (long long) sb.inode_table_start + 2 + (long long) offsetof(squashfs_lreg_inode_header_3, file_size));
+              printf("ORIGINAL_FILE_SIZE=%lld\n", (long long) inode->file_size);
+              printf("FRAGMENT=%u\n", inode->fragment);
+              printf("NLINK=%u\n", inode->nlink);
+              free(buf);
+              fclose(f);
+              return 0;
+          }
+          EOF
+
+          cc -O2 -I/tmp/sq/squashfs-tools /tmp/layout-v4.c -o /tmp/layout-v4
+          cc -O2 -I/tmp/sq/squashfs-tools /tmp/layout-v3.c -o /tmp/layout-v3
+
+          printf Z > /tmp/src-v4/file
+          ln /tmp/src-v4/file /tmp/src-v4/file-hardlink
+          /tmp/mksquashfs-current /tmp/src-v4 /tmp/v4-base.sqfs -noI -no-fragments -nopad -noappend -no-progress
+          /tmp/layout-v4 /tmp/v4-base.sqfs | tee /tmp/evidence/v4-layout.txt
+          /tmp/unsquashfs-sanitized -s /tmp/v4-base.sqfs 2>&1 | tee /tmp/evidence/v4-superblock.txt
+
+          printf Z > /tmp/src-v3/file
+          ln /tmp/src-v3/file /tmp/src-v3/file-hardlink
+          /tmp/mksquashfs-v3 /tmp/src-v3 /tmp/v3-base.sqfs -noI -no-fragments -nopad -noappend -no-progress
+          /tmp/layout-v3 /tmp/v3-base.sqfs | tee /tmp/evidence/v3-layout.txt
+          /tmp/unsquashfs-sanitized -s /tmp/v3-base.sqfs 2>&1 | tee /tmp/evidence/v3-superblock.txt
+
+          patch_size() {
+              local src="$1" dst="$2" off="$3" value="$4"
+              cp "$src" "$dst"
+              python3 - "$dst" "$off" "$value" <<'PY'
+          import hashlib, struct, sys
+          path, off, value = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+          data = bytearray(open(path, 'rb').read())
+          old = struct.unpack_from('<q', data, off)[0]
+          struct.pack_into('<q', data, off, value)
+          open(path, 'wb').write(data)
+          print(f"patched={path} offset={off} old={old} new={value} sha256={hashlib.sha256(data).hexdigest()}")
+          PY
+          }
+
+          make_cases() {
+              local ver="$1" base="$2" layout="$3"
+              local block off max plus
+              block="$(awk -F= '$1=="BLOCK_SIZE" {print $2}' "$layout")"
+              off="$(awk -F= '$1=="FILE_SIZE_ABS" {print $2}' "$layout")"
+              test -n "$block" && test -n "$off"
+              max="$((2147483647 * block))"
+              plus="$((2147483648 * block))"
+              printf '%s block=%s intmax_file_size=%s intmax_plus1_file_size=%s llmax=%s\n' "$ver" "$block" "$max" "$plus" 9223372036854775807 | tee "/tmp/evidence/${ver}-boundaries.txt"
+              patch_size "$base" "/tmp/${ver}-intmax.sqfs" "$off" "$max" | tee -a "/tmp/evidence/${ver}-mutations.txt"
+              patch_size "$base" "/tmp/${ver}-intmax-plus1.sqfs" "$off" "$plus" | tee -a "/tmp/evidence/${ver}-mutations.txt"
+              patch_size "$base" "/tmp/${ver}-llmax.sqfs" "$off" 9223372036854775807 | tee -a "/tmp/evidence/${ver}-mutations.txt"
+              sha256sum "$base" "/tmp/${ver}-intmax.sqfs" "/tmp/${ver}-intmax-plus1.sqfs" "/tmp/${ver}-llmax.sqfs" | tee "/tmp/evidence/${ver}-sha256.txt"
+          }
+
+          make_cases v4 /tmp/v4-base.sqfs /tmp/evidence/v4-layout.txt
+          make_cases v3 /tmp/v3-base.sqfs /tmp/evidence/v3-layout.txt
+
+          export ASAN_OPTIONS='halt_on_error=1:abort_on_error=1:detect_leaks=0'
+          export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
+
+          run_ok() {
+              local label="$1" image="$2"
+              set +e
+              /tmp/unsquashfs-sanitized -processors 1 -no-progress -ll "$image" > "/tmp/evidence/${label}.log" 2>&1
+              local st=$?
+              set -e
+              echo "status=$st" | tee -a "/tmp/evidence/${label}.log"
+              cat "/tmp/evidence/${label}.log"
+              test "$st" -eq 0
+              ! grep -Eq 'runtime error:|AddressSanitizer|UndefinedBehaviorSanitizer' "/tmp/evidence/${label}.log"
+          }
+
+          run_bad() {
+              local label="$1" image="$2" regex="$3"
+              set +e
+              /tmp/unsquashfs-sanitized -processors 1 -no-progress -ll "$image" > "/tmp/evidence/${label}.log" 2>&1
+              local st=$?
+              set -e
+              echo "status=$st" | tee -a "/tmp/evidence/${label}.log"
+              cat "/tmp/evidence/${label}.log"
+              test "$st" -ne 0
+              grep -Eq "$regex" "/tmp/evidence/${label}.log"
+          }
+
+          run_ok v4-base /tmp/v4-base.sqfs
+          run_ok v4-intmax /tmp/v4-intmax.sqfs
+          run_bad v4-intmax-plus1 /tmp/v4-intmax-plus1.sqfs 'implicit conversion|truncation|changed the value'
+          run_bad v4-llmax /tmp/v4-llmax.sqfs 'signed integer overflow'
+
+          run_ok v3-base /tmp/v3-base.sqfs
+          run_ok v3-intmax /tmp/v3-intmax.sqfs
+          run_bad v3-intmax-plus1 /tmp/v3-intmax-plus1.sqfs 'implicit conversion|truncation|changed the value'
+          run_bad v3-llmax /tmp/v3-llmax.sqfs 'signed integer overflow'
+
+          cp /tmp/v4-base.sqfs /tmp/evidence/
+          cp /tmp/v4-intmax.sqfs /tmp/evidence/
+          cp /tmp/v4-intmax-plus1.sqfs /tmp/evidence/
+          cp /tmp/v4-llmax.sqfs /tmp/evidence/
+          cp /tmp/v3-base.sqfs /tmp/evidence/
+          cp /tmp/v3-intmax.sqfs /tmp/evidence/
+          cp /tmp/v3-intmax-plus1.sqfs /tmp/evidence/
+          cp /tmp/v3-llmax.sqfs /tmp/evidence/
+          echo 'ALL LF-633 RUNTIME ASSERTIONS PASSED' | tee /tmp/evidence/result.txt
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lf-633-runtime-evidence
+          path: /tmp/evidence
+          if-no-files-found: warn
