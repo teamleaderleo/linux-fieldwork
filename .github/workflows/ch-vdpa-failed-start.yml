@@ -1,0 +1,119 @@
+name: Cloud Hypervisor vDPA failed migration start
+
+on:
+  push:
+    branches:
+      - research/ch-migration-rollback-probes
+    paths:
+      - .github/workflows/ch-vdpa-failed-start.yml
+      - investigations/cloud-hypervisor-vdpa-migration-start/failed-start-probe.patch
+      - investigations/cloud-hypervisor-vdpa-migration-start/failed-start-candidate.patch
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  failed-start:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      TEST_NAME: vdpa::unit_tests::failed_start_migration_keeps_normal_runtime_state
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin Rust 1.89.0
+        working-directory: cloud-hypervisor
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup override set 1.89.0
+          rustc --version | tee ../rust-version-vdpa.txt
+          git rev-parse HEAD | tee ../source-sha-vdpa.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply the regression probe only
+        working-directory: cloud-hypervisor
+        run: |
+          git apply --check ../fieldwork/investigations/cloud-hypervisor-vdpa-migration-start/failed-start-probe.patch
+          git apply ../fieldwork/investigations/cloud-hypervisor-vdpa-migration-start/failed-start-probe.patch
+          git diff --check
+          git diff -- virtio-devices/src/vdpa.rs > ../vdpa-probe.diff
+
+      - name: Build and discover the exact test
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test -p virtio-devices --lib --no-run
+          cargo test -p virtio-devices --lib -- --list | tee ../vdpa-test-list.txt
+          grep -F "$TEST_NAME: test" ../vdpa-test-list.txt
+
+      - name: Prove failed start leaks migration-only state on baseline
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test -p virtio-devices --lib "$TEST_NAME" -- --exact --nocapture \
+            > ../vdpa-baseline.log 2>&1
+          rc=$?
+          set -e
+          echo "BASELINE_RC=$rc" | tee ../vdpa-baseline-status.txt
+          cat ../vdpa-baseline.log
+          test "$rc" -ne 0
+          grep -F "failed start_migration must not authorize migration-only behavior" ../vdpa-baseline.log
+
+      - name: Apply the transactional flag candidate
+        working-directory: cloud-hypervisor
+        run: |
+          git apply --check ../fieldwork/investigations/cloud-hypervisor-vdpa-migration-start/failed-start-candidate.patch
+          git apply ../fieldwork/investigations/cloud-hypervisor-vdpa-migration-start/failed-start-candidate.patch
+          git diff --check
+          git diff -- virtio-devices/src/vdpa.rs > ../vdpa-candidate.diff
+          cargo fmt --all -- --check
+
+      - name: Prove candidate preserves normal state after failed start
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test -p virtio-devices --lib "$TEST_NAME" -- --exact --nocapture \
+            | tee ../vdpa-candidate-test.log
+          cargo clippy -p virtio-devices --lib --tests -- -D warnings \
+            | tee ../vdpa-candidate-clippy.log
+
+      - name: Write receipt
+        shell: bash
+        run: |
+          {
+            echo "source=$CH_SHA"
+            cat rust-version-vdpa.txt
+            cat vdpa-baseline-status.txt
+            echo "test=$TEST_NAME"
+            echo "candidate_test=pass"
+            echo "candidate_clippy=pass"
+          } | tee vdpa-receipt.txt
+
+      - name: Upload receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-vdpa-failed-start-receipt
+          path: |
+            vdpa-receipt.txt
+            source-sha-vdpa.txt
+            rust-version-vdpa.txt
+            vdpa-test-list.txt
+            vdpa-baseline-status.txt
+            vdpa-baseline.log
+            vdpa-candidate-test.log
+            vdpa-candidate-clippy.log
+            vdpa-probe.diff
+            vdpa-candidate.diff
