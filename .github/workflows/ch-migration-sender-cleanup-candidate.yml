@@ -1,0 +1,82 @@
+name: Cloud Hypervisor migration sender cleanup candidate
+
+on:
+  push:
+    branches:
+      - research/ch-migration-rollback-probes
+    paths:
+      - .github/workflows/ch-migration-sender-cleanup-candidate.yml
+      - investigations/cloud-hypervisor-migration-sender-cleanup/apply_sender_cleanup_candidate.py
+      - investigations/cloud-hypervisor-migration-sender-cleanup/apply_sender_channel_probe.py
+
+permissions:
+  contents: read
+
+jobs:
+  sender-cleanup:
+    runs-on: ubuntu-24.04
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      BASELINE_TEST: migration::transport::sender_channel_liveness_tests::full_queue_loses_cleanup_disconnect_while_sender_stays_alive
+      CANDIDATE_TEST: migration::transport::sender_cleanup_candidate_tests::cleanup_closes_full_queue_and_joins_worker
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin Rust 1.89.0
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          rustc --version
+
+      - name: Prove exact-current full-queue disconnect loss
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-sender-cleanup/apply_sender_channel_probe.py
+          cargo fmt --all -- --check
+          cargo test -p vmm --features kvm --lib "$BASELINE_TEST" -- --exact --nocapture
+
+      - name: Reset to exact source
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          git reset --hard "$CH_SHA"
+          git clean -fd
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply channel-close cleanup candidate
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-sender-cleanup/apply_sender_cleanup_candidate.py
+          cargo fmt --all
+          git diff --check
+          test "$(git diff --name-only)" = "vmm/src/migration/transport.rs"
+          git diff -- vmm/src/migration/transport.rs
+
+      - name: Prove cleanup terminal condition
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          cargo test -p vmm --features kvm --lib "$CANDIDATE_TEST" -- --exact --nocapture
+          cargo test -p vmm --features kvm --lib migration::transport::tests:: -- --nocapture
+          cargo check -p vmm --features kvm
+          cargo clippy -p vmm --features kvm --lib --tests -- -D warnings -A unfulfilled-lint-expectations
+          cargo fmt --all -- --check
+          git diff --check
