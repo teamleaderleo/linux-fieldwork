@@ -8,6 +8,12 @@ Candidate commit: `2038c3cb262ac27604f647729557893a61510f99`
 
 Compare view: https://github.com/cloud-hypervisor/cloud-hypervisor/compare/main...teamleaderleo:cloud-hypervisor:linux-fieldwork/kvm-dirty-log-granule-repair-v2
 
+## Pre-publish code-review note
+
+The current candidate collects the merged VM/VMM dirty bitmap into a temporary `Vec<u64>` before range conversion so it can inspect the final padding bits. Cloud Hypervisor commit `b6c266c8809e86acd5480e9c29ddd38b7fe5a7ab` deliberately removed this same kind of temporary vector because dirty bitmaps can be very large; its commit message gives a 12 TiB VM as a 384 MiB bitmap example and records a substantial scan-time improvement from keeping the merge as an iterator.
+
+Before publishing the PR, preserve the new validation without restoring that allocation: inspect the final words from the two source bitmaps when validating tail bits, then pass the existing zipped/ORed iterator directly to `MemoryRangeTable::from_dirty_bitmap()`.
+
 ## Title
 
 `vmm: Preserve dirty log granularity`
