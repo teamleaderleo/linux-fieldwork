@@ -1,0 +1,12 @@
+diff --git a/src/libcrun/linux.c b/src/libcrun/linux.c
+--- a/src/libcrun/linux.c
++++ b/src/libcrun/linux.c
+@@ -1493,6 +1493,8 @@ do_mount (libcrun_container_t *container, const char *source, int targetfd,
+ #endif
+ 
+           targetfd = fd;
++          get_proc_self_fd_path (target_buffer, targetfd);
++          real_target = target_buffer;
+         }
+     }
+ 
