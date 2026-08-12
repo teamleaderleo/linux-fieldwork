@@ -30,11 +30,9 @@ new = '''        for _ in 0..self.threads.len() {
                     }
                     Err(TrySendError::Disconnected(_)) => {
                         gate.open();
-                        return Err(self.cleanup().err().unwrap_or(
-                            MigratableError::MigrateSend(anyhow!(
-                                "All sending threads disconnected while enqueueing a gate"
-                            )),
-                        ));
+                        return Err(self.cleanup().err().unwrap_or(MigratableError::MigrateSend(
+                            anyhow!("All sending threads disconnected while enqueueing a gate"),
+                        )));
                     }
                 }
             }
