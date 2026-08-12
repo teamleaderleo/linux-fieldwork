@@ -1,0 +1,277 @@
+name: Cloud Hypervisor QCOW fresh L2 reopen execution
+
+on:
+  push:
+    branches:
+      - research/ch-qcow-fresh-l2-reopen-exec
+    paths:
+      - .github/workflows/ch-qcow-fresh-l2-reopen-exec.yml
+      - investigations/cloud-hypervisor-qcow-fresh-l2-reopen/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-l2-reopen-exec:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      WITNESS: formats::qcow::metadata::unit_tests::fresh_l2_enospc_reopen_allocator_reuses_live_table
+      INVARIANT: formats::qcow::metadata::unit_tests::fresh_l2_enospc_reopen_keeps_live_table_owned
+      SUCCESS_CONTROL: formats::qcow::metadata::unit_tests::fresh_l2_success_reopen_keeps_live_table_owned
+      ZERO_CONTROL: formats::qcow::metadata::unit_tests::zero_marker_fresh_l2_keeps_refcount_owner
+      RELOCATION_CONTROL: formats::qcow::metadata::unit_tests::failed_l2_relocate_keeps_live_table_off_free_lists
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin exact source and Rust
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../qcow-rust-version.txt
+          cargo --version | tee ../qcow-cargo-version.txt
+          git rev-parse HEAD | tee ../qcow-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          git status --short | tee ../qcow-source-status-before.txt
+          test ! -s ../qcow-source-status-before.txt
+
+      - name: Apply and format exact-current probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-fresh-l2-reopen/apply_probe.py
+          # The previous carrier stopped here because raw injected Rust was
+          # checked before being formatted. Canonicalize the fixture first.
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../qcow-probe.diff
+          cp block/src/formats/qcow/metadata.rs ../qcow-baseline-metadata.rs
+
+      - name: Build and discover focused tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib --no-run
+          cargo test --locked -p block --lib -- --list | tee ../qcow-test-list.txt
+          grep -F "$WITNESS: test" ../qcow-test-list.txt
+          grep -F "$INVARIANT: test" ../qcow-test-list.txt
+          grep -F "$SUCCESS_CONTROL: test" ../qcow-test-list.txt
+          grep -F "$ZERO_CONTROL: test" ../qcow-test-list.txt
+          grep -F "$RELOCATION_CONTROL: test" ../qcow-test-list.txt
+
+      - name: Baseline valid first-write control
+        id: baseline_success_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$SUCCESS_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../qcow-baseline-success-control.log
+
+      - name: Baseline existing relocation regression
+        id: baseline_relocation_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$RELOCATION_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../qcow-baseline-relocation-control.log
+
+      - name: Prove exact clean-reopen allocator reuse on baseline
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$WITNESS" -- --ignored --exact --nocapture \
+            2>&1 | tee ../qcow-baseline-reuse-witness.log
+          grep -F "FRESH_L2_BASELINE pre_close" ../qcow-baseline-reuse-witness.log
+          grep -F "FRESH_L2_BASELINE reopened" ../qcow-baseline-reuse-witness.log
+          grep -F "FRESH_L2_BASELINE allocator_return" ../qcow-baseline-reuse-witness.log
+
+      - name: Prove safety invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p block --lib "$INVARIANT" -- --exact --nocapture \
+            > ../qcow-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "BASELINE_INVARIANT_RC=$rc" | tee ../qcow-baseline-invariant-status.txt
+          cat ../qcow-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F "clean reopen must not classify a still-referenced fresh L2 as free" \
+            ../qcow-baseline-invariant.log
+
+      - name: Apply ownership-before-publication candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-fresh-l2-reopen/apply_candidate.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../qcow-probe-plus-candidate.diff
+          diff -u ../qcow-baseline-metadata.rs block/src/formats/qcow/metadata.rs \
+            > ../qcow-candidate-only.diff || test "$?" = 1
+
+      - name: Candidate fresh-L2 ENOSPC invariant
+        id: candidate_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$INVARIANT" -- --exact --nocapture \
+            2>&1 | tee ../qcow-candidate-invariant.log
+
+      - name: Candidate valid first-write control
+        id: candidate_success_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$SUCCESS_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../qcow-candidate-success-control.log
+
+      - name: Candidate zero-marker caller control
+        id: candidate_zero_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$ZERO_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../qcow-candidate-zero-control.log
+
+      - name: Candidate existing relocation regression
+        id: candidate_relocation_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$RELOCATION_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../qcow-candidate-relocation-control.log
+
+      - name: Candidate full block tests
+        id: block_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block 2>&1 | tee ../qcow-block-tests.log
+
+      - name: Candidate block io_uring tests
+        id: block_uring_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --features io_uring 2>&1 | tee ../qcow-block-uring-tests.log
+
+      - name: Candidate block Clippy
+        id: clippy
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p block --all-targets -- -D warnings \
+            2>&1 | tee ../qcow-clippy.log
+
+      - name: Final source hygiene
+        id: final_hygiene
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fmt --all -- --check
+          git diff --check
+          git status --short | tee ../qcow-final-status.txt
+          git diff --stat | tee ../qcow-final-diff-stat.txt
+
+      - name: Write execution receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_success_control=${{ steps.baseline_success_control.outcome }}"
+            echo "baseline_relocation_control=${{ steps.baseline_relocation_control.outcome }}"
+            echo "baseline_allocator_reuse_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_invariant=${{ steps.candidate_invariant.outcome }}"
+            echo "candidate_success_control=${{ steps.candidate_success_control.outcome }}"
+            echo "candidate_zero_control=${{ steps.candidate_zero_control.outcome }}"
+            echo "candidate_relocation_control=${{ steps.candidate_relocation_control.outcome }}"
+            echo "block_tests=${{ steps.block_tests.outcome }}"
+            echo "block_io_uring_tests=${{ steps.block_uring_tests.outcome }}"
+            echo "clippy=${{ steps.clippy.outcome }}"
+            echo "final_hygiene=${{ steps.final_hygiene.outcome }}"
+            test -f qcow-source-sha.txt && cat qcow-source-sha.txt
+            test -f qcow-rust-version.txt && cat qcow-rust-version.txt
+            test -f qcow-cargo-version.txt && cat qcow-cargo-version.txt
+            test -f qcow-baseline-invariant-status.txt && cat qcow-baseline-invariant-status.txt
+          } | tee qcow-execution-receipt.txt
+
+      - name: Upload complete execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-qcow-fresh-l2-reopen-exec
+          if-no-files-found: warn
+          path: |
+            qcow-execution-receipt.txt
+            qcow-source-sha.txt
+            qcow-rust-version.txt
+            qcow-cargo-version.txt
+            qcow-source-status-before.txt
+            qcow-test-list.txt
+            qcow-probe.diff
+            qcow-baseline-metadata.rs
+            qcow-baseline-success-control.log
+            qcow-baseline-relocation-control.log
+            qcow-baseline-reuse-witness.log
+            qcow-baseline-invariant.log
+            qcow-baseline-invariant-status.txt
+            qcow-candidate-only.diff
+            qcow-probe-plus-candidate.diff
+            qcow-candidate-invariant.log
+            qcow-candidate-success-control.log
+            qcow-candidate-zero-control.log
+            qcow-candidate-relocation-control.log
+            qcow-block-tests.log
+            qcow-block-uring-tests.log
+            qcow-clippy.log
+            qcow-final-status.txt
+            qcow-final-diff-stat.txt
