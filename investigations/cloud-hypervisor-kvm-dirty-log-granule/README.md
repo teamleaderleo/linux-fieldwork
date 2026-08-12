@@ -46,15 +46,21 @@ Source branch:
 
 `linux-fieldwork/kvm-dirty-log-granule-repair-v2`
 
-Candidate commit:
+Current candidate commit:
 
-`f1e892815ae6a71ffc18e5d18fd7fef1f030e048`
+`2038c3cb262ac27604f647729557893a61510f99`
 
 Parent:
 
 `1af93ac7035cda77cd87b0c18b1134ebb0928052`
 
-The source branch contains one commit above exact canonical main.
+Source tree:
+
+`6efdf4682cc5035c2ce76bda9aa54688ffe34934`
+
+The source branch contains one commit above exact canonical main. The current commit is authored and committed by Leo Li, carries `Signed-off-by: Leo Li <cheerleaderleo@outlook.com>` and `Assisted-by: ChatGPT:GPT-5.6 Sol`, and GitHub reports its SSH signature as valid.
+
+The prior validation carrier `f1e892815ae6a71ffc18e5d18fd7fef1f030e048` has the same parent and the exact same source tree `6efdf468...`. It is retained only as the receipt identity for earlier hosted validation; `2038c3cb...` supersedes it as the PR candidate.
 
 The candidate pairs bitmap data with its meaning:
 
@@ -94,7 +100,7 @@ Disposable validation workflow files exist only on disposable execution branches
 
 ## Focused validation
 
-The repair-v2 validation already recorded on #617 passed all configured gates, including:
+The repair-v2 source tree already passed all configured gates on the prior metadata carrier `f1e892...`, including:
 
 - formatting and `git diff --check`;
 - seven focused dirty-log conversion/negative tests;
@@ -106,9 +112,11 @@ The repair-v2 validation already recorded on #617 passed all configured gates, i
 
 Synthetic coverage includes 4K, 16K, 64K, VM/VMM merging, same-word and cross-word coalescing, granularity mismatch, word-count mismatch, out-of-region tail bits, alignment errors, and overflow.
 
+The signed candidate `2038c3cb...` has the exact same tree `6efdf468...` and exact same parent as `f1e892...`; only commit identity/attribution/signature metadata changed. Therefore those source-level validation results apply to the current candidate tree without a semantic delta.
+
 ## Real KVM live migration
 
-Preferred-candidate live validation used a disposable branch based on exact candidate `f1e892...`.
+The preferred source tree received live validation using a disposable branch based on the prior metadata carrier `f1e892...`; the current signed candidate `2038c3cb...` is source-tree identical.
 
 Run: `31567234922`
 Job: `94021476274`
@@ -131,7 +139,7 @@ PASS cloud-hypervisor::integration common_parallel::test_live_migration_basic_pa
 Summary: 2 tests run: 2 passed, 303 skipped
 ```
 
-This is an end-to-end live KVM migration check of the preferred candidate on a normal 4K host.
+This is an end-to-end live KVM migration check of the current candidate's exact source tree on a normal 4K host.
 
 ## Non-4K hardware attempt
 
@@ -248,18 +256,18 @@ This is an environment/boot-path limitation for the attempted hardware validatio
 - Defect at the dirty-bitmap conversion seam: proven synthetically.
 - 4K/16K/64K conversion semantics: covered at the production conversion helper.
 - MSHV fixed 4K contract: supported by the pinned MSHV/Hyper-V interface.
-- Preferred candidate builds/lints/tests across KVM/MSHV and x86_64/AArch64: green.
-- Preferred candidate real 4K KVM live migration: green.
+- Preferred candidate builds/lints/tests across KVM/MSHV and x86_64/AArch64: green on exact source tree `6efdf468...`.
+- Preferred candidate source tree real 4K KVM live migration: green.
 - GitHub-hosted native ARM64 hardware was probed and is 4K-only with no usable `/dev/kvm`.
 - Operator-owned M5/Lima/VZ hardware was probed and does expose usable nested KVM on a 4K ARM64 Ubuntu guest (`KVM_GET_API_VERSION = 12`).
 - A direct-boot A/B check showed the same Lima/VZ disk and boot path reaches `READY` with the known-good 4K kernel, while the tested Ubuntu `6.8.0-137-generic-64k` kernel did not reach SSH/userspace under the nested-VZ setup.
 - The follow-up 64K boot with nested virtualization disabled was started but did not produce a captured usable-guest result before the experiment ended; do not classify that sub-test more strongly.
 - Real 16K/64K KVM live migration remains uncompleted. The local 64K attempt failed before Cloud Hypervisor execution, so it neither validates nor falsifies the candidate on real non-4K KVM hardware.
-- Candidate is bot-authored/unsigned and still needs a human DCO sign-off before upstream handoff.
+- Current PR candidate `2038c3cb...` is human-authored/committed, DCO-signed, retains the required `Assisted-by` disclosure, and GitHub reports a valid SSH signature. It is source-tree identical to the previously validated carrier `f1e892...`.
 - Cloud Hypervisor upstream received no mutation or contact.
 
 ## Disposition
 
-The defect is proven, the preferred paired-granularity candidate is green through focused validation and a real 4K KVM live-migration run, and the remaining evidence gap is specifically an end-to-end migration on a real 16K/64K KVM host. The M5/Lima attempt narrowed the local limitation to getting the tested 64K Ubuntu kernel into a usable VZ guest; it did not reach Cloud Hypervisor execution.
+The defect is proven, the preferred paired-granularity candidate is green through focused validation and a real 4K KVM live-migration run on the exact same source tree, and the current candidate is human-authored and DCO-signed. The remaining evidence gap is specifically an end-to-end migration on a real 16K/64K KVM host. The M5/Lima attempt narrowed the local limitation to getting the tested 64K Ubuntu kernel into a usable VZ guest; it did not reach Cloud Hypervisor execution.
 
 PROVEN + CANDIDATE
