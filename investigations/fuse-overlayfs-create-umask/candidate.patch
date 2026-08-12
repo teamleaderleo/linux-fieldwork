@@ -1,0 +1,40 @@
+--- a/src/overlay.rs
++++ b/src/overlay.rs
+@@
+     fn mknod(
+         &self,
+         req: &Request,
+         parent: INodeNo,
+         name: &OsStr,
+         mode: u32,
+-        _umask: u32,
++        umask: u32,
+         rdev: u32,
+         reply: ReplyEntry,
+     ) {
++        let mode = mode & !umask;
+@@
+     fn mkdir(
+         &self,
+         req: &Request,
+         parent: INodeNo,
+         name: &OsStr,
+         mode: u32,
+-        _umask: u32,
++        umask: u32,
+         reply: ReplyEntry,
+     ) {
++        let mode = mode & !umask;
+@@
+     fn create(
+         &self,
+         req: &Request,
+         parent: INodeNo,
+         name: &OsStr,
+         mode: u32,
+-        _umask: u32,
++        umask: u32,
+         flags: i32,
+         reply: ReplyCreate,
+     ) {
++        let mode = mode & !umask;
