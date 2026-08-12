@@ -1,0 +1,128 @@
+name: Cloud Hypervisor offload truncated memory R555X
+
+on:
+  push:
+    branches:
+      - research/ch-offload-truncated-memory-r555x
+    paths:
+      - .github/workflows/ch-offload-truncated-memory-r555x.yml
+      - investigations/cloud-hypervisor-offload-truncated-memory/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      BASELINE_TEST: tests::truncated_snapshot_memory_is_silently_zero_filled
+      CANDIDATE_TEST: tests::truncated_snapshot_memory_is_rejected
+      CONTROL_TEST: tests::full_length_sparse_snapshot_memory_is_accepted
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and Rust
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version
+
+      - name: Apply baseline discriminator
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-offload-truncated-memory/apply_probe.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          test "$(git diff --name-only)" = "offload_daemon/src/main.rs"
+          cp offload_daemon/src/main.rs ../offload-baseline-main.rs
+          git diff -- offload_daemon/src/main.rs | tee ../offload-baseline-probe.diff
+
+      - name: Prove exact-current short artifact is zero-filled
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p offload_daemon -- --list | tee ../offload-test-list.txt
+          grep -F "$BASELINE_TEST: test" ../offload-test-list.txt
+          cargo test --locked -p offload_daemon "$BASELINE_TEST" -- --exact --nocapture 2>&1 | tee ../offload-baseline.log
+
+      - name: Apply eager and on-demand length-validation candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-offload-truncated-memory/apply_candidate.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          test "$(git diff --name-only)" = "offload_daemon/src/main.rs"
+          diff -u ../offload-baseline-main.rs offload_daemon/src/main.rs > ../offload-candidate-only.diff || test "$?" = 1
+          git diff -- offload_daemon/src/main.rs | tee ../offload-probe-plus-candidate.diff
+
+      - name: Candidate focused and full gates
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p offload_daemon -- --list | tee ../offload-candidate-test-list.txt
+          grep -F "$CANDIDATE_TEST: test" ../offload-candidate-test-list.txt
+          grep -F "$CONTROL_TEST: test" ../offload-candidate-test-list.txt
+          cargo test --locked -p offload_daemon "$CANDIDATE_TEST" -- --exact --nocapture 2>&1 | tee ../offload-candidate.log
+          cargo test --locked -p offload_daemon "$CONTROL_TEST" -- --exact --nocapture 2>&1 | tee ../offload-control.log
+          cargo test --locked -p offload_daemon 2>&1 | tee ../offload-suite.log
+          cargo clippy --locked -p offload_daemon --all-targets -- -D warnings 2>&1 | tee ../offload-clippy.log
+          cargo fmt --all -- --check
+          git diff --check
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            sha256sum offload-baseline-probe.diff 2>/dev/null || true
+            sha256sum offload-candidate-only.diff 2>/dev/null || true
+          } | tee offload-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-offload-truncated-memory-r555x
+          if-no-files-found: warn
+          path: |
+            offload-receipt.txt
+            offload-baseline-probe.diff
+            offload-candidate-only.diff
+            offload-probe-plus-candidate.diff
+            offload-test-list.txt
+            offload-candidate-test-list.txt
+            offload-baseline.log
+            offload-candidate.log
+            offload-control.log
+            offload-suite.log
+            offload-clippy.log
