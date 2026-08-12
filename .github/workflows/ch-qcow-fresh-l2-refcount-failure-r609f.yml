@@ -1,0 +1,143 @@
+name: Cloud Hypervisor QCOW fresh L2 refcount failure audit
+
+on:
+  push:
+    branches:
+      - research/ch-qcow-fresh-l2-refcount-failure-r609f
+    paths:
+      - .github/workflows/ch-qcow-fresh-l2-refcount-failure-r609f.yml
+      - investigations/cloud-hypervisor-qcow-fresh-l2-refcount-failure/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  immediate-refcount-failure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      TEST_NAME: formats::qcow::metadata::unit_tests::fresh_l2_refcount_acquire_enospc_keeps_l1_unpublished
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin exact source and Rust
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../refcount-failure-rust-version.txt
+          cargo --version | tee ../refcount-failure-cargo-version.txt
+          git rev-parse HEAD | tee ../refcount-failure-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          git status --short | tee ../refcount-failure-source-status-before.txt
+          test ! -s ../refcount-failure-source-status-before.txt
+
+      - name: Apply validated ownership-before-publication candidate
+        id: candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-fresh-l2-reopen/apply_candidate.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../refcount-failure-candidate.diff
+          grep -F "self.set_cluster_refcount_track_freed(new_addr, 1)?;" block/src/formats/qcow/metadata.rs
+
+      - name: Apply one-free-cluster failure discriminator
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-fresh-l2-refcount-failure/apply_probe.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../refcount-failure-probe-plus-candidate.diff
+
+      - name: Build and discover focused test
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib --no-run
+          cargo test --locked -p block --lib -- --list | tee ../refcount-failure-test-list.txt
+          grep -F "$TEST_NAME: test" ../refcount-failure-test-list.txt
+
+      - name: Execute immediate-refcount ENOSPC boundary
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$TEST_NAME" -- --exact --nocapture \
+            2>&1 | tee ../refcount-failure-focused.log
+          grep -F "FRESH_L2_REFCOUNT_FAIL pre_close" ../refcount-failure-focused.log
+          grep -F "FRESH_L2_REFCOUNT_FAIL reopened" ../refcount-failure-focused.log
+          grep -F "FRESH_L2_REFCOUNT_FAIL allocator_return" ../refcount-failure-focused.log
+
+      - name: Final hygiene
+        id: hygiene
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fmt --all -- --check
+          git diff --check
+          git status --short | tee ../refcount-failure-final-status.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "candidate_gate=${{ steps.candidate.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "focused_gate=${{ steps.focused.outcome }}"
+            echo "hygiene_gate=${{ steps.hygiene.outcome }}"
+            test -f refcount-failure-source-sha.txt && cat refcount-failure-source-sha.txt
+            test -f refcount-failure-rust-version.txt && cat refcount-failure-rust-version.txt
+          } | tee refcount-failure-receipt.txt
+
+      - name: Upload execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-qcow-fresh-l2-refcount-failure-r609f
+          if-no-files-found: warn
+          path: |
+            refcount-failure-receipt.txt
+            refcount-failure-source-sha.txt
+            refcount-failure-rust-version.txt
+            refcount-failure-cargo-version.txt
+            refcount-failure-source-status-before.txt
+            refcount-failure-candidate.diff
+            refcount-failure-probe-plus-candidate.diff
+            refcount-failure-test-list.txt
+            refcount-failure-focused.log
+            refcount-failure-final-status.txt
