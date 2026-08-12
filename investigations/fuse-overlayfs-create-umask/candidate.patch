@@ -14,6 +14,20 @@
      ) {
 +        let mode = mode & !umask;
 @@
+-        if let Err(e) = crate::sys::fs::mknodat(inner.workdir_fd, &c_wd, mode | 0o755, rdev as u64)
++        let backing_mode = if self.config.xattr_permissions != 0 {
++            mode | 0o755
++        } else {
++            mode
++        };
++        if let Err(e) = crate::sys::fs::mknodat(
++            inner.workdir_fd,
++            &c_wd,
++            backing_mode,
++            rdev as u64,
++        )
+         {
+@@
      fn mkdir(
          &self,
          req: &Request,
