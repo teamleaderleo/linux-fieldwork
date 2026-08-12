@@ -39,8 +39,8 @@ old_boundary = '''        // Generate HOB
         let mut hob = TdHob::start(hob_offset.unwrap());
 '''
 new_boundary = '''        // Generate HOB
-        let hob_offset = Self::required_tdx_hob_offset(hob_offset)?;
-        let mut hob = TdHob::start(hob_offset);
+        let hob_start = Self::required_tdx_hob_offset(hob_offset)?;
+        let mut hob = TdHob::start(hob_start);
 '''
 if text.count(old_boundary) != 1:
     raise SystemExit("unexpected TD HOB unwrap boundary count")
