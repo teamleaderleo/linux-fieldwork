@@ -50,7 +50,7 @@ mod sender_channel_liveness_tests {
         ));
 
         drop(message_tx);
-        assert!(message_rx.recv().is_err());
+        message_rx.recv().unwrap_err();
     }
 
     #[test]
