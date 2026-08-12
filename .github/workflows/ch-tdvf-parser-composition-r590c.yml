@@ -1,0 +1,193 @@
+name: Cloud Hypervisor TDVF parser composition R590C
+
+on:
+  push:
+    branches: [research/ch-tdvf-parser-composition-r590c]
+    paths:
+      - .github/workflows/ch-tdvf-parser-composition-r590c.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-parser-composition:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: arch/tdx,arch/kvm,hypervisor/tdx,hypervisor/kvm
+      G_SHA: 04f5eb6fc9733c4bd4a7f1892316139efeece2cb
+      A_SHA: be334d724140b11d04e587e2392dffeb468bc2cd
+      T_SHA: f19cadeb69333f941dda611f2ddc81d68560517a
+      G_TEST: x86_64::tdx::unit_tests::tdvf_guid_table_structural_bounds_are_typed
+      G_CONTROL: x86_64::tdx::unit_tests::tdvf_guid_table_minimum_footer_is_valid
+      A_TEST: x86_64::tdx::unit_tests::tdvf_truncated_section_table_rejected_before_allocation
+      A_CONTROL: x86_64::tdx::unit_tests::tdvf_section_table_range_valid_control
+      T_TEST: x86_64::tdx::unit_tests::tdvf_unknown_section_type_is_rejected
+      T_CONTROL: x86_64::tdx::unit_tests::tdvf_known_and_reserved_section_types_are_validated
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source, toolchains, and tested materializers
+        id: source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0 --path cloud-hypervisor
+          rustc --version | tee tdvf-parser-composition-rust-version.txt
+          rustc +nightly --version | tee tdvf-parser-composition-nightly-version.txt
+          git -C cloud-hypervisor rev-parse HEAD | tee tdvf-parser-composition-source-sha.txt
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git -C cloud-hypervisor status --short)"
+
+          git -C fieldwork fetch --no-tags origin "$G_SHA" "$A_SHA" "$T_SHA"
+          git -C fieldwork show "$G_SHA:investigations/cloud-hypervisor-tdvf-guid-table-bounds/apply_candidate.py" > /tmp/r590g.py
+          git -C fieldwork show "$A_SHA:investigations/cloud-hypervisor-tdvf-section-allocation/apply_candidate.py" > /tmp/r590a.py
+          git -C fieldwork show "$T_SHA:investigations/cloud-hypervisor-tdvf-section-type/apply_candidate.py" > /tmp/r590t.py
+          sha256sum /tmp/r590g.py /tmp/r590a.py /tmp/r590t.py | tee tdvf-parser-materializer-sha256.txt
+
+      - name: Apply G structural-bounds layer
+        id: apply_g
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/r590g.py
+          cargo +nightly fmt --all
+          git diff --check
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-parser-after-g.diff
+
+      - name: Apply A pre-allocation layer
+        id: apply_a
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/r590a.py
+          cargo +nightly fmt --all
+          git diff --check
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-parser-after-ga.diff
+
+      - name: Apply T validity-safe type layer
+        id: apply_t
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/r590t.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-parser-combined.diff
+          sha256sum ../tdvf-parser-combined.diff | tee ../tdvf-parser-combined-diff-sha256.txt
+          git diff --stat | tee ../tdvf-parser-combined-diff-stat.txt
+          grep -F "InvalidGuidTableSize" arch/src/x86_64/tdx/mod.rs
+          grep -F "InvalidDescriptorRange" arch/src/x86_64/tdx/mod.rs
+          grep -F "struct RawTdvfSection" arch/src/x86_64/tdx/mod.rs
+          grep -F "InvalidSectionType" arch/src/x86_64/tdx/mod.rs
+
+      - name: Build and discover all focused tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib --no-run
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib -- --list | tee ../tdvf-parser-test-list.txt
+          for test_name in "$G_TEST" "$G_CONTROL" "$A_TEST" "$A_CONTROL" "$T_TEST" "$T_CONTROL"; do
+            grep -F "$test_name: test" ../tdvf-parser-test-list.txt
+          done
+
+      - name: Focused G+A+T composition matrix
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          for test_name in "$G_TEST" "$G_CONTROL" "$A_TEST" "$A_CONTROL" "$T_TEST" "$T_CONTROL"; do
+            safe_name=$(printf '%s' "$test_name" | tr ':/' '__')
+            cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$test_name" -- --exact --nocapture \
+              2>&1 | tee "../tdvf-parser-focused-${safe_name}.log"
+          done
+          grep -R -F "TDVF_GUID_CANDIDATE small_result=InvalidGuidTableSize(0)" ../tdvf-parser-focused-*.log
+          grep -R -F "TDVF_GUID_CANDIDATE entry_result=InvalidGuidTableEntrySize { entry_size: 23, remaining: 22 }" ../tdvf-parser-focused-*.log
+          grep -R -F "TDVF_GUID_CANDIDATE control_offset=Start(0) guid_found=false" ../tdvf-parser-focused-*.log
+          grep -R -F "TDVF_ALLOC_CANDIDATE invalid_result=InvalidDescriptorRange" ../tdvf-parser-focused-*.log
+          grep -R -F "TDVF_ALLOC_CANDIDATE control_sections=1" ../tdvf-parser-focused-*.log
+          grep -R -F "TDVF_TYPE_CANDIDATE invalid_result=InvalidSectionType(7)" ../tdvf-parser-focused-*.log
+          grep -R -F "raw_type=0xffffffff type=Reserved" ../tdvf-parser-focused-*.log
+
+      - name: Full arch and hypervisor TDX KVM tests
+        id: broad_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib \
+            2>&1 | tee ../tdvf-parser-broad-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p arch -p hypervisor --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables \
+            2>&1 | tee ../tdvf-parser-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-parser-final-status.txt
+          git diff --stat | tee ../tdvf-parser-final-diff-stat.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "features=$FEATURES"
+            echo "g_materializer=$G_SHA"
+            echo "a_materializer=$A_SHA"
+            echo "t_materializer=$T_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "apply_g=${{ steps.apply_g.outcome }}"
+            echo "apply_a=${{ steps.apply_a.outcome }}"
+            echo "apply_t=${{ steps.apply_t.outcome }}"
+            echo "discover=${{ steps.discover.outcome }}"
+            echo "focused=${{ steps.focused.outcome }}"
+            echo "broad_tests=${{ steps.broad_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdvf-parser-combined-diff-sha256.txt && cat tdvf-parser-combined-diff-sha256.txt
+          } | tee tdvf-parser-composition-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-parser-composition-r590c
+          if-no-files-found: warn
+          path: |
+            tdvf-parser-*.txt
+            tdvf-parser-*.log
+            tdvf-parser-*.diff
