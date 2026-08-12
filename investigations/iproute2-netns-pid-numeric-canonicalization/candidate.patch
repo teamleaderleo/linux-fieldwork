@@ -1,0 +1,11 @@
+diff --git a/lib/namespace.c b/lib/namespace.c
+--- a/lib/namespace.c
++++ b/lib/namespace.c
+@@ -127,6 +127,6 @@ int netns_get_fd(const char *str)
+ 	if (get_integer(&pid, str, 0) < 0)
+ 		return -1;
+ 
+-	snprintf(pathbuf, sizeof(pathbuf), "/proc/%s/ns/net", str);
++	snprintf(pathbuf, sizeof(pathbuf), "/proc/%d/ns/net", pid);
+ 	return open(pathbuf, O_RDONLY);
+ }
