@@ -1,0 +1,241 @@
+name: Cloud Hypervisor TDVF GUID table bounds R590G
+
+on:
+  push:
+    branches: [research/ch-tdvf-guid-table-bounds-r590g]
+    paths:
+      - .github/workflows/ch-tdvf-guid-table-bounds-r590g.yml
+      - investigations/cloud-hypervisor-tdvf-guid-table-bounds/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-guid-table-bounds:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: arch/tdx,arch/kvm,hypervisor/tdx,hypervisor/kvm
+      CONTROL: x86_64::tdx::unit_tests::tdvf_guid_table_minimum_footer_control
+      SMALL_WITNESS: x86_64::tdx::unit_tests::tdvf_guid_table_too_small_panics_baseline
+      SMALL_INVARIANT: x86_64::tdx::unit_tests::tdvf_guid_table_too_small_should_not_panic
+      ENTRY_WITNESS: x86_64::tdx::unit_tests::tdvf_guid_entry_too_large_panics_baseline
+      ENTRY_INVARIANT: x86_64::tdx::unit_tests::tdvf_guid_entry_too_large_should_not_panic
+      CANDIDATE_TEST: x86_64::tdx::unit_tests::tdvf_guid_table_structural_bounds_are_typed
+      CANDIDATE_CONTROL: x86_64::tdx::unit_tests::tdvf_guid_table_minimum_footer_is_valid
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../tdvf-guid-rust-version.txt
+          rustc +nightly --version | tee ../tdvf-guid-nightly-version.txt
+          git rev-parse HEAD | tee ../tdvf-guid-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Apply and format baseline probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-guid-table-bounds/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-guid-probe.diff
+
+      - name: Build and discover baseline probes
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib --no-run
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib -- --list | tee ../tdvf-guid-test-list.txt
+          for test_name in "$CONTROL" "$SMALL_WITNESS" "$SMALL_INVARIANT" "$ENTRY_WITNESS" "$ENTRY_INVARIANT"; do
+            grep -F "$test_name: test" ../tdvf-guid-test-list.txt
+          done
+
+      - name: Baseline minimum-footer control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-guid-baseline-control.log
+          grep -F "TDVF_GUID_CONTROL offset=Start(0) guid_found=false" ../tdvf-guid-baseline-control.log
+
+      - name: Prove undersized table panics baseline
+        id: small_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$SMALL_WITNESS" -- --ignored --exact --nocapture \
+            2>&1 | tee ../tdvf-guid-small-witness.log
+          grep -F "TDVF_GUID_SMALL_BASELINE panicked=true" ../tdvf-guid-small-witness.log
+
+      - name: Prove undersized-table invariant loses
+        id: small_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$SMALL_INVARIANT" -- --exact --nocapture \
+            > ../tdvf-guid-small-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_GUID_SMALL_INVARIANT_RC=$rc" | tee ../tdvf-guid-small-invariant-status.txt
+          cat ../tdvf-guid-small-invariant.log
+          test "$rc" -ne 0
+          grep -F "TDVF_GUID_SMALL_INVARIANT panicked=true" ../tdvf-guid-small-invariant.log
+
+      - name: Prove oversized entry panics baseline
+        id: entry_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$ENTRY_WITNESS" -- --ignored --exact --nocapture \
+            2>&1 | tee ../tdvf-guid-entry-witness.log
+          grep -F "TDVF_GUID_ENTRY_BASELINE panicked=true" ../tdvf-guid-entry-witness.log
+
+      - name: Prove oversized-entry invariant loses
+        id: entry_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$ENTRY_INVARIANT" -- --exact --nocapture \
+            > ../tdvf-guid-entry-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_GUID_ENTRY_INVARIANT_RC=$rc" | tee ../tdvf-guid-entry-invariant-status.txt
+          cat ../tdvf-guid-entry-invariant.log
+          test "$rc" -ne 0
+          grep -F "TDVF_GUID_ENTRY_INVARIANT panicked=true" ../tdvf-guid-entry-invariant.log
+
+      - name: Restore exact source after baseline probe
+        id: restore
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git checkout -- arch/src/x86_64/tdx/mod.rs
+          test -z "$(git status --short)"
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply GUID structural-bounds candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-guid-table-bounds/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-guid-candidate-only.diff
+          sha256sum ../tdvf-guid-candidate-only.diff | tee ../tdvf-guid-candidate-diff-sha256.txt
+          grep -F "InvalidGuidTableSize" arch/src/x86_64/tdx/mod.rs
+          grep -F "InvalidGuidTableEntrySize" arch/src/x86_64/tdx/mod.rs
+
+      - name: Candidate focused bounds matrix
+        id: candidate_focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-guid-candidate-invalid.log
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CANDIDATE_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-guid-candidate-control.log
+          grep -F "TDVF_GUID_CANDIDATE small_result=InvalidGuidTableSize(0)" ../tdvf-guid-candidate-invalid.log
+          grep -F "TDVF_GUID_CANDIDATE entry_result=InvalidGuidTableEntrySize { entry_size: 23, remaining: 22 }" ../tdvf-guid-candidate-invalid.log
+          grep -F "TDVF_GUID_CANDIDATE control_offset=Start(0) guid_found=false" ../tdvf-guid-candidate-control.log
+
+      - name: Full arch and hypervisor TDX KVM tests
+        id: broad_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib \
+            2>&1 | tee ../tdvf-guid-broad-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p arch -p hypervisor --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables \
+            2>&1 | tee ../tdvf-guid-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-guid-final-status.txt
+          git diff --stat | tee ../tdvf-guid-final-diff-stat.txt
+          git diff -- arch/src/x86_64/tdx/mod.rs | tee ../tdvf-guid-final-candidate.diff
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "features=$FEATURES"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "small_table_witness=${{ steps.small_witness.outcome }}"
+            echo "small_table_invariant_expected_red=${{ steps.small_invariant.outcome }}"
+            echo "oversized_entry_witness=${{ steps.entry_witness.outcome }}"
+            echo "oversized_entry_invariant_expected_red=${{ steps.entry_invariant.outcome }}"
+            echo "restore_exact_source=${{ steps.restore.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "broad_tests=${{ steps.broad_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdvf-guid-small-invariant-status.txt && cat tdvf-guid-small-invariant-status.txt
+            test -f tdvf-guid-entry-invariant-status.txt && cat tdvf-guid-entry-invariant-status.txt
+            test -f tdvf-guid-candidate-diff-sha256.txt && cat tdvf-guid-candidate-diff-sha256.txt
+          } | tee tdvf-guid-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-guid-table-bounds-r590g
+          if-no-files-found: warn
+          path: |
+            tdvf-guid-*.txt
+            tdvf-guid-*.log
+            tdvf-guid-*.diff
