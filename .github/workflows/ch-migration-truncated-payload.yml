@@ -39,6 +39,7 @@ jobs:
         working-directory: cloud-hypervisor
         run: |
           rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
           rustup override set 1.89.0
           rustc --version | tee ../rust-version.txt
           git rev-parse HEAD | tee ../source-sha.txt
