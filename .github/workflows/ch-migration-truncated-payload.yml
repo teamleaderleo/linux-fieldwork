@@ -1,0 +1,119 @@
+name: Cloud Hypervisor truncated migration payload
+
+on:
+  push:
+    branches:
+      - research/ch-migration-rollback-probes
+    paths:
+      - .github/workflows/ch-migration-truncated-payload.yml
+      - investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-probe.patch
+      - investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-candidate.patch
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  truncated-payload:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      TEST_NAME: migration::transport::tests::receive_memory_ranges_rejects_truncated_payload
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin Rust 1.89.0
+        working-directory: cloud-hypervisor
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup override set 1.89.0
+          rustc --version | tee ../rust-version.txt
+          git rev-parse HEAD | tee ../source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply the regression probe only
+        working-directory: cloud-hypervisor
+        run: |
+          git apply --check ../fieldwork/investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-probe.patch
+          git apply ../fieldwork/investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-probe.patch
+          git diff --check
+          git diff -- vmm/src/migration/transport.rs > ../probe.diff
+
+      - name: Build the exact focused test once
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test -p vmm --features kvm --lib --no-run
+          cargo test -p vmm --features kvm --lib -- --list | tee ../test-list.txt
+          grep -F "$TEST_NAME: test" ../test-list.txt
+
+      - name: Prove the baseline zero-progress loop
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=2s 5s \
+            cargo test -p vmm --features kvm --lib "$TEST_NAME" -- --exact --nocapture \
+            > ../baseline.log 2>&1
+          rc=$?
+          set -e
+          echo "BASELINE_RC=$rc" | tee ../baseline-status.txt
+          cat ../baseline.log
+          test "$rc" -eq 124
+
+      - name: Apply the minimal zero-progress candidate
+        working-directory: cloud-hypervisor
+        run: |
+          git apply --check ../fieldwork/investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-candidate.patch
+          git apply ../fieldwork/investigations/cloud-hypervisor-migration-receive-liveness/truncated-payload-candidate.patch
+          git diff --check
+          git diff -- vmm/src/migration/transport.rs > ../candidate.diff
+          cargo fmt --all -- --check
+
+      - name: Prove the candidate converts EOF into an ordinary error
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test -p vmm --features kvm --lib "$TEST_NAME" -- --exact --nocapture \
+            | tee ../candidate-test.log
+          cargo clippy -p vmm --features kvm --lib --tests -- -D warnings \
+            | tee ../candidate-clippy.log
+
+      - name: Write receipt
+        shell: bash
+        run: |
+          {
+            echo "source=$CH_SHA"
+            cat rust-version.txt
+            cat baseline-status.txt
+            echo "test=$TEST_NAME"
+            echo "candidate_test=pass"
+            echo "candidate_clippy=pass"
+          } | tee receipt.txt
+
+      - name: Upload receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-truncated-migration-payload-receipt
+          path: |
+            receipt.txt
+            source-sha.txt
+            rust-version.txt
+            test-list.txt
+            baseline-status.txt
+            baseline.log
+            candidate-test.log
+            candidate-clippy.log
+            probe.diff
+            candidate.diff
