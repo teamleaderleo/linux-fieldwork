@@ -24,9 +24,11 @@ probe = r'''    #[test]
         assert!(malformed.unwrap().is_err());
 
         let mut empty = Cursor::new(Vec::new());
-        assert!(MemoryRangeTable::read_from(&mut empty, 0)
-            .unwrap()
-            .is_empty());
+        assert!(
+            MemoryRangeTable::read_from(&mut empty, 0)
+                .unwrap()
+                .is_empty()
+        );
 
         let range = MemoryRange {
             gpa: 0x4000,
@@ -35,11 +37,9 @@ probe = r'''    #[test]
         let mut encoded = Vec::new();
         range.write_to(&mut encoded).unwrap();
         let mut cursor = Cursor::new(encoded);
-        let table = MemoryRangeTable::read_from(
-            &mut cursor,
-            std::mem::size_of::<MemoryRange>() as u64,
-        )
-        .unwrap();
+        let table =
+            MemoryRangeTable::read_from(&mut cursor, std::mem::size_of::<MemoryRange>() as u64)
+                .unwrap();
         assert_eq!(table.regions(), &[range]);
     }
 
