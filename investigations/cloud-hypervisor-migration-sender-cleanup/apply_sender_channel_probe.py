@@ -13,9 +13,9 @@ if text.count(anchor) != 1:
 
 probe = r'''#[cfg(test)]
 mod sender_channel_liveness_tests {
+    use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
     use std::sync::mpsc::{RecvTimeoutError, TrySendError, channel, sync_channel};
-    use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
 
