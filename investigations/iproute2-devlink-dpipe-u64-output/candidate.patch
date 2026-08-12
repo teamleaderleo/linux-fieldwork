@@ -1,0 +1,21 @@
+--- a/devlink/devlink.c
++++ b/devlink/devlink.c
+@@
+ static int dpipe_entry_show(struct dpipe_ctx *ctx, struct nlattr *nl)
+ {
+ 	struct nlattr *nla_entry[DEVLINK_ATTR_MAX + 1] = {};
+-	uint32_t entry_index;
++	uint64_t entry_index;
+ 	uint64_t counter;
+ 	int err;
+@@
+-	entry_index = mnl_attr_get_u32(nla_entry[DEVLINK_ATTR_DPIPE_ENTRY_INDEX]);
+-	print_uint(PRINT_ANY, "index", "index %u", entry_index);
++	entry_index = mnl_attr_get_u64(nla_entry[DEVLINK_ATTR_DPIPE_ENTRY_INDEX]);
++	print_u64(PRINT_ANY, "index", "index %" PRIu64, entry_index);
+ 
+ 	if (nla_entry[DEVLINK_ATTR_DPIPE_ENTRY_COUNTER]) {
+ 		counter = mnl_attr_get_u64(nla_entry[DEVLINK_ATTR_DPIPE_ENTRY_COUNTER]);
+-		print_uint(PRINT_ANY, "counter", " counter %u", counter);
++		print_u64(PRINT_ANY, "counter", " counter %" PRIu64, counter);
+ 	}
