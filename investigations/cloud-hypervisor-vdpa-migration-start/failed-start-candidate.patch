@@ -1,0 +1,23 @@
+diff --git a/virtio-devices/src/vdpa.rs b/virtio-devices/src/vdpa.rs
+index f8644f82..00000000 100644
+--- a/virtio-devices/src/vdpa.rs
++++ b/virtio-devices/src/vdpa.rs
+@@ -493,14 +493,16 @@ impl Transportable for Vdpa {}
+ 
+ impl Migratable for Vdpa {
+     fn start_migration(&mut self) -> result::Result<(), MigratableError> {
+-        self.migrating = true;
+         // Given there's no way to track dirty pages, we must suspend the
+         // device as soon as the migration process starts.
+         if self.backend_features & (1 << VHOST_BACKEND_F_SUSPEND) != 0 {
+             assert!(self.vhost.is_some());
+-            self.vhost.as_ref().unwrap().suspend().map_err(|e| {
++            self.vhost.as_ref().unwrap().suspend().map_err(|e| {
+                 MigratableError::StartMigration(anyhow!("Error suspending vDPA device: {e:?}"))
+-            })
++            })?;
++            self.migrating = true;
++            Ok(())
+         } else {
+             Err(MigratableError::StartMigration(anyhow!(
+                 "vDPA device can't be suspended"
