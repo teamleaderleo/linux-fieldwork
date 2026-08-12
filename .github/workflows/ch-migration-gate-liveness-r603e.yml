@@ -1,0 +1,197 @@
+name: Cloud Hypervisor migration Gate liveness R603E
+
+on:
+  push:
+    branches:
+      - research/ch-migration-gate-liveness-r603e
+    paths:
+      - .github/workflows/ch-migration-gate-liveness-r603e.yml
+      - investigations/cloud-hypervisor-migration-gate-liveness/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate-liveness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      BUG_TEST: migration::transport::sender_gate_liveness_tests::wait_for_pending_data_worker_error_does_not_block_gate_enqueue
+      CONTROL_TEST: migration::transport::sender_gate_liveness_tests::wait_for_pending_data_full_queue_healthy_worker_completes
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and Rust
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../gate-rust-version.txt
+          cargo --version | tee ../gate-cargo-version.txt
+          git rev-parse HEAD | tee ../gate-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Apply exact-current probes
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-gate-liveness/apply_probe.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/migration/transport.rs > ../gate-probe.diff
+          cp vmm/src/migration/transport.rs ../gate-baseline-transport.rs
+
+      - name: Build and discover tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features kvm --lib --no-run
+          cargo test --locked -p vmm --features kvm --lib -- --list | tee ../gate-test-list.txt
+          grep -F "$BUG_TEST: test" ../gate-test-list.txt
+          grep -F "$CONTROL_TEST: test" ../gate-test-list.txt
+
+      - name: Baseline full-queue healthy-worker control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          timeout --signal=TERM --kill-after=2s 10s \
+            cargo test --locked -p vmm --features kvm --lib "$CONTROL_TEST" -- --exact --nocapture \
+            2>&1 | tee ../gate-baseline-control.log
+
+      - name: Prove baseline Gate enqueue blocks after worker error
+        id: baseline_bug
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=2s 4s \
+            cargo test --locked -p vmm --features kvm --lib "$BUG_TEST" -- --exact --nocapture \
+            > ../gate-baseline-bug.log 2>&1
+          rc=$?
+          set -e
+          echo "GATE_BASELINE_RC=$rc" | tee ../gate-baseline-status.txt
+          cat ../gate-baseline-bug.log
+          test "$rc" -eq 124
+
+      - name: Apply bounded nonblocking Gate candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-gate-liveness/apply_candidate.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          diff -u ../gate-baseline-transport.rs vmm/src/migration/transport.rs \
+            > ../gate-candidate-only.diff || test "$?" = 1
+          git diff -- vmm/src/migration/transport.rs > ../gate-probe-plus-candidate.diff
+
+      - name: Candidate worker-error and healthy controls
+        id: candidate_focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          timeout --signal=TERM --kill-after=2s 10s \
+            cargo test --locked -p vmm --features kvm --lib "$BUG_TEST" -- --exact --nocapture \
+            2>&1 | tee ../gate-candidate-bug.log
+          timeout --signal=TERM --kill-after=2s 10s \
+            cargo test --locked -p vmm --features kvm --lib "$CONTROL_TEST" -- --exact --nocapture \
+            2>&1 | tee ../gate-candidate-control.log
+
+      - name: Candidate full VMM library tests
+        id: vmm_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features kvm --lib 2>&1 | tee ../gate-vmm-tests.log
+
+      - name: Candidate Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features kvm --lib --tests -- \
+            -D warnings -A unfulfilled-lint-expectations \
+            2>&1 | tee ../gate-clippy.log
+          cargo fmt --all -- --check
+          git diff --check
+          git status --short | tee ../gate-final-status.txt
+          git diff --stat | tee ../gate-final-diff-stat.txt
+          sha256sum ../gate-candidate-only.diff | tee ../gate-candidate-diff-sha256.txt
+
+      - name: Write execution receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "baseline_bug_expected_timeout=${{ steps.baseline_bug.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "vmm_tests=${{ steps.vmm_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f gate-baseline-status.txt && cat gate-baseline-status.txt
+            test -f gate-candidate-diff-sha256.txt && cat gate-candidate-diff-sha256.txt
+          } | tee gate-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-migration-gate-liveness-r603e
+          if-no-files-found: warn
+          path: |
+            gate-execution-receipt.txt
+            gate-source-sha.txt
+            gate-rust-version.txt
+            gate-cargo-version.txt
+            gate-test-list.txt
+            gate-probe.diff
+            gate-baseline-transport.rs
+            gate-baseline-control.log
+            gate-baseline-bug.log
+            gate-baseline-status.txt
+            gate-candidate-only.diff
+            gate-probe-plus-candidate.diff
+            gate-candidate-bug.log
+            gate-candidate-control.log
+            gate-vmm-tests.log
+            gate-clippy.log
+            gate-final-status.txt
+            gate-final-diff-stat.txt
+            gate-candidate-diff-sha256.txt
