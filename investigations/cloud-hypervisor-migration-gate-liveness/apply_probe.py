@@ -92,7 +92,44 @@ mod sender_gate_liveness_tests {
         // Keep the receiver alive but deliberately unable to drain the full queue.
         let _message_rx = message_rx;
         let err = connections.wait_for_pending_data().unwrap_err();
-        assert!(err.to_string().contains("injected worker failure"));
+        assert!(matches!(err, MigratableError::MigrateSend(_)));
+    }
+
+    #[test]
+    fn worker_error_with_survivor_converges_through_cleanup() {
+        let (message_tx, message_rx) = sync_channel(1);
+        message_tx
+            .send(SendMemoryThreadMessage::Memory(MemoryRangeTable::default()))
+            .unwrap();
+        let (_notify_tx, notify_rx) = channel();
+        let worker_error = Arc::new(AtomicBool::new(true));
+
+        let failed_worker = thread::spawn(|| -> Result<(), MigratableError> {
+            Err(MigratableError::MigrateSend(anyhow!("injected worker failure")))
+        });
+        let survivor = thread::spawn(move || -> Result<(), MigratableError> {
+            // Give cleanup time to attempt terminal-message publication while the queue is full.
+            thread::sleep(Duration::from_millis(50));
+            assert!(matches!(
+                message_rx.recv().unwrap(),
+                SendMemoryThreadMessage::Memory(_)
+            ));
+            match message_rx.recv().unwrap() {
+                SendMemoryThreadMessage::Disconnect => Ok(()),
+                _ => panic!("expected Disconnect after queued Memory"),
+            }
+        });
+
+        let mut connections = SendAdditionalConnections {
+            guest_memory: guest_memory(),
+            threads: vec![failed_worker, survivor],
+            message_tx,
+            worker_error,
+            notify_rx,
+        };
+
+        let err = connections.wait_for_pending_data().unwrap_err();
+        assert!(matches!(err, MigratableError::MigrateSend(_)));
     }
 }
 
