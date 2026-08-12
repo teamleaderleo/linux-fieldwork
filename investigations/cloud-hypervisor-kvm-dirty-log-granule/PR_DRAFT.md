@@ -10,9 +10,11 @@ Compare view: https://github.com/cloud-hypervisor/cloud-hypervisor/compare/main.
 
 ## Pre-publish code-review note
 
-The current candidate collects the merged VM/VMM dirty bitmap into a temporary `Vec<u64>` before range conversion so it can inspect the final padding bits. Cloud Hypervisor commit `b6c266c8809e86acd5480e9c29ddd38b7fe5a7ab` deliberately removed this same kind of temporary vector because dirty bitmaps can be very large; its commit message gives a 12 TiB VM as a 384 MiB bitmap example and records a substantial scan-time improvement from keeping the merge as an iterator.
+The current signed candidate collects the merged VM/VMM dirty bitmap into a temporary `Vec<u64>` before range conversion so it can inspect the final padding bits. Cloud Hypervisor commit `b6c266c8809e86acd5480e9c29ddd38b7fe5a7ab` deliberately removed this same kind of temporary vector because dirty bitmaps can be very large; its commit message gives a 12 TiB VM as a 384 MiB bitmap example and records a substantial scan-time improvement from keeping the merge as an iterator.
 
-Before publishing the PR, preserve the new validation without restoring that allocation: inspect the final words from the two source bitmaps when validating tail bits, then pass the existing zipped/ORed iterator directly to `MemoryRangeTable::from_dirty_bitmap()`.
+A minimal repair is staged in [`STREAMING_REPAIR.patch`](STREAMING_REPAIR.patch). It checks the final source-bitmap words directly for invalid tail bits, then passes the zipped/ORed iterator to `MemoryRangeTable::from_dirty_bitmap()` without allocating a second full bitmap. The staged test checks invalid tail bits from both the VM and VMM bitmap sources.
+
+The signed source branch remains unchanged while this repair is reviewed.
 
 ## Title
 
