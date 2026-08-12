@@ -1,0 +1,214 @@
+name: lf-647 read_fs large-file validation
+
+on:
+  push:
+    branches:
+      - lf-647-readfs-exec
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate exact-current read_fs candidate
+        shell: bash
+        env:
+          UPSTREAM_HEAD: 5436ec0e5bf50dd8f7fe182d9ffd92b0861cb491
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang zlib1g-dev liblzma-dev liblzo2-dev liblz4-dev libzstd-dev
+
+          rm -rf /tmp/sq /tmp/src /tmp/append-src /tmp/evidence
+          mkdir -p /tmp/src /tmp/append-src /tmp/evidence
+          uname -a | tee /tmp/evidence/environment.txt
+          clang --version | tee -a /tmp/evidence/environment.txt
+          gcc --version | head -1 | tee -a /tmp/evidence/environment.txt
+          git --version | tee -a /tmp/evidence/environment.txt
+
+          git clone https://github.com/plougher/squashfs-tools.git /tmp/sq
+          git -C /tmp/sq checkout --detach "$UPSTREAM_HEAD"
+          test "$(git -C /tmp/sq rev-parse HEAD)" = "$UPSTREAM_HEAD"
+          git -C /tmp/sq show -s --format='%H %cI %s' HEAD | tee /tmp/evidence/upstream-head.txt
+
+          make -C /tmp/sq/squashfs-tools -j2 mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-generator
+
+          cat > /tmp/layout.c <<'EOF'
+          #include <stddef.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include "squashfs_fs.h"
+          int main(int argc, char **argv) {
+              FILE *f; struct squashfs_super_block sb; unsigned short mh; unsigned int len;
+              unsigned char *buf; struct squashfs_base_inode_header *base;
+              struct squashfs_lreg_inode_header *inode;
+              if(argc != 2) return 2;
+              f = fopen(argv[1], "rb"); if(!f) return 3;
+              if(fread(&sb, sizeof(sb), 1, f) != 1) return 4;
+              if(fseeko(f, sb.inode_table_start, SEEK_SET) != 0) return 5;
+              if(fread(&mh, sizeof(mh), 1, f) != 1 || (mh & 0x8000) == 0) return 6;
+              len = mh & 0x7fff; buf = malloc(len); if(!buf) return 7;
+              if(fread(buf, 1, len, f) != len) return 8;
+              base = (struct squashfs_base_inode_header *) buf;
+              if(base->inode_type != SQUASHFS_LREG_TYPE) return 9;
+              inode = (struct squashfs_lreg_inode_header *) buf;
+              printf("BLOCK_SIZE=%u\n", sb.block_size);
+              printf("FILE_SIZE_ABS=%lld\n", (long long) sb.inode_table_start + 2 + (long long) offsetof(struct squashfs_lreg_inode_header, file_size));
+              printf("INODE_TYPE=%u\n", base->inode_type);
+              printf("FILE_SIZE=%lld\n", inode->file_size);
+              printf("FRAGMENT=%u\n", inode->fragment);
+              printf("NLINK=%u\n", inode->nlink);
+              free(buf); fclose(f); return 0;
+          }
+          EOF
+          cc -O2 -I/tmp/sq/squashfs-tools /tmp/layout.c -o /tmp/layout
+
+          printf Z > /tmp/src/file
+          ln /tmp/src/file /tmp/src/file-hardlink
+          printf A > /tmp/append-src/new-file
+          /tmp/mksquashfs-generator /tmp/src /tmp/nofrag-base.sqfs -noI -no-fragments -nopad -noappend -no-progress
+          /tmp/mksquashfs-generator /tmp/src /tmp/frag-base.sqfs -noI -nopad -noappend -no-progress
+          /tmp/layout /tmp/nofrag-base.sqfs | tee /tmp/evidence/nofrag-layout.txt
+          /tmp/layout /tmp/frag-base.sqfs | tee /tmp/evidence/frag-layout.txt
+          grep -q '^INODE_TYPE=9$' /tmp/evidence/nofrag-layout.txt
+          grep -q '^FRAGMENT=4294967295$' /tmp/evidence/nofrag-layout.txt
+          grep -q '^FRAGMENT=0$' /tmp/evidence/frag-layout.txt
+          grep -q '^NLINK=2$' /tmp/evidence/nofrag-layout.txt
+
+          block="$(awk -F= '$1=="BLOCK_SIZE" {print $2}' /tmp/evidence/nofrag-layout.txt)"
+          no_off="$(awk -F= '$1=="FILE_SIZE_ABS" {print $2}' /tmp/evidence/nofrag-layout.txt)"
+          frag_off="$(awk -F= '$1=="FILE_SIZE_ABS" {print $2}' /tmp/evidence/frag-layout.txt)"
+          intmax_blocks=2147483647
+          no_max=$((intmax_blocks * block))
+          no_plus=$((no_max + 1))
+          frag_max=$((no_max + block - 1))
+          frag_plus=$(((intmax_blocks + 1) * block))
+          printf 'block=%s no_max=%s no_plus=%s frag_max=%s frag_plus=%s llmax=%s\n' "$block" "$no_max" "$no_plus" "$frag_max" "$frag_plus" 9223372036854775807 | tee /tmp/evidence/boundaries.txt
+
+          patch_size() {
+              local src="$1" dst="$2" off="$3" value="$4"
+              cp "$src" "$dst"
+              python3 - "$dst" "$off" "$value" <<'PY'
+          import hashlib, struct, sys
+          p, off, value = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+          d = bytearray(open(p, 'rb').read())
+          old = struct.unpack_from('<q', d, off)[0]
+          struct.pack_into('<q', d, off, value)
+          open(p, 'wb').write(d)
+          print(f"path={p} offset={off} old={old} new={value} sha256={hashlib.sha256(d).hexdigest()}")
+          PY
+          }
+          patch_size /tmp/nofrag-base.sqfs /tmp/nofrag-max.sqfs "$no_off" "$no_max" | tee /tmp/evidence/mutations.txt
+          patch_size /tmp/nofrag-base.sqfs /tmp/nofrag-plus.sqfs "$no_off" "$no_plus" | tee -a /tmp/evidence/mutations.txt
+          patch_size /tmp/nofrag-base.sqfs /tmp/nofrag-llmax.sqfs "$no_off" 9223372036854775807 | tee -a /tmp/evidence/mutations.txt
+          patch_size /tmp/frag-base.sqfs /tmp/frag-max.sqfs "$frag_off" "$frag_max" | tee -a /tmp/evidence/mutations.txt
+          patch_size /tmp/frag-base.sqfs /tmp/frag-plus.sqfs "$frag_off" "$frag_plus" | tee -a /tmp/evidence/mutations.txt
+          sha256sum /tmp/*-base.sqfs /tmp/*-max.sqfs /tmp/*-plus.sqfs /tmp/nofrag-llmax.sqfs | sort | tee /tmp/evidence/fixture-sha256.txt
+
+          SAN='-O1 -g -fsanitize=address,undefined,implicit-integer-truncation -fno-sanitize-recover=all -fno-omit-frame-pointer'
+          make -C /tmp/sq/squashfs-tools clean
+          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$SAN" EXTRA_LDFLAGS='-fsanitize=address,undefined,implicit-integer-truncation' mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-unpatched
+          export ASAN_OPTIONS='halt_on_error=1:abort_on_error=1:detect_leaks=0'
+          export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
+
+          run_unpatched() {
+              local label="$1" image="$2"
+              cp "$image" "/tmp/${label}-unpatched.sqfs"
+              set +e
+              /tmp/mksquashfs-unpatched /tmp/append-src "/tmp/${label}-unpatched.sqfs" -noI -no-progress > "/tmp/evidence/${label}-unpatched.log" 2>&1
+              local st=$?
+              set -e
+              echo "status=$st" >> "/tmp/evidence/${label}-unpatched.log"
+              cat "/tmp/evidence/${label}-unpatched.log"
+          }
+          run_unpatched base /tmp/nofrag-base.sqfs
+          run_unpatched nofrag-plus /tmp/nofrag-plus.sqfs
+          run_unpatched nofrag-llmax /tmp/nofrag-llmax.sqfs
+          run_unpatched frag-plus /tmp/frag-plus.sqfs
+          grep -q 'status=0' /tmp/evidence/base-unpatched.log
+          ! grep -Eq 'runtime error:|AddressSanitizer|UndefinedBehaviorSanitizer' /tmp/evidence/base-unpatched.log
+          grep -Eq 'implicit conversion.*2147483648.*int|changed the value to -2147483648' /tmp/evidence/nofrag-plus-unpatched.log
+          grep -q 'signed integer overflow' /tmp/evidence/nofrag-llmax-unpatched.log
+          grep -Eq 'implicit conversion.*2147483648.*int|changed the value to -2147483648' /tmp/evidence/frag-plus-unpatched.log
+
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/sq/squashfs-tools/read_fs.c')
+          s = p.read_text()
+          begin = s.index('\t\tcase SQUASHFS_LREG_TYPE: {')
+          end = s.index('\t\tcase SQUASHFS_SYMLINK_TYPE:', begin)
+          section = s[begin:end]
+          decl = '\t\t\tlong long start, file_bytes = 0;\n'
+          if section.count(decl) != 1:
+              raise SystemExit(f'LREG declaration count={section.count(decl)}')
+          section = section.replace(decl, '\t\t\tlong long start, file_bytes = 0, block_count;\n', 1)
+          old = '''\t\t\tfrag_bytes = inode.fragment == SQUASHFS_INVALID_FRAG ?\n\t\t\t\t0 : inode.file_size % sBlk->block_size;\n\t\t\tblocks = inode.fragment == SQUASHFS_INVALID_FRAG ?\n\t\t\t\t(inode.file_size + sBlk->block_size - 1) >>\n\t\t\t\tsBlk->block_log : inode.file_size >>\n\t\t\t\tsBlk->block_log;\n\t\t\tstart = inode.start_block;\n'''
+          new = '''\t\t\tfrag_bytes = inode.fragment == SQUASHFS_INVALID_FRAG ?\n\t\t\t\t0 : inode.file_size % sBlk->block_size;\n\t\t\tblock_count = inode.file_size >> sBlk->block_log;\n\t\t\tif(inode.fragment == SQUASHFS_INVALID_FRAG &&\n\t\t\t\tinode.file_size % sBlk->block_size)\n\t\t\t\tblock_count++;\n\t\t\tif(block_count > INT_MAX) {\n\t\t\t\tERROR("File system corrupted - too many blocks in inode (blocks: %lld)\\n", block_count);\n\t\t\t\tgoto corrupted2;\n\t\t\t}\n\t\t\tblocks = (int) block_count;\n\t\t\tstart = inode.start_block;\n'''
+          if section.count(old) != 1:
+              raise SystemExit(f'LREG calculation count={section.count(old)}')
+          section = section.replace(old, new, 1)
+          p.write_text(s[:begin] + section + s[end:])
+          PY
+          git -C /tmp/sq diff --check
+          git -C /tmp/sq diff -- squashfs-tools/read_fs.c | tee /tmp/evidence/candidate.diff
+          test "$(git -C /tmp/sq diff --name-only)" = 'squashfs-tools/read_fs.c'
+
+          make -C /tmp/sq/squashfs-tools clean
+          make -C /tmp/sq/squashfs-tools -j2
+          echo NORMAL_FULL_BUILD_OK | tee /tmp/evidence/normal-build.txt
+
+          make -C /tmp/sq/squashfs-tools clean
+          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$SAN" EXTRA_LDFLAGS='-fsanitize=address,undefined,implicit-integer-truncation' mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-candidate
+
+          clean_log() { ! grep -Eq 'runtime error:|AddressSanitizer|UndefinedBehaviorSanitizer' "$1"; }
+          append_ok() {
+              local label="$1" image="$2"
+              cp "$image" "/tmp/${label}-candidate.sqfs"
+              /tmp/mksquashfs-candidate /tmp/append-src "/tmp/${label}-candidate.sqfs" -noI -no-progress > "/tmp/evidence/${label}-candidate.log" 2>&1
+              clean_log "/tmp/evidence/${label}-candidate.log"
+              grep -q 'Scanning existing filesystem' "/tmp/evidence/${label}-candidate.log"
+              cat "/tmp/evidence/${label}-candidate.log"
+          }
+          append_existing_reject() {
+              local label="$1" image="$2"
+              cp "$image" "/tmp/${label}-candidate.sqfs"
+              set +e
+              /tmp/mksquashfs-candidate /tmp/append-src "/tmp/${label}-candidate.sqfs" -noI -no-progress > "/tmp/evidence/${label}-candidate.log" 2>&1
+              local st=$?
+              set -e
+              echo "status=$st" >> "/tmp/evidence/${label}-candidate.log"
+              test "$st" -ne 0
+              clean_log "/tmp/evidence/${label}-candidate.log"
+              cat "/tmp/evidence/${label}-candidate.log"
+          }
+          append_too_many() {
+              local label="$1" image="$2"
+              append_existing_reject "$label" "$image"
+              grep -q 'File system corrupted - too many blocks in inode' "/tmp/evidence/${label}-candidate.log"
+          }
+
+          append_ok nofrag-base /tmp/nofrag-base.sqfs
+          append_ok frag-base /tmp/frag-base.sqfs
+          append_existing_reject nofrag-max /tmp/nofrag-max.sqfs
+          ! grep -q 'too many blocks in inode' /tmp/evidence/nofrag-max-candidate.log
+          append_existing_reject frag-max /tmp/frag-max.sqfs
+          ! grep -q 'too many blocks in inode' /tmp/evidence/frag-max-candidate.log
+          append_too_many nofrag-plus /tmp/nofrag-plus.sqfs
+          append_too_many nofrag-llmax /tmp/nofrag-llmax.sqfs
+          append_too_many frag-plus /tmp/frag-plus.sqfs
+
+          echo 'ALL LF-647 READ_FS CANDIDATE ASSERTIONS PASSED' | tee /tmp/evidence/result.txt
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lf-647-readfs-evidence
+          path: /tmp/evidence
