@@ -1,0 +1,184 @@
+name: Cloud Hypervisor QCOW bounded refblock journal audit
+
+on:
+  push:
+    branches:
+      - research/ch-qcow-refblock-journal-r634j
+    paths:
+      - .github/workflows/ch-qcow-refblock-journal-r634j.yml
+      - investigations/cloud-hypervisor-qcow-refblock-journal/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refblock-journal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      ROLLBACK_TEST: formats::qcow::metadata::unit_tests::refblock_recursive_enospc_journal_rolls_back
+      SUCCESS_TEST: formats::qcow::metadata::unit_tests::refblock_recursive_journal_success_owns_chain_and_tracks_old_block
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin exact source and Rust
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../journal-rust-version.txt
+          cargo --version | tee ../journal-cargo-version.txt
+          git rev-parse HEAD | tee ../journal-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          git status --short | tee ../journal-source-status-before.txt
+          test ! -s ../journal-source-status-before.txt
+
+      - name: Apply bounded journal candidate
+        id: candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-journal/apply_candidate.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs block/src/formats/qcow/refcount.rs block/src/formats/qcow/vec_cache.rs > ../journal-candidate.diff
+          grep -F "RefcountUndo" block/src/formats/qcow/refcount.rs
+          grep -F "rollback_undo" block/src/formats/qcow/metadata.rs
+          if grep -F "self.refcounts.clone()" block/src/formats/qcow/metadata.rs; then
+            echo "whole RefCount clone unexpectedly present" >&2
+            exit 1
+          fi
+
+      - name: Apply semantic discriminators
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-journal/apply_probe.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs block/src/formats/qcow/refcount.rs block/src/formats/qcow/vec_cache.rs > ../journal-probe-plus-candidate.diff
+
+      - name: Build and discover tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib --no-run
+          cargo test --locked -p block --lib -- --list | tee ../journal-test-list.txt
+          grep -F "$ROLLBACK_TEST: test" ../journal-test-list.txt
+          grep -F "$SUCCESS_TEST: test" ../journal-test-list.txt
+
+      - name: Execute recursive ENOSPC journal rollback
+        id: rollback
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$ROLLBACK_TEST" -- --exact --nocapture \
+            2>&1 | tee ../journal-rollback.log
+          grep -F "REFBLOCK_JOURNAL_ROLLBACK post_error" ../journal-rollback.log
+          grep -F "REFBLOCK_JOURNAL_ROLLBACK post_sync" ../journal-rollback.log
+          grep -F "REFBLOCK_JOURNAL_ROLLBACK reopened" ../journal-rollback.log
+          grep -F "REFBLOCK_JOURNAL_ROLLBACK allocator_reuse" ../journal-rollback.log
+
+      - name: Execute successful recursive ownership control
+        id: success_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$SUCCESS_TEST" -- --exact --nocapture \
+            2>&1 | tee ../journal-success.log
+          grep -F "REFBLOCK_JOURNAL_SUCCESS target=" ../journal-success.log
+          grep -F "REFBLOCK_JOURNAL_SUCCESS reopened" ../journal-success.log
+
+      - name: Run block library regression suite
+        id: block_suite
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib 2>&1 | tee ../journal-block-suite.log
+
+      - name: Clippy candidate paths
+        id: clippy
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p block --lib -- -D warnings 2>&1 | tee ../journal-clippy.log
+
+      - name: Final hygiene
+        id: hygiene
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fmt --all -- --check
+          git diff --check
+          git status --short | tee ../journal-final-status.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "candidate_gate=${{ steps.candidate.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "rollback_gate=${{ steps.rollback.outcome }}"
+            echo "success_control_gate=${{ steps.success_control.outcome }}"
+            echo "block_suite_gate=${{ steps.block_suite.outcome }}"
+            echo "clippy_gate=${{ steps.clippy.outcome }}"
+            echo "hygiene_gate=${{ steps.hygiene.outcome }}"
+            test -f journal-source-sha.txt && cat journal-source-sha.txt
+            test -f journal-rust-version.txt && cat journal-rust-version.txt
+          } | tee journal-receipt.txt
+
+      - name: Upload execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-qcow-refblock-journal-r634j
+          if-no-files-found: warn
+          path: |
+            journal-receipt.txt
+            journal-source-sha.txt
+            journal-rust-version.txt
+            journal-cargo-version.txt
+            journal-source-status-before.txt
+            journal-candidate.diff
+            journal-probe-plus-candidate.diff
+            journal-test-list.txt
+            journal-rollback.log
+            journal-success.log
+            journal-block-suite.log
+            journal-clippy.log
+            journal-final-status.txt
