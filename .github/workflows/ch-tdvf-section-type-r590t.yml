@@ -1,0 +1,222 @@
+name: Cloud Hypervisor TDVF section type R590T
+
+on:
+  push:
+    branches:
+      - research/ch-tdvf-section-type-r590t
+    paths:
+      - .github/workflows/ch-tdvf-section-type-r590t.yml
+      - investigations/cloud-hypervisor-tdvf-section-type/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-section-type:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: arch/tdx,arch/kvm,hypervisor/tdx,hypervisor/kvm
+      CONTROL: x86_64::tdx::unit_tests::tdvf_known_section_type_control
+      MIRI_WITNESS: x86_64::tdx::unit_tests::tdvf_unknown_section_type_miri_baseline
+      CANDIDATE_TEST: x86_64::tdx::unit_tests::tdvf_unknown_section_type_is_rejected
+      CANDIDATE_CONTROL: x86_64::tdx::unit_tests::tdvf_known_and_reserved_section_types_are_validated
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt,miri
+          rustup override set 1.89.0
+          rustc --version | tee ../tdvf-type-rust-version.txt
+          rustc +nightly --version | tee ../tdvf-type-nightly-version.txt
+          cargo +nightly miri --version | tee ../tdvf-type-miri-version.txt
+          git rev-parse HEAD | tee ../tdvf-type-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Apply and format Miri-only baseline probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-section-type/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-type-probe.diff
+
+      - name: Build and discover baseline probes
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib --no-run
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib -- --list | tee ../tdvf-type-test-list.txt
+          grep -F "$CONTROL: test" ../tdvf-type-test-list.txt
+          grep -F "$MIRI_WITNESS: test" ../tdvf-type-test-list.txt
+
+      - name: Baseline known-type parser control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-type-baseline-control.log
+          grep -F "TDVF_TYPE_CONTROL section_type=Bfv" ../tdvf-type-baseline-control.log
+
+      - name: Miri proves unknown type reaches invalid enum boundary
+        id: miri_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo +nightly miri setup
+          set +e
+          MIRIFLAGS="-Zmiri-disable-isolation" cargo +nightly miri test --locked \
+            -p arch -p hypervisor --features "$FEATURES" --lib "$MIRI_WITNESS" -- --ignored --exact --nocapture \
+            > ../tdvf-type-miri-baseline.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_TYPE_MIRI_RC=$rc" | tee ../tdvf-type-miri-status.txt
+          cat ../tdvf-type-miri-baseline.log
+          test "$rc" -ne 0
+          grep -F "TDVF_TYPE_MIRI_INPUT raw_type=7" ../tdvf-type-miri-baseline.log
+          grep -Eiq "undefined behavior|invalid.*enum|valid enum|discriminant" ../tdvf-type-miri-baseline.log
+
+      - name: Restore exact source after baseline probe
+        id: restore
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git checkout -- arch/src/x86_64/tdx/mod.rs
+          test -z "$(git status --short)"
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply validity-safe section-type candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-section-type/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-type-candidate-only.diff
+          sha256sum ../tdvf-type-candidate-only.diff | tee ../tdvf-type-candidate-diff-sha256.txt
+          grep -F "struct RawTdvfSection" arch/src/x86_64/tdx/mod.rs
+          grep -F "InvalidSectionType" arch/src/x86_64/tdx/mod.rs
+          ! grep -F "sections.resize_with(descriptor.num_sections as usize, TdvfSection::default)" arch/src/x86_64/tdx/mod.rs
+
+      - name: Candidate focused validation
+        id: candidate_focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-type-candidate-invalid.log
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CANDIDATE_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-type-candidate-control.log
+          grep -F "TDVF_TYPE_CANDIDATE invalid_result=InvalidSectionType(7)" ../tdvf-type-candidate-invalid.log
+          grep -F "raw_type=0xffffffff type=Reserved" ../tdvf-type-candidate-control.log
+
+      - name: Full arch and hypervisor TDX KVM tests
+        id: broad_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib \
+            2>&1 | tee ../tdvf-type-broad-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p arch -p hypervisor --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables \
+            2>&1 | tee ../tdvf-type-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-type-final-status.txt
+          git diff --stat | tee ../tdvf-type-final-diff-stat.txt
+          git diff -- arch/src/x86_64/tdx/mod.rs | tee ../tdvf-type-final-candidate.diff
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "features=$FEATURES"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "miri_invalid_enum_witness=${{ steps.miri_witness.outcome }}"
+            echo "restore_exact_source=${{ steps.restore.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "broad_tests=${{ steps.broad_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdvf-type-miri-status.txt && cat tdvf-type-miri-status.txt
+            test -f tdvf-type-candidate-diff-sha256.txt && cat tdvf-type-candidate-diff-sha256.txt
+          } | tee tdvf-type-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-section-type-r590t
+          if-no-files-found: warn
+          path: |
+            tdvf-type-execution-receipt.txt
+            tdvf-type-source-sha.txt
+            tdvf-type-rust-version.txt
+            tdvf-type-nightly-version.txt
+            tdvf-type-miri-version.txt
+            tdvf-type-test-list.txt
+            tdvf-type-probe.diff
+            tdvf-type-baseline-control.log
+            tdvf-type-miri-baseline.log
+            tdvf-type-miri-status.txt
+            tdvf-type-candidate-only.diff
+            tdvf-type-candidate-diff-sha256.txt
+            tdvf-type-candidate-invalid.log
+            tdvf-type-candidate-control.log
+            tdvf-type-broad-tests.log
+            tdvf-type-clippy.log
+            tdvf-type-final-status.txt
+            tdvf-type-final-diff-stat.txt
+            tdvf-type-final-candidate.diff
