@@ -7,9 +7,11 @@ marker = "receive_memory_ranges_rejects_truncated_payload"
 if marker in text:
     raise SystemExit(f"probe marker already present in {path}")
 
-probe = r'''
+anchor = "#[cfg(test)]\nmod tests {"
+if text.count(anchor) != 1:
+    raise SystemExit(f"expected exactly one existing test module anchor in {path}")
 
-#[cfg(test)]
+probe = r'''#[cfg(test)]
 mod truncated_payload_tests {
     use std::io::Write as _;
     use std::os::unix::net::UnixStream;
@@ -48,6 +50,7 @@ mod truncated_payload_tests {
         ));
     }
 }
+
 '''
 
-path.write_text(text.rstrip() + probe.rstrip() + "\n")
+path.write_text(text.replace(anchor, probe + anchor, 1))
