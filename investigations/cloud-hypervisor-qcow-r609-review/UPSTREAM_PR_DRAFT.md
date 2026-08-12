@@ -7,7 +7,7 @@ Source branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/qcow-l2-refcount-
 Submitted head: `b26d6b70e28dacf0a35463b3bc45494ae2b2028e`  
 Candidate tree: `20088ee1b7f2fa69df1ebaff97105d70e9490fa0`  
 Base at submission: `1af93ac7035cda77cd87b0c18b1134ebb0928052`  
-Upstream PR: https://github.com/cloud-hypervisor/cloud-hypervisor/pull/8721  
+Upstream PR: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8721  
 Submission performed by the human contributor. No assistant-authored upstream mutation is recorded.
 
 ## Submitted title
