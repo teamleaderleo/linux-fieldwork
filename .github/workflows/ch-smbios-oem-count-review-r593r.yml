@@ -66,7 +66,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          git apply ../fieldwork/investigations/cloud-hypervisor-smbios-oem-count/candidate.patch
+          python3 ../fieldwork/investigations/cloud-hypervisor-smbios-oem-count/apply_review_candidate.py
           cargo fmt --all
           cargo fmt --all -- --check
           git diff --check
