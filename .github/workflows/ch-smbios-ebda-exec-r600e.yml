@@ -114,13 +114,13 @@ jobs:
           test "$rc" -ne 0
           grep -F "oversized SMBIOS payload must be rejected" ../smbios-baseline-invariant.log
 
-      - name: Apply exact retained EBDA candidate
+      - name: Apply retained EBDA candidate semantics
         id: candidate_apply
         working-directory: cloud-hypervisor
         shell: bash
         run: |
           set -euxo pipefail
-          git apply ../fieldwork/investigations/cloud-hypervisor-smbios-ebda-exec/candidate.patch
+          python3 ../fieldwork/investigations/cloud-hypervisor-smbios-ebda-exec/apply_candidate.py
           cargo +nightly fmt --all
           cargo +nightly fmt --all -- --check
           git diff --check
