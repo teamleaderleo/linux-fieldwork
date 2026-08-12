@@ -118,4 +118,4 @@ probe = r'''
     }
 '''
 
-path.write_text(text[:end] + probe + text[end:])
+path.write_text(text[:end] + probe.rstrip() + text[end:])
