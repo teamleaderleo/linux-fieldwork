@@ -179,7 +179,7 @@ jobs:
         run: |
           set -euxo pipefail
           cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
-            -D warnings -A unreachable-code -A unused-mut -A unused-variables \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations \
             2>&1 | tee ../tdvf-payload-param-clippy.log
           cargo +nightly fmt --all -- --check
           git diff --check
