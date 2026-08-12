@@ -1,0 +1,255 @@
+name: Cloud Hypervisor TDVF firmware exact read R590X
+
+on:
+  push:
+    branches: [research/ch-tdvf-firmware-short-read-r590x]
+    paths:
+      - .github/workflows/ch-tdvf-firmware-short-read-r590x.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-firmware-exact-read:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      D_SHA: 133b608558690e65eeb1a66b33b2d8cfe8c7ef37
+      D_DIFF_SHA: dee0bbf66069621261b7c0218737032b3ffe7b2763b14dd504493e3bf671132e
+      CONTROL: tdvf_firmware_exact_length_control
+      WITNESS: tdvf_firmware_short_source_is_success_baseline
+      INVARIANT: tdvf_firmware_short_source_must_not_succeed_partially
+      D_TEST: tdx_firmware_copy_propagates_guest_memory_error
+      X_TEST: tdx_firmware_exact_read_rejects_partial_source
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source, toolchains, and R590D materializer
+        id: source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0 --path cloud-hypervisor
+          rustc --version | tee tdvf-short-read-rust-version.txt
+          rustc +nightly --version | tee tdvf-short-read-nightly-version.txt
+          git -C cloud-hypervisor rev-parse HEAD | tee tdvf-short-read-source-sha.txt
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git -C cloud-hypervisor status --short)"
+
+          git -C fieldwork fetch --no-tags origin "$D_SHA"
+          git -C fieldwork show "$D_SHA:investigations/cloud-hypervisor-tdvf-firmware-dest/apply_candidate.py" > /tmp/r590d.py
+          sha256sum /tmp/r590d.py | tee tdvf-short-read-d-materializer-sha256.txt
+
+      - name: Apply and format exact-current short-read probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-firmware-short-read/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-short-read-probe.diff
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('vmm/src/vm.rs').read_text()
+          current = '''                    mem.read_volatile_from(
+                        GuestAddress(section.address),
+                        &mut firmware_file,
+                        section.data_size as usize,
+                    )
+                    .unwrap();
+          '''
+          assert current in text, 'baseline production BFV/CFV copy no longer matches expected non-exact ignored-count boundary'
+          PY
+
+      - name: Build and discover baseline probes
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib --no-run
+          cargo test --locked -p vmm --features "$FEATURES" --lib -- --list | tee ../tdvf-short-read-test-list.txt
+          for test_name in "$CONTROL" "$WITNESS" "$INVARIANT"; do
+            grep -F "$test_name: test" ../tdvf-short-read-test-list.txt
+          done
+
+      - name: Baseline exact-length control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL" -- --nocapture \
+            2>&1 | tee ../tdvf-short-read-baseline-control.log
+          grep -F "TDVF_SHORT_READ_CONTROL requested=16 copied=16" ../tdvf-short-read-baseline-control.log
+
+      - name: Prove baseline accepts successful short copy
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$WITNESS" -- --ignored --nocapture \
+            2>&1 | tee ../tdvf-short-read-baseline-witness.log
+          grep -F "TDVF_SHORT_READ_BASELINE requested=16 copied=8" ../tdvf-short-read-baseline-witness.log
+
+      - name: Prove exact-copy invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INVARIANT" -- --nocapture \
+            > ../tdvf-short-read-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_SHORT_READ_BASELINE_INVARIANT_RC=$rc" | tee ../tdvf-short-read-baseline-invariant-status.txt
+          cat ../tdvf-short-read-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F "TDVF_SHORT_READ_INVARIANT requested=16 copied=8" ../tdvf-short-read-baseline-invariant.log
+          grep -F "BFV/CFV copy must not silently accept a short source" ../tdvf-short-read-baseline-invariant.log
+
+      - name: Restore exact source after baseline probe
+        id: restore
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git checkout -- vmm/src/vm.rs
+          test -z "$(git status --short)"
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply and verify proven R590D destination layer
+        id: apply_d
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/r590d.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-short-read-d-base.diff
+          sha256sum ../tdvf-short-read-d-base.diff | tee ../tdvf-short-read-d-base-sha256.txt
+          actual=$(awk '{print $1}' ../tdvf-short-read-d-base-sha256.txt)
+          test "$actual" = "$D_DIFF_SHA"
+          cp vmm/src/vm.rs ../tdvf-short-read-d-base.rs
+
+      - name: Apply exact-read delta
+        id: apply_x
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-firmware-short-read/apply_exact_read_delta.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          diff -u ../tdvf-short-read-d-base.rs vmm/src/vm.rs > ../tdvf-short-read-x-only.diff || test "$?" = 1
+          sha256sum ../tdvf-short-read-x-only.diff | tee ../tdvf-short-read-x-only-sha256.txt
+          git diff -- vmm/src/vm.rs > ../tdvf-short-read-d-plus-x.diff
+          sha256sum ../tdvf-short-read-d-plus-x.diff | tee ../tdvf-short-read-stacked-sha256.txt
+          grep -F "read_exact_volatile_from" vmm/src/vm.rs
+          ! grep -F "fn copy_tdx_firmware_section" -A8 vmm/src/vm.rs | grep -F "read_volatile_from"
+
+      - name: Focused D+X matrix
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$D_TEST" -- --nocapture \
+            2>&1 | tee ../tdvf-short-read-d-control.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$X_TEST" -- --nocapture \
+            2>&1 | tee ../tdvf-short-read-x-candidate.log
+          grep -F "TDVF_FIRMWARE_DEST_CANDIDATE invalid_result=FirmwareLoad(InvalidGuestAddress" ../tdvf-short-read-d-control.log
+          grep -F "TDVF_FIRMWARE_DEST_CANDIDATE exact_bytes=" ../tdvf-short-read-d-control.log
+          grep -F "TDVF_SHORT_READ_CANDIDATE short_result=FirmwareLoad(PartialBuffer { expected: 16, completed: 8 })" ../tdvf-short-read-x-candidate.log
+          grep -F "TDVF_SHORT_READ_CANDIDATE control_bytes=" ../tdvf-short-read-x-candidate.log
+
+      - name: Full VMM TDX KVM library tests
+        id: vmm_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib \
+            2>&1 | tee ../tdvf-short-read-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations \
+            2>&1 | tee ../tdvf-short-read-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-short-read-final-status.txt
+          git diff --stat | tee ../tdvf-short-read-final-diff-stat.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "features=$FEATURES"
+            echo "r590d_materializer=$D_SHA"
+            echo "expected_r590d_diff_sha=$D_DIFF_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "baseline_short_success_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "restore_exact_source=${{ steps.restore.outcome }}"
+            echo "apply_r590d=${{ steps.apply_d.outcome }}"
+            echo "apply_r590x=${{ steps.apply_x.outcome }}"
+            echo "focused=${{ steps.focused.outcome }}"
+            echo "vmm_tests=${{ steps.vmm_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdvf-short-read-baseline-invariant-status.txt && cat tdvf-short-read-baseline-invariant-status.txt
+            test -f tdvf-short-read-d-base-sha256.txt && cat tdvf-short-read-d-base-sha256.txt
+            test -f tdvf-short-read-x-only-sha256.txt && cat tdvf-short-read-x-only-sha256.txt
+            test -f tdvf-short-read-stacked-sha256.txt && cat tdvf-short-read-stacked-sha256.txt
+          } | tee tdvf-short-read-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-firmware-short-read-r590x
+          if-no-files-found: warn
+          path: |
+            tdvf-short-read-*.txt
+            tdvf-short-read-*.log
+            tdvf-short-read-*.diff
+            tdvf-short-read-d-base.rs
