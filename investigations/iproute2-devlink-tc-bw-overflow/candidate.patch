@@ -1,0 +1,29 @@
+diff --git a/devlink/devlink.c b/devlink/devlink.c
+--- a/devlink/devlink.c
++++ b/devlink/devlink.c
+@@
+ static int
+ parse_tc_bw_arg(const char *tc_bw_str, int *tc_index, uint32_t *tc_bw)
+ {
+-	char *index, *value, *endptr;
++	char *index, *value;
+ 	char *input = NULL;
+ 	int err;
+@@
+-	*tc_index = strtoul(index, &endptr, 10);
+-	if (endptr && *endptr) {
++	err = get_integer(tc_index, index, 10);
++	if (err) {
+ 		pr_err("Invalid traffic class index: %s\n", index);
+ 		err = -EINVAL;
+ 		goto out;
+ 	}
+ 
+-	*tc_bw = strtoul(value, &endptr, 10);
+-	if (endptr && *endptr) {
++	err = get_u32(tc_bw, value, 10);
++	if (err) {
+ 		pr_err("Invalid bandwidth value: %s\n", value);
+ 		err = -EINVAL;
+ 		goto out;
+ 	}
