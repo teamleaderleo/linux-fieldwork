@@ -13,7 +13,9 @@ if text.count(anchor) != 1:
 
 probe = r'''#[cfg(test)]
 mod raw_range_probe_tests {
-    use std::fs::{OpenOptions, remove_file};
+    use std::env::temp_dir;
+    use std::fs::{OpenOptions, remove_file, write};
+    use std::process::id;
 
     use super::*;
 
@@ -46,11 +48,11 @@ mod raw_range_probe_tests {
         let pointer_offset = FILE_LEN - 0x20;
         bytes[pointer_offset..pointer_offset + 4].copy_from_slice(&0u32.to_le_bytes());
 
-        let path = std::env::temp_dir().join(format!(
+        let path = temp_dir().join(format!(
             "cloud-hypervisor-tdvf-range-{}-{data_offset:x}-{data_size:x}.fd",
-            std::process::id()
+            id()
         ));
-        std::fs::write(&path, bytes).unwrap();
+        write(&path, bytes).unwrap();
         let file = OpenOptions::new().read(true).open(&path).unwrap();
         remove_file(path).unwrap();
         file
