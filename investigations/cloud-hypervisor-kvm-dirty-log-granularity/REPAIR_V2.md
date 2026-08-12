@@ -3,63 +3,92 @@
 Updated: 2026-08-12
 Owning issue: #617
 Canonical Cloud Hypervisor source: `1af93ac7035cda77cd87b0c18b1134ebb0928052`
-Execution branch: `teamleaderleo/cloud-hypervisor:fieldwork/kvm-dirty-log-granule-repair-v2`
-Execution head: `d94b9469ce0dc99e83017899eca37112c2edf199`
-Current hosted run: `31563474390` — queued at this checkpoint
+Final validation run/job: `31564829024` / `94014411511`
+Execution recipe head: `011ae4eb9ae3c3035372cd053e08672b036a098e`
+Published technical candidate: `teamleaderleo/cloud-hypervisor:linux-fieldwork/kvm-dirty-log-granule-repair-v2` @ `f1e892815ae6a71ffc18e5d18fd7fef1f030e048`
 External-contact state: `false; none occurred`
 
-## Goal
+## Disposition
 
-Repair the current untyped dirty-log API so the bitmap's byte unit travels with the bitmap, KVM host-page dirty bits decode correctly on 4K/16K/64K Linux hosts, and MSHV remains explicitly fixed at its 4K Hyper-V page unit.
+`CANDIDATE API ACCEPTABLE`
+
+The selected repair couples each backend dirty bitmap with its byte granularity and validates the VMM/backend compatibility boundary before any bitmap OR or range conversion.
+
+Real 16K/64K KVM live migration remains hardware-blocked in the controlled environments available to this investigation. The disposition above is an API/source-candidate disposition, not an end-to-end hardware claim.
 
 ## Selected API
 
-The candidate changes `Vm::get_dirty_log()` from a bare `Vec<u64>` to:
+`Vm::get_dirty_log()` changes from a bare `Vec<u64>` to:
 
 ```rust
 pub struct DirtyLog {
     pub bitmap: Vec<u64>,
     pub bytes_per_bit: NonZeroU64,
 }
+
+fn get_dirty_log(...) -> Result<DirtyLog>;
 ```
 
-This makes the producer's unit part of the returned value. `MemoryManager` consumes that value and independently identifies the VMM `AtomicBitmap` unit from the host Linux page size before combining bitmaps.
+The bitmap and its semantic byte unit are returned as one value, preventing the unit from drifting independently from the bitmap-producing call.
 
 ### KVM
 
-KVM returns the kernel bitmap together with checked `_SC_PAGESIZE`:
+KVM returns the kernel bitmap unchanged together with checked host `_SC_PAGESIZE`.
 
-- reject `sysconf()` failure instead of casting `-1` to `u64::MAX`;
-- require a nonzero power-of-two page size;
-- preserve the bitmap unchanged.
+The candidate rejects:
+
+- signed conversion failure, including `sysconf()` returning `-1`;
+- zero page size;
+- a non-power-of-two page size.
+
+This preserves KVM's host-base-page dirty-log contract for 4K, 16K, and 64K Linux kernels.
 
 ### MSHV
 
-MSHV returns the bitmap with `1 << PAGE_SHIFT`, preserving its current fixed 4K contract.
+MSHV returns its bitmap together with `1 << PAGE_SHIFT`, preserving the backend's current fixed 4K dirty-log unit.
 
-If the Linux VMM bitmap unit differs from MSHV's unit, the merge fails with a typed migration error instead of OR-ing unrelated bit positions.
+If the VMM `AtomicBitmap` host-page unit differs from MSHV's backend unit, migration fails at the merge boundary instead of OR-ing unrelated bit indices.
 
 ## Merge invariants
 
-Before OR/coalescing, the candidate validates:
+Before the backend bitmap and VMM bitmap are combined, `MemoryManager` validates:
 
 1. backend and VMM `bytes_per_bit` equality;
 2. power-of-two granularity;
-3. nonzero region size aligned to the granularity;
+3. nonzero memory size aligned to the granularity;
 4. GPA alignment to the granularity;
 5. checked `start_gpa + memory_size`;
 6. exact expected `u64` word count for both bitmap producers;
-7. zero tail bits outside the memory region.
+7. zero tail bits outside the registered memory range.
 
-Only after these checks does it OR the words and call the existing `MemoryRangeTable::from_dirty_bitmap()` with the backend byte granularity.
+Only after those checks does the candidate OR the bitmap words and call `MemoryRangeTable::from_dirty_bitmap()` with the explicit backend byte granularity.
 
-The exact word-count check removes the current `zip()` truncation hazard. The range and tail checks bound the existing dirty-range arithmetic to the registered RAM range.
+The exact word-count check removes the prior silent `Iterator::zip()` truncation hazard. The coverage, tail-bit, alignment, and checked-end validation also bounds the existing dirty-range arithmetic to the registered RAM mapping.
 
-## Synthetic review discriminator
+## Dependency contract
 
-A Python model matching the candidate's invariants was executed locally before hosted Rust validation.
+Pinned Cloud Hypervisor dependency `kvm-ioctls 0.25.0` allocates the KVM dirty bitmap as:
 
-Observed positive cases:
+```text
+memory_size.div_ceil(page_size * 64)
+```
+
+`u64` words after validating `_SC_PAGESIZE`.
+
+Repair v2 computes, for aligned mappings:
+
+```text
+page_count = memory_size / bytes_per_bit
+expected_words = ceil(page_count / 64)
+```
+
+With KVM `bytes_per_bit == page_size`, the formulas are equivalent. Exact word-count equality therefore matches the pinned KVM userspace API contract.
+
+See `DEPENDENCY_CONTRACT.md` for the pinned dependency review.
+
+## Synthetic and unit discriminators
+
+The repair covers these positive cases:
 
 ```text
 bit 1 @ 4K:   gpa=0x40001000 len=0x1000
@@ -73,7 +102,7 @@ cross-word adjacent bits 63/64 @ 16K:
   gpa=0x400fc000 len=0x8000
 ```
 
-Observed negative cases each reject as intended:
+It also tests rejection of:
 
 ```text
 backend/VMM granularity mismatch
@@ -85,43 +114,52 @@ misaligned GPA
 GPA end overflow
 ```
 
-The model caught a draft test-oracle error before Rust execution: the cross-word 16K GPA is `0x400f_c000`, not `0x403f_0000`. The disposable validation harness now applies the corrected oracle.
+Independent arithmetic review caught a draft cross-word test-oracle error before final validation: the correct 16K GPA for bit 63 is `0x400f_c000`. The final candidate carries the corrected oracle.
 
-## Controlled ARM KVM capability probe
+## Final validation receipt
 
-The deeper native ARM hosted probe completed after the first environment check.
+Run `31564829024`, job `94014411511`, succeeded completely on exact canonical source `1af93ac7035cda77cd87b0c18b1134ebb0928052`.
 
-Run/job:
-
-```text
-31562577130 / 94007782330
-runs-on: ubuntu-24.04-arm
-```
-
-Observed kernel/environment:
+Passed gates:
 
 ```text
-Ubuntu 24.04.4 LTS
-aarch64
-Linux 6.17.0-1020-azure
-getconf PAGESIZE = 4096
-CONFIG_ARM64_4K_PAGES=y
-# CONFIG_ARM64_16K_PAGES is not set
-# CONFIG_ARM64_64K_PAGES is not set
-CONFIG_KVM=y
-CONFIG_KVM_GENERIC_DIRTYLOG_READ_PROTECT=y
-modinfo kvm: filename (builtin), arch/arm64/kvm/kvm
-/dev/kvm absent before module probe
-sudo modprobe -v kvm: no usable device appears
-/dev/kvm absent after module probe
-Python os.path.exists('/dev/kvm') = False
+exact canonical checkout
+exact workflow-head transformer receipt
+candidate application
+nightly formatting
+git diff --check
+exact five-file product-scope fence
+cargo test -p vmm --features kvm dirty_log_ -- --nocapture
+  -> 7 passed, 0 failed
+cargo test -p vm-migration test_memory_range_table_from_dirty_ranges_iter -- --nocapture
+  -> passed
+cargo check -p vmm --features kvm
+cargo check -p vmm --features mshv
+cargo check -p vmm --features kvm --target aarch64-unknown-linux-gnu
+cargo check -p vmm --features mshv --target aarch64-unknown-linux-gnu
+cargo clippy -p vmm --features kvm --all-targets --tests -- -D warnings
+cargo clippy -p vmm --features mshv --all-targets --tests -- -D warnings
+complete final diff inspection
+clean technical candidate publication
 ```
 
-This distinguishes kernel support from runner capability. The hosted ARM kernel contains KVM, but the hosted VM does not expose virtualization access to the guest runner. Module installation/loading cannot convert this runner into a usable KVM test host. It is also a 4K kernel, so it cannot exercise the target 16K/64K case.
+The validation workflow fetches its transformer scripts by exact `GITHUB_SHA`, so the successful run proves the transformer bytes recorded by run head `011ae4eb9ae3c3035372cd053e08672b036a098e` rather than a moving branch tip.
 
-## Intended source scope
+## Published source candidate review
 
-A green execution publishes a clean technical candidate containing only:
+Candidate head:
+
+```text
+f1e892815ae6a71ffc18e5d18fd7fef1f030e048
+```
+
+Parent / merge base:
+
+```text
+1af93ac7035cda77cd87b0c18b1134ebb0928052
+```
+
+The candidate is exactly one commit ahead of canonical source and changes exactly these five files:
 
 ```text
 hypervisor/src/kvm/mod.rs
@@ -131,45 +169,60 @@ hypervisor/src/vm.rs
 vmm/src/memory_manager.rs
 ```
 
-Temporary workflows and transformer scripts remain only on the disposable execution branch.
+No workflow, transformer, receipt, or Fieldwork-only file exists in the technical candidate diff.
 
-## Planned gates
-
-The current hosted workflow is configured to run:
+The commit message contains no external issue/PR references and includes:
 
 ```text
-cargo +nightly fmt --all
-git diff --check
-exact five-file product-scope fence
-cargo test -p vmm --features kvm dirty_log_ -- --nocapture
-cargo test -p vm-migration test_memory_range_table_from_dirty_ranges_iter -- --nocapture
-cargo check -p vmm --features kvm
-cargo check -p vmm --features mshv
-cargo check -p vmm --features kvm --target aarch64-unknown-linux-gnu
-cargo check -p vmm --features mshv --target aarch64-unknown-linux-gnu
-cargo clippy -p vmm --features kvm --all-targets --tests -- -D warnings
-complete final diff inspection
+Assisted-by: ChatGPT:GPT-5.6 Sol
 ```
 
-At this checkpoint GitHub Actions has a queue backlog and the repaired run `31563474390` has not allocated a job. No Rust gate is recorded as passed yet.
+## DCO boundary
 
-## Harness history
+The technical candidate was materialized by the owned-fork validation workflow and currently has a bot author/committer with no human `Signed-off-by:` footer.
 
-- Run `31563176729`: failed before job allocation because the initial embedded Python transformer made the workflow YAML invalid. Harness failure; zero product evidence.
-- The transformer was moved to a separate disposable script and the workflow became syntactically valid.
-- Independent arithmetic review then found the cross-word test-oracle typo and corrected it before execution.
-- Run `31563474390` is the current corrected validation run.
+The execution environment does not expose a verified configured human Git identity. No identity was inferred or manufactured.
 
-## Candidate branch / DCO boundary
+Before any human upstream handoff, preserve the validated product bytes and amend/reset the commit using the contributor's configured identity with `git commit -s`, while retaining the AI disclosure.
 
-On a green run the workflow targets `linux-fieldwork/kvm-dirty-log-granule-repair-v2` for the five-file technical commit.
+No upstream pull request, issue comment, review, or other Cloud Hypervisor upstream interaction occurred.
 
-The execution environment does not expose a verified configured human Git identity. Therefore the technical candidate is intentionally left without a manufactured `Signed-off-by:` identity. Before any human upstream handoff, reset/amend the commit with the contributor's configured identity and `git commit -s`, preserving the same product bytes and required `Assisted-by: ChatGPT:GPT-5.6 Sol` disclosure.
+## Controlled hardware boundary
 
-No upstream pull request, comment, issue mutation, or other Cloud Hypervisor upstream interaction is authorized or performed.
+Local execution host:
 
-## Evidence boundary
+```text
+Debian GNU/Linux 13
+Linux 6.18.35
+x86_64
+getconf PAGESIZE = 4096
+/dev/kvm absent
+Rust toolchain absent
+outbound DNS blocked
+```
 
-The source contract and the repaired API semantics are synthetic/source-review evidence. Real 16K/64K KVM live migration, direct kernel dirty-bitmap observation on those hosts, guest-visible stale-memory reproduction, and a real 4K KVM control remain outside the available controlled environments.
+Native ARM hosted probe `31562577130` / `94007782330`:
 
-Reopen the API design if exact-source Rust gates expose an ownership/type incompatibility, a backend returns a bitmap with a different cardinality contract, or a real KVM/MSHV environment disproves the assumed producer unit.
+```text
+Ubuntu 24.04.4 LTS
+aarch64
+Linux 6.17.0-1020-azure
+getconf PAGESIZE = 4096
+CONFIG_ARM64_4K_PAGES=y
+CONFIG_KVM=y
+CONFIG_KVM_GENERIC_DIRTYLOG_READ_PROTECT=y
+arm64 KVM built into the kernel
+/dev/kvm absent before and after sudo modprobe -v kvm
+```
+
+The hosted ARM VM therefore contains KVM kernel support while withholding virtualization device access. It also uses 4K base pages.
+
+No controlled AArch64 16K/64K KVM environment was available, so the following remain unexecuted:
+
+- real 16K/64K KVM `KVM_GET_DIRTY_LOG` observation;
+- Cloud Hypervisor guest boot/live migration on such a host;
+- guest-visible stale-memory baseline reproduction;
+- candidate guest-preservation confirmation on such a host;
+- real KVM 4K live-migration control.
+
+Those limitations preserve the hardware evidence boundary while the repaired API/source candidate is acceptable for further servicing.
