@@ -122,4 +122,69 @@ for old, new, label in replacements:
         raise SystemExit(f"expected exactly one {label} in {path}, found {count}")
     text = text.replace(old, new, 1)
 
+cleanup_replacements = [
+    (
+        "        let mut set_refcounts = Vec::new();",
+        "        let mut deferred_unrefs = Vec::new();",
+        "map_write deferred-unref declaration",
+        1,
+    ),
+    (
+        "&mut set_refcounts",
+        "&mut deferred_unrefs",
+        "map_write deferred-unref calls",
+        2,
+    ),
+    (
+        '''        // Apply deferred refcount updates
+        for (addr, refcount) in set_refcounts {
+            self.set_cluster_refcount_track_freed(addr, refcount)?;
+        }
+''',
+        '''        // Apply deferred L2 releases
+        for addr in deferred_unrefs {
+            self.set_cluster_refcount_track_freed(addr, 0)?;
+        }
+''',
+        "release-only application loop",
+        1,
+    ),
+    (
+        "        set_refcounts: &mut Vec<(u64, u64)>,",
+        "        deferred_unrefs: &mut Vec<u64>,",
+        "update_cluster_addr release-only parameter",
+        1,
+    ),
+    (
+        "                set_refcounts.push((addr, 0));",
+        "                deferred_unrefs.push(addr);",
+        "old-L2 deferred release",
+        1,
+    ),
+    (
+        "        let mut deferred = Vec::new();",
+        "        let mut deferred_unrefs = Vec::new();",
+        "relocation regression deferred declaration",
+        1,
+    ),
+    (
+        "            .update_cluster_addr(0, 1, data_cluster, &mut deferred)",
+        "            .update_cluster_addr(0, 1, data_cluster, &mut deferred_unrefs)",
+        "relocation regression deferred call",
+        1,
+    ),
+    (
+        "        drop(deferred);",
+        "        assert_eq!(deferred_unrefs, vec![old_l2]);\n        drop(deferred_unrefs);",
+        "relocation regression release-only assertion",
+        1,
+    ),
+]
+
+for old, new, label, expected in cleanup_replacements:
+    count = text.count(old)
+    if count != expected:
+        raise SystemExit(f"expected {expected} {label} occurrences in {path}, found {count}")
+    text = text.replace(old, new)
+
 path.write_text(text)
