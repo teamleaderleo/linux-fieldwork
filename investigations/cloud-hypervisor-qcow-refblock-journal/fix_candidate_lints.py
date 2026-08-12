@@ -22,8 +22,8 @@ wrapper = '''    pub(super) fn set_cluster_refcount(
 
 '''
 if wrapper not in text:
-    raise SystemExit("obsolete RefCount wrapper anchor missing")
-text = text.replace(wrapper, "", 1)
+    raise SystemExit("RefCount compatibility wrapper anchor missing")
+text = text.replace(wrapper, "    #[cfg(test)]\n" + wrapper, 1)
 
 needle = "if let Some(undo) = undo.as_deref_mut() {"
 if text.count(needle) != 2:
