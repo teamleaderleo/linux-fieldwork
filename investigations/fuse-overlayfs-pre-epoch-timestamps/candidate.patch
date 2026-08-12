@@ -1,0 +1,81 @@
+--- a/src/overlay.rs
++++ b/src/overlay.rs
+@@
+ fn stat_to_attr(st: &libc::stat) -> FileAttr {
+     let kind = mode_to_filetype(st.st_mode);
+     FileAttr {
+         ino: INodeNo(st.st_ino as u64),
+         size: st.st_size as u64,
+         blocks: st.st_blocks as u64,
+-        atime: UNIX_EPOCH + Duration::new(st.st_atime as u64, st.st_atime_nsec as u32),
+-        mtime: UNIX_EPOCH + Duration::new(st.st_mtime as u64, st.st_mtime_nsec as u32),
+-        ctime: UNIX_EPOCH + Duration::new(st.st_ctime as u64, st.st_ctime_nsec as u32),
++        atime: system_time_from_timespec(st.st_atime as i64, st.st_atime_nsec as u32),
++        mtime: system_time_from_timespec(st.st_mtime as i64, st.st_mtime_nsec as u32),
++        ctime: system_time_from_timespec(st.st_ctime as i64, st.st_ctime_nsec as u32),
+         crtime: UNIX_EPOCH,
+@@
+ }
++
++/// Convert a normalized POSIX timespec to SystemTime without losing
++/// timestamps before the Unix epoch.
++fn system_time_from_timespec(secs: i64, nsecs: u32) -> SystemTime {
++    let nsecs = nsecs.min(999_999_999);
++    if secs >= 0 {
++        UNIX_EPOCH + Duration::new(secs as u64, nsecs)
++    } else if nsecs == 0 {
++        UNIX_EPOCH - Duration::new(secs.unsigned_abs(), 0)
++    } else {
++        UNIX_EPOCH
++            - Duration::new(secs.unsigned_abs() - 1, 1_000_000_000 - nsecs)
++    }
++}
++
++/// Convert SystemTime back to a normalized signed POSIX timespec.
++fn timespec_from_system_time(t: SystemTime) -> libc::timespec {
++    let (secs, nsecs) = match t.duration_since(UNIX_EPOCH) {
++        Ok(d) => {
++            let secs = i64::try_from(d.as_secs()).unwrap_or(i64::MAX);
++            let nsecs = if secs == i64::MAX && d.as_secs() > i64::MAX as u64 {
++                999_999_999
++            } else {
++                d.subsec_nanos()
++            };
++            (secs, nsecs)
++        }
++        Err(e) => {
++            let d = e.duration();
++            let secs = d.as_secs();
++            let nsecs = d.subsec_nanos();
++            if (secs, nsecs) >= (i64::MAX as u64 + 1, 0) {
++                (i64::MIN, 0)
++            } else if nsecs == 0 {
++                (-(secs as i64), 0)
++            } else {
++                (-(secs as i64) - 1, 1_000_000_000 - nsecs)
++            }
++        }
++    };
++    libc::timespec {
++        tv_sec: secs as _,
++        tv_nsec: nsecs as _,
++    }
++}
+@@
+                 TimeOrNow::SpecificTime(t) => {
+-                    let d = t.duration_since(UNIX_EPOCH).unwrap_or_default();
+-                    times[0] = libc::timespec {
+-                        tv_sec: d.as_secs() as _,
+-                        tv_nsec: d.subsec_nanos() as _,
+-                    };
++                    times[0] = timespec_from_system_time(t);
+                 }
+@@
+                 TimeOrNow::SpecificTime(t) => {
+-                    let d = t.duration_since(UNIX_EPOCH).unwrap_or_default();
+-                    times[1] = libc::timespec {
+-                        tv_sec: d.as_secs() as _,
+-                        tv_nsec: d.subsec_nanos() as _,
+-                    };
++                    times[1] = timespec_from_system_time(t);
+                 }
