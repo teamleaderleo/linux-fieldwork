@@ -8,6 +8,14 @@ Upstream contact remains deliberate by default. When the human says `upstream gr
 
 A greenlight is bounded to that upstream interaction. It does not imply merge, release, deployment, credentials, spending, private-data access, or unrelated authority. A later human instruction can narrow or revoke it.
 
+## Operator terminal ergonomics
+
+- When giving the operator Git commands for GitHub, prefer SSH remote forms such as `git@github.com:owner/repo.git` for clone, fetch, push, and remote changes. Use HTTPS for browser links or when the operator explicitly asks for HTTPS.
+- Preserve an existing remote's transport in reusable Git commands instead of silently converting an SSH remote to HTTPS.
+- For small repository or local-config edits, make the edit directly when the available tools and authority allow it. When human-side editing is genuinely required, provide one pasteable command, heredoc, or patch.
+- Do not send the operator into `nano`, `vi`, `vim`, or another modal editor for routine edits unless the operator explicitly asks for interactive editor use. If an interactive terminal editor is genuinely useful and available, prefer `micro`.
+- For read-only diff, log, and pager views, use plain output or a viewer with a simple exit such as `q`. Never require `:wq` merely to leave a read-only view.
+
 ## Source branch guardrails
 
 These rules are mandatory for owned-fork candidates that may later be offered upstream:
