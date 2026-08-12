@@ -1,0 +1,180 @@
+name: Cloud Hypervisor TDVF firmware destination R590D
+
+on:
+  push:
+    branches: [research/ch-tdvf-firmware-dest-r590d]
+    paths:
+      - .github/workflows/ch-tdvf-firmware-dest-r590d.yml
+      - investigations/cloud-hypervisor-tdvf-firmware-dest/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-firmware-dest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      CONTROL: tdvf_firmware_valid_guest_address_control
+      WITNESS: tdvf_firmware_invalid_guest_address_panics_baseline
+      INVARIANT: tdvf_firmware_invalid_guest_address_should_not_panic
+      CANDIDATE_TEST: tdx_firmware_copy_propagates_guest_memory_error
+
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: fieldwork, persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../tdvf-dest-rust-version.txt
+          rustc +nightly --version | tee ../tdvf-dest-nightly-version.txt
+          git rev-parse HEAD | tee ../tdvf-dest-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Apply baseline probe
+        id: probe
+        working-directory: cloud-hypervisor
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-firmware-dest/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-dest-probe.diff
+
+      - name: Build and discover probes
+        id: discover
+        working-directory: cloud-hypervisor
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib --no-run
+          cargo test --locked -p vmm --features "$FEATURES" --lib -- --list | tee ../tdvf-dest-test-list.txt
+          grep -F "$CONTROL: test" ../tdvf-dest-test-list.txt
+          grep -F "$WITNESS: test" ../tdvf-dest-test-list.txt
+          grep -F "$INVARIANT: test" ../tdvf-dest-test-list.txt
+
+      - name: Baseline valid destination control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL" -- --nocapture 2>&1 | tee ../tdvf-dest-baseline-control.log
+          grep -F "TDVF_FIRMWARE_DEST_CONTROL copied=16" ../tdvf-dest-baseline-control.log
+
+      - name: Prove baseline destination panic
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$WITNESS" -- --ignored --nocapture 2>&1 | tee ../tdvf-dest-baseline-witness.log
+          grep -F "TDVF_FIRMWARE_DEST_BASELINE panicked=true" ../tdvf-dest-baseline-witness.log
+
+      - name: Prove no-panic invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        run: |
+          set +e
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INVARIANT" -- --nocapture > ../tdvf-dest-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_FIRMWARE_DEST_BASELINE_INVARIANT_RC=$rc" | tee ../tdvf-dest-baseline-invariant-status.txt
+          cat ../tdvf-dest-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F "TDVF_FIRMWARE_DEST_INVARIANT panicked=true" ../tdvf-dest-baseline-invariant.log
+
+      - name: Restore exact source
+        id: restore
+        working-directory: cloud-hypervisor
+        run: |
+          set -euxo pipefail
+          git checkout -- vmm/src/vm.rs
+          test -z "$(git status --short)"
+
+      - name: Apply destination candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-firmware-dest/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-dest-candidate-only.diff
+          sha256sum ../tdvf-dest-candidate-only.diff | tee ../tdvf-dest-candidate-diff-sha256.txt
+          grep -F "copy_tdx_firmware_section" vmm/src/vm.rs
+
+      - name: Candidate focused propagation
+        id: candidate_focused
+        working-directory: cloud-hypervisor
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --nocapture 2>&1 | tee ../tdvf-dest-candidate-focused.log
+          grep -F "TDVF_FIRMWARE_DEST_CANDIDATE invalid_result=FirmwareLoad" ../tdvf-dest-candidate-focused.log
+          grep -F "TDVF_FIRMWARE_DEST_CANDIDATE copied=16" ../tdvf-dest-candidate-focused.log
+
+      - name: Full VMM tests
+        id: vmm_tests
+        working-directory: cloud-hypervisor
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib 2>&1 | tee ../tdvf-dest-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations 2>&1 | tee ../tdvf-dest-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-dest-final-status.txt
+          git diff --stat | tee ../tdvf-dest-final-diff-stat.txt
+
+      - name: Write receipt
+        if: always()
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "baseline_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "restore_exact_source=${{ steps.restore.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "vmm_tests=${{ steps.vmm_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdvf-dest-baseline-invariant-status.txt && cat tdvf-dest-baseline-invariant-status.txt
+            test -f tdvf-dest-candidate-diff-sha256.txt && cat tdvf-dest-candidate-diff-sha256.txt
+          } | tee tdvf-dest-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-firmware-dest-r590d
+          path: |
+            tdvf-dest-*.txt
+            tdvf-dest-*.log
+            tdvf-dest-*.diff
