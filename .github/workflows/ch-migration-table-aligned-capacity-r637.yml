@@ -1,0 +1,143 @@
+name: Cloud Hypervisor migration aligned table capacity
+
+on:
+  push:
+    branches:
+      - research/ch-migration-table-aligned-capacity-r637
+    paths:
+      - .github/workflows/ch-migration-table-aligned-capacity-r637.yml
+      - investigations/cloud-hypervisor-migration-table-aligned-capacity/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+          path: cloud-hypervisor
+          persist-credentials: false
+      - name: Install exact toolchain
+        working-directory: cloud-hypervisor
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup override set 1.89.0
+      - name: Inject aligned-capacity discriminator
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          mkdir -p vm-migration/tests
+          cat > vm-migration/tests/aligned_capacity.rs <<'RS'
+          use std::any::Any;
+          use std::io::Cursor;
+          use std::mem::size_of;
+          use std::panic::{AssertUnwindSafe, catch_unwind};
+
+          use vm_migration::protocol::{MemoryRange, MemoryRangeTable};
+
+          fn panic_text(panic: &(dyn Any + Send)) -> String {
+              if let Some(s) = panic.downcast_ref::<&str>() {
+                  (*s).to_string()
+              } else if let Some(s) = panic.downcast_ref::<String>() {
+                  s.clone()
+              } else {
+                  "<non-string panic>".to_string()
+              }
+          }
+
+          #[test]
+          fn aligned_huge_table_length_panics_on_capacity_overflow() {
+              assert_eq!(size_of::<MemoryRange>(), 16);
+              let length = u64::MAX - 15;
+              assert_eq!(length % size_of::<MemoryRange>() as u64, 0);
+              let mut cursor = Cursor::new(Vec::<u8>::new());
+              let outcome = catch_unwind(AssertUnwindSafe(|| {
+                  MemoryRangeTable::read_from(&mut cursor, length)
+              }));
+              let panic = outcome.expect_err("aligned impossible table length must currently panic");
+              let text = panic_text(&*panic);
+              println!("ALIGNED_CAPACITY panic={text:?} length={length:#x}");
+              assert!(text.contains("capacity overflow"), "unexpected panic: {text}");
+          }
+          RS
+      - name: Execute exact-current baseline
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test --locked -p vm-migration --test aligned_capacity -- --nocapture 2>&1 | tee ../baseline.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r637-baseline
+          path: baseline.log
+
+  candidate-r604:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/cloud-hypervisor
+          ref: a9ff8e0ca603f72e6fb718fc023b679201ce04c5
+          path: cloud-hypervisor
+          persist-credentials: false
+      - name: Install exact toolchain
+        working-directory: cloud-hypervisor
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup override set 1.89.0
+      - name: Verify #604 candidate base
+        working-directory: cloud-hypervisor
+        run: |
+          test "$(git rev-parse HEAD)" = a9ff8e0ca603f72e6fb718fc023b679201ce04c5
+          grep -F 'invalid memory range table length' vm-migration/src/protocol.rs
+      - name: Inject aligned-capacity discriminator
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          mkdir -p vm-migration/tests
+          cat > vm-migration/tests/aligned_capacity.rs <<'RS'
+          use std::any::Any;
+          use std::io::Cursor;
+          use std::mem::size_of;
+          use std::panic::{AssertUnwindSafe, catch_unwind};
+
+          use vm_migration::protocol::{MemoryRange, MemoryRangeTable};
+
+          fn panic_text(panic: &(dyn Any + Send)) -> String {
+              if let Some(s) = panic.downcast_ref::<&str>() {
+                  (*s).to_string()
+              } else if let Some(s) = panic.downcast_ref::<String>() {
+                  s.clone()
+              } else {
+                  "<non-string panic>".to_string()
+              }
+          }
+
+          #[test]
+          fn aligned_huge_table_length_panics_on_capacity_overflow() {
+              assert_eq!(size_of::<MemoryRange>(), 16);
+              let length = u64::MAX - 15;
+              assert_eq!(length % size_of::<MemoryRange>() as u64, 0);
+              let mut cursor = Cursor::new(Vec::<u8>::new());
+              let outcome = catch_unwind(AssertUnwindSafe(|| {
+                  MemoryRangeTable::read_from(&mut cursor, length)
+              }));
+              let panic = outcome.expect_err("#604 candidate must still expose aligned capacity overflow for this discriminator");
+              let text = panic_text(&*panic);
+              println!("ALIGNED_CAPACITY_R604 panic={text:?} length={length:#x}");
+              assert!(text.contains("capacity overflow"), "unexpected panic: {text}");
+          }
+          RS
+      - name: Execute internal #604 candidate
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test --locked -p vm-migration --test aligned_capacity -- --nocapture 2>&1 | tee ../candidate-r604.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r637-candidate-r604
+          path: candidate-r604.log
