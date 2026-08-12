@@ -172,6 +172,16 @@ jobs:
               2>&1 | tee "../combined-${safe_name}.log"
           done
 
+      - name: Grant KVM access for broad VMM tests
+        id: kvm_access
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -e /dev/kvm
+          ls -l /dev/kvm | tee gate-kvm-before.txt
+          sudo chmod a+rw /dev/kvm
+          ls -l /dev/kvm | tee gate-kvm-after.txt
+
       - name: Combined full VMM library tests
         id: vmm_tests
         working-directory: cloud-hypervisor
@@ -214,6 +224,7 @@ jobs:
             echo "gate_only_survivor_expected_timeout=${{ steps.gate_only_survivor.outcome }}"
             echo "cleanup_apply=${{ steps.cleanup_apply.outcome }}"
             echo "combined_focused=${{ steps.combined_focused.outcome }}"
+            echo "kvm_access=${{ steps.kvm_access.outcome }}"
             echo "vmm_tests=${{ steps.vmm_tests.outcome }}"
             echo "quality=${{ steps.quality.outcome }}"
             test -f gate-baseline-status.txt && cat gate-baseline-status.txt
@@ -250,6 +261,8 @@ jobs:
             gate-cleanup-combined.diff
             gate-probe-plus-combined.diff
             combined-*.log
+            gate-kvm-before.txt
+            gate-kvm-after.txt
             gate-vmm-tests.log
             gate-clippy.log
             gate-final-status.txt
