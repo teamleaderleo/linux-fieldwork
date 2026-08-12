@@ -13,7 +13,9 @@ if end == -1:
 
 probe = r'''
 
-    fn shutdown_probe_raw_dirty_bit(file: &std::fs::File) -> bool {
+    use std::fs::File;
+
+    fn shutdown_probe_raw_dirty_bit(file: &File) -> bool {
         use std::os::unix::fs::FileExt;
 
         let mut buf = [0u8; 8];
