@@ -1,0 +1,90 @@
+diff --git a/squashfs-tools/unsquash-3.c b/squashfs-tools/unsquash-3.c
+index 00f402e9..6398afed 100644
+--- a/squashfs-tools/unsquash-3.c
++++ b/squashfs-tools/unsquash-3.c
+@@ -23,6 +23,8 @@
+  * unsquash-3.c
+  */
+ 
++#include <limits.h>
++
+ #include "unsquashfs.h"
+ #include "squashfs_compat.h"
+ #include "compressor.h"
+@@ -303,6 +305,7 @@ static struct inode *read_inode(unsigned int start_block, unsigned int offset)
+ 		}	
+ 		case SQUASHFS_LREG_TYPE: {
+ 			squashfs_lreg_inode_header_3 *inode = &header.lreg;
++			long long blocks;
+ 
+ 			if(swap) {
+ 				squashfs_lreg_inode_header_3 sinode;
+@@ -320,15 +323,19 @@ static struct inode *read_inode(unsigned int start_block, unsigned int offset)
+ 			if(inode->file_size < 0)
+ 				EXIT_UNSQUASH("File system corrupted - negative file size in inode\n");
+ 
++			blocks = inode->file_size >> sBlk.s.block_log;
++			if(inode->fragment == SQUASHFS_INVALID_FRAG &&
++				inode->file_size % sBlk.s.block_size)
++				blocks++;
++			if(blocks > INT_MAX)
++				EXIT_UNSQUASH("File system corrupted - block count in inode too large (blocks: %lld)\n", blocks);
++
+ 			i.data = inode->file_size;
+ 			i.frag_bytes = inode->fragment == SQUASHFS_INVALID_FRAG
+ 				?  0 : inode->file_size % sBlk.s.block_size;
+ 			i.fragment = inode->fragment;
+ 			i.offset = inode->offset;
+-			i.blocks = inode->fragment == SQUASHFS_INVALID_FRAG ?
+-				(inode->file_size + sBlk.s.block_size - 1) >>
+-				sBlk.s.block_log :
+-				inode->file_size >> sBlk.s.block_log;
++			i.blocks = blocks;
+ 			i.start = inode->start_block;
+ 			i.block_start = start;
+ 			i.block_offset = offset;
+diff --git a/squashfs-tools/unsquash-4.c b/squashfs-tools/unsquash-4.c
+index 7336f8f8..d600c301 100644
+--- a/squashfs-tools/unsquash-4.c
++++ b/squashfs-tools/unsquash-4.c
+@@ -23,6 +23,8 @@
+  * unsquash-4.c
+  */
+ 
++#include <limits.h>
++
+ #include "unsquashfs.h"
+ #include "squashfs_swap.h"
+ #include "xattr.h"
+@@ -230,6 +232,7 @@ static struct inode *read_inode(unsigned int start_block, unsigned int offset)
+ 		}	
+ 		case SQUASHFS_LREG_TYPE: {
+ 			struct squashfs_lreg_inode_header *inode = &header.lreg;
++			long long blocks;
+ 
+ 			res = read_inode_data(inode, &start, &offset, sizeof(*inode));
+ 			if(res == FALSE)
+@@ -241,15 +244,19 @@ static struct inode *read_inode(unsigned int start_block, unsigned int offset)
+ 			if(inode->file_size < 0)
+ 				EXIT_UNSQUASH("File system corrupted - negative file size in inode\n");
+ 
++			blocks = inode->file_size >> sBlk.s.block_log;
++			if(inode->fragment == SQUASHFS_INVALID_FRAG &&
++				inode->file_size % sBlk.s.block_size)
++				blocks++;
++			if(blocks > INT_MAX)
++				EXIT_UNSQUASH("File system corrupted - block count in inode too large (blocks: %lld)\n", blocks);
++
+ 			i.data = inode->file_size;
+ 			i.frag_bytes = inode->fragment == SQUASHFS_INVALID_FRAG
+ 				?  0 : inode->file_size % sBlk.s.block_size;
+ 			i.fragment = inode->fragment;
+ 			i.offset = inode->offset;
+-			i.blocks = inode->fragment == SQUASHFS_INVALID_FRAG ?
+-				(inode->file_size + sBlk.s.block_size - 1) >>
+-				sBlk.s.block_log :
+-				inode->file_size >> sBlk.s.block_log;
++			i.blocks = blocks;
+ 			i.start = inode->start_block;
+ 			i.block_start = start;
+ 			i.block_offset = offset;
