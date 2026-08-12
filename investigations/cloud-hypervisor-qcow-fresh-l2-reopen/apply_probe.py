@@ -89,6 +89,33 @@ probe = r'''
             "clean reopen must retain a nonzero refcount for the live L2"
         );
     }
+
+    #[test]
+    fn zero_marker_fresh_l2_keeps_refcount_owner() {
+        let cluster_size: u64 = 1 << 16;
+        let temp = super::super::QcowTempDisk::new(4 * cluster_size, None, false, true, false)
+            .unwrap()
+            .into_tempfile();
+        let raw = crate::AlignedFile::new(temp.as_file().try_clone().unwrap(), false);
+        let (mut inner, _backing, _sparse) =
+            super::super::parser::parse_qcow(raw, 0, true).unwrap();
+        assert_eq!(inner.l1_table[0], 0);
+
+        inner
+            .deallocate_cluster(0, true, true)
+            .expect("zero-marker deallocation must allocate its metadata table");
+        let live_l2 = inner.l1_table[0];
+        assert_ne!(live_l2, 0);
+        let refcount = {
+            let super::QcowState {
+                refcounts,
+                raw_file,
+                ..
+            } = &mut inner;
+            refcounts.get_cluster_refcount(raw_file, live_l2).unwrap()
+        };
+        assert_eq!(refcount, 1);
+    }
 '''
 
 path.write_text(text[:end] + probe + text[end:])
