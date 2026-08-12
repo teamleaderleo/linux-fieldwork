@@ -1,0 +1,241 @@
+name: Cloud Hypervisor QCOW metadata failure-policy integration
+
+on:
+  push:
+    branches:
+      - research/ch-qcow-metadata-failure-policy-r611-634
+    paths:
+      - .github/workflows/ch-qcow-metadata-failure-policy-r611-634.yml
+      - investigations/cloud-hypervisor-qcow-metadata-failure-policy/**
+      - investigations/cloud-hypervisor-qcow-refblock-journal/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  failure-policy-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      JOURNAL_ROLLBACK: formats::qcow::metadata::unit_tests::refblock_recursive_enospc_journal_rolls_back
+      JOURNAL_SUCCESS: formats::qcow::metadata::unit_tests::refblock_recursive_journal_success_owns_chain_and_tracks_old_block
+      JOURNAL_EVICT: formats::qcow::metadata::unit_tests::refblock_journal_rolls_back_dirty_sibling_after_eviction
+      SYNC_FAIL: formats::qcow::metadata::unit_tests::failed_metadata_sync_keeps_dirty_bit_set
+      CLEAN_CLOSE: formats::qcow::metadata::unit_tests::successful_metadata_sync_clears_dirty_bit
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin exact source and Rust
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../integration-rust-version.txt
+          cargo --version | tee ../integration-cargo-version.txt
+          git rev-parse HEAD | tee ../integration-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          git status --short | tee ../integration-source-status-before.txt
+          test ! -s ../integration-source-status-before.txt
+
+      - name: Apply integrated product candidates
+        id: candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-journal/apply_candidate.py
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-journal/fix_candidate_lints.py
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-metadata-failure-policy/apply_shutdown_candidate.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs block/src/formats/qcow/refcount.rs block/src/formats/qcow/vec_cache.rs > ../integration-candidate.diff
+          grep -F 'RefcountUndo' block/src/formats/qcow/refcount.rs
+          grep -F 'Failed to synchronize QCOW metadata during shutdown' block/src/formats/qcow/metadata.rs
+          if grep -F 'self.refcounts.clone()' block/src/formats/qcow/metadata.rs; then
+            echo 'whole RefCount clone unexpectedly present' >&2
+            exit 1
+          fi
+
+      - name: Apply all focused discriminators
+        id: probes
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-journal/apply_probe.py
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-journal/apply_adversarial_probe_v2.py
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-metadata-failure-policy/apply_shutdown_probe.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs block/src/formats/qcow/refcount.rs block/src/formats/qcow/vec_cache.rs > ../integration-probes-plus-candidate.diff
+
+      - name: Build and discover integration tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib --no-run
+          cargo test --locked -p block --lib -- --list | tee ../integration-test-list.txt
+          grep -F "$JOURNAL_ROLLBACK: test" ../integration-test-list.txt
+          grep -F "$JOURNAL_SUCCESS: test" ../integration-test-list.txt
+          grep -F "$JOURNAL_EVICT: test" ../integration-test-list.txt
+          grep -F "$SYNC_FAIL: test" ../integration-test-list.txt
+          grep -F "$CLEAN_CLOSE: test" ../integration-test-list.txt
+
+      - name: Execute reversible allocator-ENOSPC rollback
+        id: journal_rollback
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$JOURNAL_ROLLBACK" -- --exact --nocapture \
+            2>&1 | tee ../integration-journal-rollback.log
+          grep -F 'REFBLOCK_JOURNAL_ROLLBACK post_error' ../integration-journal-rollback.log
+          grep -F 'REFBLOCK_JOURNAL_ROLLBACK reopened' ../integration-journal-rollback.log
+          grep -F 'REFBLOCK_JOURNAL_ROLLBACK allocator_reuse' ../integration-journal-rollback.log
+
+      - name: Execute successful recursive ownership
+        id: journal_success
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$JOURNAL_SUCCESS" -- --exact --nocapture \
+            2>&1 | tee ../integration-journal-success.log
+          grep -F 'REFBLOCK_JOURNAL_SUCCESS reopened' ../integration-journal-success.log
+
+      - name: Execute journal dirty-cache eviction control
+        id: journal_eviction
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$JOURNAL_EVICT" -- --exact --nocapture \
+            2>&1 | tee ../integration-journal-eviction.log
+          grep -F 'REFBLOCK_JOURNAL_EVICT post_error' ../integration-journal-eviction.log
+          grep -F 'REFBLOCK_JOURNAL_EVICT reopened' ../integration-journal-eviction.log
+
+      - name: Execute non-reversible sync failure policy
+        id: sync_failure
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$SYNC_FAIL" -- --exact --nocapture \
+            2>&1 | tee ../integration-sync-failure.log
+          grep -F 'QCOW_INTEGRATION_SYNC_FAIL post_failed_drop dirty=true' ../integration-sync-failure.log
+          grep -F 'QCOW_INTEGRATION_SYNC_FAIL recovery_close dirty=false' ../integration-sync-failure.log
+
+      - name: Execute ordinary clean-close control
+        id: clean_close
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$CLEAN_CLOSE" -- --exact --nocapture \
+            2>&1 | tee ../integration-clean-close.log
+          grep -F 'QCOW_INTEGRATION_CLEAN_CLOSE post_drop dirty=false' ../integration-clean-close.log
+
+      - name: Run default block library suite
+        id: default_suite
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib 2>&1 | tee ../integration-default-suite.log
+
+      - name: Run io_uring block library suite
+        id: io_uring_suite
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib --features io_uring 2>&1 | tee ../integration-io-uring-suite.log
+
+      - name: Clippy integrated candidate
+        id: clippy
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p block --lib --features io_uring -- -D warnings 2>&1 | tee ../integration-clippy.log
+
+      - name: Final hygiene
+        id: hygiene
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fmt --all -- --check
+          git diff --check
+          git status --short | tee ../integration-final-status.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "candidate_gate=${{ steps.candidate.outcome }}"
+            echo "probes_gate=${{ steps.probes.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "journal_rollback_gate=${{ steps.journal_rollback.outcome }}"
+            echo "journal_success_gate=${{ steps.journal_success.outcome }}"
+            echo "journal_eviction_gate=${{ steps.journal_eviction.outcome }}"
+            echo "sync_failure_gate=${{ steps.sync_failure.outcome }}"
+            echo "clean_close_gate=${{ steps.clean_close.outcome }}"
+            echo "default_suite_gate=${{ steps.default_suite.outcome }}"
+            echo "io_uring_suite_gate=${{ steps.io_uring_suite.outcome }}"
+            echo "clippy_gate=${{ steps.clippy.outcome }}"
+            echo "hygiene_gate=${{ steps.hygiene.outcome }}"
+            cat integration-source-sha.txt
+            cat integration-rust-version.txt
+          } | tee integration-receipt.txt
+
+      - name: Upload integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-qcow-metadata-failure-policy-r611-634
+          if-no-files-found: warn
+          path: |
+            integration-receipt.txt
+            integration-source-sha.txt
+            integration-rust-version.txt
+            integration-cargo-version.txt
+            integration-source-status-before.txt
+            integration-candidate.diff
+            integration-probes-plus-candidate.diff
+            integration-test-list.txt
+            integration-journal-rollback.log
+            integration-journal-success.log
+            integration-journal-eviction.log
+            integration-sync-failure.log
+            integration-clean-close.log
+            integration-default-suite.log
+            integration-io-uring-suite.log
+            integration-clippy.log
+            integration-final-status.txt
