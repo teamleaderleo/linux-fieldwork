@@ -20,6 +20,7 @@ jobs:
       CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
       ROLLBACK_TEST: formats::qcow::metadata::unit_tests::refblock_recursive_enospc_journal_rolls_back
       SUCCESS_TEST: formats::qcow::metadata::unit_tests::refblock_recursive_journal_success_owns_chain_and_tracks_old_block
+      EVICT_TEST: formats::qcow::metadata::unit_tests::refblock_journal_rolls_back_dirty_sibling_after_eviction
     steps:
       - name: Check out Fieldwork carrier
         uses: actions/checkout@v4
@@ -77,6 +78,7 @@ jobs:
         run: |
           set -euxo pipefail
           python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-journal/apply_probe.py
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-journal/apply_adversarial_probe_v2.py
           cargo fmt --all
           cargo fmt --all -- --check
           git diff --check
@@ -92,6 +94,7 @@ jobs:
           cargo test --locked -p block --lib -- --list | tee ../journal-test-list.txt
           grep -F "$ROLLBACK_TEST: test" ../journal-test-list.txt
           grep -F "$SUCCESS_TEST: test" ../journal-test-list.txt
+          grep -F "$EVICT_TEST: test" ../journal-test-list.txt
 
       - name: Execute recursive ENOSPC journal rollback
         id: rollback
@@ -116,6 +119,18 @@ jobs:
             2>&1 | tee ../journal-success.log
           grep -F "REFBLOCK_JOURNAL_SUCCESS target=" ../journal-success.log
           grep -F "REFBLOCK_JOURNAL_SUCCESS reopened" ../journal-success.log
+
+      - name: Execute dirty-cache eviction rollback
+        id: eviction_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$EVICT_TEST" -- --exact --nocapture \
+            2>&1 | tee ../journal-eviction.log
+          grep -F "REFBLOCK_JOURNAL_EVICT post_error" ../journal-eviction.log
+          grep -F "REFBLOCK_JOURNAL_EVICT post_sync" ../journal-eviction.log
+          grep -F "REFBLOCK_JOURNAL_EVICT reopened" ../journal-eviction.log
 
       - name: Run block library regression suite
         id: block_suite
@@ -156,6 +171,7 @@ jobs:
             echo "discover_gate=${{ steps.discover.outcome }}"
             echo "rollback_gate=${{ steps.rollback.outcome }}"
             echo "success_control_gate=${{ steps.success_control.outcome }}"
+            echo "eviction_control_gate=${{ steps.eviction_control.outcome }}"
             echo "block_suite_gate=${{ steps.block_suite.outcome }}"
             echo "clippy_gate=${{ steps.clippy.outcome }}"
             echo "hygiene_gate=${{ steps.hygiene.outcome }}"
@@ -180,6 +196,7 @@ jobs:
             journal-test-list.txt
             journal-rollback.log
             journal-success.log
+            journal-eviction.log
             journal-block-suite.log
             journal-clippy.log
             journal-final-status.txt
