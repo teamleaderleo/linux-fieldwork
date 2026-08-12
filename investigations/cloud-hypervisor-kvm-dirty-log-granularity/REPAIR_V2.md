@@ -87,6 +87,38 @@ GPA end overflow
 
 The model caught a draft test-oracle error before Rust execution: the cross-word 16K GPA is `0x400f_c000`, not `0x403f_0000`. The disposable validation harness now applies the corrected oracle.
 
+## Controlled ARM KVM capability probe
+
+The deeper native ARM hosted probe completed after the first environment check.
+
+Run/job:
+
+```text
+31562577130 / 94007782330
+runs-on: ubuntu-24.04-arm
+```
+
+Observed kernel/environment:
+
+```text
+Ubuntu 24.04.4 LTS
+aarch64
+Linux 6.17.0-1020-azure
+getconf PAGESIZE = 4096
+CONFIG_ARM64_4K_PAGES=y
+# CONFIG_ARM64_16K_PAGES is not set
+# CONFIG_ARM64_64K_PAGES is not set
+CONFIG_KVM=y
+CONFIG_KVM_GENERIC_DIRTYLOG_READ_PROTECT=y
+modinfo kvm: filename (builtin), arch/arm64/kvm/kvm
+/dev/kvm absent before module probe
+sudo modprobe -v kvm: no usable device appears
+/dev/kvm absent after module probe
+Python os.path.exists('/dev/kvm') = False
+```
+
+This distinguishes kernel support from runner capability. The hosted ARM kernel contains KVM, but the hosted VM does not expose virtualization access to the guest runner. Module installation/loading cannot convert this runner into a usable KVM test host. It is also a 4K kernel, so it cannot exercise the target 16K/64K case.
+
 ## Intended source scope
 
 A green execution publishes a clean technical candidate containing only:
