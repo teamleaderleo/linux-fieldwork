@@ -1,0 +1,226 @@
+name: Cloud Hypervisor TDVF missing HOB R590H
+
+on:
+  push:
+    branches:
+      - research/ch-tdvf-missing-hob-r590h
+    paths:
+      - .github/workflows/ch-tdvf-missing-hob-r590h.yml
+      - investigations/cloud-hypervisor-tdvf-missing-hob/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-missing-hob:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      CONTROL: tdvf_present_hob_control
+      WITNESS: tdvf_missing_hob_panics_baseline
+      INVARIANT: tdvf_missing_hob_should_not_panic
+      CANDIDATE_TEST: required_tdx_hob_offset_is_typed
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../tdvf-hob-rust-version.txt
+          rustc +nightly --version | tee ../tdvf-hob-nightly-version.txt
+          git rev-parse HEAD | tee ../tdvf-hob-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Apply and format baseline probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-missing-hob/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-hob-probe.diff
+
+      - name: Build and discover baseline probes
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib --no-run
+          cargo test --locked -p vmm --features "$FEATURES" --lib -- --list | tee ../tdvf-hob-test-list.txt
+          grep -F "$CONTROL: test" ../tdvf-hob-test-list.txt
+          grep -F "$WITNESS: test" ../tdvf-hob-test-list.txt
+          grep -F "$INVARIANT: test" ../tdvf-hob-test-list.txt
+
+      - name: Baseline present-HOB control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL" -- --nocapture \
+            2>&1 | tee ../tdvf-hob-baseline-control.log
+          grep -F "TDVF_HOB_CONTROL offset=0x4000" ../tdvf-hob-baseline-control.log
+
+      - name: Prove baseline missing-HOB panic
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$WITNESS" -- --ignored --nocapture \
+            2>&1 | tee ../tdvf-hob-baseline-witness.log
+          grep -F "TDVF_HOB_BASELINE sections=1 panicked=true" ../tdvf-hob-baseline-witness.log
+
+      - name: Prove no-panic invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INVARIANT" -- --nocapture \
+            > ../tdvf-hob-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_HOB_BASELINE_INVARIANT_RC=$rc" | tee ../tdvf-hob-baseline-invariant-status.txt
+          cat ../tdvf-hob-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F "TDVF_HOB_INVARIANT sections=1 panicked=true" ../tdvf-hob-baseline-invariant.log
+          grep -F "missing TdHob must not panic the VMM" ../tdvf-hob-baseline-invariant.log
+
+      - name: Restore exact source after baseline probe
+        id: restore
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git checkout -- vmm/src/vm.rs
+          test -z "$(git status --short)"
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply typed missing-HOB candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-missing-hob/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-hob-candidate-only.diff
+          sha256sum ../tdvf-hob-candidate-only.diff | tee ../tdvf-hob-candidate-diff-sha256.txt
+          ! grep -F "TdHob::start(hob_offset.unwrap())" vmm/src/vm.rs
+          grep -F "TdxHobMissing" vmm/src/vm.rs
+
+      - name: Candidate focused typed boundary
+        id: candidate_focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --nocapture \
+            2>&1 | tee ../tdvf-hob-candidate-focused.log
+          grep -F "TDVF_HOB_CANDIDATE missing_result=TdxHobMissing" ../tdvf-hob-candidate-focused.log
+          grep -F "TDVF_HOB_CANDIDATE control_offset=0x4000" ../tdvf-hob-candidate-focused.log
+
+      - name: Full VMM TDX KVM library tests
+        id: vmm_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib \
+            2>&1 | tee ../tdvf-hob-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables \
+            2>&1 | tee ../tdvf-hob-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-hob-final-status.txt
+          git diff --stat | tee ../tdvf-hob-final-diff-stat.txt
+          git diff -- vmm/src/vm.rs | tee ../tdvf-hob-final-candidate.diff
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "features=$FEATURES"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "baseline_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "restore_exact_source=${{ steps.restore.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "vmm_tests=${{ steps.vmm_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdvf-hob-baseline-invariant-status.txt && cat tdvf-hob-baseline-invariant-status.txt
+            test -f tdvf-hob-candidate-diff-sha256.txt && cat tdvf-hob-candidate-diff-sha256.txt
+          } | tee tdvf-hob-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-missing-hob-r590h
+          if-no-files-found: warn
+          path: |
+            tdvf-hob-execution-receipt.txt
+            tdvf-hob-source-sha.txt
+            tdvf-hob-rust-version.txt
+            tdvf-hob-nightly-version.txt
+            tdvf-hob-test-list.txt
+            tdvf-hob-probe.diff
+            tdvf-hob-baseline-control.log
+            tdvf-hob-baseline-witness.log
+            tdvf-hob-baseline-invariant.log
+            tdvf-hob-baseline-invariant-status.txt
+            tdvf-hob-candidate-only.diff
+            tdvf-hob-candidate-diff-sha256.txt
+            tdvf-hob-candidate-focused.log
+            tdvf-hob-vmm-tests.log
+            tdvf-hob-clippy.log
+            tdvf-hob-final-status.txt
+            tdvf-hob-final-diff-stat.txt
+            tdvf-hob-final-candidate.diff
