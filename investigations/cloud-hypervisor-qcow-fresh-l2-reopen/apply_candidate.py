@@ -37,7 +37,9 @@ new_zero_marker = '''        if l2_addr_disk == 0 {
         }
 '''
 
-old_fn = '''    fn cache_l2_cluster_alloc(
+old_fn = '''    /// Populates the L2 cache for write operations and may allocate a new
+    /// L2 table. Returns the address of the newly allocated cluster if any.
+    fn cache_l2_cluster_alloc(
         &mut self,
         l1_index: usize,
         l2_addr_disk: u64,
@@ -63,7 +65,9 @@ old_fn = '''    fn cache_l2_cluster_alloc(
         Ok(new_cluster)
     }
 '''
-new_fn = '''    fn cache_l2_cluster_alloc(&mut self, l1_index: usize, l2_addr_disk: u64) -> io::Result<()> {
+new_fn = '''    /// Populates the L2 cache for write operations, allocating and owning a
+    /// fresh L2 table before publishing it through L1 when needed.
+    fn cache_l2_cluster_alloc(&mut self, l1_index: usize, l2_addr_disk: u64) -> io::Result<()> {
         if !self.l2_cache.contains_key(l1_index) {
             let l2_table = if l2_addr_disk == 0 {
                 // Establish ownership before publishing the new metadata cluster
