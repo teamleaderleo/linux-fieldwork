@@ -45,10 +45,10 @@ jobs:
           #include "squashfs_fs.h"
           int main(void) {
             printf("root_inode=%zu fragments=%zu inode_table_start=%zu s_major=%zu s_minor=%zu reg_size=%zu reg_fragment=%zu file_type=%d\n",
-              offsetof(squashfs_super_block, root_inode), offsetof(squashfs_super_block, fragments),
-              offsetof(squashfs_super_block, inode_table_start), offsetof(squashfs_super_block, s_major),
-              offsetof(squashfs_super_block, s_minor), sizeof(squashfs_reg_inode_header),
-              offsetof(squashfs_reg_inode_header, fragment), SQUASHFS_FILE_TYPE);
+              offsetof(struct squashfs_super_block, root_inode), offsetof(struct squashfs_super_block, fragments),
+              offsetof(struct squashfs_super_block, inode_table_start), offsetof(struct squashfs_super_block, s_major),
+              offsetof(struct squashfs_super_block, s_minor), sizeof(struct squashfs_reg_inode_header),
+              offsetof(struct squashfs_reg_inode_header, fragment), SQUASHFS_FILE_TYPE);
             return 0;
           }
           EOF
