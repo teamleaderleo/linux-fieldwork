@@ -1,0 +1,86 @@
+name: Cloud Hypervisor QCOW cache eviction error
+
+on:
+  push:
+    branches:
+      - research/ch-qcow-cache-eviction-error-r640
+    paths:
+      - .github/workflows/ch-qcow-cache-eviction-error-r640.yml
+      - investigations/cloud-hypervisor-qcow-cache-eviction-error/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      TEST: formats::qcow::refcount::eviction_error_unit_tests::failed_refblock_eviction_loses_dirty_victim_after_pointer_swap
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and Rust
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt
+          rustup override set 1.89.0
+          rustc --version
+
+      - name: Inject exact-current probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-cache-eviction-error/apply_probe.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          test "$(git diff --name-only)" = "block/src/formats/qcow/refcount.rs"
+          git diff -- block/src/formats/qcow/refcount.rs | tee ../r640-probe.diff
+
+      - name: Discover and execute discriminator
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib -- --list | tee ../r640-test-list.txt
+          grep -F "$TEST: test" ../r640-test-list.txt
+          cargo test --locked -p block --lib "$TEST" -- --exact --nocapture 2>&1 | tee ../r640-focused.log
+
+      - name: Probe hygiene
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fmt --all -- --check
+          git diff --check
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-qcow-cache-eviction-error-r640
+          if-no-files-found: warn
+          path: |
+            r640-probe.diff
+            r640-test-list.txt
+            r640-focused.log
