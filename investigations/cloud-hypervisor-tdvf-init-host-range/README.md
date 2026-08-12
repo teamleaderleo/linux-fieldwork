@@ -6,73 +6,86 @@ Worker/variant: LF-R590M
 Fieldwork base: `1ae906f23e765908c8a44cf870d78ed73262f83e`
 Exact Cloud Hypervisor source: `1af93ac7035cda77cd87b0c18b1134ebb0928052`
 External-contact state: false; upstream remains read-only
-State: STAGED
+State: PROVEN
 
-## Narrow question
+## Result
 
-When `init_tdx_memory()` processes a TDVF section whose declared guest range is not fully backed by one guest-memory region, does exact-current Cloud Hypervisor panic at `get_host_address_range(...).unwrap()`? Can the minimum VMM-side repair preserve the valid host pointer while returning a typed error for the unbacked/cross-region range before any TDX hypervisor call?
+Exact-current `Vm::init_tdx_memory()` panics when a TDVF section names a guest range that is not fully backed by one guest-memory region. The controlling boundary is the unconditional `unwrap()` on `virtio_devices::get_host_address_range()`.
 
-## Exact source owner
+A one-region 4 KiB fixture proved:
 
-Current `Vm::init_tdx_memory()` obtains the guest-memory map and for every TDVF section executes:
-
-```rust
-let size = section.size.try_into().unwrap();
-self.vm.tdx_init_memory_region(
-    virtio_devices::get_host_address_range(
-        &*mem,
-        GuestAddress(section.address),
-        size,
-    )
-    .unwrap(),
-    section.address,
-    size,
-    section.attributes == 1,
-)
+```text
+valid: address=0x800 size=0x100 -> host pointer returned
+invalid: address=0xf80 size=0x100 -> get_host_address_range() returns None
+baseline: unwrap(None) panics
 ```
 
-On x86_64 the `u64 -> usize` conversion is not the controlling edge. The meaningful boundary is `get_host_address_range(...).unwrap()`.
+Hosted baseline witness:
 
-`virtio_devices::get_host_address_range()` explicitly returns `None` if the requested range is out of bounds, spans multiple regions, or has zero size at an unmapped GPA. The VMM currently turns that ordinary invalid-range result into a panic.
+```text
+called `Option::unwrap()` on a `None` value
+TDVF_INIT_HOST_RANGE_BASELINE panicked=true
+```
 
-## Baseline discriminator
+The paired normal invariant lost with exit code 101, as expected.
 
-Use a single 4 KiB `GuestMemoryMmap` at GPA `0`:
+## Minimum validated candidate
 
-- valid control: address `0x800`, size `0x100` -> helper returns `Some(host_ptr)`;
-- ignored witness: address `0xf80`, size `0x100` crosses the end of the only region -> helper returns `None`, current `.unwrap()` panics;
-- normal expected-red invariant: same invalid range must not panic.
+The candidate changes only the VMM error boundary:
 
-This exercises the exact range helper and unwrap contract without requiring TDX hardware.
+1. add `Error::InvalidTdxMemoryRange { address, size }`;
+2. add `Vm::tdx_host_address_range()` to convert the existing helper's `None` into that typed error;
+3. replace only the production `get_host_address_range(...).unwrap()` with the helper + `?`;
+4. retain the same host pointer for a valid range.
 
-## Minimum candidate
+Focused result:
 
-1. add typed `Error::InvalidTdxMemoryRange { address: u64, size: usize }`;
-2. add a tiny production helper wrapping `get_host_address_range()` and converting `None` to that error;
-3. call the helper with `?` from `init_tdx_memory()` before `tdx_init_memory_region()`;
-4. focused regression proves invalid cross-boundary range returns the typed error and the valid range returns the same host pointer as the underlying helper.
+```text
+TDVF_INIT_HOST_RANGE_CANDIDATE invalid_result=InvalidTdxMemoryRange { address: 3968, size: 256 }
+TDVF_INIT_HOST_RANGE_CANDIDATE control expected=<ptr> actual=<same ptr>
+```
 
-The candidate does not add parser-level layout policy, change guest-memory allocation, alter TDVF section semantics, or call the hypervisor in the focused test.
+No parser policy, memory-allocation policy, TDVF section semantics, or hypervisor API behavior is changed.
 
-## Gates
+## Validation receipt
 
-- exact source pin and clean tree;
-- baseline valid host-range control green;
-- baseline invalid-range panic witness green;
+Fieldwork tested head:
+
+`2b0a437e55413b49f6ae0b0ab4c7c6758b52ea79`
+
+Hosted Actions:
+
+- run: `31595790732`
+- job: `94110847428`
+- conclusion: success
+- artifact: `9141025898`
+- artifact digest: `sha256:7e5c61f961f6e42fe4142af0eee0a74dc1bdeb6a4452bdcf1355198238f395c5`
+
+Candidate-only diff SHA-256:
+
+`664af6fee4c247a9d4b09c07ae960367c9088f251d5fd243622993b78f7007f3`
+
+All gates passed:
+
+- exact source pin / clean tree;
+- valid host-range baseline control;
+- baseline cross-region panic witness;
 - baseline no-panic invariant expected red;
-- restore exact source before candidate;
-- candidate typed invalid-range + valid pointer control green;
-- full `vmm` library tests with `tdx,kvm` and `/dev/kvm` permissions repaired when present;
-- Clippy with warnings denied except already identified exact-current unrelated baseline classes;
-- nightly rustfmt and `git diff --check`;
-- complete candidate-only diff review and SHA-256 receipt.
+- exact-source restoration;
+- candidate typed error + valid-pointer focused regression;
+- full `vmm` `tdx,kvm`: **105 passed / 0 failed**;
+- Clippy with warnings denied except previously identified exact-current baseline classes;
+- nightly rustfmt;
+- `git diff --check`;
+- complete candidate-only diff review.
 
-## Split boundaries
+## Remaining adjacent owners
 
 Keep separate:
 
-- BFV/CFV source-file ranges and short reads;
-- BFV/CFV or PayloadParam copy/write errors;
-- Payload section header/body I/O;
-- parser type/GUID/section-table validity;
-- section-overlap/cardinality policy.
+- BFV/CFV exact-read/short-source behavior;
+- the earlier start-only boot-RAM allocation decision (`address_in_range` versus whole-range backing);
+- Payload header/body I/O and payload guest-memory destination failures;
+- parser and section-cardinality policy.
+
+The record-only commit after this tested head is not a substitute for the tested carrier.
