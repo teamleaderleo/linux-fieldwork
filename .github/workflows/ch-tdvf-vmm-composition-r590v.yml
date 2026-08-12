@@ -1,0 +1,145 @@
+name: Cloud Hypervisor TDVF VMM composition R590V
+
+on:
+  push:
+    branches: [research/ch-tdvf-vmm-composition-r590v]
+    paths:
+      - .github/workflows/ch-tdvf-vmm-composition-r590v.yml
+      - investigations/cloud-hypervisor-tdvf-vmm-composition/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-vmm-composition:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      COMPOSITION_TEST: tdx_vmm_composition_preserves_typed_boundaries
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../tdvf-vmm-composition-rust-version.txt
+          rustc +nightly --version | tee ../tdvf-vmm-composition-nightly-version.txt
+          git rev-parse HEAD | tee ../tdvf-vmm-composition-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Apply selected VMM composition
+        id: apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-vmm-composition/apply_composition.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-vmm-composition.diff
+          sha256sum ../tdvf-vmm-composition.diff | tee ../tdvf-vmm-composition-diff-sha256.txt
+          grep -F "TdxHobMissing" vmm/src/vm.rs
+          grep -F "LoadPayloadParam" vmm/src/vm.rs
+          grep -F "copy_tdx_firmware_section" vmm/src/vm.rs
+          ! grep -F "TdHob::start(hob_offset.unwrap())" vmm/src/vm.rs
+
+      - name: Build and discover composition test
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib --no-run
+          cargo test --locked -p vmm --features "$FEATURES" --lib -- --list | tee ../tdvf-vmm-composition-test-list.txt
+          grep -F "$COMPOSITION_TEST: test" ../tdvf-vmm-composition-test-list.txt
+
+      - name: Focused composition matrix
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$COMPOSITION_TEST" -- --nocapture \
+            2>&1 | tee ../tdvf-vmm-composition-focused.log
+          grep -F "TDVF_VMM_COMPOSITION firmware_invalid=FirmwareLoad" ../tdvf-vmm-composition-focused.log
+          grep -F "TDVF_VMM_COMPOSITION firmware_control copied=16" ../tdvf-vmm-composition-focused.log
+          grep -F "TDVF_VMM_COMPOSITION payload_param_invalid=LoadPayloadParam" ../tdvf-vmm-composition-focused.log
+          grep -F "TDVF_VMM_COMPOSITION payload_param_control bytes=" ../tdvf-vmm-composition-focused.log
+          grep -F "TDVF_VMM_COMPOSITION hob_missing=TdxHobMissing" ../tdvf-vmm-composition-focused.log
+          grep -F "TDVF_VMM_COMPOSITION hob_control=0x4000" ../tdvf-vmm-composition-focused.log
+
+      - name: Full VMM TDX KVM library tests
+        id: vmm_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib \
+            2>&1 | tee ../tdvf-vmm-composition-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations \
+            2>&1 | tee ../tdvf-vmm-composition-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-vmm-composition-final-status.txt
+          git diff --stat | tee ../tdvf-vmm-composition-final-diff-stat.txt
+          git diff -- vmm/src/vm.rs | tee ../tdvf-vmm-composition-final.diff
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "features=$FEATURES"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "apply=${{ steps.apply.outcome }}"
+            echo "discover=${{ steps.discover.outcome }}"
+            echo "focused=${{ steps.focused.outcome }}"
+            echo "vmm_tests=${{ steps.vmm_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdvf-vmm-composition-diff-sha256.txt && cat tdvf-vmm-composition-diff-sha256.txt
+          } | tee tdvf-vmm-composition-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-vmm-composition-r590v
+          if-no-files-found: warn
+          path: |
+            tdvf-vmm-composition-*.txt
+            tdvf-vmm-composition-*.log
+            tdvf-vmm-composition-*.diff
