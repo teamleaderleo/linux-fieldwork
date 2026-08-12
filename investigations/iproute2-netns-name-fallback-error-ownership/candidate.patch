@@ -1,0 +1,13 @@
+diff --git a/lib/namespace.c b/lib/namespace.c
+--- a/lib/namespace.c
++++ b/lib/namespace.c
+@@ -121,6 +121,9 @@ int netns_get_fd(const char *str)
+ 	if (fd >= 0)
+ 		return fd;
+ 
++	if (errno != ENOENT)
++		return -1;
++
+ 	/* make sure string is an integer */
+ 	if (get_integer(&pid, str, 0) < 0)
+ 		return -1;
