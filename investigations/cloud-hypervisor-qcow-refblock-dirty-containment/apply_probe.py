@@ -20,9 +20,20 @@ probe = r'''
         let refcount_block_entries = cluster_size * 8 / refcount_bits;
         assert_eq!(refcount_block_entries, 32_768);
 
-        let temp = super::super::QcowTempDisk::new(4 * cluster_size, None, false, true, false)
-            .unwrap()
-            .into_tempfile();
+        // The deterministic ENOSPC fixture sparse-extends the physical file
+        // across two real refcount regions. Use a virtual geometry large
+        // enough that DIRTY recovery accepts that physical extent, so the
+        // containment test exercises refcount rebuild rather than the parser's
+        // unrelated impossible-file-size rejection.
+        let temp = super::super::QcowTempDisk::new(
+            4 * 1024 * 1024 * 1024,
+            None,
+            false,
+            true,
+            false,
+        )
+        .unwrap()
+        .into_tempfile();
         let raw = crate::AlignedFile::new(temp.as_file().try_clone().unwrap(), false);
         let (mut inner, _backing, _sparse) =
             super::super::parser::parse_qcow(raw, 0, true).unwrap();
