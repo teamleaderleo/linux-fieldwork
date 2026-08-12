@@ -1,0 +1,121 @@
+name: Cloud Hypervisor migration memory table length
+
+on:
+  push:
+    branches:
+      - research/ch-migration-rollback-probes
+    paths:
+      - .github/workflows/ch-migration-memory-table-length.yml
+      - investigations/cloud-hypervisor-migration-memory-table-length/apply_probe.py
+      - investigations/cloud-hypervisor-migration-memory-table-length/apply_candidate.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  malformed-table-length:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      TEST_NAME: protocol::unit_tests::malformed_memory_range_table_length_returns_error_without_panic
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin Rust 1.89.0
+        working-directory: cloud-hypervisor
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../table-rust-version.txt
+          git rev-parse HEAD | tee ../table-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply malformed-length regression probe
+        working-directory: cloud-hypervisor
+        run: |
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-memory-table-length/apply_probe.py
+          git diff --check
+          cargo fmt --all -- --check
+          git diff -- vm-migration/src/protocol.rs > ../table-probe.diff
+
+      - name: Build and discover exact test
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test -p vm-migration --lib --no-run
+          cargo test -p vm-migration --lib -- --list | tee ../table-test-list.txt
+          grep -F "$TEST_NAME: test" ../table-test-list.txt
+
+      - name: Prove malformed length panics current parser
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test -p vm-migration --lib "$TEST_NAME" -- --exact --nocapture \
+            > ../table-baseline.log 2>&1
+          rc=$?
+          set -e
+          echo "BASELINE_RC=$rc" | tee ../table-baseline-status.txt
+          cat ../table-baseline.log
+          test "$rc" -ne 0
+          grep -F "malformed migration table framing must return an error instead of panicking" ../table-baseline.log
+
+      - name: Apply local validation candidate
+        working-directory: cloud-hypervisor
+        run: |
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-memory-table-length/apply_candidate.py
+          git diff --check
+          cargo fmt --all -- --check
+          git diff -- vm-migration/src/protocol.rs > ../table-candidate.diff
+
+      - name: Prove candidate returns an error and preserves valid controls
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test -p vm-migration --lib "$TEST_NAME" -- --exact --nocapture \
+            | tee ../table-candidate-test.log
+          cargo clippy -p vm-migration --lib --tests -- -D warnings \
+            | tee ../table-candidate-clippy.log
+
+      - name: Write receipt
+        shell: bash
+        run: |
+          {
+            echo "source=$CH_SHA"
+            cat table-rust-version.txt
+            cat table-baseline-status.txt
+            echo "test=$TEST_NAME"
+            echo "candidate_test=pass"
+            echo "candidate_clippy=pass"
+          } | tee table-receipt.txt
+
+      - name: Upload receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-migration-memory-table-length-receipt
+          path: |
+            table-receipt.txt
+            table-source-sha.txt
+            table-rust-version.txt
+            table-test-list.txt
+            table-baseline-status.txt
+            table-baseline.log
+            table-candidate-test.log
+            table-candidate-clippy.log
+            table-probe.diff
+            table-candidate.diff
