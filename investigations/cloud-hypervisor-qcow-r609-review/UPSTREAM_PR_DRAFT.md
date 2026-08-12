@@ -25,7 +25,7 @@ after:  allocate L2 -> refcount=1 -> publish L1
 
 If later work fails in the old ordering, the deferred refcount update can be lost while the L1 change remains. After shutdown, the image can reopen without rebuilding refcounts, making the still-referenced L2 eligible for allocator reuse.
 
-The same ordering gap affects both initial L2 allocation and L2 relocation. New L2 ownership is now synchronous; only release of the old relocated L2 remains deferred, preserving the ordering introduced by PR #8637.
+The same ordering gap affects both initial L2 allocation and L2 relocation. New L2 ownership is now synchronous; only release of the old relocated L2 remains deferred, preserving the ordering introduced by upstream PR 8637.
 
 The added regressions cover fresh-L2 ENOSPC and allocator reuse after reopen, relocated-L2 ownership, and the zero-marker path. The existing failed-relocation regressions continue to pass.
 
@@ -62,7 +62,7 @@ Issue #611 remains a separate shutdown durability problem: metadata flush failur
 - [x] Block tests pass: 298 passed, 0 failed.
 - [x] Block tests with `io_uring` pass: 326 passed, 0 failed.
 - [x] Check, Clippy, nightly rustfmt, and diff-check pass.
-- [x] Existing PR #8637 relocation regressions remain green.
+- [x] Existing upstream PR 8637 relocation regressions remain green.
 - [x] Candidate commit has a human `Signed-off-by` trailer.
 - [x] Candidate commit is cryptographically signed and GitHub reports the signature as valid.
 - [x] Public PR recorded via redirect link.
