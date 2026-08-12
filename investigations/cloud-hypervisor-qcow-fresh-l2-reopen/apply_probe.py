@@ -19,20 +19,17 @@ probe = r'''    #[test]
     fn failed_fresh_l2_becomes_reusable_after_clean_reopen() {
         const CLUSTER_SIZE: u64 = 1 << 16;
 
-        let temp = super::super::QcowTempDisk::new(
-            64 * CLUSTER_SIZE,
-            None,
-            false,
-            true,
-            false,
-        )
-        .unwrap()
-        .into_tempfile();
+        let temp = super::super::QcowTempDisk::new(64 * CLUSTER_SIZE, None, false, true, false)
+            .unwrap()
+            .into_tempfile();
         let raw = crate::AlignedFile::new(temp.as_file().try_clone().unwrap(), false);
         let (mut inner, _backing, _sparse) =
             super::super::parser::parse_qcow(raw, 0, true).unwrap();
 
-        assert_eq!(inner.l1_table[0], 0, "fresh image must start with an empty L1 slot");
+        assert_eq!(
+            inner.l1_table[0], 0,
+            "fresh image must start with an empty L1 slot"
+        );
 
         // Add exactly one physical cluster whose on-disk refcount remains zero,
         // then cap the refcount horizon at the current file size so the next
