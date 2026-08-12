@@ -1,0 +1,107 @@
+name: Cloud Hypervisor migration table review candidate
+
+on:
+  push:
+    branches:
+      - research/ch-migration-memory-table-length-r604
+    paths:
+      - .github/workflows/ch-migration-memory-table-length-review-r604.yml
+      - investigations/cloud-hypervisor-migration-memory-table-length/apply_review_candidate.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      TEST_NAME: protocol::unit_tests::test_memory_range_table_rejects_unaligned_length
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchain
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          git status --short | tee ../review-source-status-before.txt
+          test ! -s ../review-source-status-before.txt
+          rustc --version | tee ../review-rust-version.txt
+
+      - name: Apply review candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-memory-table-length/apply_review_candidate.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- vm-migration/src/protocol.rs | tee ../review-candidate.patch
+          git diff --stat | tee ../review-candidate-stat.txt
+          sha256sum ../review-candidate.patch | tee ../review-candidate-sha256.txt
+
+      - name: Discover and run regression
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vm-migration --lib -- --list | tee ../review-test-list.txt
+          grep -F "$TEST_NAME: test" ../review-test-list.txt
+          cargo test --locked -p vm-migration --lib "$TEST_NAME" -- --exact --nocapture \
+            2>&1 | tee ../review-focused.log
+
+      - name: Full vm-migration tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vm-migration 2>&1 | tee ../review-crate-tests.log
+
+      - name: Clippy and hygiene
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vm-migration --all-targets -- -D warnings \
+            2>&1 | tee ../review-clippy.log
+          cargo fmt --all -- --check
+          git diff --check
+          git status --short | tee ../review-final-status.txt
+
+      - name: Upload review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-migration-memory-table-review-r604
+          if-no-files-found: warn
+          path: |
+            review-source-status-before.txt
+            review-rust-version.txt
+            review-candidate.patch
+            review-candidate-stat.txt
+            review-candidate-sha256.txt
+            review-test-list.txt
+            review-focused.log
+            review-crate-tests.log
+            review-clippy.log
+            review-final-status.txt
