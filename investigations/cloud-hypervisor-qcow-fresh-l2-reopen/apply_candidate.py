@@ -7,15 +7,34 @@ marker = "self.set_cluster_refcount_track_freed(new_addr, 1)?;\n                
 if marker in text:
     raise SystemExit(f"candidate marker already present in {path}")
 
-old_call = '''        let mut set_refcounts = Vec::new();
+old_map_write = '''        let mut set_refcounts = Vec::new();
 
         if let Some(new_addr) = self.cache_l2_cluster_alloc(l1_index, l2_addr_disk)? {
             set_refcounts.push((new_addr, 1));
         }
 '''
-new_call = '''        let mut set_refcounts = Vec::new();
+new_map_write = '''        let mut set_refcounts = Vec::new();
 
         self.cache_l2_cluster_alloc(l1_index, l2_addr_disk)?;
+'''
+
+old_zero_marker = '''        if l2_addr_disk == 0 {
+            if zero_marker {
+                if let Some(new_addr) = self.cache_l2_cluster_alloc(l1_index, l2_addr_disk)? {
+                    self.set_cluster_refcount_track_freed(new_addr, 1)?;
+                }
+                self.l2_cache.get_mut(l1_index).unwrap()[l2_index] = dealloc_entry;
+            }
+            return Ok(None);
+        }
+'''
+new_zero_marker = '''        if l2_addr_disk == 0 {
+            if zero_marker {
+                self.cache_l2_cluster_alloc(l1_index, l2_addr_disk)?;
+                self.l2_cache.get_mut(l1_index).unwrap()[l2_index] = dealloc_entry;
+            }
+            return Ok(None);
+        }
 '''
 
 old_fn = '''    fn cache_l2_cluster_alloc(
@@ -51,8 +70,8 @@ new_fn = '''    fn cache_l2_cluster_alloc(
     ) -> io::Result<()> {
         if !self.l2_cache.contains_key(l1_index) {
             let l2_table = if l2_addr_disk == 0 {
-                // Commit ownership of the new metadata cluster before L1 can
-                // point at it. If the refcount update fails, leave L1 unchanged.
+                // Establish ownership before publishing the new metadata cluster
+                // through L1. If the refcount update fails, L1 stays unchanged.
                 let new_addr = self.get_new_cluster(None)?;
                 self.set_cluster_refcount_track_freed(new_addr, 1)?;
                 self.l1_table[l1_index] = new_addr;
@@ -71,10 +90,13 @@ new_fn = '''    fn cache_l2_cluster_alloc(
     }
 '''
 
-if text.count(old_call) != 1:
-    raise SystemExit(f"expected exactly one deferred fresh-L2 caller block in {path}")
-text = text.replace(old_call, new_call, 1)
-if text.count(old_fn) != 1:
-    raise SystemExit(f"expected exactly one cache_l2_cluster_alloc owner in {path}")
-text = text.replace(old_fn, new_fn, 1)
+for old, new, label in [
+    (old_map_write, new_map_write, "map_write fresh-L2 caller"),
+    (old_zero_marker, new_zero_marker, "zero-marker fresh-L2 caller"),
+    (old_fn, new_fn, "cache_l2_cluster_alloc owner"),
+]:
+    if text.count(old) != 1:
+        raise SystemExit(f"expected exactly one {label} in {path}, found {text.count(old)}")
+    text = text.replace(old, new, 1)
+
 path.write_text(text)
