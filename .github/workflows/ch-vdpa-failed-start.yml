@@ -6,8 +6,8 @@ on:
       - research/ch-migration-rollback-probes
     paths:
       - .github/workflows/ch-vdpa-failed-start.yml
-      - investigations/cloud-hypervisor-vdpa-migration-start/failed-start-probe.patch
-      - investigations/cloud-hypervisor-vdpa-migration-start/failed-start-candidate.patch
+      - investigations/cloud-hypervisor-vdpa-migration-start/apply_failed_start_probe.py
+      - investigations/cloud-hypervisor-vdpa-migration-start/apply_failed_start_candidate.py
   workflow_dispatch:
 
 permissions:
@@ -47,8 +47,7 @@ jobs:
       - name: Apply the regression probe only
         working-directory: cloud-hypervisor
         run: |
-          git apply --check ../fieldwork/investigations/cloud-hypervisor-vdpa-migration-start/failed-start-probe.patch
-          git apply ../fieldwork/investigations/cloud-hypervisor-vdpa-migration-start/failed-start-probe.patch
+          python3 ../fieldwork/investigations/cloud-hypervisor-vdpa-migration-start/apply_failed_start_probe.py
           git diff --check
           git diff -- virtio-devices/src/vdpa.rs > ../vdpa-probe.diff
 
@@ -76,8 +75,7 @@ jobs:
       - name: Apply the transactional flag candidate
         working-directory: cloud-hypervisor
         run: |
-          git apply --check ../fieldwork/investigations/cloud-hypervisor-vdpa-migration-start/failed-start-candidate.patch
-          git apply ../fieldwork/investigations/cloud-hypervisor-vdpa-migration-start/failed-start-candidate.patch
+          python3 ../fieldwork/investigations/cloud-hypervisor-vdpa-migration-start/apply_failed_start_candidate.py
           git diff --check
           git diff -- virtio-devices/src/vdpa.rs > ../vdpa-candidate.diff
           cargo fmt --all -- --check
