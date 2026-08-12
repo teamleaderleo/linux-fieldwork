@@ -3,7 +3,7 @@ from pathlib import Path
 
 path = Path("vmm/src/migration/transport.rs")
 text = path.read_text()
-marker = "let mut disconnect = SendMemoryThreadMessage::Disconnect;"
+marker = "self.threads.iter().all(|thread| thread.is_finished())"
 if marker in text:
     raise SystemExit(f"cleanup candidate marker already present in {path}")
 
@@ -17,11 +17,16 @@ old = '''        // Send disconnect messages to all workers.
         }
 '''
 new = '''        // Send disconnect messages to all workers. The work queue can still be full when
-        // cleanup follows a worker error, so retry without blocking until each terminal
-        // message is accepted or all receivers have disappeared.
+        // cleanup follows a worker error, so retry without blocking while a worker can still
+        // consume a terminal message. Once every worker has finished, no further disconnect
+        // is needed even if another receiver handle temporarily keeps the channel alive.
         for _ in 0..self.threads.len() {
             let mut disconnect = SendMemoryThreadMessage::Disconnect;
             loop {
+                if self.threads.iter().all(|thread| thread.is_finished()) {
+                    break;
+                }
+
                 match self.message_tx.try_send(disconnect) {
                     Ok(()) => break,
                     Err(TrySendError::Full(unsent_message)) => {
