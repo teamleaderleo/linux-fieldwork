@@ -43,4 +43,4 @@ mod unit_tests {
 }
 '''
 
-path.write_text(text.rstrip() + probe + "\n")
+path.write_text(text.rstrip() + probe.rstrip() + "\n")
