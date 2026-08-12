@@ -30,7 +30,9 @@ The added regressions cover fresh-L2 ENOSPC and allocator reuse after reopen, re
 
 ### Validation
 
-Current-tree Linux validation is being refreshed after the release-only cleanup. Replace this note with the final block/io_uring/check/Clippy/rustfmt results before submission.
+`cargo test --locked -p block` — 298 passed  
+`cargo test --locked -p block --features io_uring` — 326 passed  
+`cargo check`, Clippy with warnings denied, nightly rustfmt, and `git diff --check` also passed.
 
 AI assistance: ChatGPT (GPT-5.6 Sol) was used for source review, test design, and patch refinement.
 
@@ -44,7 +46,7 @@ The repair is intentionally framed as `ownership before reachability`, not as a 
 
 The source candidate changes only `block/src/formats/qcow/metadata.rs`. The signed head remains one commit ahead of the current upstream base, and GitHub reports its SSH signature as valid.
 
-The release-only cleanup changed the source tree, so the earlier 298/326 test receipts are not being treated as exact-current validation for this head. Internal Linux rerun `31610738323` was launched from Fieldwork head `98c79d6e056244fcdc4e7f063dfb9d2029039bd0` to rematerialize and validate the updated candidate.
+Current-tree Linux validation passed in Fieldwork run `31610738323` from carrier head `98c79d6e056244fcdc4e7f063dfb9d2029039bd0`. The focused fresh-L2, relocated-L2, and zero-marker tests passed; both existing failed-relocation controls passed; the block suite passed 298/298; the io_uring block suite passed 326/326; check, Clippy, nightly rustfmt, and diff-check passed. Artifact `9147104092` has digest `sha256:6e54c2bd5db682588f3bb5a2a65d3a6a24a7d70381f8b6f49dee041acca34209`.
 
 Issue #611 remains a separate shutdown durability problem: metadata flush failure can interact with DIRTY-bit clearing. This candidate doesn't claim to repair that path.
 
@@ -52,12 +54,15 @@ Issue #611 remains a separate shutdown durability problem: metadata flush failur
 
 - [x] Candidate is one source commit on the current intended upstream base.
 - [x] Complete candidate diff reviewed.
-- [x] Baseline fresh-L2 regression fails and candidate passes on the original two-site candidate.
-- [x] Baseline relocated-L2 ownership regression fails and candidate passes on the original two-site candidate.
+- [x] Baseline fresh-L2 regression fails and current candidate passes.
+- [x] Baseline relocated-L2 ownership regression fails and current candidate passes.
+- [x] Block tests pass: 298 passed, 0 failed.
+- [x] Block tests with `io_uring` pass: 326 passed, 0 failed.
+- [x] Check, Clippy, nightly rustfmt, and diff-check pass.
+- [x] Existing PR #8637 relocation regressions remain green.
 - [x] Fork/branch delivery path exists.
 - [x] Candidate commit has a human `Signed-off-by` trailer.
 - [x] Candidate commit is cryptographically signed and GitHub reports the signature as valid.
 - [x] Upstream base remains `1af93ac7035cda77cd87b0c18b1134ebb0928052` at the release-only amend.
-- [ ] Current release-only source tree passes focused regressions and block/io_uring/check/Clippy/rustfmt gates.
 - [ ] Explicit authorization for upstream contact recorded.
 - [ ] Submitted head and public PR recorded after submission.
