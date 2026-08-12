@@ -12,7 +12,9 @@ probe = r'''
 #[cfg(test)]
 mod eviction_error_candidate_unit_tests {
     use super::*;
+    use std::env::temp_dir;
     use std::fs::{OpenOptions, remove_file};
+    use std::process::id;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -27,9 +29,9 @@ mod eviction_error_candidate_unit_tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!(
+        let path = temp_dir().join(format!(
             "cloud-hypervisor-refcount-evict-candidate-{}-{nonce}.qcow",
-            std::process::id()
+            id()
         ));
 
         let seed = OpenOptions::new()
