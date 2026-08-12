@@ -71,9 +71,25 @@ probe = r'''
             reopened.l1_table[0], live_l2,
             "clean reopen must preserve the L1 reference"
         );
+
+        if reopened.avail_clusters.contains(&live_l2) {
+            // Prove allocator eligibility all the way through reuse. Restrict
+            // the free list to the parser-published live cluster so the next
+            // allocation is deterministic.
+            reopened.avail_clusters.clear();
+            reopened.avail_clusters.push(live_l2);
+            let reused = reopened
+                .get_new_cluster(None)
+                .expect("parser-published live L2 must be allocatable");
+            assert_ne!(
+                reused, live_l2,
+                "allocator must never return a still-referenced fresh L2"
+            );
+        }
+
         assert!(
             !reopened.avail_clusters.contains(&live_l2),
-            "clean reopen must not classify a still-referenced fresh L2 as free"
+            "clean reopen must keep a still-referenced fresh L2 off the free list"
         );
 
         let reopened_refcount = {
@@ -87,6 +103,51 @@ probe = r'''
         assert_eq!(
             reopened_refcount, 1,
             "clean reopen must retain a nonzero refcount for the live L2"
+        );
+    }
+
+    #[test]
+    fn fresh_l2_refcount_enospc_does_not_publish_l1() {
+        let cluster_size: u64 = 1 << 16;
+        let temp = super::super::QcowTempDisk::new(4 * cluster_size, None, false, true, false)
+            .unwrap()
+            .into_tempfile();
+        let raw = crate::AlignedFile::new(temp.as_file().try_clone().unwrap(), false);
+        let (mut inner, _backing, _sparse) =
+            super::super::parser::parse_qcow(raw, 0, true).unwrap();
+        assert_eq!(inner.l1_table[0], 0);
+
+        // Leave one fresh cluster available and cap growth. The candidate can
+        // allocate that L2, but securing its refcount needs a COW refcount
+        // block and must fail ENOSPC before L1 publication.
+        let file_size = inner.raw_file.file_mut().metadata().unwrap().len();
+        assert_eq!(file_size % cluster_size, 0);
+        inner
+            .raw_file
+            .file_mut()
+            .set_len(file_size + cluster_size)
+            .unwrap();
+        let file_clusters = (file_size + cluster_size) / cluster_size;
+        inner.refcounts = super::super::refcount::RefCount::new(
+            &mut inner.raw_file,
+            inner.header.refcount_table_offset,
+            1,
+            file_clusters,
+            cluster_size,
+            16,
+        )
+        .unwrap();
+        inner.avail_clusters.clear();
+        inner.unref_clusters.clear();
+        inner.avail_clusters.push(file_size);
+
+        let err = inner
+            .map_write(0, None)
+            .expect_err("refcount ownership must fail at allocator exhaustion");
+        assert_eq!(err.raw_os_error(), Some(libc::ENOSPC));
+        assert_eq!(
+            inner.l1_table[0], 0,
+            "failed fresh-L2 ownership must leave L1 unpublished"
         );
     }
 
