@@ -49,6 +49,8 @@ The submitted patch changes only `block/src/formats/qcow/metadata.rs`. GitHub re
 
 Current-tree Linux validation passed in Fieldwork run `31610738323` from carrier head `98c79d6e056244fcdc4e7f063dfb9d2029039bd0`. The focused fresh-L2, relocated-L2, and zero-marker tests passed; both existing failed-relocation controls passed; the block suite passed 298/298; the io_uring block suite passed 326/326; check, Clippy, nightly rustfmt, and diff-check passed. Artifact `9147104092` has digest `sha256:6e54c2bd5db682588f3bb5a2a65d3a6a24a7d70381f8b6f49dee041acca34209`.
 
+Upstream context for the earlier relocation ordering is https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8637.
+
 Issue #611 remains a separate shutdown durability problem: metadata flush failure can interact with DIRTY-bit clearing. This patch doesn't claim to repair that path.
 
 ## Submission state
@@ -63,8 +65,11 @@ Issue #611 remains a separate shutdown durability problem: metadata flush failur
 - [x] Existing PR #8637 relocation regressions remain green.
 - [x] Candidate commit has a human `Signed-off-by` trailer.
 - [x] Candidate commit is cryptographically signed and GitHub reports the signature as valid.
-- [x] Public PR recorded: `cloud-hypervisor/cloud-hypervisor#8721`.
+- [x] Public PR recorded via redirect link.
 - [x] Submitted head recorded: `b26d6b70e28dacf0a35463b3bc45494ae2b2028e`.
+- [x] Canonical upstream CI started: run `31611611323`.
 - [ ] Canonical upstream CI complete.
 - [ ] Maintainer review outcome recorded.
 - [ ] Merge outcome recorded.
+
+Latest housekeeping check: upstream CI run `31611611323` is in progress. No upstream mutation is performed by this internal record.
