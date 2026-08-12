@@ -141,3 +141,85 @@ jobs:
         with:
           name: r637-candidate-r604
           path: candidate-r604.log
+
+  fallible-allocation-containment:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/cloud-hypervisor
+          ref: a9ff8e0ca603f72e6fb718fc023b679201ce04c5
+          path: cloud-hypervisor
+          persist-credentials: false
+      - name: Install exact toolchain
+        working-directory: cloud-hypervisor
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy rustfmt
+          rustup override set 1.89.0
+      - name: Apply fallible allocation containment
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('vm-migration/src/protocol.rs')
+          s = p.read_text()
+          old = '''        let mut data: Vec<MemoryRange> =\n            vec![MemoryRange::default(); length / size_of::<MemoryRange>()];\n\n        fd.read_exact(data.as_mut_bytes())\n'''
+          new = '''        let entries = length / size_of::<MemoryRange>();\n        let mut data = Vec::new();\n        data.try_reserve_exact(entries).map_err(|e| {\n            MigratableError::MigrateReceive(anyhow!(\n                "invalid memory range table length: cannot allocate {entries} entries: {e}"\n            ))\n        })?;\n        data.resize(entries, MemoryRange::default());\n\n        fd.read_exact(data.as_mut_bytes())\n'''
+          if s.count(old) != 1:
+              raise SystemExit(f'expected one allocation body, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          cargo fmt --all
+          git diff --check
+          git diff -- vm-migration/src/protocol.rs | tee ../containment.diff
+      - name: Inject ordinary-error discriminator
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          mkdir -p vm-migration/tests
+          cat > vm-migration/tests/aligned_capacity_contained.rs <<'RS'
+          use std::io::Cursor;
+          use std::mem::size_of;
+          use std::panic::{AssertUnwindSafe, catch_unwind};
+
+          use vm_migration::MigratableError;
+          use vm_migration::protocol::{MemoryRange, MemoryRangeTable};
+
+          #[test]
+          fn aligned_impossible_table_length_returns_receive_error() {
+              assert_eq!(size_of::<MemoryRange>(), 16);
+              let length = u64::MAX - 15;
+              assert_eq!(length % size_of::<MemoryRange>() as u64, 0);
+              let mut cursor = Cursor::new(Vec::<u8>::new());
+              let outcome = catch_unwind(AssertUnwindSafe(|| {
+                  MemoryRangeTable::read_from(&mut cursor, length)
+              }));
+              let result = outcome.expect("fallible allocation must not panic");
+              let err = result.expect_err("impossible table capacity must be rejected");
+              println!("ALIGNED_CAPACITY_CONTAINED error={err:?} length={length:#x}");
+              assert!(matches!(err, MigratableError::MigrateReceive(_)));
+          }
+          RS
+      - name: Execute containment and existing regression
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test --locked -p vm-migration --test aligned_capacity_contained -- --nocapture 2>&1 | tee ../containment-focused.log
+          cargo test --locked -p vm-migration protocol::unit_tests::test_memory_range_table_rejects_unaligned_length -- --exact --nocapture
+      - name: Full crate and quality gates
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test --locked -p vm-migration 2>&1 | tee ../containment-suite.log
+          cargo clippy --locked -p vm-migration --all-targets -- -D warnings 2>&1 | tee ../containment-clippy.log
+          cargo fmt --all -- --check
+          git diff --check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r637-fallible-allocation-containment
+          path: |
+            containment.diff
+            containment-focused.log
+            containment-suite.log
+            containment-clippy.log
