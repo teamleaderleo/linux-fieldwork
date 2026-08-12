@@ -20,6 +20,7 @@ jobs:
     env:
       CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
       TEST_NAME: formats::qcow::metadata::unit_tests::fresh_l2_enospc_reopen_keeps_live_table_out_of_free_list
+      OWNERSHIP_TEST_NAME: formats::qcow::metadata::unit_tests::fresh_l2_refcount_enospc_does_not_publish_l1
     steps:
       - name: Check out Fieldwork carrier
         uses: actions/checkout@v4
@@ -35,14 +36,16 @@ jobs:
           path: cloud-hypervisor
           persist-credentials: false
 
-      - name: Pin Rust 1.89.0
+      - name: Pin Rust 1.89.0 and nightly rustfmt
         working-directory: cloud-hypervisor
         shell: bash
         run: |
           rustup toolchain install 1.89.0 --profile minimal
           rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
           rustup override set 1.89.0
           rustc --version | tee ../qcow-rust-version.txt
+          rustc +nightly --version | tee ../qcow-nightly-version.txt
           git rev-parse HEAD | tee ../qcow-source-sha.txt
           test "$(git rev-parse HEAD)" = "$CH_SHA"
 
@@ -52,30 +55,45 @@ jobs:
         run: |
           python3 ../fieldwork/investigations/cloud-hypervisor-qcow-fresh-l2-reopen/apply_probe.py
           git diff --check
-          cargo fmt --all -- --check
+          cargo +nightly fmt --all -- --check
           git diff -- block/src/formats/qcow/metadata.rs > ../qcow-probe.diff
 
-      - name: Build and discover exact test
+      - name: Build and discover exact tests
         working-directory: cloud-hypervisor
         shell: bash
         run: |
           cargo test --locked -p block --lib --no-run
           cargo test --locked -p block --lib -- --list | tee ../qcow-test-list.txt
           grep -F "$TEST_NAME: test" ../qcow-test-list.txt
+          grep -F "$OWNERSHIP_TEST_NAME: test" ../qcow-test-list.txt
 
-      - name: Prove clean reopen publishes the live L2 on baseline
+      - name: Prove clean reopen makes the live L2 reusable on baseline
         working-directory: cloud-hypervisor
         shell: bash
         run: |
           set +e
           cargo test --locked -p block --lib "$TEST_NAME" -- --exact --nocapture \
-            > ../qcow-baseline.log 2>&1
+            > ../qcow-baseline-reuse.log 2>&1
           rc=$?
           set -e
-          echo "BASELINE_RC=$rc" | tee ../qcow-baseline-status.txt
-          cat ../qcow-baseline.log
+          echo "BASELINE_REUSE_RC=$rc" | tee ../qcow-baseline-reuse-status.txt
+          cat ../qcow-baseline-reuse.log
           test "$rc" -ne 0
-          grep -F "clean reopen must not classify a still-referenced fresh L2 as free" ../qcow-baseline.log
+          grep -F "allocator must never return a still-referenced fresh L2" ../qcow-baseline-reuse.log
+
+      - name: Prove baseline publishes before fresh L2 ownership succeeds
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p block --lib "$OWNERSHIP_TEST_NAME" -- --exact --nocapture \
+            > ../qcow-baseline-ownership.log 2>&1
+          rc=$?
+          set -e
+          echo "BASELINE_OWNERSHIP_RC=$rc" | tee ../qcow-baseline-ownership-status.txt
+          cat ../qcow-baseline-ownership.log
+          test "$rc" -ne 0
+          grep -F "failed fresh-L2 ownership must leave L1 unpublished" ../qcow-baseline-ownership.log
 
       - name: Apply immediate fresh-L2 refcount candidate
         working-directory: cloud-hypervisor
@@ -83,7 +101,7 @@ jobs:
         run: |
           python3 ../fieldwork/investigations/cloud-hypervisor-qcow-fresh-l2-reopen/apply_candidate.py
           git diff --check
-          cargo fmt --all -- --check
+          cargo +nightly fmt --all -- --check
           git diff -- block/src/formats/qcow/metadata.rs > ../qcow-candidate.diff
 
       - name: Run focused candidate and full block gates
@@ -91,7 +109,9 @@ jobs:
         shell: bash
         run: |
           cargo test --locked -p block --lib "$TEST_NAME" -- --exact --nocapture \
-            | tee ../qcow-candidate-focused.log
+            | tee ../qcow-candidate-reuse.log
+          cargo test --locked -p block --lib "$OWNERSHIP_TEST_NAME" -- --exact --nocapture \
+            | tee ../qcow-candidate-ownership.log
           cargo test --locked -p block \
             | tee ../qcow-block-tests.log
           cargo test --locked -p block --features io_uring \
@@ -105,9 +125,14 @@ jobs:
           {
             echo "source=$CH_SHA"
             cat qcow-rust-version.txt
-            cat qcow-baseline-status.txt
-            echo "test=$TEST_NAME"
-            echo "candidate_focused=pass"
+            cat qcow-nightly-version.txt
+            cat qcow-baseline-reuse-status.txt
+            cat qcow-baseline-ownership-status.txt
+            echo "reuse_test=$TEST_NAME"
+            echo "ownership_test=$OWNERSHIP_TEST_NAME"
+            echo "candidate_reuse=pass"
+            echo "candidate_ownership=pass"
+            echo "nightly_fmt=pass"
             echo "block_tests=pass"
             echo "block_io_uring_tests=pass"
             echo "clippy=pass"
@@ -121,10 +146,14 @@ jobs:
             qcow-receipt.txt
             qcow-source-sha.txt
             qcow-rust-version.txt
+            qcow-nightly-version.txt
             qcow-test-list.txt
-            qcow-baseline-status.txt
-            qcow-baseline.log
-            qcow-candidate-focused.log
+            qcow-baseline-reuse-status.txt
+            qcow-baseline-reuse.log
+            qcow-baseline-ownership-status.txt
+            qcow-baseline-ownership.log
+            qcow-candidate-reuse.log
+            qcow-candidate-ownership.log
             qcow-block-tests.log
             qcow-block-uring-tests.log
             qcow-clippy.log
