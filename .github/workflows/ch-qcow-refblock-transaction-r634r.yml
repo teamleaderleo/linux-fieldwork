@@ -1,0 +1,180 @@
+name: Cloud Hypervisor QCOW refblock transaction audit
+
+on:
+  push:
+    branches:
+      - research/ch-qcow-refblock-transaction-r634r
+    paths:
+      - .github/workflows/ch-qcow-refblock-transaction-r634r.yml
+      - investigations/cloud-hypervisor-qcow-refblock-transaction/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refblock-transaction:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      ROLLBACK_TEST: formats::qcow::metadata::unit_tests::refblock_recursive_enospc_transaction_rolls_back
+      SUCCESS_TEST: formats::qcow::metadata::unit_tests::refblock_recursive_transaction_success_owns_chain_and_tracks_old_block
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin exact source and Rust
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../transaction-rust-version.txt
+          cargo --version | tee ../transaction-cargo-version.txt
+          git rev-parse HEAD | tee ../transaction-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          git status --short | tee ../transaction-source-status-before.txt
+          test ! -s ../transaction-source-status-before.txt
+
+      - name: Apply transactional candidate
+        id: candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-transaction/apply_candidate.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../transaction-candidate.diff
+          grep -F "set_cluster_refcount_inner" block/src/formats/qcow/metadata.rs
+          grep -F "refcounts_before_relocation" block/src/formats/qcow/metadata.rs
+
+      - name: Apply transaction discriminators
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-transaction/apply_probe.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../transaction-probe-plus-candidate.diff
+
+      - name: Build and discover tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib --no-run
+          cargo test --locked -p block --lib -- --list | tee ../transaction-test-list.txt
+          grep -F "$ROLLBACK_TEST: test" ../transaction-test-list.txt
+          grep -F "$SUCCESS_TEST: test" ../transaction-test-list.txt
+
+      - name: Execute recursive ENOSPC rollback witness
+        id: rollback
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$ROLLBACK_TEST" -- --exact --nocapture \
+            2>&1 | tee ../transaction-rollback.log
+          grep -F "REFBLOCK_TX_ROLLBACK post_error" ../transaction-rollback.log
+          grep -F "REFBLOCK_TX_ROLLBACK post_sync" ../transaction-rollback.log
+          grep -F "REFBLOCK_TX_ROLLBACK reopened" ../transaction-rollback.log
+          grep -F "REFBLOCK_TX_ROLLBACK allocator_reuse" ../transaction-rollback.log
+
+      - name: Execute successful recursive ownership control
+        id: success_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$SUCCESS_TEST" -- --exact --nocapture \
+            2>&1 | tee ../transaction-success.log
+          grep -F "REFBLOCK_TX_SUCCESS target=" ../transaction-success.log
+          grep -F "REFBLOCK_TX_SUCCESS reopened" ../transaction-success.log
+
+      - name: Run block library regression suite
+        id: block_suite
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib 2>&1 | tee ../transaction-block-suite.log
+
+      - name: Clippy candidate paths
+        id: clippy
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p block --lib -- -D warnings 2>&1 | tee ../transaction-clippy.log
+
+      - name: Final hygiene
+        id: hygiene
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fmt --all -- --check
+          git diff --check
+          git status --short | tee ../transaction-final-status.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "candidate_gate=${{ steps.candidate.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "rollback_gate=${{ steps.rollback.outcome }}"
+            echo "success_control_gate=${{ steps.success_control.outcome }}"
+            echo "block_suite_gate=${{ steps.block_suite.outcome }}"
+            echo "clippy_gate=${{ steps.clippy.outcome }}"
+            echo "hygiene_gate=${{ steps.hygiene.outcome }}"
+            test -f transaction-source-sha.txt && cat transaction-source-sha.txt
+            test -f transaction-rust-version.txt && cat transaction-rust-version.txt
+          } | tee transaction-receipt.txt
+
+      - name: Upload execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-qcow-refblock-transaction-r634r
+          if-no-files-found: warn
+          path: |
+            transaction-receipt.txt
+            transaction-source-sha.txt
+            transaction-rust-version.txt
+            transaction-cargo-version.txt
+            transaction-source-status-before.txt
+            transaction-candidate.diff
+            transaction-probe-plus-candidate.diff
+            transaction-test-list.txt
+            transaction-rollback.log
+            transaction-success.log
+            transaction-block-suite.log
+            transaction-clippy.log
+            transaction-final-status.txt
