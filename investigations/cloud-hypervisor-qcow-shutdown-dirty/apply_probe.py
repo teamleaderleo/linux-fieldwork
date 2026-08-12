@@ -29,15 +29,9 @@ probe = r'''    #[test]
             u64::from_be_bytes(buf) & super::super::header::IncompatFeatures::DIRTY.bits() != 0
         }
 
-        let temp = super::super::QcowTempDisk::new(
-            64 * CLUSTER_SIZE,
-            None,
-            false,
-            true,
-            false,
-        )
-        .unwrap()
-        .into_tempfile();
+        let temp = super::super::QcowTempDisk::new(64 * CLUSTER_SIZE, None, false, true, false)
+            .unwrap()
+            .into_tempfile();
         let raw = crate::AlignedFile::new(temp.as_file().try_clone().unwrap(), false);
         let (mut inner, _backing, _sparse) =
             super::super::parser::parse_qcow(raw, 0, true).unwrap();
