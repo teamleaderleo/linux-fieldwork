@@ -1,0 +1,208 @@
+name: Cloud Hypervisor QCOW shutdown DIRTY audit
+
+on:
+  push:
+    branches:
+      - research/ch-qcow-shutdown-dirty
+    paths:
+      - .github/workflows/ch-qcow-shutdown-dirty.yml
+      - investigations/cloud-hypervisor-qcow-shutdown-dirty/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shutdown-dirty:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      BASELINE_TEST: formats::qcow::metadata::unit_tests::failed_metadata_sync_currently_clears_dirty_bit
+      CANDIDATE_TEST: formats::qcow::metadata::unit_tests::failed_metadata_sync_keeps_dirty_bit_set
+      CLEAN_CONTROL: formats::qcow::metadata::unit_tests::successful_metadata_sync_clears_dirty_bit
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and Rust
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../shutdown-rust-version.txt
+          cargo --version | tee ../shutdown-cargo-version.txt
+          git rev-parse HEAD | tee ../shutdown-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          git status --short | tee ../shutdown-source-status-before.txt
+          test ! -s ../shutdown-source-status-before.txt
+
+      - name: Apply exact-current baseline probe
+        id: baseline_probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-shutdown-dirty/apply_baseline_probe.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../shutdown-baseline-probe.diff
+          cargo test --locked -p block --lib -- --list | tee ../shutdown-baseline-test-list.txt
+          grep -F "$BASELINE_TEST: test" ../shutdown-baseline-test-list.txt
+
+      - name: Execute exact-current false-clean baseline
+        id: baseline
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$BASELINE_TEST" -- --exact --nocapture \
+            2>&1 | tee ../shutdown-baseline.log
+          grep -F "QCOW_SHUTDOWN_BASELINE sync_error" ../shutdown-baseline.log
+          grep -F "QCOW_SHUTDOWN_BASELINE post_drop dirty=false" ../shutdown-baseline.log
+
+      - name: Reset exact source and apply candidate
+        id: candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git reset --hard "$CH_SHA"
+          git clean -fd
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-shutdown-dirty/apply_candidate.py
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-shutdown-dirty/apply_probe.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../shutdown-candidate-plus-probe.diff
+          grep -F 'Failed to synchronize QCOW metadata during shutdown' block/src/formats/qcow/metadata.rs
+
+      - name: Build and discover candidate tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib --no-run
+          cargo test --locked -p block --lib -- --list | tee ../shutdown-candidate-test-list.txt
+          grep -F "$CANDIDATE_TEST: test" ../shutdown-candidate-test-list.txt
+          grep -F "$CLEAN_CONTROL: test" ../shutdown-candidate-test-list.txt
+
+      - name: Execute failed-sync DIRTY retention
+        id: retained_dirty
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$CANDIDATE_TEST" -- --exact --nocapture \
+            2>&1 | tee ../shutdown-candidate.log
+          grep -F "QCOW_SHUTDOWN_CANDIDATE sync_error" ../shutdown-candidate.log
+          grep -F "QCOW_SHUTDOWN_CANDIDATE post_failed_drop dirty=true" ../shutdown-candidate.log
+          grep -F "QCOW_SHUTDOWN_CANDIDATE recovery_close dirty=false" ../shutdown-candidate.log
+
+      - name: Execute clean-close control
+        id: clean_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$CLEAN_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../shutdown-clean-control.log
+          grep -F "QCOW_SHUTDOWN_CONTROL post_drop dirty=false" ../shutdown-clean-control.log
+
+      - name: Run block library suite
+        id: block_suite
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib 2>&1 | tee ../shutdown-block-suite.log
+
+      - name: Run io_uring block library suite
+        id: io_uring_suite
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib --features io_uring 2>&1 | tee ../shutdown-io-uring-suite.log
+
+      - name: Clippy candidate paths
+        id: clippy
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p block --lib --features io_uring -- -D warnings 2>&1 | tee ../shutdown-clippy.log
+
+      - name: Final hygiene
+        id: hygiene
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fmt --all -- --check
+          git diff --check
+          git status --short | tee ../shutdown-final-status.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "baseline_probe_gate=${{ steps.baseline_probe.outcome }}"
+            echo "baseline_gate=${{ steps.baseline.outcome }}"
+            echo "candidate_gate=${{ steps.candidate.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "retained_dirty_gate=${{ steps.retained_dirty.outcome }}"
+            echo "clean_control_gate=${{ steps.clean_control.outcome }}"
+            echo "block_suite_gate=${{ steps.block_suite.outcome }}"
+            echo "io_uring_suite_gate=${{ steps.io_uring_suite.outcome }}"
+            echo "clippy_gate=${{ steps.clippy.outcome }}"
+            echo "hygiene_gate=${{ steps.hygiene.outcome }}"
+            test -f shutdown-source-sha.txt && cat shutdown-source-sha.txt
+            test -f shutdown-rust-version.txt && cat shutdown-rust-version.txt
+          } | tee shutdown-receipt.txt
+
+      - name: Upload execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-qcow-shutdown-dirty
+          if-no-files-found: warn
+          path: |
+            shutdown-receipt.txt
+            shutdown-source-sha.txt
+            shutdown-rust-version.txt
+            shutdown-cargo-version.txt
+            shutdown-source-status-before.txt
+            shutdown-baseline-probe.diff
+            shutdown-baseline-test-list.txt
+            shutdown-baseline.log
+            shutdown-candidate-plus-probe.diff
+            shutdown-candidate-test-list.txt
+            shutdown-candidate.log
+            shutdown-clean-control.log
+            shutdown-block-suite.log
+            shutdown-io-uring-suite.log
+            shutdown-clippy.log
+            shutdown-final-status.txt
