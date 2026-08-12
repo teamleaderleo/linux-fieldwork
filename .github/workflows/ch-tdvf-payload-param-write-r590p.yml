@@ -1,0 +1,237 @@
+name: Cloud Hypervisor TDVF PayloadParam write R590P
+
+on:
+  push:
+    branches:
+      - research/ch-tdvf-payload-param-write-r590p
+    paths:
+      - .github/workflows/ch-tdvf-payload-param-write-r590p.yml
+      - investigations/cloud-hypervisor-tdvf-payload-param-write/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-payload-param-write:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      CONTROL: tdvf_payload_param_valid_guest_address_control
+      WITNESS: tdvf_payload_param_invalid_guest_address_panics_baseline
+      INVARIANT: tdvf_payload_param_invalid_guest_address_should_not_panic
+      CANDIDATE_TEST: tdx_payload_param_write_propagates_guest_memory_error
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../tdvf-payload-param-rust-version.txt
+          rustc +nightly --version | tee ../tdvf-payload-param-nightly-version.txt
+          git rev-parse HEAD | tee ../tdvf-payload-param-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Apply and format baseline probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-payload-param-write/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-payload-param-probe.diff
+
+      - name: Build and discover baseline probes
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib --no-run
+          cargo test --locked -p vmm --features "$FEATURES" --lib -- --list | tee ../tdvf-payload-param-test-list.txt
+          grep -F "$CONTROL: test" ../tdvf-payload-param-test-list.txt
+          grep -F "$WITNESS: test" ../tdvf-payload-param-test-list.txt
+          grep -F "$INVARIANT: test" ../tdvf-payload-param-test-list.txt
+
+      - name: Baseline valid PayloadParam write control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL" -- --nocapture \
+            2>&1 | tee ../tdvf-payload-param-baseline-control.log
+          grep -F "TDVF_PAYLOAD_PARAM_CONTROL" ../tdvf-payload-param-baseline-control.log
+
+      - name: Prove baseline invalid PayloadParam write panics
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$WITNESS" -- --ignored --nocapture \
+            2>&1 | tee ../tdvf-payload-param-baseline-witness.log
+          grep -F "TDVF_PAYLOAD_PARAM_BASELINE panicked=true" ../tdvf-payload-param-baseline-witness.log
+
+      - name: Prove no-panic invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INVARIANT" -- --nocapture \
+            > ../tdvf-payload-param-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_PAYLOAD_PARAM_BASELINE_INVARIANT_RC=$rc" | tee ../tdvf-payload-param-baseline-invariant-status.txt
+          cat ../tdvf-payload-param-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F "TDVF_PAYLOAD_PARAM_INVARIANT panicked=true" ../tdvf-payload-param-baseline-invariant.log
+          grep -F "invalid PayloadParam destination must not panic the VMM" ../tdvf-payload-param-baseline-invariant.log
+
+      - name: Restore exact source after baseline probe
+        id: restore
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git checkout -- vmm/src/vm.rs
+          test -z "$(git status --short)"
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply typed PayloadParam write candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-payload-param-write/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-payload-param-candidate-only.diff
+          sha256sum ../tdvf-payload-param-candidate-only.diff | tee ../tdvf-payload-param-candidate-diff-sha256.txt
+          grep -F "LoadPayloadParam" vmm/src/vm.rs
+          grep -F "Self::write_tdx_payload_param" vmm/src/vm.rs
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('vmm/src/vm.rs').read_text()
+          old = '''                    mem.write_slice(
+                        cmdline.as_cstring().unwrap().as_bytes_with_nul(),
+                        GuestAddress(section.address),
+                    )
+                    .unwrap();
+          '''
+          assert old not in text
+          PY
+
+      - name: Candidate focused typed propagation
+        id: candidate_focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --nocapture \
+            2>&1 | tee ../tdvf-payload-param-candidate-focused.log
+          grep -F "TDVF_PAYLOAD_PARAM_CANDIDATE invalid_result=LoadPayloadParam" ../tdvf-payload-param-candidate-focused.log
+          grep -F "TDVF_PAYLOAD_PARAM_CANDIDATE control_bytes=" ../tdvf-payload-param-candidate-focused.log
+
+      - name: Full VMM TDX KVM library tests
+        id: vmm_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib \
+            2>&1 | tee ../tdvf-payload-param-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables \
+            2>&1 | tee ../tdvf-payload-param-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-payload-param-final-status.txt
+          git diff --stat | tee ../tdvf-payload-param-final-diff-stat.txt
+          git diff -- vmm/src/vm.rs | tee ../tdvf-payload-param-final-candidate.diff
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "features=$FEATURES"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "baseline_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "restore_exact_source=${{ steps.restore.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "vmm_tests=${{ steps.vmm_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdvf-payload-param-baseline-invariant-status.txt && cat tdvf-payload-param-baseline-invariant-status.txt
+            test -f tdvf-payload-param-candidate-diff-sha256.txt && cat tdvf-payload-param-candidate-diff-sha256.txt
+          } | tee tdvf-payload-param-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-payload-param-write-r590p
+          if-no-files-found: warn
+          path: |
+            tdvf-payload-param-execution-receipt.txt
+            tdvf-payload-param-source-sha.txt
+            tdvf-payload-param-rust-version.txt
+            tdvf-payload-param-nightly-version.txt
+            tdvf-payload-param-test-list.txt
+            tdvf-payload-param-probe.diff
+            tdvf-payload-param-baseline-control.log
+            tdvf-payload-param-baseline-witness.log
+            tdvf-payload-param-baseline-invariant.log
+            tdvf-payload-param-baseline-invariant-status.txt
+            tdvf-payload-param-candidate-only.diff
+            tdvf-payload-param-candidate-diff-sha256.txt
+            tdvf-payload-param-candidate-focused.log
+            tdvf-payload-param-vmm-tests.log
+            tdvf-payload-param-clippy.log
+            tdvf-payload-param-final-status.txt
+            tdvf-payload-param-final-diff-stat.txt
+            tdvf-payload-param-final-candidate.diff
