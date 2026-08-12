@@ -1,0 +1,228 @@
+name: Cloud Hypervisor migration memory table length
+
+on:
+  push:
+    branches:
+      - research/ch-migration-memory-table-length-r604
+    paths:
+      - .github/workflows/ch-migration-memory-table-length-r604.yml
+      - investigations/cloud-hypervisor-migration-memory-table-length/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migration-table-length:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      WITNESS: protocol::malformed_memory_range_table_length_tests::malformed_memory_range_table_length_panics_baseline
+      INVARIANT: protocol::malformed_memory_range_table_length_tests::malformed_memory_range_table_length_returns_error
+      EMPTY_CONTROL: protocol::malformed_memory_range_table_length_tests::empty_memory_range_table_length_is_valid
+      RECORD_CONTROL: protocol::malformed_memory_range_table_length_tests::complete_memory_range_record_decodes
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin exact source and Rust
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../migration-rust-version.txt
+          cargo --version | tee ../migration-cargo-version.txt
+          git rev-parse HEAD | tee ../migration-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          git status --short | tee ../migration-source-status-before.txt
+          test ! -s ../migration-source-status-before.txt
+
+      - name: Apply and format exact-current probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-memory-table-length/apply_probe.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- vm-migration/src/protocol.rs > ../migration-probe.diff
+          cp vm-migration/src/protocol.rs ../migration-baseline-protocol.rs
+
+      - name: Build and discover focused tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vm-migration --lib --no-run
+          cargo test --locked -p vm-migration --lib -- --list | tee ../migration-test-list.txt
+          grep -F "$WITNESS: test" ../migration-test-list.txt
+          grep -F "$INVARIANT: test" ../migration-test-list.txt
+          grep -F "$EMPTY_CONTROL: test" ../migration-test-list.txt
+          grep -F "$RECORD_CONTROL: test" ../migration-test-list.txt
+
+      - name: Baseline valid controls
+        id: baseline_controls
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vm-migration --lib "$EMPTY_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../migration-baseline-empty-control.log
+          cargo test --locked -p vm-migration --lib "$RECORD_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../migration-baseline-record-control.log
+
+      - name: Prove baseline panic witness
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vm-migration --lib "$WITNESS" -- --ignored --exact --nocapture \
+            2>&1 | tee ../migration-baseline-panic-witness.log
+          grep -F "MALFORMED_TABLE_BASELINE panicked=true" ../migration-baseline-panic-witness.log
+
+      - name: Prove ordinary-error invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p vm-migration --lib "$INVARIANT" -- --exact --nocapture \
+            > ../migration-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "BASELINE_INVARIANT_RC=$rc" | tee ../migration-baseline-invariant-status.txt
+          cat ../migration-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F "malformed peer length must not panic" ../migration-baseline-invariant.log
+
+      - name: Apply malformed-length validation candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-memory-table-length/apply_candidate.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          diff -u ../migration-baseline-protocol.rs vm-migration/src/protocol.rs \
+            > ../migration-candidate-only.diff || test "$?" = 1
+          git diff -- vm-migration/src/protocol.rs > ../migration-probe-plus-candidate.diff
+
+      - name: Candidate focused matrix
+        id: candidate_focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vm-migration --lib "$INVARIANT" -- --exact --nocapture \
+            2>&1 | tee ../migration-candidate-invariant.log
+          cargo test --locked -p vm-migration --lib "$EMPTY_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../migration-candidate-empty-control.log
+          cargo test --locked -p vm-migration --lib "$RECORD_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../migration-candidate-record-control.log
+
+      - name: Candidate full vm-migration tests
+        id: crate_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vm-migration 2>&1 | tee ../migration-crate-tests.log
+
+      - name: Candidate vm-migration Clippy
+        id: clippy
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vm-migration --all-targets -- -D warnings \
+            2>&1 | tee ../migration-clippy.log
+
+      - name: Final source hygiene
+        id: hygiene
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fmt --all -- --check
+          git diff --check
+          git status --short | tee ../migration-final-status.txt
+          git diff --stat | tee ../migration-final-diff-stat.txt
+          sha256sum ../migration-candidate-only.diff | tee ../migration-candidate-diff-sha256.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_controls=${{ steps.baseline_controls.outcome }}"
+            echo "baseline_panic_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "crate_tests=${{ steps.crate_tests.outcome }}"
+            echo "clippy=${{ steps.clippy.outcome }}"
+            echo "hygiene=${{ steps.hygiene.outcome }}"
+            test -f migration-source-sha.txt && cat migration-source-sha.txt
+            test -f migration-rust-version.txt && cat migration-rust-version.txt
+            test -f migration-cargo-version.txt && cat migration-cargo-version.txt
+            test -f migration-baseline-invariant-status.txt && cat migration-baseline-invariant-status.txt
+            test -f migration-candidate-diff-sha256.txt && cat migration-candidate-diff-sha256.txt
+          } | tee migration-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-migration-memory-table-length-r604
+          if-no-files-found: warn
+          path: |
+            migration-execution-receipt.txt
+            migration-source-sha.txt
+            migration-rust-version.txt
+            migration-cargo-version.txt
+            migration-source-status-before.txt
+            migration-test-list.txt
+            migration-probe.diff
+            migration-baseline-protocol.rs
+            migration-baseline-empty-control.log
+            migration-baseline-record-control.log
+            migration-baseline-panic-witness.log
+            migration-baseline-invariant.log
+            migration-baseline-invariant-status.txt
+            migration-candidate-only.diff
+            migration-candidate-diff-sha256.txt
+            migration-probe-plus-candidate.diff
+            migration-candidate-invariant.log
+            migration-candidate-empty-control.log
+            migration-candidate-record-control.log
+            migration-crate-tests.log
+            migration-clippy.log
+            migration-final-status.txt
+            migration-final-diff-stat.txt
