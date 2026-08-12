@@ -1,0 +1,177 @@
+name: Cloud Hypervisor QCOW refblock DIRTY containment audit
+
+on:
+  push:
+    branches:
+      - research/ch-qcow-refblock-dirty-containment-r634
+    paths:
+      - .github/workflows/ch-qcow-refblock-dirty-containment-r634.yml
+      - investigations/cloud-hypervisor-qcow-refblock-dirty-containment/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dirty-containment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      TEST_NAME: formats::qcow::metadata::unit_tests::refblock_recursive_enospc_retains_dirty_and_rebuilds
+      CLEAN_CONTROL: formats::qcow::parser::unit_tests::dirty_bit_set_on_open_cleared_on_close_v3
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin exact source and Rust
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../containment-rust-version.txt
+          cargo --version | tee ../containment-cargo-version.txt
+          git rev-parse HEAD | tee ../containment-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          git status --short | tee ../containment-source-status-before.txt
+          test ! -s ../containment-source-status-before.txt
+
+      - name: Apply containment candidate
+        id: candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-dirty-containment/apply_candidate.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs block/src/formats/qcow/parser.rs > ../containment-candidate.diff
+          grep -F "refcount_update_failed" block/src/formats/qcow/metadata.rs
+          grep -F "refcount_update_failed: false" block/src/formats/qcow/parser.rs
+
+      - name: Apply focused containment probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-refblock-dirty-containment/apply_probe.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs block/src/formats/qcow/parser.rs > ../containment-probe-plus-candidate.diff
+
+      - name: Build and discover tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib --no-run
+          cargo test --locked -p block --lib -- --list | tee ../containment-test-list.txt
+          grep -F "$TEST_NAME: test" ../containment-test-list.txt
+          grep -F "$CLEAN_CONTROL: test" ../containment-test-list.txt
+
+      - name: Execute recursive ENOSPC containment
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$TEST_NAME" -- --exact --nocapture \
+            2>&1 | tee ../containment-focused.log
+          grep -F "REFBLOCK_DIRTY_CONTAIN pre_close" ../containment-focused.log
+          grep -F "REFBLOCK_DIRTY_CONTAIN post_shutdown dirty=true" ../containment-focused.log
+          grep -F "REFBLOCK_DIRTY_CONTAIN reopened" ../containment-focused.log
+
+      - name: Execute ordinary clean-close negative control
+        id: control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib "$CLEAN_CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../containment-clean-control.log
+
+      - name: Run block library regression suite
+        id: block_suite
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p block --lib 2>&1 | tee ../containment-block-suite.log
+
+      - name: Clippy candidate paths
+        id: clippy
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p block --lib -- -D warnings 2>&1 | tee ../containment-clippy.log
+
+      - name: Final hygiene
+        id: hygiene
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fmt --all -- --check
+          git diff --check
+          git status --short | tee ../containment-final-status.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "candidate_gate=${{ steps.candidate.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "focused_gate=${{ steps.focused.outcome }}"
+            echo "control_gate=${{ steps.control.outcome }}"
+            echo "block_suite_gate=${{ steps.block_suite.outcome }}"
+            echo "clippy_gate=${{ steps.clippy.outcome }}"
+            echo "hygiene_gate=${{ steps.hygiene.outcome }}"
+            test -f containment-source-sha.txt && cat containment-source-sha.txt
+            test -f containment-rust-version.txt && cat containment-rust-version.txt
+          } | tee containment-receipt.txt
+
+      - name: Upload execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-qcow-refblock-dirty-containment-r634
+          if-no-files-found: warn
+          path: |
+            containment-receipt.txt
+            containment-source-sha.txt
+            containment-rust-version.txt
+            containment-cargo-version.txt
+            containment-source-status-before.txt
+            containment-candidate.diff
+            containment-probe-plus-candidate.diff
+            containment-test-list.txt
+            containment-focused.log
+            containment-clean-control.log
+            containment-block-suite.log
+            containment-clippy.log
+            containment-final-status.txt
