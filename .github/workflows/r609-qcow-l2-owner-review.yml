@@ -1,0 +1,168 @@
+name: Cloud Hypervisor QCOW L2 ownership review
+
+on:
+  push:
+    branches:
+      - research/r609-qcow-l2-owner-review
+    paths:
+      - .github/workflows/r609-qcow-l2-owner-review.yml
+      - investigations/cloud-hypervisor-qcow-r609-review/apply_candidate.py
+      - investigations/cloud-hypervisor-qcow-r609-review/apply_probe.py
+
+permissions:
+  contents: read
+
+jobs:
+  qcow-l2-owner:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FRESH_TEST: formats::qcow::metadata::unit_tests::fresh_l2_enospc_reopen_does_not_reuse_live_table
+      RELOC_TEST: formats::qcow::metadata::unit_tests::relocated_l2_dropped_deferred_updates_keeps_refcount_owner
+      ZERO_TEST: formats::qcow::metadata::unit_tests::zero_marker_fresh_l2_keeps_refcount_owner
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin build and formatting toolchains
+        working-directory: cloud-hypervisor
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../rust-version.txt
+          cargo +nightly fmt --version | tee ../rustfmt-version.txt
+          git rev-parse HEAD | tee ../source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply independent probes
+        working-directory: cloud-hypervisor
+        run: |
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-r609-review/apply_probe.py
+          cargo +nightly fmt --all
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../probe.diff
+
+      - name: Build and discover probes
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test --locked -p block --lib --no-run
+          cargo test --locked -p block --lib -- --list | tee ../test-list.txt
+          grep -F "$FRESH_TEST: test" ../test-list.txt
+          grep -F "$RELOC_TEST: test" ../test-list.txt
+          grep -F "$ZERO_TEST: test" ../test-list.txt
+
+      - name: Prove baseline discriminators
+        working-directory: cloud-hypervisor
+        run: |
+          set +e
+          cargo test --locked -p block --lib "$FRESH_TEST" -- --exact --nocapture > ../baseline-fresh.log 2>&1
+          fresh_rc=$?
+          cargo test --locked -p block --lib "$RELOC_TEST" -- --exact --nocapture > ../baseline-reloc.log 2>&1
+          reloc_rc=$?
+          set -e
+          cargo test --locked -p block --lib "$ZERO_TEST" -- --exact --nocapture | tee ../baseline-zero.log
+          printf 'BASELINE_FRESH_RC=%s\nBASELINE_RELOC_RC=%s\n' "$fresh_rc" "$reloc_rc" | tee ../baseline-status.txt
+          cat ../baseline-fresh.log
+          cat ../baseline-reloc.log
+          test "$fresh_rc" -ne 0
+          test "$reloc_rc" -ne 0
+          grep -F "clean reopen allocator must not return a still-referenced L2 cluster" ../baseline-fresh.log
+          grep -F "clean reopen must retain ownership for the published relocated L2" ../baseline-reloc.log
+
+      - name: Apply two-site L2 ownership candidate
+        working-directory: cloud-hypervisor
+        run: |
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-r609-review/apply_candidate.py
+          cargo +nightly fmt --all
+          git diff --check
+          cargo +nightly fmt --all -- --check
+          git diff -- block/src/formats/qcow/metadata.rs > ../candidate.diff
+          cp block/src/formats/qcow/metadata.rs ../candidate-metadata.rs
+          sha256sum ../candidate.diff ../candidate-metadata.rs | tee ../candidate-sha256.txt
+          git diff --stat | tee ../candidate-stat.txt
+          git diff --name-only | tee ../candidate-files.txt
+          test "$(wc -l < ../candidate-files.txt)" -eq 1
+          grep -Fx "block/src/formats/qcow/metadata.rs" ../candidate-files.txt
+
+      - name: Run focused candidate probes
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test --locked -p block --lib "$FRESH_TEST" -- --exact --nocapture | tee ../candidate-fresh.log
+          cargo test --locked -p block --lib "$RELOC_TEST" -- --exact --nocapture | tee ../candidate-reloc.log
+          cargo test --locked -p block --lib "$ZERO_TEST" -- --exact --nocapture | tee ../candidate-zero.log
+
+      - name: Run relocation regression controls
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test --locked -p block --lib failed_l2_relocate -- --nocapture | tee ../candidate-relocation-controls.log
+
+      - name: Run block quality gates
+        working-directory: cloud-hypervisor
+        run: |
+          cargo +nightly fmt --all -- --check
+          cargo check --locked -p block --all-targets --tests | tee ../candidate-check.log
+          cargo test --locked -p block | tee ../candidate-block-test.log
+          cargo test --locked -p block --features io_uring | tee ../candidate-block-io-uring-test.log
+          cargo clippy --locked -p block --all-targets --tests -- -D warnings | tee ../candidate-clippy.log
+
+      - name: Write receipt
+        if: always()
+        run: |
+          {
+            echo "FIELDWORK_HEAD=$(git -C fieldwork rev-parse HEAD)"
+            echo "SOURCE_HEAD=$(git -C cloud-hypervisor rev-parse HEAD)"
+            echo "EXPECTED_SOURCE=$CH_SHA"
+            cat rust-version.txt 2>/dev/null || true
+            cat rustfmt-version.txt 2>/dev/null || true
+            cat baseline-status.txt 2>/dev/null || true
+            cat candidate-sha256.txt 2>/dev/null || true
+            echo 'CANDIDATE_FILES:'
+            cat candidate-files.txt 2>/dev/null || true
+            echo 'CANDIDATE_STAT:'
+            cat candidate-stat.txt 2>/dev/null || true
+          } | tee receipt.txt
+
+      - name: Upload receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r609-qcow-l2-owner-review
+          path: |
+            receipt.txt
+            source-sha.txt
+            rust-version.txt
+            rustfmt-version.txt
+            probe.diff
+            baseline-status.txt
+            baseline-fresh.log
+            baseline-reloc.log
+            baseline-zero.log
+            candidate.diff
+            candidate-metadata.rs
+            candidate-sha256.txt
+            candidate-stat.txt
+            candidate-files.txt
+            candidate-fresh.log
+            candidate-reloc.log
+            candidate-zero.log
+            candidate-relocation-controls.log
+            candidate-check.log
+            candidate-block-test.log
+            candidate-block-io-uring-test.log
+            candidate-clippy.log
+          if-no-files-found: warn
