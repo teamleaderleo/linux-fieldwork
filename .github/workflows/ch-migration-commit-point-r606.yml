@@ -1,0 +1,97 @@
+name: Cloud Hypervisor migration commit point r606
+
+on:
+  push:
+    branches:
+      - research/ch-migration-commit-point-r606
+    paths:
+      - .github/workflows/ch-migration-commit-point-r606.yml
+      - investigations/cloud-hypervisor-migration-commit-point/**
+
+permissions:
+  contents: read
+
+jobs:
+  commit-point:
+    runs-on: ubuntu-24.04
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      BASELINE_TEST: migration::transport::commit_point_baseline_tests::complete_request_reaches_receiver_before_ack_loss_error
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin Rust 1.89.0
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          rustc --version
+
+      - name: Prove Complete can arrive before ACK-loss error
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-commit-point/apply_commit_point_baseline_probe.py
+          cargo fmt --all -- --check
+          cargo test -p vmm --features kvm --lib "$BASELINE_TEST" -- --exact --nocapture
+
+      - name: Reset to exact source
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          git reset --hard "$CH_SHA"
+          git clean -fd
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply commit-state candidate
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-commit-point/apply_commit_point_candidate.py
+          cargo fmt --all
+          git diff --check
+          expected=$(printf '%s\n' vmm/src/lib.rs vmm/src/migration/worker.rs)
+          actual=$(git diff --name-only)
+          printf '%s\n' "$actual"
+          test "$actual" = "$expected"
+
+      - name: Run commit-state discriminators
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          cargo test -p vmm --features kvm --lib complete_ack_loss_is_commit_unknown -- --exact --nocapture
+          cargo test -p vmm --features kvm --lib complete_ok_is_committed -- --exact --nocapture
+          cargo test -p vmm --features kvm --lib complete_write_failure_remains_rollback_safe -- --exact --nocapture
+
+      - name: Check backend builds and lint
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          cargo check -p vmm --features kvm
+          cargo check -p vmm --features mshv
+          cargo clippy -p vmm --features kvm --lib --tests -- -D warnings -A unfulfilled-lint-expectations
+          cargo clippy -p vmm --features mshv --lib --tests -- -D warnings -A unfulfilled-lint-expectations
+          cargo fmt --all -- --check
+          git diff --check
+
+      - name: Inspect candidate diff
+        working-directory: cloud-hypervisor
+        run: |
+          set -euo pipefail
+          git diff --stat
+          git diff -- vmm/src/lib.rs vmm/src/migration/worker.rs
