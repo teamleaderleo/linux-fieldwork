@@ -158,6 +158,91 @@ Canonical Cloud Hypervisor CI publicly declares a self-hosted `bookworm-arm64` r
 
 Issue #8582 independently records Cloud Hypervisor unit-test failures on a real 16K-page kernel around unrelated hardcoded 4096 assumptions, confirming that 16K hosts are an active environment class.
 
+## Local Apple-silicon/Lima hardware attempt
+
+A second non-4K attempt used an operator-owned Apple-silicon MacBook Air with Lima `2.2.0`. The host macOS version was not recorded in the transcript. The guest path used Apple Virtualization (`vmType: vz`), AArch64 Ubuntu 24.04, `plain: true`, and Lima nested virtualization.
+
+### Clean 4K nested-KVM baseline
+
+A fresh guest was created with:
+
+```sh
+limactl start -y \
+  --name ch-kvm-clean \
+  --vm-type vz \
+  --arch aarch64 \
+  --nested-virt \
+  --plain \
+  --cpus 6 \
+  --memory 8 \
+  --disk 80 \
+  template:ubuntu-24.04
+```
+
+Observed guest state:
+
+```text
+Architecture: aarch64
+Kernel: 6.8.0-134-generic
+getconf PAGESIZE: 4096
+/dev/kvm: present, root:kvm
+KVM_GET_API_VERSION: 12
+```
+
+The user was added to the guest `kvm` group before the KVM ioctl check. This proves that the M5/Lima/VZ path can expose a real usable nested KVM device to an ARM64 Linux guest on the ordinary 4K kernel.
+
+### 64K kernel artifacts
+
+Inside the clean Ubuntu guest, `linux-generic-64k` was installed. The installed package set identified the 64K flavor as `6.8.0-137.137` for arm64, with kernel `6.8.0-137-generic-64k`.
+
+The packaged boot artifacts copied to macOS were:
+
+```text
+vmlinuz-64k sha256 1585ab2c1575e1adbf0f9ebaa0917d1a9fa07d8654241a1a9155d3df9c655373
+initrd-64k  sha256 52cb51653d49510b27eb7d90c1daab13b3170ca0d1ebc81a2f0041e57e805bf7
+```
+
+The packaged `vmlinuz` was gzip-compressed. Passing it directly to Lima/VZ's Linux boot loader failed immediately with:
+
+```text
+Error Domain=VZErrorDomain Code=1
+Internal Virtualization error. The virtual machine failed to start.
+```
+
+After `gzip -dc`, `file` identified the result as an ARM64 Linux kernel boot executable and VZ accepted it far enough to enter VM state `running`.
+
+### Direct-boot A/B discriminator
+
+To separate a bad direct-boot harness from a 64K-specific failure, the same stopped Lima clone, disk, initrd/cmdline scheme, and VZ direct-Linux boot path were tested with a freshly extracted known-good 4K kernel from a separate pristine Ubuntu guest.
+
+The 4K direct-boot control reached Lima `READY` in about seven seconds and reported:
+
+```text
+uname -r: 6.8.0-134-generic
+getconf PAGESIZE: 4096
+```
+
+The 64K direct-boot attempt with nested virtualization enabled behaved differently:
+
+```text
+VZ VM state: running
+Lima ready/SSH: not reached within 90 seconds
+serialv.log: 0 bytes
+```
+
+No Cloud Hypervisor binary or migration test ran in this 64K attempt because the Linux guest never became usable.
+
+A final follow-up set `nestedVirtualization = false` and started the same 64K direct-boot configuration. VZ again entered VM state `running`, but no successful guest-ready or SSH result was captured before the experiment was stopped. Treat that no-nested-virtualization sub-test as incomplete rather than as a definitive pass/fail discriminator.
+
+### Interpretation of the local attempt
+
+The local experiment establishes two things:
+
+1. ARM64 nested KVM on the operator-owned M5/Lima/VZ setup works on a 4K Ubuntu kernel.
+2. The tested Ubuntu 64K kernel did not reach a usable Linux guest under the tested VZ direct-boot setup, while an otherwise equivalent 4K direct-boot control did.
+
+This is an environment/boot-path limitation for the attempted hardware validation. It is not evidence that the Cloud Hypervisor candidate fails on 64K KVM, because Cloud Hypervisor never executed in the failed 64K guest.
+
 ## Evidence boundary
 
 - Defect at the dirty-bitmap conversion seam: proven synthetically.
@@ -165,12 +250,16 @@ Issue #8582 independently records Cloud Hypervisor unit-test failures on a real 
 - MSHV fixed 4K contract: supported by the pinned MSHV/Hyper-V interface.
 - Preferred candidate builds/lints/tests across KVM/MSHV and x86_64/AArch64: green.
 - Preferred candidate real 4K KVM live migration: green.
-- Real 16K/64K KVM live migration: not completed because no controlled non-4K host with usable `/dev/kvm` is available in this environment; the available native ARM hardware path was explicitly probed and documented.
+- GitHub-hosted native ARM64 hardware was probed and is 4K-only with no usable `/dev/kvm`.
+- Operator-owned M5/Lima/VZ hardware was probed and does expose usable nested KVM on a 4K ARM64 Ubuntu guest (`KVM_GET_API_VERSION = 12`).
+- A direct-boot A/B check showed the same Lima/VZ disk and boot path reaches `READY` with the known-good 4K kernel, while the tested Ubuntu `6.8.0-137-generic-64k` kernel did not reach SSH/userspace under the nested-VZ setup.
+- The follow-up 64K boot with nested virtualization disabled was started but did not produce a captured usable-guest result before the experiment ended; do not classify that sub-test more strongly.
+- Real 16K/64K KVM live migration remains uncompleted. The local 64K attempt failed before Cloud Hypervisor execution, so it neither validates nor falsifies the candidate on real non-4K KVM hardware.
 - Candidate is bot-authored/unsigned and still needs a human DCO sign-off before upstream handoff.
 - Cloud Hypervisor upstream received no mutation or contact.
 
 ## Disposition
 
-The defect is proven, the preferred paired-granularity candidate is green through focused validation and a real 4K KVM live-migration run, and the remaining evidence gap is specifically an end-to-end migration on a real 16K/64K KVM host.
+The defect is proven, the preferred paired-granularity candidate is green through focused validation and a real 4K KVM live-migration run, and the remaining evidence gap is specifically an end-to-end migration on a real 16K/64K KVM host. The M5/Lima attempt narrowed the local limitation to getting the tested 64K Ubuntu kernel into a usable VZ guest; it did not reach Cloud Hypervisor execution.
 
 PROVEN + CANDIDATE
