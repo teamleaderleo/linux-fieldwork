@@ -2,7 +2,7 @@ diff --git a/bubblewrap.c b/bubblewrap.c
 index 3b9719c..0000000 100644
 --- a/bubblewrap.c
 +++ b/bubblewrap.c
-@@ -95,7 +95,15 @@ static int next_perms = -1;
+@@ -95,6 +95,14 @@
  static size_t next_size_arg = 0;
  static int next_overlay_src_count = 0;
  static bool opt_not_a_security_boundary = false;
