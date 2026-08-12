@@ -1,0 +1,29 @@
+name: lf-633 corrected three-reader validation
+
+on:
+  push:
+    branches:
+      - lf-633-append-exec
+    paths:
+      - .github/lf633-v2.sh
+      - .github/workflows/lf-633-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run corrected validator
+        shell: bash
+        run: bash .github/lf633-v2.sh
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lf-633-v2-evidence
+          path: /tmp/evidence
