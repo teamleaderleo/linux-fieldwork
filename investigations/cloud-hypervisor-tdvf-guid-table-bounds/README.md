@@ -6,70 +6,55 @@ Worker/variant: LF-R590G
 Fieldwork base: `1ae906f23e765908c8a44cf870d78ed73262f83e`
 Exact Cloud Hypervisor source: `1af93ac7035cda77cd87b0c18b1134ebb0928052`
 External-contact state: false; upstream remains read-only
-State: EXECUTING
+State: **PROVEN — malformed GUID-table lengths can underflow parser cursors and panic; structural bounds candidate validated**
 
 ## Narrow question
 
 When the TDVF/OVMF GUID-table footer is recognized, can malformed length fields make exact-current `tdvf_descriptor_offset()` underflow its table cursor and panic before any TDVF descriptor is parsed? Can minimal structural bounds checks turn those panics into typed parser errors while preserving the minimum footer-only table and normal deprecated-pointer fallback?
 
-## Source owners
-
-Exact-current code reads the 16-bit table length and then immediately computes:
-
-```rust
-let mut offset = table_size - 18;
-```
-
-without requiring `table_size >= 18`.
-
-Inside the backward entry walk it reads an entry length and, after handling only zero, performs:
-
-```rust
-offset -= entry_size;
-```
-
-without requiring the nonzero entry to fit within the remaining table bytes.
-
-Both are malformed-input subtraction boundaries before the descriptor parser.
+Yes. Exact-current source has two independently reproducible subtraction panics: a recognized table smaller than its 18-byte footer, and a nonzero entry length larger than the bytes remaining before the cursor. The minimum structural-bounds candidate turns both into typed errors and preserves the 18-byte footer-only fallback control.
 
 ## Format basis
 
-EDK2's own reset-vector source documents the GUID table as:
+EDK2 documents each GUID-table entry as arbitrary data + a 2-byte length + a 16-byte GUID, and the table footer as a 2-byte total length + 16-byte footer GUID. Therefore a recognized table must be at least 18 bytes; a nonzero entry must be at least 18 bytes and cannot exceed the remaining table bytes.
+
+## Authoritative execution
+
+- Fieldwork tested head: `04f5eb6fc9733c4bd4a7f1892316139efeece2cb`
+- exact Cloud Hypervisor source: `1af93ac7035cda77cd87b0c18b1134ebb0928052`
+- workflow run: `31590967422`
+- job: `94095564467`
+- artifact: `9139432616`
+- artifact digest: `sha256:dcb7f28e360b9bc856c0b2b39a0f053efc0692b5667425f6f3ecdafe98618fde`
+- feature graph: `arch/tdx,arch/kvm,hypervisor/tdx,hypervisor/kvm`
+
+## Baseline result
+
+Minimum footer-only table (`table_size=18`) stayed green and fell back to the deprecated pointer:
 
 ```text
-Data (arbitrary bytes identified by guid)
-length from start of data to end of guid (2 bytes)
-guid (16 bytes)
+TDVF_GUID_CONTROL offset=Start(0) guid_found=false
 ```
 
-and the table footer as:
+Recognized `table_size=0` reaches exact-current `table_size - 18`:
 
 ```text
-length of whole table (16 bit word)
-GUID (table footer, 16 bytes)
+attempt to subtract with overflow
+TDVF_GUID_SMALL_BASELINE panicked=true
+TDVF_GUID_SMALL_INVARIANT_RC=101
 ```
 
-Therefore:
+A 40-byte table has 22 bytes before its footer. An entry advertising length 23 reaches exact-current `offset -= entry_size` with `offset=22`:
 
-- the recognized footer requires at least 18 table bytes;
-- any nonzero entry must be at least 18 bytes;
-- an entry length cannot exceed the bytes remaining before the current cursor.
-
-The candidate uses only those structural constraints.
-
-## Baseline discriminators
-
-Synthetic 256-byte firmware images place the exact footer GUID bytes at EOF-0x30 and the 16-bit table size at EOF-0x32.
-
-Controls and witnesses:
-
-1. `table_size = 18` is the minimum footer-only table. Exact-current should avoid the loop and fall back to the deprecated metadata pointer at EOF-0x20, preserving `SeekFrom::Start(0)` and `guid_found=false`.
-2. `table_size = 0` recognizes the footer but underflows `table_size - 18`; ignored witness catches the panic, paired no-panic invariant is expected-red.
-3. `table_size = 40` gives 22 bytes before the footer; the first synthetic entry advertises length 23. Exact-current reaches `offset -= entry_size` with `offset=22`, underflows, and panics; a second paired invariant is expected-red.
+```text
+attempt to subtract with overflow
+TDVF_GUID_ENTRY_BASELINE panicked=true
+TDVF_GUID_ENTRY_INVARIANT_RC=101
+```
 
 ## Candidate
 
-Add typed structural errors:
+Typed structural errors:
 
 ```text
 InvalidGuidTableSize(table_size)
@@ -78,26 +63,58 @@ InvalidGuidTableEntrySize { entry_size, remaining }
 
 Checks:
 
-- reject recognized table size `< 18` before allocation/read/cursor arithmetic;
+- reject recognized table size `< 18` before cursor arithmetic;
 - preserve current zero-entry break behavior;
 - for nonzero entries reject `< 18` or `> remaining` before subtraction;
-- otherwise preserve the existing backward traversal and metadata-GUID handling.
+- otherwise preserve existing backward traversal and metadata-GUID handling.
 
-Focused candidate tests cover both malformed cases and the 18-byte minimum footer control.
+Focused results:
 
-## Intended gates
+```text
+TDVF_GUID_CANDIDATE small_result=InvalidGuidTableSize(0)
+TDVF_GUID_CANDIDATE entry_result=InvalidGuidTableEntrySize { entry_size: 23, remaining: 22 }
+TDVF_GUID_CANDIDATE control_offset=Start(0) guid_found=false
+```
 
-- exact source pin and clean tree;
-- minimum footer-only control green;
-- undersized-table panic witness green + no-panic invariant expected-red;
-- oversized-entry panic witness green + no-panic invariant expected-red;
-- restore exact source before candidate;
-- candidate typed structural errors + boundary control green;
-- full arch + hypervisor TDX/KVM library tests;
-- Clippy with warnings denied except already identified exact-current unrelated x86 baseline classes;
-- nightly rustfmt and `git diff --check`;
-- complete candidate-only diff review and SHA-256 receipt.
+## Candidate-only diff review
+
+```text
+arch/src/x86_64/tdx/mod.rs | 79 +++++++++++++++++++++++++++++++++++++++++++++-
+1 file changed, 78 insertions(+), 1 deletion(-)
+```
+
+Reviewed scope is exactly:
+
+- two typed GUID structural errors;
+- the minimum table-size guard;
+- the nonzero entry-size bounds guard;
+- focused malformed regressions and the minimum-footer control.
+
+No descriptor/section-table allocation, section-type decoding, BFV/CFV range, VMM destination, Payload, HOB, or cardinality semantics changed.
+
+Candidate-only diff SHA-256:
+
+```text
+aa47e0e165834a37e41b0377a8b7c80fd9ec7f870686bfd3ab46ae745764b046
+```
+
+## Broad and quality gates
+
+Authoritative run `31590967422` / job `94095564467`:
+
+```text
+arch lib:       37 passed, 0 failed, 1 existing ignored
+hypervisor lib:  1 passed, 0 failed
+candidate focused malformed/control matrix: success
+clippy: success
+nightly rustfmt: success
+git diff --check: success
+```
 
 ## Composition boundary
 
-R590G touches GUID-table discovery before the TDVF descriptor. R590A and R590T touch later descriptor/section parsing. Their semantic owners are independent, but a selected parser-hardening stack should still receive an explicit composition run because all are in `arch/src/x86_64/tdx/mod.rs`.
+R590G touches GUID-table discovery before the TDVF descriptor. R590A owns later table-vs-file pre-allocation validation, and R590T owns wire section-type validity. Their semantic owners remain distinct, but the selected parser-hardening stack needs an explicit G+A+T composition run because all touch `arch/src/x86_64/tdx/mod.rs`.
+
+## Disposition
+
+**PROVEN.** Exact-current Cloud Hypervisor can panic on malformed recognized GUID-table lengths before TDVF descriptor parsing. The minimum format-backed structural bounds checks convert both subtraction panics into typed errors, preserve the minimum footer-only fallback control, and clear focused, broad, Clippy, rustfmt, and diff-hygiene gates.
