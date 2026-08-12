@@ -1,0 +1,214 @@
+name: Cloud Hypervisor TDVF raw range R590E
+
+on:
+  push:
+    branches:
+      - research/ch-tdvf-raw-range-r590e
+    paths:
+      - .github/workflows/ch-tdvf-raw-range-r590e.yml
+      - investigations/cloud-hypervisor-tdvf-raw-range/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-raw-range:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      WITNESS: x86_64::tdx::raw_range_probe_tests::tdvf_bfv_range_past_eof_is_accepted_baseline
+      INVARIANT: x86_64::tdx::raw_range_probe_tests::tdvf_bfv_range_past_eof_is_rejected
+      CONTROL: x86_64::tdx::raw_range_probe_tests::tdvf_bfv_range_inside_file_is_valid
+      CANDIDATE_TEST: x86_64::tdx::unit_tests::raw_bfv_section_must_fit_in_firmware_file
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../tdvf-rust-version.txt
+          rustc +nightly --version | tee ../tdvf-nightly-version.txt
+          git rev-parse HEAD | tee ../tdvf-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Apply and format baseline probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-raw-range/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-probe.diff
+          cp arch/src/x86_64/tdx/mod.rs ../tdvf-baseline.rs
+
+      - name: Build and discover focused tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --features tdx --lib --no-run
+          cargo test --locked -p arch --features tdx --lib -- --list | tee ../tdvf-test-list.txt
+          grep -F "$WITNESS: test" ../tdvf-test-list.txt
+          grep -F "$INVARIANT: test" ../tdvf-test-list.txt
+          grep -F "$CONTROL: test" ../tdvf-test-list.txt
+
+      - name: Baseline valid BFV control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --features tdx --lib "$CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-baseline-control.log
+          grep -F "TDVF_RAW_CONTROL" ../tdvf-baseline-control.log
+
+      - name: Prove baseline accepts BFV range past EOF
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --features tdx --lib "$WITNESS" -- --ignored --exact --nocapture \
+            2>&1 | tee ../tdvf-baseline-witness.log
+          grep -F "TDVF_RAW_BASELINE" ../tdvf-baseline-witness.log
+
+      - name: Prove raw-range invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p arch --features tdx --lib "$INVARIANT" -- --exact --nocapture \
+            > ../tdvf-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_BASELINE_INVARIANT_RC=$rc" | tee ../tdvf-baseline-invariant-status.txt
+          cat ../tdvf-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F "BFV raw range past EOF must be rejected" ../tdvf-baseline-invariant.log
+
+      - name: Apply BFV/CFV file-range candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-raw-range/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          diff -u ../tdvf-baseline.rs arch/src/x86_64/tdx/mod.rs \
+            > ../tdvf-candidate-only.diff || test "$?" = 1
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-probe-plus-candidate.diff
+          sha256sum ../tdvf-candidate-only.diff | tee ../tdvf-candidate-diff-sha256.txt
+
+      - name: Candidate focused matrix
+        id: candidate_focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --features tdx --lib "$INVARIANT" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-candidate-invariant.log
+          cargo test --locked -p arch --features tdx --lib "$CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-candidate-control.log
+          cargo test --locked -p arch --features tdx --lib "$CANDIDATE_TEST" -- --exact --nocapture \
+            2>&1 | tee ../tdvf-candidate-typed-test.log
+
+      - name: Full arch TDX tests
+        id: arch_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --features tdx 2>&1 | tee ../tdvf-arch-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p arch --features tdx --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables \
+            2>&1 | tee ../tdvf-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-final-status.txt
+          git diff --stat | tee ../tdvf-final-diff-stat.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "baseline_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "arch_tests=${{ steps.arch_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdvf-baseline-invariant-status.txt && cat tdvf-baseline-invariant-status.txt
+            test -f tdvf-candidate-diff-sha256.txt && cat tdvf-candidate-diff-sha256.txt
+          } | tee tdvf-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-raw-range-r590e
+          if-no-files-found: warn
+          path: |
+            tdvf-execution-receipt.txt
+            tdvf-source-sha.txt
+            tdvf-rust-version.txt
+            tdvf-nightly-version.txt
+            tdvf-test-list.txt
+            tdvf-probe.diff
+            tdvf-baseline.rs
+            tdvf-baseline-control.log
+            tdvf-baseline-witness.log
+            tdvf-baseline-invariant.log
+            tdvf-baseline-invariant-status.txt
+            tdvf-candidate-only.diff
+            tdvf-candidate-diff-sha256.txt
+            tdvf-probe-plus-candidate.diff
+            tdvf-candidate-invariant.log
+            tdvf-candidate-control.log
+            tdvf-candidate-typed-test.log
+            tdvf-arch-tests.log
+            tdvf-clippy.log
+            tdvf-final-status.txt
+            tdvf-final-diff-stat.txt
