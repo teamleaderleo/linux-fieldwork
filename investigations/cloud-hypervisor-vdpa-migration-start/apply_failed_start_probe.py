@@ -7,9 +7,7 @@ marker = "failed_start_migration_keeps_normal_runtime_state"
 if marker in text:
     raise SystemExit(f"probe marker already present in {path}")
 
-probe = r'''
-
-#[cfg(test)]
+probe = r'''#[cfg(test)]
 mod unit_tests {
     use super::*;
 
@@ -40,7 +38,6 @@ mod unit_tests {
         );
         assert!(vdpa.pause().is_err());
     }
-}
-'''
+}'''
 
-path.write_text(text.rstrip() + probe.rstrip() + "\n")
+path.write_text(text.rstrip() + "\n\n" + probe)
