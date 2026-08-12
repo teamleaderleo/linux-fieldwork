@@ -14,6 +14,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zlib1g-dev liblzma-dev liblzo2-dev liblz4-dev libzstd-dev libattr1-dev
       - name: Build and run exact-head reproducer
         shell: bash
         run: |
@@ -28,6 +32,7 @@ jobs:
           gcc --version
           git --version
           python3 --version
+
           git clone https://github.com/plougher/squashfs-tools.git /tmp/squashfs-tools
           cd /tmp/squashfs-tools
           git checkout --detach "$CURRENT"
@@ -36,8 +41,6 @@ jobs:
           git show -s --format='CURRENT %H %cI %s'
           make -C squashfs-tools clean
           make -C squashfs-tools \
-            CONFIG=1 GZIP_SUPPORT=1 XZ_SUPPORT=0 LZO_SUPPORT=0 LZ4_SUPPORT=0 ZSTD_SUPPORT=0 \
-            XATTR_SUPPORT=0 XATTR_OS_SUPPORT=0 \
             EXTRA_CFLAGS='-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer' \
             EXTRA_LDFLAGS='-fsanitize=address,undefined' unsquashfs
           cp squashfs-tools/unsquashfs "$OUT/unsquashfs-current"
@@ -54,11 +57,13 @@ jobs:
           #include <stdio.h>
           #include "squashfs_fs.h"
           int main(void) {
-            printf("super_size=%zu root_inode=%zu fragments=%zu inode_table_start=%zu\n",
+            printf("super_size=%zu root_inode=%zu fragments=%zu inode_table_start=%zu s_major=%zu s_minor=%zu\n",
               sizeof(struct squashfs_super_block),
               offsetof(struct squashfs_super_block, root_inode),
               offsetof(struct squashfs_super_block, fragments),
-              offsetof(struct squashfs_super_block, inode_table_start));
+              offsetof(struct squashfs_super_block, inode_table_start),
+              offsetof(struct squashfs_super_block, s_major),
+              offsetof(struct squashfs_super_block, s_minor));
             printf("reg_size=%zu reg_fragment=%zu\n",
               sizeof(struct squashfs_reg_inode_header),
               offsetof(struct squashfs_reg_inode_header, fragment));
@@ -67,19 +72,21 @@ jobs:
           EOF
           gcc -I. /tmp/layout-v3.c -o /tmp/layout-v3
           /tmp/layout-v3 | tee "$OUT/layout-v3.txt"
+
           rm -rf /tmp/src-v3 /tmp/*v3*-out
           mkdir -p /tmp/src-v3
           printf 'Z' > /tmp/src-v3/file
           ./mksquashfs /tmp/src-v3 "$OUT/v3-base.sqfs" -noI -noD -noF -nopad -noappend -no-progress
+
           python3 - "$OUT" <<'PY'
-          import pathlib, re, struct, sys
+          import hashlib, pathlib, re, struct, sys
           out = pathlib.Path(sys.argv[1])
-          vals = {k:int(v) for k,v in re.findall(r'(super_size|root_inode|fragments|inode_table_start|reg_size|reg_fragment)=(\d+)', (out / 'layout-v3.txt').read_text())}
+          vals = {k:int(v) for k,v in re.findall(r'(super_size|root_inode|fragments|inode_table_start|s_major|s_minor|reg_size|reg_fragment)=(\d+)', (out / 'layout-v3.txt').read_text())}
           data = bytearray((out / 'v3-base.sqfs').read_bytes())
           magic, = struct.unpack_from('<I', data, 0)
           assert magic == 0x73717368, hex(magic)
-          major_minor, = struct.unpack_from('<I', data, 28)
-          major, minor = major_minor & 0xffff, major_minor >> 16
+          major, = struct.unpack_from('<H', data, vals['s_major'])
+          minor, = struct.unpack_from('<H', data, vals['s_minor'])
           assert major == 3, (major, minor)
           root_inode, = struct.unpack_from('<Q', data, vals['root_inode'])
           fragments, = struct.unpack_from('<I', data, vals['fragments'])
@@ -99,8 +106,10 @@ jobs:
           for name, value in [('count_minus_1', fragments - 1), ('count', fragments), ('count_plus_1', fragments + 1)]:
               img = bytearray(data)
               struct.pack_into('<I', img, frag_pos, value)
-              (out / f'v3-{name}.sqfs').write_bytes(img)
-              print(f'WROTE v3-{name}.sqfs fragment={value}')
+              path = out / f'v3-{name}.sqfs'
+              path.write_bytes(img)
+              print(f'WROTE {path.name} fragment={value} sha256={hashlib.sha256(img).hexdigest()}')
+          print(f'BASE sha256={hashlib.sha256(data).hexdigest()} size={len(data)}')
           PY
 
           BASE="$OUT/unsquashfs-current"
@@ -118,11 +127,14 @@ jobs:
             echo "ENDCASE $label"
             printf '%s\n' "$status" > "$OUT/${label}.status"
           }
+
           run_case current_v3_count_minus_1 "$OUT/v3-count_minus_1.sqfs" "$BASE"
           test "$(cat "$OUT/current_v3_count_minus_1.status")" -eq 0
           cmp /tmp/src-v3/file /tmp/current_v3_count_minus_1-out/file
           run_case current_v3_count "$OUT/v3-count.sqfs" "$BASE"
+          test "$(cat "$OUT/current_v3_count.status")" -ne 0
           grep -q 'AddressSanitizer: heap-buffer-overflow' "$OUT/current_v3_count.log"
+          grep -q 'unsquash-3.c' "$OUT/current_v3_count.log"
           run_case current_v3_count_plus_1 "$OUT/v3-count_plus_1.sqfs" "$BASE"
           test "$(cat "$OUT/current_v3_count_plus_1.status")" -ne 0
           grep -q 'fragment index in inode too large (fragment: 2)' "$OUT/current_v3_count_plus_1.log"
@@ -141,8 +153,6 @@ jobs:
           test "$(git diff --numstat | awk '{s+=$1+$2} END{print s+0}')" -eq 4
           make -C squashfs-tools clean
           make -C squashfs-tools \
-            CONFIG=1 GZIP_SUPPORT=1 XZ_SUPPORT=0 LZO_SUPPORT=0 LZ4_SUPPORT=0 ZSTD_SUPPORT=0 \
-            XATTR_SUPPORT=0 XATTR_OS_SUPPORT=0 \
             EXTRA_CFLAGS='-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer' \
             EXTRA_LDFLAGS='-fsanitize=address,undefined' unsquashfs
           cp squashfs-tools/unsquashfs "$OUT/unsquashfs-candidate"
@@ -162,9 +172,17 @@ jobs:
           test "$(cat "$OUT/candidate_v3_zero_fragments.status")" -eq 0
           cmp /tmp/src-v3/file /tmp/candidate_v3_zero_fragments-out/file
 
+          make -C squashfs-tools clean
+          make -C squashfs-tools
+          find . -maxdepth 3 -type f \( -iname '*test*' -o -iname '*tests*' \) | sort | tee "$OUT/test-file-discovery.txt"
+          if make -C squashfs-tools -n test >"$OUT/make-test.txt" 2>&1; then
+            make -C squashfs-tools test | tee -a "$OUT/make-test.txt"
+          else
+            cat "$OUT/make-test.txt"
+          fi
+
           echo '--- V2 HISTORY DISCOVERY ---'
           cd /tmp/squashfs-tools
-          git log --all --format='%H %cI %s' -- squashfs-tools/squashfs_fs.h | tail -40 | tee "$OUT/v2-history.txt"
           found=''
           while read -r c; do
             if git show "$c:squashfs-tools/squashfs_fs.h" 2>/dev/null | grep -Eq '^#define[[:space:]]+SQUASHFS_MAJOR[[:space:]]+2([[:space:]]|$)'; then found=$c; break; fi
