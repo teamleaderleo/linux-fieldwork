@@ -20,6 +20,7 @@ jobs:
       CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
       BUG_TEST: migration::transport::sender_gate_liveness_tests::wait_for_pending_data_worker_error_does_not_block_gate_enqueue
       CONTROL_TEST: migration::transport::sender_gate_liveness_tests::wait_for_pending_data_full_queue_healthy_worker_completes
+      SURVIVOR_TEST: migration::transport::sender_gate_liveness_tests::worker_error_with_survivor_converges_through_cleanup
     steps:
       - name: Check out Fieldwork carrier
         uses: actions/checkout@v4
@@ -73,6 +74,7 @@ jobs:
           cargo test --locked -p vmm --features kvm --lib -- --list | tee ../gate-test-list.txt
           grep -F "$BUG_TEST: test" ../gate-test-list.txt
           grep -F "$CONTROL_TEST: test" ../gate-test-list.txt
+          grep -F "$SURVIVOR_TEST: test" ../gate-test-list.txt
 
       - name: Baseline full-queue healthy-worker control
         id: baseline_control
@@ -100,7 +102,7 @@ jobs:
           test "$rc" -eq 124
 
       - name: Apply bounded nonblocking Gate candidate
-        id: candidate_apply
+        id: gate_apply
         working-directory: cloud-hypervisor
         shell: bash
         run: |
@@ -111,22 +113,66 @@ jobs:
           git diff --check
           diff -u ../gate-baseline-transport.rs vmm/src/migration/transport.rs \
             > ../gate-candidate-only.diff || test "$?" = 1
-          git diff -- vmm/src/migration/transport.rs > ../gate-probe-plus-candidate.diff
+          cp vmm/src/migration/transport.rs ../gate-only-transport.rs
 
-      - name: Candidate worker-error and healthy controls
-        id: candidate_focused
+      - name: Gate candidate fixes Gate boundary
+        id: gate_focused
         working-directory: cloud-hypervisor
         shell: bash
         run: |
           set -euxo pipefail
           timeout --signal=TERM --kill-after=2s 10s \
             cargo test --locked -p vmm --features kvm --lib "$BUG_TEST" -- --exact --nocapture \
-            2>&1 | tee ../gate-candidate-bug.log
+            2>&1 | tee ../gate-only-bug.log
           timeout --signal=TERM --kill-after=2s 10s \
             cargo test --locked -p vmm --features kvm --lib "$CONTROL_TEST" -- --exact --nocapture \
-            2>&1 | tee ../gate-candidate-control.log
+            2>&1 | tee ../gate-only-control.log
 
-      - name: Candidate full VMM library tests
+      - name: Prove Gate-only repair can still strand survivor in cleanup
+        id: gate_only_survivor
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=2s 4s \
+            cargo test --locked -p vmm --features kvm --lib "$SURVIVOR_TEST" -- --exact --nocapture \
+            > ../gate-only-survivor.log 2>&1
+          rc=$?
+          set -e
+          echo "GATE_ONLY_SURVIVOR_RC=$rc" | tee ../gate-only-survivor-status.txt
+          cat ../gate-only-survivor.log
+          test "$rc" -eq 124
+
+      - name: Apply reliable cleanup terminal-message candidate
+        id: cleanup_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-gate-liveness/apply_cleanup_candidate.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          diff -u ../gate-only-transport.rs vmm/src/migration/transport.rs \
+            > ../cleanup-candidate-only.diff || test "$?" = 1
+          diff -u ../gate-baseline-transport.rs vmm/src/migration/transport.rs \
+            > ../gate-cleanup-combined.diff || test "$?" = 1
+          git diff -- vmm/src/migration/transport.rs > ../gate-probe-plus-combined.diff
+
+      - name: Combined focused convergence matrix
+        id: combined_focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          for test_name in "$BUG_TEST" "$CONTROL_TEST" "$SURVIVOR_TEST"; do
+            safe_name=$(echo "$test_name" | tr ':/' '__')
+            timeout --signal=TERM --kill-after=2s 10s \
+              cargo test --locked -p vmm --features kvm --lib "$test_name" -- --exact --nocapture \
+              2>&1 | tee "../combined-${safe_name}.log"
+          done
+
+      - name: Combined full VMM library tests
         id: vmm_tests
         working-directory: cloud-hypervisor
         shell: bash
@@ -134,7 +180,7 @@ jobs:
           set -euxo pipefail
           cargo test --locked -p vmm --features kvm --lib 2>&1 | tee ../gate-vmm-tests.log
 
-      - name: Candidate Clippy and hygiene
+      - name: Combined Clippy and hygiene
         id: quality
         working-directory: cloud-hypervisor
         shell: bash
@@ -148,6 +194,8 @@ jobs:
           git status --short | tee ../gate-final-status.txt
           git diff --stat | tee ../gate-final-diff-stat.txt
           sha256sum ../gate-candidate-only.diff | tee ../gate-candidate-diff-sha256.txt
+          sha256sum ../cleanup-candidate-only.diff | tee ../cleanup-candidate-diff-sha256.txt
+          sha256sum ../gate-cleanup-combined.diff | tee ../combined-candidate-diff-sha256.txt
 
       - name: Write execution receipt
         if: always()
@@ -161,12 +209,18 @@ jobs:
             echo "discover_gate=${{ steps.discover.outcome }}"
             echo "baseline_control=${{ steps.baseline_control.outcome }}"
             echo "baseline_bug_expected_timeout=${{ steps.baseline_bug.outcome }}"
-            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
-            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "gate_apply=${{ steps.gate_apply.outcome }}"
+            echo "gate_focused=${{ steps.gate_focused.outcome }}"
+            echo "gate_only_survivor_expected_timeout=${{ steps.gate_only_survivor.outcome }}"
+            echo "cleanup_apply=${{ steps.cleanup_apply.outcome }}"
+            echo "combined_focused=${{ steps.combined_focused.outcome }}"
             echo "vmm_tests=${{ steps.vmm_tests.outcome }}"
             echo "quality=${{ steps.quality.outcome }}"
             test -f gate-baseline-status.txt && cat gate-baseline-status.txt
+            test -f gate-only-survivor-status.txt && cat gate-only-survivor-status.txt
             test -f gate-candidate-diff-sha256.txt && cat gate-candidate-diff-sha256.txt
+            test -f cleanup-candidate-diff-sha256.txt && cat cleanup-candidate-diff-sha256.txt
+            test -f combined-candidate-diff-sha256.txt && cat combined-candidate-diff-sha256.txt
           } | tee gate-execution-receipt.txt
 
       - name: Upload evidence
@@ -187,11 +241,19 @@ jobs:
             gate-baseline-bug.log
             gate-baseline-status.txt
             gate-candidate-only.diff
-            gate-probe-plus-candidate.diff
-            gate-candidate-bug.log
-            gate-candidate-control.log
+            gate-only-transport.rs
+            gate-only-bug.log
+            gate-only-control.log
+            gate-only-survivor.log
+            gate-only-survivor-status.txt
+            cleanup-candidate-only.diff
+            gate-cleanup-combined.diff
+            gate-probe-plus-combined.diff
+            combined-*.log
             gate-vmm-tests.log
             gate-clippy.log
             gate-final-status.txt
             gate-final-diff-stat.txt
             gate-candidate-diff-sha256.txt
+            cleanup-candidate-diff-sha256.txt
+            combined-candidate-diff-sha256.txt
