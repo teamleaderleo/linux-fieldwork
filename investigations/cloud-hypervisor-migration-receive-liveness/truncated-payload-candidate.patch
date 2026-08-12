@@ -1,0 +1,18 @@
+diff --git a/vmm/src/migration/transport.rs b/vmm/src/migration/transport.rs
+index 89b7dfd7..00000000 100644
+--- a/vmm/src/migration/transport.rs
++++ b/vmm/src/migration/transport.rs
+@@ -851,6 +851,13 @@ pub(crate) fn receive_memory_ranges(
+                 .context("Error receiving memory from socket")
+                 .map_err(MigratableError::MigrateReceive)?;
++
++            if bytes_read == 0 {
++                return Err(MigratableError::MigrateSocket(io::Error::new(
++                    ErrorKind::UnexpectedEof,
++                    "migration peer closed while receiving memory payload",
++                )));
++            }
++
+             offset += bytes_read as u64;
+ 
+             if offset == range.length {
