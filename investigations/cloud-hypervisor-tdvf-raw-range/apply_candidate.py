@@ -76,7 +76,9 @@ if text.count(anchor) != 1:
 
 test = r'''    #[test]
     fn raw_bfv_section_must_fit_in_firmware_file() {
-        use std::fs::{OpenOptions, remove_file};
+        use std::env::temp_dir;
+        use std::fs::{OpenOptions, remove_file, write};
+        use std::process::id;
 
         let mut bytes = vec![0u8; 0x100];
         bytes[0..4].copy_from_slice(b"TDVF");
@@ -90,11 +92,8 @@ test = r'''    #[test]
         // Bfv type and attributes are both zero.
         bytes[0xe0..0xe4].copy_from_slice(&0u32.to_le_bytes());
 
-        let path = std::env::temp_dir().join(format!(
-            "cloud-hypervisor-tdvf-candidate-{}.fd",
-            std::process::id()
-        ));
-        std::fs::write(&path, bytes).unwrap();
+        let path = temp_dir().join(format!("cloud-hypervisor-tdvf-candidate-{}.fd", id()));
+        write(&path, bytes).unwrap();
         let mut file = OpenOptions::new().read(true).open(&path).unwrap();
         remove_file(path).unwrap();
 
