@@ -1,0 +1,215 @@
+name: Cloud Hypervisor SMBIOS EBDA execution R600E
+
+on:
+  push:
+    branches:
+      - research/ch-smbios-ebda-exec-r600e
+    paths:
+      - .github/workflows/ch-smbios-ebda-exec-r600e.yml
+      - investigations/cloud-hypervisor-smbios-ebda-exec/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smbios-ebda:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      WITNESS: x86_64::smbios::ebda_boundary_tests::smbios_large_payload_overwrites_high_ram_baseline
+      INVARIANT: x86_64::smbios::ebda_boundary_tests::smbios_large_payload_keeps_high_ram_unchanged
+      CONTROL: x86_64::smbios::ebda_boundary_tests::smbios_small_payload_stays_below_high_ram
+      CANDIDATE_TEST: x86_64::smbios::unit_tests::smbios_payload_cannot_cross_into_high_ram
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and Rust
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../smbios-rust-version.txt
+          cargo --version | tee ../smbios-cargo-version.txt
+          rustc +nightly --version | tee ../smbios-nightly-version.txt
+          git rev-parse HEAD | tee ../smbios-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Apply and format baseline probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-smbios-ebda-exec/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- arch/src/x86_64/smbios.rs > ../smbios-probe.diff
+          cp arch/src/x86_64/smbios.rs ../smbios-baseline.rs
+
+      - name: Build and discover focused tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --lib --no-run
+          cargo test --locked -p arch --lib -- --list | tee ../smbios-test-list.txt
+          grep -F "$WITNESS: test" ../smbios-test-list.txt
+          grep -F "$INVARIANT: test" ../smbios-test-list.txt
+          grep -F "$CONTROL: test" ../smbios-test-list.txt
+
+      - name: Baseline short-payload control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --lib "$CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../smbios-baseline-control.log
+          grep -F "SMBIOS_EBDA_CONTROL" ../smbios-baseline-control.log
+
+      - name: Prove baseline physical high-RAM overwrite
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --lib "$WITNESS" -- --ignored --exact --nocapture \
+            2>&1 | tee ../smbios-baseline-witness.log
+          grep -F "SMBIOS_EBDA_BASELINE" ../smbios-baseline-witness.log
+
+      - name: Prove safety invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p arch --lib "$INVARIANT" -- --exact --nocapture \
+            > ../smbios-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "SMBIOS_BASELINE_INVARIANT_RC=$rc" | tee ../smbios-baseline-invariant-status.txt
+          cat ../smbios-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F "oversized SMBIOS payload must be rejected" ../smbios-baseline-invariant.log
+
+      - name: Apply exact retained EBDA candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git apply ../fieldwork/investigations/cloud-hypervisor-smbios-ebda-exec/candidate.patch
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          diff -u ../smbios-baseline.rs arch/src/x86_64/smbios.rs \
+            > ../smbios-candidate-only.diff || test "$?" = 1
+          git diff -- arch/src/x86_64/smbios.rs > ../smbios-probe-plus-candidate.diff
+          sha256sum ../smbios-candidate-only.diff | tee ../smbios-candidate-diff-sha256.txt
+
+      - name: Candidate focused matrix
+        id: candidate_focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --lib "$INVARIANT" -- --exact --nocapture \
+            2>&1 | tee ../smbios-candidate-invariant.log
+          cargo test --locked -p arch --lib "$CONTROL" -- --exact --nocapture \
+            2>&1 | tee ../smbios-candidate-control.log
+          cargo test --locked -p arch --lib "$CANDIDATE_TEST" -- --exact --nocapture \
+            2>&1 | tee ../smbios-candidate-typed-test.log
+
+      - name: Full arch tests
+        id: arch_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch 2>&1 | tee ../smbios-arch-tests.log
+
+      - name: Arch Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p arch --all-targets -- -D warnings \
+            2>&1 | tee ../smbios-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../smbios-final-status.txt
+          git diff --stat | tee ../smbios-final-diff-stat.txt
+
+      - name: Write execution receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "baseline_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "arch_tests=${{ steps.arch_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f smbios-baseline-invariant-status.txt && cat smbios-baseline-invariant-status.txt
+            test -f smbios-candidate-diff-sha256.txt && cat smbios-candidate-diff-sha256.txt
+          } | tee smbios-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-smbios-ebda-r600e
+          if-no-files-found: warn
+          path: |
+            smbios-execution-receipt.txt
+            smbios-source-sha.txt
+            smbios-rust-version.txt
+            smbios-cargo-version.txt
+            smbios-nightly-version.txt
+            smbios-test-list.txt
+            smbios-probe.diff
+            smbios-baseline.rs
+            smbios-baseline-control.log
+            smbios-baseline-witness.log
+            smbios-baseline-invariant.log
+            smbios-baseline-invariant-status.txt
+            smbios-candidate-only.diff
+            smbios-candidate-diff-sha256.txt
+            smbios-probe-plus-candidate.diff
+            smbios-candidate-invariant.log
+            smbios-candidate-control.log
+            smbios-candidate-typed-test.log
+            smbios-arch-tests.log
+            smbios-clippy.log
+            smbios-final-status.txt
+            smbios-final-diff-stat.txt
