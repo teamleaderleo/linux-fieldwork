@@ -1,151 +1,123 @@
 # Cloud Hypervisor — QCOW fresh-L2 ENOSPC reopen refcount
 
 Updated: 2026-08-12
-State: EXECUTING / SOURCE BOUNDARY MAPPED
-Owning issue: #612
+State: CANDIDATE READY FOR HUMAN REVIEW
+Owning issue: #609
+Disposition: ACCEPT CANDIDATE FOR HUMAN REVIEW
 Exact upstream source: `cloud-hypervisor/cloud-hypervisor@1af93ac7035cda77cd87b0c18b1134ebb0928052`
+Owned source candidate: `teamleaderleo/cloud-hypervisor@f50d82af46753719a8fab7209a01e2d5460d3ace`
+Source branch: `linux-fieldwork/qcow-fresh-l2-refcount`
 External-contact state: false; none occurred
 
-## TL;DR
+## Result
 
-Merged upstream PR 8637 fixed an in-run QCOW double-allocation path but explicitly left a reopen-time gap: a fresh metadata cluster can be wired into tables while its refcount increment remains only in a caller-local deferred vector. A later ENOSPC error drops that vector. Current main still has that ordering.
+The defect is executable on exact-current Cloud Hypervisor source. A failed first write can publish a fresh L2 through L1 while that L2 still has refcount zero. A successful clean close persists the L1 reference and clears DIRTY. Clean reopen then treats the still-referenced cluster as free, and the allocator can return the exact live L2 address.
 
-The smallest current case is a brand-new L2 table. `cache_l2_cluster_alloc()` allocates the L2 and immediately updates L1, then returns the new address so `map_write()` can defer `(new_l2, 1)`. If the subsequent data-cluster allocation fails, L1 keeps the pointer and the refcount stays zero.
+The smallest safe repair moves fresh-L2 ownership into `cache_l2_cluster_alloc()`: allocate and zero the fresh L2, set its refcount to 1, then publish the L1 pointer and insert the table into the L2 cache. The two callers no longer add a separate fresh-L2 refcount.
 
-Clean shutdown persists L1 and clears the DIRTY bit. Clean reopen therefore skips refcount rebuild and constructs `avail_clusters` from zero refcounts, making the still-referenced L2 allocator-eligible.
-
-The first executable gate is a block-unit fixture that forces exactly this sequence and asserts the clean reopen does **not** publish the L2 as free. Current baseline should fail; the narrow candidate makes the fresh-L2 refcount durable before L1 wiring.
-
-## Explain like I'm five
-
-QCOW has a map that points to little index pages called L2 tables. It also keeps a counter saying which disk blocks are in use.
-
-Current code can do this:
+The clean source candidate is one commit directly on the exact upstream head and changes one file:
 
 ```text
-reserve block for new L2
-point the map at it
-plan to set its used-counter later
-run out of space before “later”
+block/src/formats/qcow/metadata.rs
 ```
 
-When the VM closes cleanly, the map is saved but the counter is still zero. Next time the image opens, zero means “free”, so the allocator can hand out a block that the map is still using.
+Candidate compare against `1af93ac7035cda77cd87b0c18b1134ebb0928052`: ahead 1, behind 0, one changed file, 174 additions and 17 deletions. The additions include three focused regression/control tests.
 
-## Why care
+## Independent baseline proof
 
-This is a latent metadata double-allocation path. The original ENOSPC operation can return an ordinary error, yet a later clean reopen can make live metadata eligible for overwrite.
+Fieldwork run `31562343911` used exact upstream `1af93ac7035cda77cd87b0c18b1134ebb0928052` with Rust 1.89.0 and nightly rustfmt `1.99.0-nightly (3d6c19bb9 2026-08-11)`.
 
-The failure class matches the dangerous family investigated under upstream issue 8606, where reused live metadata led to silent guest filesystem corruption.
+Two independent discriminators fail on baseline as required:
 
-## Historical intent
+- clean-reopen allocator reuse: test exits 101 after the allocator returns the exact still-referenced L2 (`left: 327680`, `right: 327680`);
+- ownership ENOSPC: test exits 101 because baseline leaves L1 published (`left: 262144`) when the invariant requires zero.
 
-Public context:
+Artifact `9128231893` has digest `sha256:cb1e4306167a58fd83d6d8ab4453ac77962bc6e18e9416a7b700958446691f5a`.
 
-- https://github.com/cloud-hypervisor/cloud-hypervisor/issues/8606
-- https://github.com/cloud-hypervisor/cloud-hypervisor/pull/8637
-- https://github.com/cloud-hypervisor/cloud-hypervisor/commit/a5e145bdefe72f3f4a7dd98186aee50f5e2fdf2b
-
-PR 8637 explicitly says the same ENOSPC unwind can drop a deferred refcount update for a cluster already wired into tables, naming a fresh L2 from `cache_l2_cluster_alloc()` as an example. It deliberately left that larger transactional problem out of scope.
-
-Current source still has the fresh-L2 deferred-refcount ordering. The only later reviewed commit touching `metadata.rs`, `53ee9ebb...`, changes when the DIRTY bit is cleared; it does not repair the wiring/refcount transaction.
-
-## Exact current source
-
-### `map_write()`
-
-Current ordering:
+A later retained receipt, run `31562528682`, records:
 
 ```text
-set_refcounts = []
-if cache_l2_cluster_alloc(...) returns new_l2:
-    set_refcounts.push((new_l2, 1))
-
-allocate/map data cluster ?
-update L2 ?
-
-for deferred refcounts:
-    apply
+source=1af93ac7035cda77cd87b0c18b1134ebb0928052
+rustc 1.89.0 (29483883e 2025-08-04)
+rustc 1.99.0-nightly (3d6c19bb9 2026-08-11)
+BASELINE_REUSE_RC=101
+BASELINE_OWNERSHIP_RC=101
+candidate_reuse=pass
+candidate_ownership=pass
+nightly_fmt=pass
+block_tests=pass
+block_io_uring_tests=pass
+clippy=pass
 ```
 
-Any `?` after the fresh L2 is wired can discard the local vector.
+Artifact `9128392578` has digest `sha256:7df373e4db09f16699c7f8d59350005bbefa7669262e3e046eaeff1aa319fc6a`.
 
-### `cache_l2_cluster_alloc()`
+## Exact candidate-tree validation
 
-When L1 has no L2 yet:
+Owned-fork materializer run `31563067456` applied the reviewed probe and repair to exact upstream `1af93ac7035cda77cd87b0c18b1134ebb0928052`, then passed:
 
-```text
-new_addr = get_new_cluster(None)?
-l1_table[l1_index] = new_addr
-insert empty L2 cache
-return Some(new_addr)
+- `git diff --check`;
+- `cargo +nightly fmt --all -- --check`;
+- `fresh_l2_enospc_reopen_keeps_live_table_out_of_free_list`;
+- `fresh_l2_refcount_enospc_does_not_publish_l1`;
+- `zero_marker_fresh_l2_keeps_refcount_owner`;
+- `cargo test --locked -p block`: 298 passed;
+- `cargo test --locked -p block --features io_uring`: 326 passed;
+- `cargo clippy --locked -p block --all-targets -- -D warnings`.
+
+The exact tested `metadata.rs` blob is `7f6559490fdbd133ba64f44c4dcad1441f05f4e4`. The clean one-commit candidate `f50d82af46753719a8fab7209a01e2d5460d3ace` reuses that exact blob on the upstream base tree. Temporary materializer commits were removed from the candidate branch history.
+
+## Full-diff review
+
+### Ownership boundary
+
+`cache_l2_cluster_alloc()` is the right owner for fresh-L2 allocation because it is the routine that creates the metadata cluster and publishes its L1 address. The candidate performs `set_cluster_refcount_track_freed(new_addr, 1)` before `self.l1_table[l1_index] = new_addr`.
+
+The helper has exactly two write-side callers in current source:
+
+1. `map_write()`;
+2. `deallocate_cluster()` when a zero marker needs a fresh L2.
+
+Both caller-side fresh-L2 increments are removed, preventing double counting. Existing-L2 cache population never receives a new ownership increment.
+
+### ENOSPC and rollback
+
+- Allocation failure before a fresh L2 exists leaves L1 unchanged.
+- Refcount-COW ENOSPC after allocating the fresh L2 but before securing ownership is covered by `fresh_l2_refcount_enospc_does_not_publish_l1`; L1 remains zero.
+- Data/refcount failure after successful fresh-L2 ownership can leave an allocated empty L2, but that cluster has refcount 1 before L1 exposure.
+- Cache insertion/eviction failure occurs after ownership and L1 publication. The fresh L2 is zero-filled and refcount-owned, so reopen cannot classify it as free; the failure can retain an empty allocated table.
+- The generic recursive refcount setter can itself allocate and relocate refcount metadata. Deeper failures can conservatively orphan allocation/refcount work. That pre-existing refcount transaction behavior remains a residual risk, while the fresh L2 stays unpublished until its own ownership call returns success.
+
+### Zero-marker and sentinels
+
+`l2_addr_disk == 0` is the absent-L2 sentinel. Physical cluster zero is rejected by the allocator. The zero-marker caller now relies on helper ownership and passes the focused refcount-1 control.
+
+### Relocation
+
+The candidate leaves `update_cluster_addr()` relocation logic unchanged. Existing relocation ENOSPC regressions, compressed-write relocation controls, metadata reuse tests, and the full block suites pass. A fresh `VecCache` is already dirty, so the immediate fresh-L2 path does not enter the clean-L2 relocation branch.
+
+### Refcount overflow
+
+Fresh ownership sets refcount to 1, which is valid for every accepted QCOW refcount width. Existing `refcount_overflow_returns_error` passes in the full suite, and overflow still maps through the existing refcount error path.
+
+### Cache, concurrency, and repeated allocation
+
+Metadata writes take the `QcowMetadata` write lock. A cache hit or nonzero L1 address bypasses fresh allocation, so repeated writes do not increment L2 ownership again. Cache eviction and L2-eviction/refcount-order tests pass in the full suites.
+
+### Shutdown and reopen
+
+On successful flush/clean close, the candidate persists refcount ownership before the L1 table can be durably committed, so clean reopen keeps the live L2 out of the free list. Dirty reopen already rebuilds refcounts from reachability.
+
+Issue #611 tracks the adjacent shutdown path that clears DIRTY even when `sync_caches()` fails. That separate failed-flush problem remains outside this candidate.
+
+## Candidate history / DCO
+
+The review candidate is intentionally unsigned because the API execution path cannot create a commit with the repository-configured human author/signoff. The commit carries the required AI-assistance trailer. Before any upstream submission, the human owner should set the recorded contributor identity and amend/sign off:
+
+```bash
+git config user.name "Leo Li"
+git config user.email "cheerleaderleo@outlook.com"
+git commit --amend --reset-author -s --no-edit
 ```
 
-The durable ownership counter is not changed here.
-
-### Clean shutdown/reopen
-
-`QcowMetadata::shutdown()` calls `sync_caches()` and clears DIRTY.
-
-`parse_qcow()` on a clean writable image builds `avail_clusters` by scanning the on-disk refcount table and including every cluster whose refcount is zero.
-
-So the defect crosses a process lifetime boundary.
-
-## First executable fixture
-
-The fixture stays inside `block/src/formats/qcow/metadata.rs` and uses the existing QCOW test helpers.
-
-1. Create and cleanly close a fresh QCOW image.
-2. Parse it to `QcowState`; L1[0] is zero.
-3. Extend the host file by one cluster and cap the refcount horizon at that exact file size.
-4. Put only that one appended cluster in `avail_clusters`.
-5. Call `map_write(0, None)`.
-6. Expected current sequence:
-   - the sole free cluster becomes the new L2 and is wired into L1;
-   - the data-cluster allocation cannot extend past the capped horizon and returns ENOSPC;
-   - the local deferred `(new_l2, 1)` update is dropped.
-7. Wrap/drop `QcowMetadata` to use the normal clean-shutdown path.
-8. Reopen with `parse_qcow()`.
-9. Assert the reopened L1 still points to the L2 but the allocator does **not** list it as free and its refcount is 1.
-
-Baseline should fail on the free-list/refcount invariant. Candidate should pass.
-
-## Candidate boundary
-
-For the fresh-L2 path only:
-
-```text
-allocate L2
-set L2 refcount = 1
-wire L1
-insert cache
-```
-
-`cache_l2_cluster_alloc()` should own that transaction instead of returning the address for a deferred caller-side increment.
-
-If the immediate refcount update fails, do not wire L1. A leaked newly allocated cluster is safer than a durable pointer to a refcount-zero cluster.
-
-This first candidate deliberately does not change relocated-L2 old-cluster release. That adjacent path should be tested separately because its best failure behavior is likely “new table refcount committed, old table refcount release deferred/leaked on failure.”
-
-## Evidence boundary
-
-Established:
-
-- exact current source retains the fresh-L2 deferred-refcount ordering;
-- clean shutdown can persist L1 while clearing DIRTY;
-- clean reopen builds the free list from refcount zero;
-- upstream history explicitly identifies this as a known remaining gap.
-
-Pending:
-
-- deterministic exact-current baseline;
-- candidate focused test;
-- full block tests, io_uring block tests, rustfmt, Clippy;
-- relocated-L2 adjacent error test.
-
-## Next step
-
-Execute the exact-current fresh-L2 ENOSPC/reopen fixture. If it fails as source predicts, apply the immediate-refcount candidate and run block crate gates.
-
-## Authority
-
-No upstream issue, pull request, review, comment, email, reaction, or other external interaction is authorized or performed by this investigation.
+No Cloud Hypervisor upstream issue, pull request, review, comment, reaction, or other contact occurred.
