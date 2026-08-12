@@ -3,11 +3,52 @@ from pathlib import Path
 
 path = Path("vmm/src/migration/transport.rs")
 text = path.read_text()
-marker = "self.threads.iter().all(|thread| thread.is_finished())"
+marker = "let message_tx = mem::replace(&mut self.message_tx, closed_tx);"
 if marker in text:
     raise SystemExit(f"cleanup candidate marker already present in {path}")
 
-old = '''        // Send disconnect messages to all workers.
+old_import = "use std::io::{self, ErrorKind, Read, Write};\n"
+new_import = old_import + "use std::mem;\n"
+if text.count(old_import) != 1:
+    raise SystemExit("unexpected std::io import count")
+text = text.replace(old_import, new_import, 1)
+
+old_recv = '''            let message = message_rx
+                .lock()
+                .map_err(|_| MigratableError::MigrateSend(anyhow!("message_rx mutex is poisoned")))
+                .inspect_err(|_| {
+                    worker_error.store(true, Ordering::Relaxed);
+                    // We ignore errors during error handling.
+                    notify_tx.send(SendMemoryThreadNotify::Error).ok();
+                })?
+                .recv()
+                .context("Error receiving message from main thread")
+                .map_err(MigratableError::MigrateSend)
+                .inspect_err(|_| {
+                    worker_error.store(true, Ordering::Relaxed);
+                    notify_tx.send(SendMemoryThreadNotify::Error).ok();
+                })?;
+'''
+new_recv = '''            let message_rx = message_rx
+                .lock()
+                .map_err(|_| MigratableError::MigrateSend(anyhow!("message_rx mutex is poisoned")))
+                .inspect_err(|_| {
+                    worker_error.store(true, Ordering::Relaxed);
+                    // We ignore errors during error handling.
+                    notify_tx.send(SendMemoryThreadNotify::Error).ok();
+                })?;
+            let message = match message_rx.recv() {
+                Ok(message) => message,
+                // The main thread closes the work channel as the guaranteed terminal
+                // condition during cleanup. Queued work is drained before this point.
+                Err(_) => return Ok(()),
+            };
+'''
+if text.count(old_recv) != 1:
+    raise SystemExit("unexpected worker receive block count")
+text = text.replace(old_recv, new_recv, 1)
+
+old_cleanup = '''        // Send disconnect messages to all workers.
         for _ in 0..self.threads.len() {
             // All threads may have terminated, leading to a dropped receiver. Thus we ignore
             // errors here.
@@ -16,29 +57,15 @@ old = '''        // Send disconnect messages to all workers.
                 .ok();
         }
 '''
-new = '''        // Send disconnect messages to all workers. The work queue can still be full when
-        // cleanup follows a worker error, so retry without blocking while a worker can still
-        // consume a terminal message. Once every worker has finished, no further disconnect
-        // is needed even if another receiver handle temporarily keeps the channel alive.
-        for _ in 0..self.threads.len() {
-            let mut disconnect = SendMemoryThreadMessage::Disconnect;
-            loop {
-                if self.threads.iter().all(|thread| thread.is_finished()) {
-                    break;
-                }
-
-                match self.message_tx.try_send(disconnect) {
-                    Ok(()) => break,
-                    Err(TrySendError::Full(unsent_message)) => {
-                        thread::sleep(Duration::from_millis(10));
-                        disconnect = unsent_message;
-                    }
-                    Err(TrySendError::Disconnected(_)) => break,
-                }
-            }
-        }
+new_cleanup = '''        // Closing the work channel is independent of bounded-queue capacity. Workers
+        // drain already queued work and then receive the terminal disconnect state.
+        let (closed_tx, closed_rx) = sync_channel(0);
+        drop(closed_rx);
+        let message_tx = mem::replace(&mut self.message_tx, closed_tx);
+        drop(message_tx);
 '''
+if text.count(old_cleanup) != 1:
+    raise SystemExit("unexpected cleanup disconnect block count")
+text = text.replace(old_cleanup, new_cleanup, 1)
 
-if text.count(old) != 1:
-    raise SystemExit(f"expected exactly one cleanup disconnect loop in {path}")
-path.write_text(text.replace(old, new, 1))
+path.write_text(text)
