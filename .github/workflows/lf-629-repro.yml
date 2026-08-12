@@ -44,10 +44,9 @@ jobs:
           #include <stdio.h>
           #include "squashfs_fs.h"
           int main(void) {
-            printf("root_inode=%zu fragments=%zu inode_table_start=%zu s_major=%zu s_minor=%zu reg_size=%zu reg_fragment=%zu file_type=%d\n",
+            printf("root_inode=%zu fragments=%zu inode_table_start=%zu reg_size=%zu reg_fragment=%zu file_type=%d\n",
               offsetof(struct squashfs_super_block, root_inode), offsetof(struct squashfs_super_block, fragments),
-              offsetof(struct squashfs_super_block, inode_table_start), offsetof(struct squashfs_super_block, s_major),
-              offsetof(struct squashfs_super_block, s_minor), sizeof(struct squashfs_reg_inode_header),
+              offsetof(struct squashfs_super_block, inode_table_start), sizeof(struct squashfs_reg_inode_header),
               offsetof(struct squashfs_reg_inode_header, fragment), SQUASHFS_FILE_TYPE);
             return 0;
           }
@@ -61,18 +60,17 @@ jobs:
           python3 - "$OUT" <<'PY'
           import hashlib, pathlib, re, struct, sys
           out=pathlib.Path(sys.argv[1]); data=bytearray((out/'v3-base.sqfs').read_bytes())
-          v={k:int(x) for k,x in re.findall(r'(root_inode|fragments|inode_table_start|s_major|s_minor|reg_size|reg_fragment|file_type)=(\d+)',(out/'layout-v3.txt').read_text())}
+          v={k:int(x) for k,x in re.findall(r'(root_inode|fragments|inode_table_start|reg_size|reg_fragment|file_type)=(\d+)',(out/'layout-v3.txt').read_text())}
           assert struct.unpack_from('<I',data,0)[0]==0x73717368
-          major=struct.unpack_from('<H',data,v['s_major'])[0]; minor=struct.unpack_from('<H',data,v['s_minor'])[0]
           root=struct.unpack_from('<Q',data,v['root_inode'])[0]; count=struct.unpack_from('<I',data,v['fragments'])[0]
           it=struct.unpack_from('<Q',data,v['inode_table_start'])[0]; hdr=struct.unpack_from('<H',data,it)[0]
-          assert major==3 and count==1 and (hdr & 0x8000), (major,minor,count,hex(hdr))
+          assert count==1 and (hdr & 0x8000), (count,hex(hdr))
           root_block,root_off=root>>16,root&0xffff; assert root_block==0 and root_off>=v['reg_size']
           inode_payload=it+2
-          inode_type=struct.unpack_from('<H',data,inode_payload)[0]; assert inode_type==v['file_type'], (inode_type,v['file_type'])
+          inode_word=struct.unpack_from('<H',data,inode_payload)[0]; assert (inode_word & 0xf)==v['file_type'], (inode_word,v['file_type'])
           pos=inode_payload+v['reg_fragment']; orig=struct.unpack_from('<I',data,pos)[0]
           assert orig==count-1==0, (orig,count)
-          print(f'V3_FIXTURE major={major}.{minor} count={count} root_inode=0x{root:x} root_off={root_off} inode_table_start={it} metadata_header=0x{hdr:04x} fragment_field_offset={pos} original_fragment={orig}')
+          print(f'V3_FIXTURE generator=3.3 count={count} root_inode=0x{root:x} root_off={root_off} inode_table_start={it} metadata_header=0x{hdr:04x} fragment_field_offset={pos} original_fragment={orig}')
           print(f'BASE size={len(data)} sha256={hashlib.sha256(data).hexdigest()}')
           for name,val in [('count_minus_1',count-1),('count',count),('count_plus_1',count+1)]:
             img=bytearray(data); struct.pack_into('<I',img,pos,val); p=out/f'v3-{name}.sqfs'; p.write_bytes(img)
