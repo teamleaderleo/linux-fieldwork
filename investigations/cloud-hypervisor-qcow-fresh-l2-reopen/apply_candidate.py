@@ -37,6 +37,13 @@ new_zero_marker = '''        if l2_addr_disk == 0 {
         }
 '''
 
+old_doc = '''    /// Populates the L2 cache for write operations and may allocate a new
+    /// L2 table. Returns the address of the newly allocated cluster if any.
+'''
+new_doc = '''    /// Populates the L2 cache for write operations and may allocate a new
+    /// L2 table. Fresh L2 ownership is established before L1 publication.
+'''
+
 old_fn = '''    fn cache_l2_cluster_alloc(
         &mut self,
         l1_index: usize,
@@ -93,6 +100,7 @@ new_fn = '''    fn cache_l2_cluster_alloc(
 for old, new, label in [
     (old_map_write, new_map_write, "map_write fresh-L2 caller"),
     (old_zero_marker, new_zero_marker, "zero-marker fresh-L2 caller"),
+    (old_doc, new_doc, "cache_l2_cluster_alloc documentation"),
     (old_fn, new_fn, "cache_l2_cluster_alloc owner"),
 ]:
     count = text.count(old)
