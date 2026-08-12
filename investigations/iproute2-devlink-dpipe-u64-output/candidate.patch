@@ -1,6 +1,45 @@
 --- a/devlink/devlink.c
 +++ b/devlink/devlink.c
 @@
+ 	[DEVLINK_ATTR_DPIPE_TABLE_MATCHES] = MNL_TYPE_NESTED,
+ 	[DEVLINK_ATTR_DPIPE_TABLE_ACTIONS] = MNL_TYPE_NESTED,
+ 	[DEVLINK_ATTR_DPIPE_TABLE_COUNTERS_ENABLED] =  MNL_TYPE_U8,
++	[DEVLINK_ATTR_DPIPE_TABLE_RESOURCE_ID] = MNL_TYPE_U64,
++	[DEVLINK_ATTR_DPIPE_TABLE_RESOURCE_UNITS] = MNL_TYPE_U64,
+ 	[DEVLINK_ATTR_DPIPE_ENTRIES] = MNL_TYPE_NESTED,
+@@
+ static int dpipe_table_show(struct dpipe_ctx *ctx, struct nlattr *nl)
+ {
+ 	struct nlattr *nla_table[DEVLINK_ATTR_MAX + 1] = {};
+ 	struct dpipe_table *table;
+-	uint32_t resource_units;
++	uint64_t resource_units;
+ 	bool counters_enabled;
+ 	bool resource_valid;
+-	uint32_t size;
++	uint64_t size;
+ 	int err;
+@@
+-	size = mnl_attr_get_u32(nla_table[DEVLINK_ATTR_DPIPE_TABLE_SIZE]);
++	size = mnl_attr_get_u64(nla_table[DEVLINK_ATTR_DPIPE_TABLE_SIZE]);
+@@
+ 	check_indent_newline(ctx->dl);
+ 	print_string(PRINT_ANY, "name", "name %s", table->name);
+-	print_uint(PRINT_ANY, "size", " size %u", size);
++	print_u64(PRINT_ANY, "size", " size %" PRIu64, size);
+ 	print_bool(PRINT_ANY, "counters_enabled", " counters_enabled %s", counters_enabled);
+ 
+ 	if (resource_valid && ctx->resources) {
+-		resource_units = mnl_attr_get_u32(nla_table[DEVLINK_ATTR_DPIPE_TABLE_RESOURCE_UNITS]);
++		resource_units = mnl_attr_get_u64(nla_table[DEVLINK_ATTR_DPIPE_TABLE_RESOURCE_UNITS]);
+ 		resource_path_print(ctx->dl, ctx->resources,
+ 				    table->resource_id);
+-		print_uint(PRINT_ANY, "resource_units", " resource_units %u",
+-			   resource_units);
++		print_u64(PRINT_ANY, "resource_units", " resource_units %" PRIu64,
++			  resource_units);
+ 	}
+@@
  static int dpipe_entry_show(struct dpipe_ctx *ctx, struct nlattr *nl)
  {
  	struct nlattr *nla_entry[DEVLINK_ATTR_MAX + 1] = {};
