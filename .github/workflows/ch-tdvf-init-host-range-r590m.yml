@@ -1,0 +1,217 @@
+name: Cloud Hypervisor TDVF init host range R590M
+
+on:
+  push:
+    branches: [research/ch-tdvf-init-host-range-r590m]
+    paths:
+      - .github/workflows/ch-tdvf-init-host-range-r590m.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-init-host-range:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      CONTROL: tdvf_init_host_range_valid_control
+      WITNESS: tdvf_init_host_range_crosses_region_panics_baseline
+      INVARIANT: tdvf_init_host_range_crosses_region_should_not_panic
+      CANDIDATE_TEST: tdx_host_address_range_returns_typed_error
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0 --path cloud-hypervisor
+          rustc +1.89.0 --version | tee tdvf-init-host-range-rust-version.txt
+          rustc +nightly --version | tee tdvf-init-host-range-nightly-version.txt
+          git -C cloud-hypervisor rev-parse HEAD | tee tdvf-init-host-range-source-sha.txt
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git -C cloud-hypervisor status --short)"
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('cloud-hypervisor/vmm/src/vm.rs').read_text()
+          start = text.index('    fn init_tdx_memory(')
+          end = text.index('    // Creates ACPI tables', start)
+          body = text[start:end]
+          assert 'get_host_address_range(' in body
+          assert '.unwrap(),' in body
+          print('TDVF_INIT_HOST_RANGE_SOURCE_BOUNDARY unwrap=true')
+          PY
+
+      - name: Apply and format baseline probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-init-host-range/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-init-host-range-probe.diff
+
+      - name: Build and discover baseline probes
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib --no-run
+          cargo test --locked -p vmm --features "$FEATURES" --lib -- --list | tee ../tdvf-init-host-range-test-list.txt
+          for t in "$CONTROL" "$WITNESS" "$INVARIANT"; do grep -F "$t: test" ../tdvf-init-host-range-test-list.txt; done
+
+      - name: Baseline valid host-range control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL" -- --nocapture 2>&1 | tee ../tdvf-init-host-range-baseline-control.log
+          grep -F "TDVF_INIT_HOST_RANGE_CONTROL" ../tdvf-init-host-range-baseline-control.log
+
+      - name: Prove baseline cross-region panic
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$WITNESS" -- --ignored --nocapture 2>&1 | tee ../tdvf-init-host-range-baseline-witness.log
+          grep -F "TDVF_INIT_HOST_RANGE_BASELINE panicked=true" ../tdvf-init-host-range-baseline-witness.log
+
+      - name: Prove no-panic invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INVARIANT" -- --nocapture > ../tdvf-init-host-range-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_INIT_HOST_RANGE_BASELINE_INVARIANT_RC=$rc" | tee ../tdvf-init-host-range-baseline-invariant-status.txt
+          cat ../tdvf-init-host-range-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F "TDVF_INIT_HOST_RANGE_INVARIANT panicked=true" ../tdvf-init-host-range-baseline-invariant.log
+          grep -F "invalid TDVF host range must not panic the VMM" ../tdvf-init-host-range-baseline-invariant.log
+
+      - name: Restore exact source after baseline probe
+        id: restore
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git checkout -- vmm/src/vm.rs
+          test -z "$(git status --short)"
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply typed host-range candidate
+        id: candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-init-host-range/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-init-host-range-candidate-only.diff
+          sha256sum ../tdvf-init-host-range-candidate-only.diff | tee ../tdvf-init-host-range-candidate-diff-sha256.txt
+          grep -F "InvalidTdxMemoryRange" vmm/src/vm.rs
+          grep -F "Self::tdx_host_address_range" vmm/src/vm.rs
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('vmm/src/vm.rs').read_text()
+          start = text.index('    fn init_tdx_memory(')
+          end = text.index('    // Creates ACPI tables', start)
+          assert 'get_host_address_range(' not in text[start:end]
+          assert '.unwrap(),' not in text[start:end]
+          PY
+
+      - name: Candidate focused typed boundary
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --nocapture 2>&1 | tee ../tdvf-init-host-range-candidate-focused.log
+          grep -F "TDVF_INIT_HOST_RANGE_CANDIDATE invalid_result=InvalidTdxMemoryRange" ../tdvf-init-host-range-candidate-focused.log
+          grep -F "TDVF_INIT_HOST_RANGE_CANDIDATE control" ../tdvf-init-host-range-candidate-focused.log
+
+      - name: Full VMM TDX KVM library tests
+        id: vmm_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib 2>&1 | tee ../tdvf-init-host-range-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations 2>&1 | tee ../tdvf-init-host-range-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-init-host-range-final-status.txt
+          git diff --stat | tee ../tdvf-init-host-range-final-diff-stat.txt
+          git diff -- vmm/src/vm.rs | tee ../tdvf-init-host-range-final-candidate.diff
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "features=$FEATURES"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "baseline_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "restore_exact_source=${{ steps.restore.outcome }}"
+            echo "candidate_apply=${{ steps.candidate.outcome }}"
+            echo "candidate_focused=${{ steps.focused.outcome }}"
+            echo "vmm_tests=${{ steps.vmm_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdvf-init-host-range-baseline-invariant-status.txt && cat tdvf-init-host-range-baseline-invariant-status.txt
+            test -f tdvf-init-host-range-candidate-diff-sha256.txt && cat tdvf-init-host-range-candidate-diff-sha256.txt
+          } | tee tdvf-init-host-range-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-init-host-range-r590m
+          if-no-files-found: warn
+          path: |
+            tdvf-init-host-range-*.txt
+            tdvf-init-host-range-*.log
+            tdvf-init-host-range-*.diff
