@@ -1,0 +1,108 @@
+name: Cloud Hypervisor QCOW fresh L2 reuse audit R609C
+
+on:
+  push:
+    branches:
+      - research/ch-qcow-fresh-l2-reuse-audit-r609c
+    paths:
+      - .github/workflows/ch-qcow-fresh-l2-reuse-audit-r609c.yml
+      - investigations/cloud-hypervisor-qcow-fresh-l2-reuse-audit/apply_probe.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reuse-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      CLEAN_TEST: formats::qcow::metadata::unit_tests::fresh_l2_enospc_clean_reopen_reuses_live_l2
+      DIRTY_TEST: formats::qcow::metadata::unit_tests::fresh_l2_enospc_dirty_reopen_recovers_live_l2
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin Rust 1.89.0
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../rust-version.txt
+          git rev-parse HEAD | tee ../source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply independent probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          python3 ../fieldwork/investigations/cloud-hypervisor-qcow-fresh-l2-reuse-audit/apply_probe.py
+          cargo fmt --all
+          git diff --check
+          git diff -- block/src/formats/qcow/metadata.rs | tee ../probe.diff
+
+      - name: Build and discover tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          cargo test --locked -p block --lib --no-run
+          cargo test --locked -p block --lib -- --list | tee ../test-list.txt
+          grep -F "$CLEAN_TEST: test" ../test-list.txt
+          grep -F "$DIRTY_TEST: test" ../test-list.txt
+
+      - name: Prove clean reopen reuses live L2
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          cargo test --locked -p block --lib "$CLEAN_TEST" -- --exact --nocapture \
+            2>&1 | tee ../clean-reuse.log
+          grep -F "post_enospc" ../clean-reuse.log
+          grep -F "post_shutdown dirty=false" ../clean-reuse.log
+          grep -F "clean_reopen" ../clean-reuse.log
+          grep -F "allocator_reuse" ../clean-reuse.log
+
+      - name: Prove dirty reopen repairs ownership
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          cargo test --locked -p block --lib "$DIRTY_TEST" -- --exact --nocapture \
+            2>&1 | tee ../dirty-recovery.log
+          grep -F "post_enospc" ../dirty-recovery.log
+          grep -F "dirty_reopen" ../dirty-recovery.log
+
+      - name: Write receipt
+        shell: bash
+        run: |
+          {
+            echo "source=$CH_SHA"
+            cat rust-version.txt
+            echo "clean_reuse=pass"
+            echo "dirty_recovery=pass"
+          } | tee receipt.txt
+
+      - name: Upload receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-qcow-fresh-l2-reuse-audit-r609c
+          path: |
+            receipt.txt
+            source-sha.txt
+            rust-version.txt
+            test-list.txt
+            clean-reuse.log
+            dirty-recovery.log
+            probe.diff
