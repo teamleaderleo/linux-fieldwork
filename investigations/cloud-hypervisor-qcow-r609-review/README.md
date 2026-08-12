@@ -41,7 +41,7 @@ new L2 ownership -> synchronous
 old L2 release   -> deferred
 ```
 
-This preserves the replacement-before-release ordering from upstream PR #8637 without allowing a newly published replacement to remain refcount 0. Upstream context: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8637
+This preserves the replacement-before-release ordering from upstream PR 8637 without allowing a newly published replacement to remain refcount 0. Upstream context: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8637
 
 ## Failure direction
 
