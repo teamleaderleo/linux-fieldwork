@@ -1,0 +1,173 @@
+name: Cloud Hypervisor SMBIOS OEM count review
+
+on:
+  push:
+    branches:
+      - research/ch-smbios-oem-count-review-r593r
+    paths:
+      - .github/workflows/ch-smbios-oem-count-review-r593r.yml
+      - investigations/cloud-hypervisor-smbios-oem-count/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      TEST_255: x86_64::smbios::unit_tests::smbios_oem_string_count_255_is_accepted
+      TEST_256: x86_64::smbios::unit_tests::smbios_oem_string_count_256_is_rejected
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and Rust
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../smbios-review-rust-version.txt
+          cargo --version | tee ../smbios-review-cargo-version.txt
+          git rev-parse HEAD | tee ../smbios-review-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          git status --short | tee ../smbios-review-source-status-before.txt
+          test ! -s ../smbios-review-source-status-before.txt
+
+      - name: Matched exact-current baseline Clippy
+        id: baseline_clippy
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p arch --features kvm --all-targets -- -D warnings \
+            2>&1 | tee ../smbios-review-baseline-clippy.log
+
+      - name: Apply retained narrow candidate
+        id: candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git apply ../fieldwork/investigations/cloud-hypervisor-smbios-oem-count/candidate.patch
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          git diff -- arch/src/x86_64/smbios.rs | tee ../smbios-review-candidate.diff
+          changed="$(git diff --name-only)"
+          test "$changed" = "arch/src/x86_64/smbios.rs"
+          grep -F 'TooManyOemStrings' arch/src/x86_64/smbios.rs
+
+      - name: Discover focused tests
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --features kvm --lib -- --list | tee ../smbios-review-test-list.txt
+          grep -F "$TEST_255: test" ../smbios-review-test-list.txt
+          grep -F "$TEST_256: test" ../smbios-review-test-list.txt
+
+      - name: Execute 255 valid boundary
+        id: valid_255
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --features kvm --lib "$TEST_255" -- --exact --nocapture \
+            2>&1 | tee ../smbios-review-255.log
+
+      - name: Execute 256 rejection boundary
+        id: reject_256
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --features kvm --lib "$TEST_256" -- --exact --nocapture \
+            2>&1 | tee ../smbios-review-256.log
+
+      - name: Run arch library suite with KVM
+        id: arch_suite
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch --features kvm --lib 2>&1 | tee ../smbios-review-arch-suite.log
+
+      - name: Matched candidate Clippy
+        id: candidate_clippy
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p arch --features kvm --all-targets -- -D warnings \
+            2>&1 | tee ../smbios-review-candidate-clippy.log
+
+      - name: Final hygiene
+        id: hygiene
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fmt --all -- --check
+          git diff --check
+          test "$(git diff --name-only)" = "arch/src/x86_64/smbios.rs"
+          git status --short | tee ../smbios-review-final-status.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "baseline_clippy_gate=${{ steps.baseline_clippy.outcome }}"
+            echo "candidate_gate=${{ steps.candidate.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "valid_255_gate=${{ steps.valid_255.outcome }}"
+            echo "reject_256_gate=${{ steps.reject_256.outcome }}"
+            echo "arch_suite_gate=${{ steps.arch_suite.outcome }}"
+            echo "candidate_clippy_gate=${{ steps.candidate_clippy.outcome }}"
+            echo "hygiene_gate=${{ steps.hygiene.outcome }}"
+            test -f smbios-review-source-sha.txt && cat smbios-review-source-sha.txt
+            test -f smbios-review-rust-version.txt && cat smbios-review-rust-version.txt
+          } | tee smbios-review-receipt.txt
+
+      - name: Upload review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-smbios-oem-count-review-r593r
+          if-no-files-found: warn
+          path: |
+            smbios-review-receipt.txt
+            smbios-review-source-sha.txt
+            smbios-review-rust-version.txt
+            smbios-review-cargo-version.txt
+            smbios-review-source-status-before.txt
+            smbios-review-baseline-clippy.log
+            smbios-review-candidate.diff
+            smbios-review-test-list.txt
+            smbios-review-255.log
+            smbios-review-256.log
+            smbios-review-arch-suite.log
+            smbios-review-candidate-clippy.log
+            smbios-review-final-status.txt
