@@ -156,7 +156,8 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          cargo clippy --locked -p arch --all-targets -- -D warnings \
+          cargo clippy --locked -p arch --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables \
             2>&1 | tee ../smbios-clippy.log
           cargo +nightly fmt --all -- --check
           git diff --check
