@@ -25,7 +25,6 @@ old_alloc = '''    let mut sections = Vec::new();
         TdvfSection::default,
     );
 '''
-# Exact source currently formats resize_with on one line; accept either shape deterministically.
 if old_alloc not in text:
     old_alloc = '''    let mut sections = Vec::new();
     sections.resize_with(descriptor.num_sections as usize, TdvfSection::default);
@@ -99,6 +98,14 @@ test = r'''    fn candidate_truncated_section_table_fixture(num_sections: u32) -
                 file_len: 0x100,
             }
         ));
+    }
+
+    #[test]
+    fn tdvf_section_table_range_valid_control() {
+        let mut file = candidate_truncated_section_table_fixture(1);
+        let (sections, _) = parse_tdvf_sections(&mut file).unwrap();
+        println!("TDVF_ALLOC_CANDIDATE control_sections={}", sections.len());
+        assert_eq!(sections.len(), 1);
     }
 
 '''
