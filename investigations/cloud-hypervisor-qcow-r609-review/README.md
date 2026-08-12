@@ -2,129 +2,117 @@
 
 Updated: 2026-08-12
 Owning issue: #609
-Role: independent repair design and candidate review
-Disposition: ACCEPT CANDIDATE FOR HUMAN REVIEW
-External-contact state: false; Cloud Hypervisor upstream remained read-only
+Disposition: SUBMITTED UPSTREAM; AWAIT CI / MAINTAINER REVIEW
 
-## Canonical source and candidate
+## Submitted source
 
-- Cloud Hypervisor current `main`: `1af93ac7035cda77cd87b0c18b1134ebb0928052`.
-- Owned fork candidate branch: `linux-fieldwork/qcow-l2-refcount-ownership-r609`.
-- Candidate head: `12cb3db040362b5dc0656e6fc1eb6ebe2da6bd1c`.
-- Candidate parent / merge base: `1af93ac7035cda77cd87b0c18b1134ebb0928052`.
-- Candidate relation: one commit ahead, zero behind exact current upstream source.
-- Candidate source file: `block/src/formats/qcow/metadata.rs` only.
-- Candidate diffstat: 168 insertions, 17 deletions.
-- Candidate file SHA-256: `3bf9ff485f9c0d90bc5da51214f9741949f9954f2e15fca6e2f1af23439db921`.
-- Candidate Git blob: `6646461c309558f1644b43921b27c0b08ecb7b5f`.
-- Candidate-only diff SHA-256: `f7ba8b378a9d48f8a8c7f9620d4bb2beeab3365baf4e761d6150ed335fcab7d7`.
+- Upstream PR: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8721
+- Base: `1af93ac7035cda77cd87b0c18b1134ebb0928052` (`main` at submission).
+- Source branch: `teamleaderleo/cloud-hypervisor:linux-fieldwork/qcow-l2-refcount-ownership-r609`.
+- Submitted head: `b26d6b70e28dacf0a35463b3bc45494ae2b2028e`.
+- Submitted tree: `20088ee1b7f2fa69df1ebaff97105d70e9490fa0`.
+- Source fence: `block/src/formats/qcow/metadata.rs` only.
+- Submitted diffstat: 177 insertions, 25 deletions.
+- Commit has `Signed-off-by: Leo Li <cheerleaderleo@outlook.com>` and `Assisted-by: ChatGPT:GPT-5.6 Sol`; GitHub reports the SSH signature as valid.
 
-The source commit was reconstructed from the exact bytes exercised by the independent workflow. The materializer verified both the expected SHA-256 and Git blob before pushing the one-file candidate branch. Its temporary workflow was kept on a separate fork branch and removed after materialization.
+The public PR was opened by the human contributor. Internal references to the upstream PR use `redirect.github.com` to avoid creating additional cross-repository backlinks.
 
-The candidate commit carries `Assisted-by: ChatGPT:GPT-5.6 Sol`. It intentionally lacks a human `Signed-off-by` because no configured human Git identity was available to this worker. A human reviewer must amend/sign before any upstream submission.
+## Defect and invariant
 
-## Defect and ownership boundary
+The baseline QCOW write path could publish a newly allocated L2 table through L1 while its `refcount=1` ownership remained only in `map_write()`'s deferred vector. A later error could drop that vector while the L1 mutation survived. After shutdown with the DIRTY bit clear, reopen could trust the refcount metadata, place the still-referenced L2 in the free pool, and hand it back to the allocator.
 
-The fresh-L2 defect is execution-proven on exact current source: a first write can allocate a fresh L2, publish it through L1, fail later with ENOSPC before the deferred L2 refcount update, clean-close, reopen with the L2 still at refcount 0, and hand that exact L1-referenced cluster back out through the allocator.
+Independent review found the same ownership-before-publication violation at both new-L2 publication sites:
 
-Independent source review found the same ownership-before-publication invariant violated at two new-L2 publication sites:
+1. first L2 allocation for an empty L1 slot in `cache_l2_cluster_alloc()`;
+2. replacement L2 allocation during relocation in `update_cluster_addr()`.
 
-1. `cache_l2_cluster_alloc()` for the first L2 under an empty L1 entry;
-2. `update_cluster_addr()` when a clean L2 table is relocated before an L2-entry update.
-
-The pre-existing helper-only candidate repairs (1) but leaves (2) deferred. On the compressed-write path, `update_cluster_addr()` can publish the replacement L2 and then encounter fallible data write / compressed-cluster deallocation before `map_write()` applies deferred refcounts. A deliberately dropped-deferred-update test is red on baseline with relocated L2 refcount 0 after clean reopen.
-
-The smallest repair reviewed here therefore follows one rule at both publication sites:
+The submitted patch applies one rule at both sites:
 
 ```text
-allocate new L2 cluster
+allocate new L2
 -> establish refcount=1 ownership
 -> publish L1 pointer
--> later fallible work
 ```
 
-Old-L2 release remains deferred. This preserves PR-8637's allocate-before-release safety ordering while preventing the replacement table itself from becoming live with refcount 0.
+The cleanup also makes the split structural. New L2 ownership is synchronous, while `deferred_unrefs: Vec<u64>` can represent only release of an old relocated L2:
 
-## Caller and sentinel audit
+```text
+new L2 ownership -> synchronous
+old L2 release   -> deferred
+```
 
-`cache_l2_cluster_alloc()` has exactly two callers on current source:
+This preserves the replacement-before-release ordering from upstream PR #8637 without allowing a newly published replacement to remain refcount 0. Upstream context: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8637
 
-- `map_write()`;
-- the `l2_addr_disk == 0 && zero_marker` branch of `deallocate_cluster()`.
+## Failure direction
 
-Both caller-side fresh-L2 refcount operations are removed when ownership moves into the helper, preventing redundant ownership writes. The helper becomes `io::Result<()>`.
+The intended failure behavior is conservative:
 
-`update_cluster_addr()` is reached from the compressed-entry and empty/zero-entry branches of `map_write()`. A fresh L2 created earlier in the same `map_write()` is dirty, so `update_cluster_addr()` does not immediately relocate and double-own it. A cached clean existing L2 takes the relocation branch and now owns its replacement before the L1 switch.
+- allocation failure -> L1 remains unchanged;
+- ownership failure -> L1 remains unchanged and the prospective L2 is unreachable;
+- ownership succeeds and later work fails -> the new L2 may remain allocated, but it cannot be exposed as refcount-0 free space;
+- an old relocated L2 release remains deferred, so losing that later release can retain old metadata rather than free live metadata.
 
-L1 value 0 remains the absent-table sentinel. `get_new_cluster()` rejects cluster address 0. If immediate ownership fails, the L1 sentinel remains unchanged.
+This is not a transactional rewrite and does not add rollback/commit machinery. It moves ownership ahead of reachability.
 
-`set_cluster_refcount_track_freed(addr, 1)` is an absolute set to 1, not an arithmetic increment. The value fits every valid QCOW refcount width, including one-bit refcounts. Existing callers do not already hold an owner for these newly allocated metadata clusters.
+## Regression coverage
 
-## Failure-path review
+Focused regressions in the submitted source:
 
-### Fresh L2
+- `fresh_l2_enospc_reopen_does_not_reuse_live_table` — forces the original ENOSPC unwind, reopens through the production parser, verifies refcount ownership/free-list exclusion, and asks the allocator for another cluster.
+- `relocated_l2_dropped_deferred_updates_keeps_refcount_owner` — models loss of the deferred old-L2 release after publication and verifies the replacement already owns refcount 1; it also asserts the deferred collection contains exactly the old L2.
+- `zero_marker_fresh_l2_keeps_refcount_owner` — guards the second caller of `cache_l2_cluster_alloc()` after ownership moved into the helper.
 
-- `get_new_cluster()` ENOSPC/error: L1 remains zero.
-- zeroing / file-growth failure inside allocation: L1 remains zero.
-- immediate refcount ownership failure, including refcount-block COW/ENOSPC/I/O: L1 remains zero. The prospective L2 can become an unreachable leak or partial allocation; it cannot become a reachable refcount-0 L2 through this path.
-- ownership succeeds, then L2-cache insertion/dirty-eviction write fails: L1 can name the new table, but the table already has refcount 1 and was zero-filled. This is an error/leak outcome, not live-free aliasing.
-- later data allocation ENOSPC after publication: the fresh L2 remains owned and clean reopen excludes it from `avail_clusters`.
+Existing upstream relocation controls remain unchanged and pass:
 
-### Relocated L2
+- `failed_l2_relocate_keeps_live_table_off_free_lists`;
+- `failed_l2_relocate_after_compressed_write_keeps_live_table`.
 
-- replacement allocation failure: old L1 remains unchanged and old-L2 release has not started.
-- immediate replacement-owner failure: old L1 remains unchanged and old-L2 release has not started; the new cluster can leak unreachable.
-- replacement ownership succeeds, L1 publishes new table, then compressed data write/deallocation fails: the new live L2 remains refcount 1. The old table can leak because its deferred refcount-0 update is lost; this is the conservative failure direction.
-- applying the deferred old-table refcount-0 later fails: the new live table remains owned; old metadata can remain allocated.
+Baseline discriminators remain useful historical evidence:
 
-## Cache, reopen, shutdown, and concurrency
+- fresh-L2 baseline: expected red, exit 101; reopened allocator returned the still-referenced L2 at `327680` (`0x50000`);
+- relocated-L2 baseline: expected red, exit 101; reopened replacement refcount was 0;
+- zero-marker baseline: pass, serving as a control.
 
-QCOW metadata mutations run under the `QcowMetadata` write lock, so concurrent guest requests cannot race two fresh-L2 allocations for one L1 index. A successful cache insertion makes repeated writes hit the same L2. If insertion fails after publication, a later operation can reload the owned zero-filled table from its L1 address.
+## Current-tree Linux validation
 
-Successful `sync_caches()` writes dirty L2/refcount metadata before committing L1/refcount-table pointer state. The focused tests use final-owner `QcowMetadata` drop followed by production `parse_qcow()` reopen and verify the new owner survives clean close/reopen.
-
-Adjacent issue #611 tracks a different shutdown invariant: `shutdown()` ignores `sync_caches()` errors and can clear DIRTY after a metadata flush failure. This candidate does not claim crash/power-loss atomicity or repair that error path. On successful cache sync, it repairs #609's logical owner-before-publication defect.
-
-## Independent execution receipt
-
-Fieldwork execution branch: `research/r609-qcow-l2-owner-review`
-Frozen execution head: `0c440c3812326c8af7973cd45ab7a5740f34e55a`
-Workflow run: `31562514755`
-Job: `94007596780`
+Fieldwork branch: `research/r609-qcow-l2-owner-review`
+Validation carrier head: `98c79d6e056244fcdc4e7f063dfb9d2029039bd0`
+Workflow run: `31610738323`
+Job: `94161115529`
 Result: success
-Artifact: `9128269811`, `r609-qcow-l2-owner-review`
-Artifact digest: `sha256:d215afe599807042c4f80cbe52249bb1c5fdf136f6431b8edbc031b7b94eefab`
+Artifact: `9147104092` (`r609-qcow-l2-owner-review`)
+Artifact digest: `sha256:6e54c2bd5db682588f3bb5a2a65d3a6a24a7d70381f8b6f49dee041acca34209`
 Runner: Ubuntu 24.04
 Rust: `rustc 1.89.0 (29483883e 2025-08-04)`
 Rustfmt: `rustfmt 1.10.0-nightly (3d6c19bb9a 2026-08-11)`
-Exact source: `1af93ac7035cda77cd87b0c18b1134ebb0928052`
+Candidate-only diff SHA-256: `0c45437e68eeca0788357b268dc5e2460b3a54ce660dc288c1bf626cb00f5e15`
+Candidate `metadata.rs` SHA-256: `59e2454f34711748fae267fdb13541d07682a0c6b26cd5476bedea339ceb2188`
 
-Baseline discriminators:
+Results:
 
-- `fresh_l2_enospc_reopen_does_not_reuse_live_table`: expected red, exit 101. Reopened allocator returned the live L2 at `327680`.
-- `relocated_l2_dropped_deferred_updates_keeps_refcount_owner`: expected red, exit 101. Reopened replacement L2 refcount was 0.
-- `zero_marker_fresh_l2_keeps_refcount_owner`: pass on baseline.
+```text
+fresh focused regression                          PASS
+relocated focused regression                      PASS
+zero-marker control                               PASS
+existing failed-relocation controls               2 passed
+cargo +nightly fmt --all -- --check              PASS
+git diff --check                                  PASS
+cargo check --locked -p block --all-targets --tests  PASS
+cargo test --locked -p block                      298 passed, 0 failed
+cargo test --locked -p block --features io_uring  326 passed, 0 failed
+cargo clippy --locked -p block --all-targets --tests -- -D warnings  PASS
+```
 
-Candidate focused results:
+Execution limits remain deterministic block-level fixtures on hosted Linux; no host-wide ENOSPC run, power-cut injection, KVM integration suite, or failpoint for every individual filesystem write.
 
-- fresh-L2 ENOSPC -> clean reopen -> actual allocator reuse exclusion: pass;
-- relocated-L2 dropped-deferred-update -> clean reopen ownership: pass;
-- zero-marker fresh-L2 ownership: pass;
-- existing `failed_l2_relocate*` controls: 2 passed.
+## Upstream submission state
 
-Quality gates on the exact candidate bytes:
+Public PR: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor/pull/8721
+Submitted head: `b26d6b70e28dacf0a35463b3bc45494ae2b2028e`
+Canonical upstream CI run: `31611611323` (in progress at the latest housekeeping check).
 
-- `cargo +nightly fmt --all -- --check`: pass;
-- `git diff --check`: pass;
-- `cargo check --locked -p block --all-targets --tests`: pass;
-- `cargo test --locked -p block`: 298 passed, 0 failed;
-- `cargo test --locked -p block --features io_uring`: 326 passed, 0 failed;
-- `cargo clippy --locked -p block --all-targets --tests -- -D warnings`: pass.
+No assistant-authored upstream mutation is part of this record. Further upstream comments/reviews/edits remain human-driven unless explicitly requested.
 
-Execution limits: deterministic block-unit fixtures on a hosted Linux runner; no host-wide ENOSPC, power-cut injection, KVM integration suite, or failpoint for every individual filesystem write. Source ordering plus focused red/green probes cover the owner-before-L1 boundary; #611 remains the flush-error recovery boundary.
+## Adjacent boundary
 
-## Review disposition
-
-**ACCEPT CANDIDATE FOR HUMAN REVIEW.**
-
-The defect is proven, the helper-only candidate is too narrow for the stated invariant, and the one-file two-publication-site candidate preserves the conservative rollback direction: ownership failure happens before L1 publication; later failures can leak metadata but cannot expose the newly allocated L2 as allocator-free through these paths.
+Issue #611 remains separate: `QcowMetadata::shutdown()` can clear DIRTY after a metadata flush failure. This patch does not repair that durability path and does not claim power-loss atomicity.
