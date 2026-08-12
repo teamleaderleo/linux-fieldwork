@@ -1,0 +1,130 @@
+name: Cloud Hypervisor migration sender channel liveness
+
+on:
+  push:
+    branches:
+      - research/ch-migration-rollback-probes
+    paths:
+      - .github/workflows/ch-migration-sender-channel-liveness.yml
+      - investigations/cloud-hypervisor-migration-sender-cleanup/apply_sender_channel_probe.py
+      - investigations/cloud-hypervisor-migration-sender-cleanup/apply_sender_gate_candidate.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sender-channel-liveness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      CLEANUP_TEST: migration::transport::sender_channel_liveness_tests::full_queue_loses_cleanup_disconnect_while_sender_stays_alive
+      GATE_TEST: migration::transport::sender_channel_liveness_tests::wait_for_pending_data_observes_worker_error_before_blocking_gate_send
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin Rust 1.89.0
+        working-directory: cloud-hypervisor
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 rustfmt clippy
+          rustup override set 1.89.0
+          rustc --version | tee ../sender-rust-version.txt
+          git rev-parse HEAD | tee ../sender-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply exact-current sender channel probes
+        working-directory: cloud-hypervisor
+        run: |
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-sender-cleanup/apply_sender_channel_probe.py
+          git diff --check
+          cargo fmt --all -- --check
+          git diff -- vmm/src/migration/transport.rs > ../sender-probe.diff
+
+      - name: Build and discover both focused tests
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test -p vmm --features kvm --lib --no-run
+          cargo test -p vmm --features kvm --lib -- --list | tee ../sender-test-list.txt
+          grep -F "$CLEANUP_TEST: test" ../sender-test-list.txt
+          grep -F "$GATE_TEST: test" ../sender-test-list.txt
+
+      - name: Prove cleanup can lose its disconnect on a full queue
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test -p vmm --features kvm --lib "$CLEANUP_TEST" -- --exact --nocapture \
+            | tee ../sender-cleanup-baseline.log
+
+      - name: Prove gate enqueue blocks after worker error on a full queue
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=2s 5s \
+            cargo test -p vmm --features kvm --lib "$GATE_TEST" -- --exact --nocapture \
+            > ../sender-gate-baseline.log 2>&1
+          rc=$?
+          set -e
+          echo "GATE_BASELINE_RC=$rc" | tee ../sender-gate-baseline-status.txt
+          cat ../sender-gate-baseline.log
+          test "$rc" -eq 124
+
+      - name: Apply bounded nonblocking gate candidate
+        working-directory: cloud-hypervisor
+        run: |
+          python3 ../fieldwork/investigations/cloud-hypervisor-migration-sender-cleanup/apply_sender_gate_candidate.py
+          git diff --check
+          cargo fmt --all -- --check
+          git diff -- vmm/src/migration/transport.rs > ../sender-gate-candidate.diff
+
+      - name: Prove candidate returns instead of blocking
+        working-directory: cloud-hypervisor
+        run: |
+          cargo test -p vmm --features kvm --lib "$GATE_TEST" -- --exact --nocapture \
+            | tee ../sender-gate-candidate-test.log
+          cargo clippy -p vmm --features kvm --lib --tests -- -D warnings \
+            | tee ../sender-gate-candidate-clippy.log
+
+      - name: Write receipt
+        shell: bash
+        run: |
+          {
+            echo "source=$CH_SHA"
+            cat sender-rust-version.txt
+            echo "cleanup_test=$CLEANUP_TEST"
+            echo "cleanup_baseline=pass-reduced-proof"
+            echo "gate_test=$GATE_TEST"
+            cat sender-gate-baseline-status.txt
+            echo "gate_candidate_test=pass"
+            echo "gate_candidate_clippy=pass"
+          } | tee sender-channel-receipt.txt
+
+      - name: Upload receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-migration-sender-channel-liveness-receipt
+          path: |
+            sender-channel-receipt.txt
+            sender-source-sha.txt
+            sender-rust-version.txt
+            sender-test-list.txt
+            sender-cleanup-baseline.log
+            sender-gate-baseline.log
+            sender-gate-baseline-status.txt
+            sender-gate-candidate-test.log
+            sender-gate-candidate-clippy.log
+            sender-probe.diff
+            sender-gate-candidate.diff
