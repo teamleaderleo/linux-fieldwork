@@ -15,7 +15,8 @@ old = '''    pub fn read_from(fd: &mut dyn Read, length: u64) -> Result<MemoryRa
 
         fd.read_exact(data.as_mut_bytes())
             .map_err(MigratableError::MigrateSocket)?;
-        Ok(MemoryRangeTable { data })
+
+        Ok(Self { data })
     }
 '''
 new = '''    pub fn read_from(fd: &mut dyn Read, length: u64) -> Result<MemoryRangeTable, MigratableError> {
@@ -36,7 +37,8 @@ new = '''    pub fn read_from(fd: &mut dyn Read, length: u64) -> Result<MemoryRa
 
         fd.read_exact(data.as_mut_bytes())
             .map_err(MigratableError::MigrateSocket)?;
-        Ok(MemoryRangeTable { data })
+
+        Ok(Self { data })
     }
 '''
 
