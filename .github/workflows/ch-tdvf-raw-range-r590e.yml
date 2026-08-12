@@ -15,13 +15,15 @@ permissions:
 jobs:
   tdvf-raw-range:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: arch/tdx,arch/kvm,hypervisor/tdx,hypervisor/kvm
       WITNESS: x86_64::tdx::raw_range_probe_tests::tdvf_bfv_range_past_eof_is_accepted_baseline
       INVARIANT: x86_64::tdx::raw_range_probe_tests::tdvf_bfv_range_past_eof_is_rejected
       CONTROL: x86_64::tdx::raw_range_probe_tests::tdvf_bfv_range_inside_file_is_valid
       CANDIDATE_TEST: x86_64::tdx::unit_tests::raw_bfv_section_must_fit_in_firmware_file
+
     steps:
       - name: Check out Fieldwork carrier
         uses: actions/checkout@v4
@@ -72,8 +74,8 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          cargo test --locked -p arch --features tdx --lib --no-run
-          cargo test --locked -p arch --features tdx --lib -- --list | tee ../tdvf-test-list.txt
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib --no-run
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib -- --list | tee ../tdvf-test-list.txt
           grep -F "$WITNESS: test" ../tdvf-test-list.txt
           grep -F "$INVARIANT: test" ../tdvf-test-list.txt
           grep -F "$CONTROL: test" ../tdvf-test-list.txt
@@ -84,7 +86,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          cargo test --locked -p arch --features tdx --lib "$CONTROL" -- --exact --nocapture \
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CONTROL" -- --exact --nocapture \
             2>&1 | tee ../tdvf-baseline-control.log
           grep -F "TDVF_RAW_CONTROL" ../tdvf-baseline-control.log
 
@@ -94,7 +96,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          cargo test --locked -p arch --features tdx --lib "$WITNESS" -- --ignored --exact --nocapture \
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$WITNESS" -- --ignored --exact --nocapture \
             2>&1 | tee ../tdvf-baseline-witness.log
           grep -F "TDVF_RAW_BASELINE" ../tdvf-baseline-witness.log
 
@@ -104,7 +106,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo test --locked -p arch --features tdx --lib "$INVARIANT" -- --exact --nocapture \
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$INVARIANT" -- --exact --nocapture \
             > ../tdvf-baseline-invariant.log 2>&1
           rc=$?
           set -e
@@ -123,8 +125,7 @@ jobs:
           cargo +nightly fmt --all
           cargo +nightly fmt --all -- --check
           git diff --check
-          diff -u ../tdvf-baseline.rs arch/src/x86_64/tdx/mod.rs \
-            > ../tdvf-candidate-only.diff || test "$?" = 1
+          diff -u ../tdvf-baseline.rs arch/src/x86_64/tdx/mod.rs > ../tdvf-candidate-only.diff || test "$?" = 1
           git diff -- arch/src/x86_64/tdx/mod.rs > ../tdvf-probe-plus-candidate.diff
           sha256sum ../tdvf-candidate-only.diff | tee ../tdvf-candidate-diff-sha256.txt
 
@@ -134,20 +135,22 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          cargo test --locked -p arch --features tdx --lib "$INVARIANT" -- --exact --nocapture \
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$INVARIANT" -- --exact --nocapture \
             2>&1 | tee ../tdvf-candidate-invariant.log
-          cargo test --locked -p arch --features tdx --lib "$CONTROL" -- --exact --nocapture \
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CONTROL" -- --exact --nocapture \
             2>&1 | tee ../tdvf-candidate-control.log
-          cargo test --locked -p arch --features tdx --lib "$CANDIDATE_TEST" -- --exact --nocapture \
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --exact --nocapture \
             2>&1 | tee ../tdvf-candidate-typed-test.log
 
-      - name: Full arch TDX tests
+      - name: Full arch and hypervisor TDX/KVM tests
         id: arch_tests
         working-directory: cloud-hypervisor
         shell: bash
         run: |
           set -euxo pipefail
-          cargo test --locked -p arch --features tdx 2>&1 | tee ../tdvf-arch-tests.log
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib \
+            2>&1 | tee ../tdvf-arch-tests.log
 
       - name: Clippy and hygiene
         id: quality
@@ -155,7 +158,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          cargo clippy --locked -p arch --features tdx --all-targets -- \
+          cargo clippy --locked -p arch -p hypervisor --features "$FEATURES" --all-targets -- \
             -D warnings -A unreachable-code -A unused-mut -A unused-variables \
             2>&1 | tee ../tdvf-clippy.log
           cargo +nightly fmt --all -- --check
@@ -170,6 +173,7 @@ jobs:
           {
             echo "fieldwork_head=${GITHUB_SHA}"
             echo "source=$CH_SHA"
+            echo "features=$FEATURES"
             echo "source_gate=${{ steps.source.outcome }}"
             echo "probe_gate=${{ steps.probe.outcome }}"
             echo "discover_gate=${{ steps.discover.outcome }}"
