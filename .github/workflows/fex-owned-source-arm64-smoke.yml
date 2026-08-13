@@ -1,0 +1,76 @@
+name: Owned FEX source on hosted ARM64
+
+on:
+  push:
+    branches:
+      - probe/fex-nodelete-gha
+  workflow_dispatch:
+
+jobs:
+  source-smoke:
+    runs-on: ubuntu-24.04-arm
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(uname -m)" = aarch64
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang lld cmake ninja-build git pkg-config python3 \
+            libssl-dev libcap-dev libfmt-dev libsdl2-dev libepoxy-dev \
+            libdrm-dev libx11-dev libxext-dev libxfixes-dev libxrender-dev \
+            libxrandr-dev libxcb1-dev libwayland-dev libvulkan-dev \
+            gcc-x86-64-linux-gnu file
+
+      - name: Checkout owned FEX experiment
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 --branch diagnostic/vulkan-elf-nodelete-clean https://github.com/teamleaderleo/FEX.git FEX
+          cd FEX
+          git rev-parse HEAD
+          test "$(git rev-parse HEAD)" = 5982a38f1a8e6fcd8aadd2e58e033223c865714f
+          git submodule update --init --recursive --depth 1
+
+      - name: Configure FEX
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake -S FEX -B FEX/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_LTO=OFF \
+            -DENABLE_CCACHE=OFF \
+            -DENABLE_GDB_SYMBOLS=OFF \
+            -DENABLE_OFFLINE_TELEMETRY=OFF \
+            -DBUILD_FEXCONFIG=OFF \
+            -DBUILD_FEX_LINUX_TESTS=OFF \
+            -DBUILD_THUNKS=OFF
+
+      - name: Build FEX runtime
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake --build FEX/build --target FEX
+          file FEX/build/Bin/FEX
+
+      - name: Execute static x86-64 guest through source build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat > guest.c <<'EOF'
+          #include <stdio.h>
+          #include <sys/utsname.h>
+          int main(void) {
+            struct utsname u;
+            if (uname(&u) != 0) return 11;
+            printf("OWNED_FEX_SOURCE_GUEST machine=%s answer=%d\n", u.machine, 6 * 7);
+            return 0;
+          }
+          EOF
+          x86_64-linux-gnu-gcc -static -O2 guest.c -o guest-x86_64
+          FEX/build/Bin/FEX "$PWD/guest-x86_64" 2>&1 | tee source-smoke.log
+          grep -q 'OWNED_FEX_SOURCE_GUEST machine=x86_64 answer=42' source-smoke.log
