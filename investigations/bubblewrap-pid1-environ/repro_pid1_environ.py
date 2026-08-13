@@ -117,13 +117,13 @@ def empty_environment_case(path):
         "--proc", "/proc",
         "--clearenv",
         "--", "/usr/bin/python3", "-c",
-        "import os; print('env_count='+str(len(os.environ)))",
+        f"import os; print('marker='+repr(os.getenv('{MARKER_NAME}'))+' control='+repr(os.getenv('{CONTROL_NAME}')))",
     ]
     completed = subprocess.run(cmd, env={}, text=True, capture_output=True, check=False)
     output = completed.stdout.strip().replace("\n", "; ")
     error = completed.stderr.strip().replace("\n", "; ")
     print(f"empty-env-clearenv: rc={completed.returncode} stdout=[{output}] stderr=[{error}]")
-    return completed.returncode == 0 and "env_count=0" in completed.stdout
+    return completed.returncode == 0 and "marker=None control=None" in completed.stdout
 
 
 def run_bwrap(path, expect_scrubbed=False):
