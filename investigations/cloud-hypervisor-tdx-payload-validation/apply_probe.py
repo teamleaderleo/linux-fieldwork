@@ -57,7 +57,7 @@ mod tdx_payload_validation_probe_tests {
         println!(
             "TDX_PAYLOAD_VALIDATION_BASELINE cmdline_result={result:?} cmdline_after={cmdline:?}"
         );
-        assert!(result.is_ok());
+        result.unwrap();
         assert!(cmdline.is_none());
     }
 
@@ -80,7 +80,7 @@ mod tdx_payload_validation_probe_tests {
         println!(
             "TDX_PAYLOAD_VALIDATION_CONTROL non_tdx_cmdline={result:?} cmdline_after={cmdline:?}"
         );
-        assert!(result.is_ok());
+        result.unwrap();
         assert!(cmdline.is_none());
     }
 
@@ -90,10 +90,9 @@ mod tdx_payload_validation_probe_tests {
         let mut config = config(true, true, true);
         let result = config.validate();
         println!("TDX_PAYLOAD_VALIDATION_INVARIANT kernel_result={result:?}");
-        assert!(
-            result.is_ok(),
-            "TDX firmware plus kernel is an intended direct-kernel boot mode"
-        );
+        result.unwrap_or_else(|err| {
+            panic!("TDX firmware plus kernel is an intended direct-kernel boot mode: {err:?}")
+        });
     }
 
     #[cfg(feature = "tdx")]
@@ -105,7 +104,7 @@ mod tdx_payload_validation_probe_tests {
         println!(
             "TDX_PAYLOAD_VALIDATION_INVARIANT cmdline_result={result:?} cmdline_after={cmdline:?}"
         );
-        assert!(result.is_ok());
+        result.unwrap();
         assert_eq!(cmdline.as_deref(), Some("console=hvc0 root=/dev/vda"));
     }
 }
