@@ -20,7 +20,7 @@ jobs:
           persist-credentials: false
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential cmake git
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential cmake git python3-psutil
 
       - name: Fetch exact Tini source
         shell: bash
@@ -78,7 +78,6 @@ jobs:
           EOF
           cat >/tmp/tini-launcher.c <<'EOF'
           #define _GNU_SOURCE
-          #include <errno.h>
           #include <fcntl.h>
           #include <signal.h>
           #include <stdio.h>
@@ -134,18 +133,53 @@ jobs:
           cc -O2 -Wall -Wextra -Werror /tmp/tini-child.c -o /tmp/tini-child
           cc -O2 -Wall -Wextra -Werror /tmp/tini-launcher.c -o /tmp/tini-launcher
 
-      - name: Execute baseline and candidate discriminator
+      - name: Execute startup discriminator
         shell: bash
         run: |
           set -euo pipefail
-          direct=$(/tmp/tini-launcher /tmp/build-baseline/tini /tmp/tini-child direct 100)
+          direct_baseline=$(/tmp/tini-launcher /tmp/build-baseline/tini /tmp/tini-child direct 100)
+          direct_candidate=$(/tmp/tini-launcher /tmp/build-candidate/tini /tmp/tini-child direct 100)
           baseline=$(/tmp/tini-launcher /tmp/build-baseline/tini /tmp/tini-child group 300)
           candidate=$(/tmp/tini-launcher /tmp/build-candidate/tini /tmp/tini-child group 300)
-          printf '%s\n%s\n%s\n' "$direct" "$baseline" "$candidate" | tee /tmp/tini-native-result.txt
-          grep -Eq 'mode=direct iterations=100 forwarded=100 lost=0 other=0' <<<"$direct"
+          printf '%s\n%s\n%s\n%s\n' "$direct_baseline" "$direct_candidate" "$baseline" "$candidate" | tee /tmp/tini-native-result.txt
+          grep -Eq 'mode=direct iterations=100 forwarded=100 lost=0 other=0' <<<"$direct_baseline"
+          grep -Eq 'mode=direct iterations=100 forwarded=100 lost=0 other=0' <<<"$direct_candidate"
           baseline_lost=$(sed -n 's/.* lost=\([0-9][0-9]*\) .*/\1/p' <<<"$baseline")
           test "$baseline_lost" -gt 0
           grep -Eq 'mode=group iterations=300 forwarded=300 lost=0 other=0' <<<"$candidate"
+
+      - name: Preserve existing steady-state process-group behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee /tmp/tini-steady-state-result.txt
+          import os, signal, subprocess, time
+          import psutil
+
+          tini = '/tmp/build-candidate/tini'
+          stage = '/tmp/tini-candidate/test/pgroup/stage_1.py'
+
+          def wait_tree(proc, count=2, timeout=10):
+              deadline = time.monotonic() + timeout
+              while time.monotonic() < deadline:
+                  if len(psutil.Process(proc.pid).children(recursive=True)) == count:
+                      return
+                  time.sleep(0.02)
+              raise RuntimeError('candidate process tree did not become ready')
+
+          def run(label, argv, env=None):
+              proc = subprocess.Popen(argv, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              wait_tree(proc)
+              proc.send_signal(signal.SIGUSR1)
+              rc = proc.wait(timeout=10)
+              print(f'{label}: rc={rc}')
+              if rc != 0:
+                  raise SystemExit(f'{label} failed with rc={rc}')
+
+          run('candidate-arg-g', [tini, '-g', stage])
+          env = dict(os.environ, TINI_KILL_PROCESS_GROUP='1')
+          run('candidate-env-g', [tini, stage], env=env)
+          PY
 
       - name: Retain evidence
         if: always()
@@ -154,6 +188,7 @@ jobs:
           name: tini-native-startup-signal-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             /tmp/tini-native-result.txt
+            /tmp/tini-steady-state-result.txt
             /tmp/tini-candidate.diff
           if-no-files-found: warn
           retention-days: 14
