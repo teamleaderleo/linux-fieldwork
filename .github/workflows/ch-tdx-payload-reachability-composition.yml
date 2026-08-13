@@ -1,0 +1,182 @@
+name: Cloud Hypervisor TDX Payload reachability composition
+
+on:
+  push:
+    branches: [research/ch-tdx-payload-reachability-composition]
+    paths:
+      - .github/workflows/ch-tdx-payload-reachability-composition.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdx-payload-reachability:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      CONFIG_SHA: 921b7ecd5ee25889000d1fcaabbcc578a4cbbc69
+      CONFIG_DIFF_SHA: 0af9d875fd2b82099fe15f7f6a910d9500293990846bda6d677da1ea16b0da5e
+      PAYLOAD_SHA: 3b671c290a675d86f3c606f99185c5c94488fe77
+      PAYLOAD_DIFF_SHA: 298ac3ea1ce3062f3967880098d1ed142487a38bc90c64729ae6682289e13772
+      INV_KERNEL: config::tdx_payload_validation_probe_tests::tdx_firmware_kernel_should_validate
+      INV_CMDLINE: config::tdx_payload_validation_probe_tests::tdx_firmware_cmdline_should_be_preserved
+      CONTROL_KERNEL: config::tdx_payload_validation_probe_tests::non_tdx_firmware_kernel_remains_rejected_control
+      CONTROL_CMDLINE: config::tdx_payload_validation_probe_tests::non_tdx_firmware_cmdline_is_removed_control
+      PAYLOAD_TEST: vm::unit_tests::tdx_payload_copy_propagates_guest_memory_error
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source, toolchains, and immutable materializers
+        id: source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0 --path cloud-hypervisor
+          rustc --version | tee tdx-payload-composition-rust-version.txt
+          rustc +nightly --version | tee tdx-payload-composition-nightly-version.txt
+          git -C cloud-hypervisor rev-parse HEAD | tee tdx-payload-composition-source-sha.txt
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git -C cloud-hypervisor status --short)"
+
+          git -C fieldwork fetch --no-tags origin "$CONFIG_SHA" "$PAYLOAD_SHA"
+          git -C fieldwork show "$CONFIG_SHA:investigations/cloud-hypervisor-tdx-payload-validation/apply_candidate.py" > /tmp/config_candidate.py
+          git -C fieldwork show "$CONFIG_SHA:investigations/cloud-hypervisor-tdx-payload-validation/apply_probe.py" > /tmp/config_probe.py
+          git -C fieldwork show "$PAYLOAD_SHA:investigations/cloud-hypervisor-tdvf-payload-dest/apply_candidate.py" > /tmp/payload_candidate.py
+          sha256sum /tmp/config_candidate.py /tmp/config_probe.py /tmp/payload_candidate.py | tee tdx-payload-composition-materializer-sha256.txt
+
+      - name: Apply and verify immutable #654 validation layer
+        id: config_layer
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/config_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/config.rs vmm/src/vm_config.rs > ../tdx-payload-composition-config.diff
+          sha256sum ../tdx-payload-composition-config.diff | tee ../tdx-payload-composition-config-sha256.txt
+          actual=$(awk '{print $1}' ../tdx-payload-composition-config-sha256.txt)
+          test "$actual" = "$CONFIG_DIFF_SHA"
+
+      - name: Apply and verify immutable #590 Payload destination layer
+        id: payload_layer
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/payload_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdx-payload-composition-payload.diff
+          sha256sum ../tdx-payload-composition-payload.diff | tee ../tdx-payload-composition-payload-sha256.txt
+          actual=$(awk '{print $1}' ../tdx-payload-composition-payload-sha256.txt)
+          test "$actual" = "$PAYLOAD_DIFF_SHA"
+          git diff -- vmm/src/config.rs vmm/src/vm_config.rs vmm/src/vm.rs > ../tdx-payload-composition-product.diff
+          sha256sum ../tdx-payload-composition-product.diff | tee ../tdx-payload-composition-product-sha256.txt
+          git diff --stat | tee ../tdx-payload-composition-product-stat.txt
+
+      - name: Apply cleaned validation probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/config_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+
+      - name: Focused supported-reachability and consumer matrix
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INV_KERNEL" -- --exact --nocapture 2>&1 | tee ../tdx-payload-composition-kernel.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INV_CMDLINE" -- --exact --nocapture 2>&1 | tee ../tdx-payload-composition-cmdline.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL_KERNEL" -- --exact --nocapture 2>&1 | tee ../tdx-payload-composition-control-kernel.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL_CMDLINE" -- --exact --nocapture 2>&1 | tee ../tdx-payload-composition-control-cmdline.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$PAYLOAD_TEST" -- --exact --nocapture 2>&1 | tee ../tdx-payload-composition-payload-test.log
+          grep -F 'kernel_result=Ok' ../tdx-payload-composition-kernel.log
+          grep -F 'cmdline_after=Some("console=hvc0 root=/dev/vda")' ../tdx-payload-composition-cmdline.log
+          grep -F 'FirmwarePlusOtherPayloads' ../tdx-payload-composition-control-kernel.log
+          grep -F 'cmdline_after=None' ../tdx-payload-composition-control-cmdline.log
+          grep -F 'TDVF_PAYLOAD_DEST_CANDIDATE invalid_result=LoadPayloadMemory(InvalidGuestAddress' ../tdx-payload-composition-payload-test.log
+          grep -F 'TDVF_PAYLOAD_DEST_CANDIDATE copied=16' ../tdx-payload-composition-payload-test.log
+
+      - name: Full VMM TDX KVM library tests
+        id: broad
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib 2>&1 | tee ../tdx-payload-composition-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations \
+            2>&1 | tee ../tdx-payload-composition-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdx-payload-composition-final-status.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "config_materializer=$CONFIG_SHA"
+            echo "expected_config_diff_sha=$CONFIG_DIFF_SHA"
+            echo "payload_materializer=$PAYLOAD_SHA"
+            echo "expected_payload_diff_sha=$PAYLOAD_DIFF_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "config_layer=${{ steps.config_layer.outcome }}"
+            echo "payload_layer=${{ steps.payload_layer.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "focused_gate=${{ steps.focused.outcome }}"
+            echo "broad_gate=${{ steps.broad.outcome }}"
+            echo "quality_gate=${{ steps.quality.outcome }}"
+            test -f tdx-payload-composition-config-sha256.txt && cat tdx-payload-composition-config-sha256.txt
+            test -f tdx-payload-composition-payload-sha256.txt && cat tdx-payload-composition-payload-sha256.txt
+            test -f tdx-payload-composition-product-sha256.txt && cat tdx-payload-composition-product-sha256.txt
+          } | tee tdx-payload-composition-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdx-payload-reachability-composition
+          if-no-files-found: warn
+          path: |
+            tdx-payload-composition-*.txt
+            tdx-payload-composition-*.log
+            tdx-payload-composition-*.diff
