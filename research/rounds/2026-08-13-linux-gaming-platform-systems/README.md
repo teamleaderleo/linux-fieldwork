@@ -34,6 +34,7 @@ These are research surfaces. Future work should begin with source and test mappi
 
 - `ValveSoftware/Proton` — Linux game compatibility integration and runtime behavior.
 - `wine-mirror/wine` — Windows API compatibility, processes, synchronization, graphics, input, filesystem and loader behavior.
+- `FEX-Emu/FEX` — x86/x86-64 execution on ARM64 Linux; dynamic binary translation, JIT/code-cache lifetime, x86 memory ordering, signals, syscall/ABI translation, host-library forwarding, and Wine/Proton compatibility.
 - `ValveSoftware/GameNetworkingSockets` — realtime networking, packet scheduling, reliable/unreliable delivery, P2P and encryption.
 - `flatpak/flatpak` — desktop application sandbox and runtime integration.
 - `containers/bubblewrap` — namespaces, mounts, sandbox setup and process boundaries relevant to launch/runtime behavior.
