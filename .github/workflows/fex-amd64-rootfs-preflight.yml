@@ -1,0 +1,34 @@
+name: FEX amd64 rootfs X11 preflight
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - probe/fex-vulkan-callback-ci
+    paths:
+      - .github/workflows/fex-amd64-rootfs-preflight.yml
+
+jobs:
+  rootfs-preflight:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - name: Checkout fieldwork probe
+        uses: actions/checkout@v4
+
+      - name: Exercise amd64 container and install guest X11 runtime
+        run: |
+          set -euxo pipefail
+          sudo systemctl start docker || true
+          sudo docker info
+          sudo docker pull --platform linux/amd64 ubuntu:24.04
+          cid=$(sudo docker run -d --platform linux/amd64 ubuntu:24.04 sleep infinity)
+          cleanup() { sudo docker rm -f "$cid" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          sudo docker exec "$cid" uname -m
+          sudo docker exec "$cid" sh -c 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libx11-6 && rm -rf /var/lib/apt/lists/*'
+          mkdir -p rootfs
+          sudo docker export "$cid" | sudo tar -C rootfs -xf -
+          test -e rootfs/usr/lib/x86_64-linux-gnu/libX11.so.6
+          file rootfs/usr/lib/x86_64-linux-gnu/libX11.so.6
+          readelf -h rootfs/usr/lib/x86_64-linux-gnu/libX11.so.6 | grep -E 'Class:|Machine:'
