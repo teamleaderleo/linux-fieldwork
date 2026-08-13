@@ -66,6 +66,20 @@ The host->guest callback failure remains independent. Host trampoline memory is 
 
 The pre-unmap H->T diagnostic strengthens this separation: it repairs generation-2 H rebinding while the original retained callback continues to SIGSEGV and the new callback succeeds.
 
+### Callback creation-path discriminator
+
+Run `31745951483` (job `94600418184`) instrumented `FinalizeHostTrampolineForGuestFunction` to preserve/rebind one older host trampoline for a repeated callback `HostPacker` signature. The build and forced-different runtime completed, but the run emitted no `DIAG_CALLBACK_STABLE` or `DIAG_CALLBACK_REBIND` lines. Callback behavior remained baseline: the retained generation-1 callback faults, the fresh current-generation callback succeeds, the original callback still faults after generation 2 appears, and the current callback succeeds.
+
+This is a path discriminator, not evidence against stable rebinding. The retained full-pair callback bypasses the guest-preallocation plus host-finalization path. It is created through host-side `MakeHostTrampolineForGuestFunction`, where `HostPacker` is already present.
+
+That host-side function caches by the generation-specific pair `{GuestUnpacker, GuestTarget}`. A moved reload changes those guest addresses and therefore allocates/publishes a new host trampoline, while any native holder of the generation-1 host pointer keeps its generation-1 guest addresses indefinitely.
+
+For a causality probe, the host-side creation path can preserve one host trampoline and rebind its embedded guest state when the same logical callback appears in a later generation. `HostPacker` is adequate only for a one-callback-per-signature fixture; it identifies the callback ABI, not a general logical callback identity.
+
+The real Vulkan/X11 path has stronger identity: `X11Manager` owns persistent slots for `GuestXSync`, `GuestXGetVisualInfo`, and `GuestXDisplayString`, and Vulkan guest `OnInit()` repopulates those slots on every load. A slot-aware stable trampoline can therefore preserve the host pointer associated with one X11 logical callback while updating its current guest unpacker/target generation.
+
+Simple in-place writes to `GuestUnpacker` and `GuestTarget` remain diagnostic only. Callback code reads them separately immediately before the transition, so a concurrent product design should use one atomic pointer/generation to immutable callback state and an execution lease/drain before old guest code unmaps.
+
 ## Adjacent independent Vulkan allocator bug
 
 Run `31737446041` establishes another cross-ISA callback defect outside proc-address routing and unload lifetime. A generated `vkCreateBuffer` call with `pAllocator=nullptr` completes successfully. The same call with a real x86 `VkAllocationCallbacks` reaches `BEFORE_CREATE_BUFFER` and dies `132/SIGILL` before returning. FEX currently marks `VkAllocationCallbacks` opaque with a TODO for function-pointer support, so generated functions pass guest callback addresses through to the ARM64 host driver. Existing handwritten Vulkan wrappers already suppress allocator callbacks for a subset of APIs.
