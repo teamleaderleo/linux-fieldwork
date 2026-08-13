@@ -28,6 +28,14 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Enable hosted KVM
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -l /dev/kvm
+          sudo chmod 666 /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+
       - name: Add exact event-sequence discriminator
         shell: bash
         run: |
