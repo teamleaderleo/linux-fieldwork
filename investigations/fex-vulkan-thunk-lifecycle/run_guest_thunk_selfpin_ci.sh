@@ -12,7 +12,7 @@ ulimit -c 0
 
 sudo apt-get update
 sudo apt-get install -y \
-  build-essential cmake ninja-build clang lld clang-tools libclang-dev llvm-dev pkg-config git ccache \
+  build-essential cmake ninja-build clang-18 lld-18 clang-tools-18 libclang-18-dev llvm-18-dev pkg-config git ccache \
   gcc-x86-64-linux-gnu g++-x86-64-linux-gnu gcc-i686-linux-gnu g++-i686-linux-gnu libc6-dev-i386-cross \
   libcap-dev libglfw3-dev libepoxy-dev python3-dev libsdl2-dev \
   libasound2-dev libdrm-dev libwayland-dev libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libxrender-dev \
@@ -42,10 +42,12 @@ git -C "$FEX" diff -- ThunkLibs/libvulkan/Guest.cpp > "$EVIDENCE/vulkan-callback
 
 configure_build_install() {
   rm -rf "$FEX/build" "$INSTALL"
-  CC=clang CXX=clang++ cmake -S "$FEX" -B "$FEX/build" -G Ninja \
+  CC=clang-18 CXX=clang++-18 cmake -S "$FEX" -B "$FEX/build" -G Ninja \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DCMAKE_INSTALL_PREFIX="$INSTALL" \
     -DUSE_LINKER=lld \
+    -DClang_DIR=/usr/lib/llvm-18/lib/cmake/clang \
+    -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm \
     -DENABLE_LTO=False \
     -DENABLE_ASSERTIONS=True \
     -DBUILD_TESTING=False \
