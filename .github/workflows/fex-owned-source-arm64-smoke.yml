@@ -20,7 +20,7 @@ jobs:
           test "$(uname -m)" = aarch64
           sudo apt-get update
           sudo apt-get install -y \
-            clang lld cmake ninja-build git pkg-config python3 \
+            clang lld cmake ninja-build nasm git pkg-config python3 \
             libssl-dev libcap-dev libfmt-dev libsdl2-dev libepoxy-dev \
             libdrm-dev libx11-dev libxext-dev libxfixes-dev libxrender-dev \
             libxrandr-dev libxcb1-dev libwayland-dev libvulkan-dev \
