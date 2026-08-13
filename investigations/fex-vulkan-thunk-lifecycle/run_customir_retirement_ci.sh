@@ -46,6 +46,8 @@ CC=clang CXX=clang++ cmake -S "$FEX" -B "$FEX/build" -G Ninja \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DCMAKE_INSTALL_PREFIX="$INSTALL" \
   -DUSE_LINKER=lld \
+  -DClang_DIR=/usr/lib/llvm-18/lib/cmake/clang \
+  -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm \
   -DENABLE_LTO=False \
   -DENABLE_ASSERTIONS=True \
   -DBUILD_TESTING=False \
