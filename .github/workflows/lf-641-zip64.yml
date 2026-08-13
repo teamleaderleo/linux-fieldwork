@@ -42,9 +42,8 @@ jobs:
           p64 = lambda x: struct.pack('<Q', x)
           name = b'a'
           dos_time = 0
-          dos_date = 0x0021  # 1980-01-01, valid DOS date minimum
+          dos_date = 0x0021
 
-          # Empty stored file, no extras.  Local header at offset 0.
           local = b''.join([
               p32(0x04034b50), p16(45), p16(0), p16(0), p16(dos_time), p16(dos_date),
               p32(0), p32(0), p32(0), p16(len(name)), p16(0), name
@@ -76,7 +75,6 @@ jobs:
               print(f'{name} size={len(data)} sha256={hashlib.sha256(data).hexdigest()}')
 
           save('valid.zip', base)
-          # Sanity-check the hand-built control with Python's independent parser.
           with zipfile.ZipFile('/tmp/valid.zip') as z:
               assert z.namelist() == ['a']
               assert z.read('a') == b''
@@ -87,13 +85,9 @@ jobs:
                   struct.pack_into('<Q', d, off, val)
               save(filename, d)
 
-          # ZIP64 locator's 64-bit EOCD offset.
           mutant('locator-sign.zip', [(locator_off + 8, 1 << 63)])
-          # ZIP64 EOCD central-directory fields.
           mutant('cd-off-sign.zip', [(z64_off + 48, 1 << 63)])
           mutant('cd-size-sign.zip', [(z64_off + 40, 1 << 63)])
-          # Values individually fit signed long long, but the current range
-          # expression cd_off + cd_size overflows before comparison.
           mutant('range-overflow.zip', [(z64_off + 48, (1 << 63) - 1),
                                         (z64_off + 40, 1)])
 
@@ -101,9 +95,8 @@ jobs:
                 f'z64_off={z64_off} locator_off={locator_off} eocd_off={eocd_off}')
           PY
 
-          # Functional control using the documented -zip mode.
           make -C /tmp/sq/squashfs-tools -j2 mksquashfs
-          /tmp/sq/squashfs-tools/mksquashfs /tmp/valid.zip /tmp/out-control.sqfs -zip -noappend -no-progress -no-duplicates > /tmp/evidence/control.log 2>&1
+          /tmp/sq/squashfs-tools/mksquashfs /tmp/valid.zip /tmp/out-control.sqfs -zip -noappend -no-progress -no-duplicates -no-xattrs > /tmp/evidence/control.log 2>&1
           test -s /tmp/out-control.sqfs
 
           SAN='-O1 -g -fsanitize=implicit-integer-sign-change,signed-integer-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer'
@@ -115,7 +108,7 @@ jobs:
           run_case() {
               local label="$1" image="$2"
               set +e
-              /tmp/mksquashfs-san "$image" "/tmp/out-${label}.sqfs" -zip -noappend -no-progress -no-duplicates > "/tmp/evidence/${label}.log" 2>&1
+              /tmp/mksquashfs-san "$image" "/tmp/out-${label}.sqfs" -zip -noappend -no-progress -no-duplicates -no-xattrs > "/tmp/evidence/${label}.log" 2>&1
               local st=$?
               set -e
               echo "status=$st" >> "/tmp/evidence/${label}.log"
