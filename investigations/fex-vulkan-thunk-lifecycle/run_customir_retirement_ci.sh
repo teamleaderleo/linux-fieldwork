@@ -14,6 +14,7 @@ sudo apt-get update
 sudo apt-get install -y \
   build-essential cmake ninja-build clang lld clang-tools libclang-dev llvm-dev pkg-config git ccache \
   gcc-x86-64-linux-gnu g++-x86-64-linux-gnu \
+  gcc-i686-linux-gnu g++-i686-linux-gnu libc6-dev-i386-cross \
   libcap-dev libglfw3-dev libepoxy-dev python3-dev libsdl2-dev \
   libasound2-dev libdrm-dev libwayland-dev libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libxrender-dev \
   libgl-dev libegl-dev libvulkan-dev mesa-vulkan-drivers
