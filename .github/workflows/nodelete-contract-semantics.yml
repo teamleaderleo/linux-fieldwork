@@ -1,0 +1,190 @@
+name: NODELETE contract semantics
+
+on:
+  push:
+    branches:
+      - probe/fex-nodelete-gha
+  workflow_dispatch:
+
+jobs:
+  semantics:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Build ordinary and NODELETE DSOs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat > state.c <<'EOF'
+          static int state;
+          __attribute__((constructor)) static void init(void) { state = 100; }
+          int bump(void) { return ++state; }
+          int read_state(void) { return state; }
+          EOF
+          cc -shared -fPIC state.c -Wl,-soname,libstate-normal.so.1 -o libstate-normal.so
+          cc -shared -fPIC state.c -Wl,-soname,libstate-nodelete.so.1 -Wl,-z,nodelete -o libstate-nodelete.so
+          ! readelf -d libstate-normal.so | grep -q NODELETE
+          readelf -d libstate-nodelete.so | grep NODELETE
+
+      - name: Exercise close reopen state and mapping count
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat > semantics.c <<'EOF'
+          #define _GNU_SOURCE
+          #include <dlfcn.h>
+          #include <link.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <sys/wait.h>
+          #include <unistd.h>
+
+          typedef int (*fn0)(void);
+
+          static int map_count(const char *needle) {
+            FILE *f = fopen("/proc/self/maps", "r");
+            if (!f) return -1;
+            char *line = 0;
+            size_t n = 0;
+            int count = 0;
+            while (getline(&line, &n, f) != -1) if (strstr(line, needle)) ++count;
+            free(line);
+            fclose(f);
+            return count;
+          }
+
+          static int ordinary(void) {
+            void *h = dlopen("./libstate-normal.so", RTLD_NOW | RTLD_LOCAL);
+            if (!h) return 10;
+            fn0 bump = (fn0)dlsym(h, "bump");
+            if (!bump || bump() != 101) return 11;
+            void *first = (void*)bump;
+            if (dlclose(h)) return 12;
+            if (map_count("libstate-normal.so") != 0) return 13;
+            if (dlopen("./libstate-normal.so", RTLD_NOW | RTLD_NOLOAD)) return 14;
+
+            h = dlopen("./libstate-normal.so", RTLD_NOW | RTLD_LOCAL);
+            if (!h) return 15;
+            bump = (fn0)dlsym(h, "bump");
+            if (!bump || bump() != 101) return 16;
+            printf("ordinary first=%p second=%p state_reset=1\n", first, (void*)bump);
+            if (dlclose(h)) return 17;
+            return 0;
+          }
+
+          static int nodelete(void) {
+            void *h = dlopen("./libstate-nodelete.so", RTLD_NOW | RTLD_LOCAL);
+            if (!h) return 20;
+            fn0 bump = (fn0)dlsym(h, "bump");
+            if (!bump || bump() != 101) return 21;
+            void *first = (void*)bump;
+            int maps_before = map_count("libstate-nodelete.so");
+            if (maps_before <= 0) return 22;
+            if (dlclose(h)) return 23;
+            if (map_count("libstate-nodelete.so") != maps_before) return 24;
+
+            void *noload = dlopen("./libstate-nodelete.so", RTLD_NOW | RTLD_NOLOAD);
+            if (!noload) return 25;
+            fn0 read_state = (fn0)dlsym(noload, "read_state");
+            if (!read_state || read_state() != 101) return 26;
+            if (dlclose(noload)) return 27;
+
+            h = dlopen("./libstate-nodelete.so", RTLD_NOW | RTLD_LOCAL);
+            if (!h) return 28;
+            bump = (fn0)dlsym(h, "bump");
+            if (!bump || (void*)bump != first) return 29;
+            if (bump() != 102) return 30;
+            if (dlclose(h)) return 31;
+
+            for (int i = 0; i < 1000; ++i) {
+              h = dlopen("./libstate-nodelete.so", RTLD_NOW | RTLD_LOCAL);
+              if (!h) return 32;
+              if (dlclose(h)) return 33;
+            }
+            int maps_after = map_count("libstate-nodelete.so");
+            if (maps_after != maps_before) return 34;
+            printf("nodelete ptr=%p state_persisted=1 maps_before=%d maps_after=%d\n", first, maps_before, maps_after);
+            return 0;
+          }
+
+          static int namespaces(void) {
+          #ifdef LM_ID_NEWLM
+            void *a = dlmopen(LM_ID_NEWLM, "./libstate-nodelete.so", RTLD_NOW | RTLD_LOCAL);
+            void *b = dlmopen(LM_ID_NEWLM, "./libstate-nodelete.so", RTLD_NOW | RTLD_LOCAL);
+            if (!a || !b) return 40;
+            fn0 fa = (fn0)dlsym(a, "bump");
+            fn0 fb = (fn0)dlsym(b, "bump");
+            if (!fa || !fb || fa == fb) return 41;
+            if (fa() != 101 || fb() != 101) return 42;
+            if (fa() != 102 || fb() != 102) return 43;
+            printf("namespaces independent=1 a=%p b=%p\n", (void*)fa, (void*)fb);
+            if (dlclose(a) || dlclose(b)) return 44;
+          #endif
+            return 0;
+          }
+
+          static int fork_semantics(void) {
+            void *h = dlopen("./libstate-nodelete.so", RTLD_NOW | RTLD_LOCAL);
+            if (!h) return 50;
+            fn0 bump = (fn0)dlsym(h, "bump");
+            fn0 read_state = (fn0)dlsym(h, "read_state");
+            if (!bump || !read_state) return 51;
+            int before = read_state();
+            pid_t p = fork();
+            if (p < 0) return 52;
+            if (p == 0) {
+              int child = bump();
+              _exit(child == before + 1 ? 0 : 53);
+            }
+            int status = 0;
+            if (waitpid(p, &status, 0) != p) return 54;
+            if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return 55;
+            if (read_state() != before) return 56;
+            printf("fork cow_state=1 inherited_before=%d\n", before);
+            if (dlclose(h)) return 57;
+            return 0;
+          }
+
+          int main(void) {
+            int r;
+            if ((r = ordinary())) return r;
+            if ((r = nodelete())) return r;
+            if ((r = namespaces())) return r;
+            if ((r = fork_semantics())) return r;
+            puts("NODELETE_SEMANTICS_PASS");
+            return 0;
+          }
+          EOF
+          cc semantics.c -ldl -o semantics
+          ./semantics 2>&1 | tee semantics.log
+          grep -q NODELETE_SEMANTICS_PASS semantics.log
+
+      - name: Verify exec starts a fresh address space
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat > execcheck.c <<'EOF'
+          #define _GNU_SOURCE
+          #include <dlfcn.h>
+          #include <stdio.h>
+          #include <unistd.h>
+          int main(int argc, char **argv) {
+            if (argc == 2) {
+              void *h = dlopen("./libstate-nodelete.so", RTLD_NOW | RTLD_NOLOAD);
+              printf("after_exec_noload=%p\n", h);
+              return h ? 9 : 0;
+            }
+            void *h = dlopen("./libstate-nodelete.so", RTLD_NOW | RTLD_LOCAL);
+            if (!h) return 10;
+            if (dlclose(h)) return 11;
+            execl(argv[0], argv[0], "after", (char*)0);
+            return 12;
+          }
+          EOF
+          cc execcheck.c -ldl -o execcheck
+          ./execcheck 2>&1 | tee exec.log
+          grep -q 'after_exec_noload=(nil)' exec.log
