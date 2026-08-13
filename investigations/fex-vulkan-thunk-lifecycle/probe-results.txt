@@ -1,0 +1,37 @@
+baseline: registration inserted                          PASS
+baseline: custom IR compiled target                      PASS
+baseline: mapped guest target executes                   PASS
+baseline: guest target munmap succeeds                   PASS
+SURVIVORS key=0x700000001000 handler=yes captured=0x7fecd4026000 data=0x7fecd4026000 creator=0x5448554e4b cache=yes baked_target=0x7fecd4026000
+current unmap: CustomIR entry survives with stale Data   PASS
+current unmap: compiled synthetic-key mapping survives   PASS
+current unmap: stale target faults when invoked          PASS
+registry-only: finds target dependency                   PASS
+registry-only: CustomIR entry erased                     PASS
+registry-only: compiled mapping still survives           PASS
+registry-only: precompiled stale target still faults     PASS
+cache-only: synthetic cache entry invalidated            PASS
+cache-only: CustomIR registration still survives         PASS
+cache-only: stale target is recompiled from handler      PASS
+cache-only: recreated stale target faults                PASS
+targeted cleanup: CustomIR entry erased                  PASS
+targeted cleanup: synthetic cache entry invalidated      PASS
+targeted cleanup: dispatch cannot recreate stale target  PASS
+negative control: pinned guest target remains callable   PASS
+negative control: cleanup preserves unrelated handler    PASS
+negative control: cleanup preserves unrelated compiled mapping PASS
+negative control: unrelated target remains callable      PASS
+alias control: both native PFN keys removed for one guest target PASS
+alias control: no stale registry/cache entries remain    PASS
+duplicate-key: first registration inserts                PASS
+duplicate-key: second registration is rejected           PASS
+duplicate-key: first target remains authoritative        PASS
+duplicate-key: unloading rejected target changes nothing PASS
+duplicate-key: unloading owning target clears key        PASS
+SMC-none control: targeted cleanup is self-sufficient    PASS
+SMC-none control: stale target cannot be reconstructed   PASS
+uncompiled control: registry erase prevents first compilation PASS
+reload: same native PFN key can register after cleanup   PASS
+reload: new guest target is used after cleanup           PASS
+
+RESULT passed=34 failed=0

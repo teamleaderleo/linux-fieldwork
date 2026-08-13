@@ -1,0 +1,14 @@
+Debug-report x86 callback entry receipt
+
+0000000000001690 <report_callback>:
+    1690: e9 00 00 00 00        jmp    1695 <report_callback+0x5>
+    1695: eb 59                 jmp    16f0 <report_callback_body>
+    1697: 0f 0b                 ud2
+
+AArch64 decode check for the first four bytes:
+
+0x000000e9 -> .word 0x000000e9
+
+The five-byte x86 `jmp +0` prefix is harmless when executed as x86. Raw little-endian AArch64 entry sees the first word as an undefined instruction, giving the debug-report probe a deliberate callback-entry discriminator.
+
+The committed debug-utils reduction uses an ordinary C callback; its runtime discriminator is callback/submit marker ordering rather than this entry prefix.

@@ -1,0 +1,24 @@
+owner: first load-generation claim becomes active                            PASS
+owner: active claim dispatches to its guest wrapper                          PASS
+owner: revocation invalidates affected synthetic key                         PASS
+owner: no surviving claim leaves a tombstone                                 PASS
+owner: tombstone retains native PFN identity                                 PASS
+promotion: first compatible owner active                                     PASS
+promotion: second compatible target does not replace live first owner        PASS
+promotion: second compatible owner is retained for lifetime handoff          PASS
+promotion: unloading active owner invalidates compiled synthetic path        PASS
+promotion: surviving same-signature owner becomes active                     PASS
+abi: establish active signature                                              PASS
+abi: incompatible owner cannot replace active claim                          PASS
+abi: incompatible collision is retained for diagnosis                        PASS
+abi: incompatible survivor is not promoted after active owner unload         PASS
+reload: new generation can revive tombstoned native PFN                      PASS
+reload: rebound key reaches new guest image                                  PASS
+aliases: one load generation revokes every dependent synthetic key           PASS
+aliases: first alias tombstoned                                              PASS
+aliases: second alias tombstoned                                             PASS
+aliases: unrelated owner remains callable                                    PASS
+scope: arbitrary guest address still uses ordinary frontend decode           PASS
+scope: formerly synthetic native PFN remains distinguished after unload      PASS
+
+RESULT passed=22 failed=0

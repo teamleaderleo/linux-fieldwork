@@ -1,0 +1,28 @@
+Split resident bridge: post-wrapper-unload native-target call
+
+Local architecture: x86_64
+Result:
+SPLIT_BRIDGE_PASS adapter=<ASLR> post_unload_call=42 bridge_maps=5 native_maps=5 wrapper_resets=1 bridge_calls=3
+
+Sequence proved:
+- native target DSO stays loaded and supplies H;
+- bridge DSO has DF_1_NODELETE and supplies stable adapter T;
+- ordinary wrapper DSO loads and has resettable static generation state;
+- T(H,35) == 42 while wrapper is loaded;
+- wrapper dlclose removes all wrapper mappings;
+- T(H,35) == 42 after wrapper mappings are gone;
+- wrapper reopen resets static state and returns same T;
+- 1000 wrapper close/reopen cycles end with wrapper unmapped while bridge/native mapping counts stay unchanged.
+
+SHA-256:
+native.c  c3b6bae08ce5d58b0f35e718bbcb06e89ea132d44db8fd2c25625c89c186b7b2
+bridge.c  f936a1841ab64397f972915f9cffbd71a37d5df87460c0d9f7f7086c1a53e04c
+wrapper.c ddce182e154de8bcdb1fd7478639053b5d0e043655dd8c2ddebd96f348ab1fc2
+split.c   3bb072d8b2ed476c33175af2ee678db977c90da76086037c5265300b21c2e56e
+result    37c085de134d59c91a8db088b453c0d734ebe2719fead2a8d7df50838f4d987f
+
+Relation to hosted evidence:
+The earlier split-runtime workflow passed on hosted x86-64 and AArch64 but only called the adapter while each wrapper generation was mapped. This local variant adds the missing FEX-like case: the native H remains live and the resident T is invoked after the guest-wrapper analogue has physically unloaded.
+
+Evidence boundary:
+This is loader/lifetime design evidence, not a FEX integration run. It does not prove the FEX generator can yet emit its CallHostFunction/special-thunk pair into a resident sidecar, nor that the real Vulkan exit-139 arrives through the dynamic-PFN CustomIR route.

@@ -1,0 +1,5 @@
+20 repeated executions: identical
+SHA-256: fd1e5fc235899e8f5db338159111ce8a6200cd33b07d25a2ba91d13cdadf761c
+GCC build: C++20, -Wall -Wextra -Wpedantic -Werror
+Clang build: clang version 17.0.0
+Clang results vs GCC results: byte-identical

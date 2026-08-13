@@ -1,0 +1,164 @@
+### retained state, normal reload, stale calls, alias collision
+synthetic thunk lifetime reproducer
+host process architecture: x86_64
+
+=== generation 1 policy=retain reload=normal ===
+stable native host address       0x561c1567abc0
+guest CallHost invoker       0x7f7c90eaf110 -> 00007f7c90eaf000-00007f7c90eb0000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestTarget                  0x7f7c90eaf150 -> 00007f7c90eaf000-00007f7c90eb0000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestUnpacker                0x7f7c90eaf160 -> 00007f7c90eaf000-00007f7c90eb0000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+DSO span                       00007f7c90eae000-00007f7c90eb3000
+pre-unload CallHost result      1023
+pre-unload host->guest result   115
+alias register alias.a      host=0x561c1567abc0 invoker=0x7f7c90eaf110 -> insert; retained=alias.a/0x7f7c90eaf110
+alias register alias.b      host=0x561c1567abc0 invoker=0x7f7c90eaf130 -> COLLISION; retained=alias.a/0x7f7c90eaf110
+old invoker after dlclose    0x7f7c90eaf110 -> unmapped
+old target after dlclose     0x7f7c90eaf150 -> unmapped
+old unpacker after dlclose   0x7f7c90eaf160 -> unmapped
+proof: all three old executable addresses lost executable mappings
+retained state: invoker=0x7f7c90eaf110 target=0x7f7c90eaf150 unpacker=0x7f7c90eaf160
+child retained CallHost      signal=11 (Segmentation fault)
+child retained trampoline    signal=11 (Segmentation fault)
+reload invoker old=0x7f7c90eaf110 new=0x7f7c90eaf110 (SAME address)
+reload stable host old/new=0x561c1567abc0/0x561c1567abc0
+retained old invoker after reload is executable again
+child old CallHost after reload returned 101035
+child old CallHost after reload exit=0
+fresh reload CallHost result     101035
+fresh reload host->guest result  11119
+
+### retained state, forced different reload address
+synthetic thunk lifetime reproducer
+host process architecture: x86_64
+
+=== generation 1 policy=retain reload=forced-different ===
+stable native host address       0x562d43506bc0
+guest CallHost invoker       0x7f947c9d7110 -> 00007f947c9d7000-00007f947c9d8000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestTarget                  0x7f947c9d7150 -> 00007f947c9d7000-00007f947c9d8000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestUnpacker                0x7f947c9d7160 -> 00007f947c9d7000-00007f947c9d8000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+DSO span                       00007f947c9d6000-00007f947c9db000
+pre-unload CallHost result      1023
+pre-unload host->guest result   115
+old invoker after dlclose    0x7f947c9d7110 -> unmapped
+old target after dlclose     0x7f947c9d7150 -> unmapped
+old unpacker after dlclose   0x7f947c9d7160 -> unmapped
+proof: all three old executable addresses lost executable mappings
+retained state: invoker=0x7f947c9d7110 target=0x7f947c9d7150 unpacker=0x7f947c9d7160
+child retained CallHost      signal=11 (Segmentation fault)
+child retained trampoline    signal=11 (Segmentation fault)
+reserved old DSO span PROT_NONE at 0x7f947c9d6000 len=0x5000
+reload invoker old=0x7f947c9d7110 new=0x7f947c9d2110 (DIFFERENT address)
+reload stable host old/new=0x562d43506bc0/0x562d43506bc0
+retained old invoker after reload is still non-executable
+child old CallHost after reload signal=11 (Segmentation fault)
+fresh reload CallHost result     101035
+fresh reload host->guest result  11119
+
+### owner cleanup before dlclose, repeated cycles
+synthetic thunk lifetime reproducer
+host process architecture: x86_64
+
+=== generation 1 policy=erase-before-dlclose reload=forced-different ===
+stable native host address       0x56504a6fabc0
+guest CallHost invoker       0x7f45f63cd110 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestTarget                  0x7f45f63cd150 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestUnpacker                0x7f45f63cd160 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+DSO span                       00007f45f63cc000-00007f45f63d1000
+pre-unload CallHost result      1023
+pre-unload host->guest result   115
+alias register alias.a      host=0x56504a6fabc0 invoker=0x7f45f63cd110 -> insert; retained=alias.a/0x7f45f63cd110
+alias register alias.b      host=0x56504a6fabc0 invoker=0x7f45f63cd130 -> COLLISION; retained=alias.a/0x7f45f63cd110
+old invoker after dlclose    0x7f45f63cd110 -> unmapped
+old target after dlclose     0x7f45f63cd150 -> unmapped
+old unpacker after dlclose   0x7f45f63cd160 -> unmapped
+proof: all three old executable addresses lost executable mappings
+cleanup state: host_link=ERASED trampoline=ERASED
+reserved old DSO span PROT_NONE at 0x7f45f63cc000 len=0x5000
+reload invoker old=0x7f45f63cd110 new=0x7f45f63c8110 (DIFFERENT address)
+reload stable host old/new=0x56504a6fabc0/0x56504a6fabc0
+fresh reload CallHost result     101035
+fresh reload host->guest result  11119
+
+=== generation 2 policy=erase-before-dlclose reload=forced-different ===
+stable native host address       0x56504a6fabc0
+guest CallHost invoker       0x7f45f63cd110 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestTarget                  0x7f45f63cd150 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestUnpacker                0x7f45f63cd160 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+DSO span                       00007f45f63cc000-00007f45f63d1000
+pre-unload CallHost result      2023
+pre-unload host->guest result   225
+alias register alias.a      host=0x56504a6fabc0 invoker=0x7f45f63cd110 -> insert; retained=alias.a/0x7f45f63cd110
+alias register alias.b      host=0x56504a6fabc0 invoker=0x7f45f63cd130 -> COLLISION; retained=alias.a/0x7f45f63cd110
+old invoker after dlclose    0x7f45f63cd110 -> unmapped
+old target after dlclose     0x7f45f63cd150 -> unmapped
+old unpacker after dlclose   0x7f45f63cd160 -> unmapped
+proof: all three old executable addresses lost executable mappings
+cleanup state: host_link=ERASED trampoline=ERASED
+reserved old DSO span PROT_NONE at 0x7f45f63cc000 len=0x5000
+reload invoker old=0x7f45f63cd110 new=0x7f45f63c8110 (DIFFERENT address)
+reload stable host old/new=0x56504a6fabc0/0x56504a6fabc0
+fresh reload CallHost result     102035
+fresh reload host->guest result  11229
+
+=== generation 3 policy=erase-before-dlclose reload=forced-different ===
+stable native host address       0x56504a6fabc0
+guest CallHost invoker       0x7f45f63cd110 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestTarget                  0x7f45f63cd150 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestUnpacker                0x7f45f63cd160 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+DSO span                       00007f45f63cc000-00007f45f63d1000
+pre-unload CallHost result      3023
+pre-unload host->guest result   335
+alias register alias.a      host=0x56504a6fabc0 invoker=0x7f45f63cd110 -> insert; retained=alias.a/0x7f45f63cd110
+alias register alias.b      host=0x56504a6fabc0 invoker=0x7f45f63cd130 -> COLLISION; retained=alias.a/0x7f45f63cd110
+old invoker after dlclose    0x7f45f63cd110 -> unmapped
+old target after dlclose     0x7f45f63cd150 -> unmapped
+old unpacker after dlclose   0x7f45f63cd160 -> unmapped
+proof: all three old executable addresses lost executable mappings
+cleanup state: host_link=ERASED trampoline=ERASED
+reserved old DSO span PROT_NONE at 0x7f45f63cc000 len=0x5000
+reload invoker old=0x7f45f63cd110 new=0x7f45f63c8110 (DIFFERENT address)
+reload stable host old/new=0x56504a6fabc0/0x56504a6fabc0
+fresh reload CallHost result     103035
+fresh reload host->guest result  11339
+
+=== generation 4 policy=erase-before-dlclose reload=forced-different ===
+stable native host address       0x56504a6fabc0
+guest CallHost invoker       0x7f45f63cd110 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestTarget                  0x7f45f63cd150 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestUnpacker                0x7f45f63cd160 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+DSO span                       00007f45f63cc000-00007f45f63d1000
+pre-unload CallHost result      4023
+pre-unload host->guest result   445
+alias register alias.a      host=0x56504a6fabc0 invoker=0x7f45f63cd110 -> insert; retained=alias.a/0x7f45f63cd110
+alias register alias.b      host=0x56504a6fabc0 invoker=0x7f45f63cd130 -> COLLISION; retained=alias.a/0x7f45f63cd110
+old invoker after dlclose    0x7f45f63cd110 -> unmapped
+old target after dlclose     0x7f45f63cd150 -> unmapped
+old unpacker after dlclose   0x7f45f63cd160 -> unmapped
+proof: all three old executable addresses lost executable mappings
+cleanup state: host_link=ERASED trampoline=ERASED
+reserved old DSO span PROT_NONE at 0x7f45f63cc000 len=0x5000
+reload invoker old=0x7f45f63cd110 new=0x7f45f63c8110 (DIFFERENT address)
+reload stable host old/new=0x56504a6fabc0/0x56504a6fabc0
+fresh reload CallHost result     104035
+fresh reload host->guest result  11449
+
+=== generation 5 policy=erase-before-dlclose reload=forced-different ===
+stable native host address       0x56504a6fabc0
+guest CallHost invoker       0x7f45f63cd110 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestTarget                  0x7f45f63cd150 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+GuestUnpacker                0x7f45f63cd160 -> 00007f45f63cd000-00007f45f63ce000 r-xp /mnt/data/fex-thunk-lifetime-repro/libguest_thunk.so
+DSO span                       00007f45f63cc000-00007f45f63d1000
+pre-unload CallHost result      5023
+pre-unload host->guest result   555
+alias register alias.a      host=0x56504a6fabc0 invoker=0x7f45f63cd110 -> insert; retained=alias.a/0x7f45f63cd110
+alias register alias.b      host=0x56504a6fabc0 invoker=0x7f45f63cd130 -> COLLISION; retained=alias.a/0x7f45f63cd110
+old invoker after dlclose    0x7f45f63cd110 -> unmapped
+old target after dlclose     0x7f45f63cd150 -> unmapped
+old unpacker after dlclose   0x7f45f63cd160 -> unmapped
+proof: all three old executable addresses lost executable mappings
+cleanup state: host_link=ERASED trampoline=ERASED
+reserved old DSO span PROT_NONE at 0x7f45f63cc000 len=0x5000
+reload invoker old=0x7f45f63cd110 new=0x7f45f63c8110 (DIFFERENT address)
+reload stable host old/new=0x56504a6fabc0/0x56504a6fabc0
+fresh reload CallHost result     105035
+fresh reload host->guest result  11559

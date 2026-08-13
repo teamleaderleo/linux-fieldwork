@@ -1,0 +1,66 @@
+Host execution receipt
+Date: 2026-08-14
+Host: Linux 30a249b75292 6.18.35 x86_64
+ICD: /usr/lib/chromium/vk_swiftshader_icd.json
+
+Build:
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -o vk_debug_report_repro vk_debug_report_repro.c -ldl
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -o vk_debug_utils_repro vk_debug_utils_repro.c -ldl
+
+file results:
+- vk_debug_report_repro: ELF 64-bit LSB pie executable, x86-64
+- vk_debug_utils_repro: ELF 64-bit LSB pie executable, x86-64
+
+Native SwiftShader result matrix:
+
+report_gipa_match:
+  MARK registered
+  MARK submit-enter
+  CALLBACK debug_report MATCH
+  MARK submit-return matched=1 bad_userdata=0
+  PASS debug_report matched=1
+  exit=0
+
+report_gipa_no_submit:
+  MARK registered
+  PASS debug_report matched=0
+  exit=0
+
+report_gipa_filter_miss:
+  MARK registered
+  MARK submit-enter
+  MARK submit-return matched=0 bad_userdata=0
+  PASS debug_report matched=0
+  exit=0
+
+report_export_match:
+  create export unavailable
+  exit=77
+
+utils_gipa_match:
+  MARK registered
+  MARK submit-enter
+  CALLBACK debug_utils MATCH
+  MARK submit-return matched=1 bad_userdata=0
+  PASS debug_utils matched=1
+  exit=0
+
+utils_gipa_no_submit:
+  MARK registered
+  PASS debug_utils matched=0
+  exit=0
+
+utils_gipa_filter_miss:
+  MARK registered
+  MARK submit-enter
+  MARK submit-return matched=0 bad_userdata=0
+  PASS debug_utils matched=0
+  exit=0
+
+utils_export_match:
+  create export unavailable
+  exit=77
+
+Interpretation boundary:
+- The native run validates both positive callback paths and both zero-callback controls.
+- FEX runtime behavior was not executed on this host.
