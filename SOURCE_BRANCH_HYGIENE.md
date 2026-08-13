@@ -43,7 +43,18 @@ For an amended commit where the author identity also needs to match the configur
 
 Never manufacture, infer, or substitute a sign-off identity from GitHub account metadata. In particular, do not synthesize a `users.noreply.github.com` address from a username or numeric account ID, and do not replace a configured real name with a GitHub login.
 
+A GitHub-resolved author or committer account is not proof of the raw Git identity. DCO verification must inspect the commit object's author and committer name/email directly, for example:
+
+```text
+git show --no-patch --format=fuller HEAD
+git log -1 --format='%an <%ae>%n%cn <%ce>%n%B'
+```
+
+Require the raw author, raw committer, and every required `Signed-off-by:` identity to agree with the contributor's configured or explicitly chosen identity.
+
 If the configured Git identity is unavailable to the current execution environment, do not guess. Leave the candidate unsigned for the human to sign locally, or provide the exact `git commit -s` / amend command needed to finish it.
+
+If the available commit-writing API or connector cannot explicitly set the required raw author/committer identity and independently expose or verify the resulting raw metadata, do not use it to create, squash, amend, rebase, or rebuild the final DCO-bearing submission commit. Stop at preparation and leave the final commit operation to ordinary Git or the human.
 
 A privacy-preserving noreply address is acceptable only when it is already the contributor's configured or explicitly chosen Git identity. The tooling must not choose it on the contributor's behalf.
 
@@ -62,6 +73,8 @@ Do not leave behind:
 
 If temporary commits were created while preparing the branch, rebuild or squash the candidate before presenting it. The final branch should read as if the intended product change had been made directly from the correct upstream base.
 
+Every operation that creates a new commit object reopens final identity verification. This includes squash, amend, rebase, cherry-pick, clean-base rebuild, and API commit recreation. An unchanged source tree does not preserve authorship metadata or DCO validity automatically.
+
 ## External interaction remains separate
 
 Creating or editing an owned-fork branch is not permission to contact upstream.
@@ -78,6 +91,8 @@ Before handing a candidate to a human for upstream submission, verify all of the
 4. The commit history is minimal and reviewable.
 5. Commit messages contain no issue or pull-request numbers, shorthand references, or URLs.
 6. Required project trailers such as DCO sign-off are present and use the contributor's configured or explicitly chosen Git identity.
-7. No sign-off name or email was inferred or synthesized from provider account metadata.
-8. Issue-closing syntax, if desired, appears only in the pull-request body.
-9. No upstream interaction has occurred beyond what the human explicitly authorized.
+7. Raw Git author and committer name/email were inspected directly and match the intended contributor identity; GitHub account association alone is not sufficient.
+8. No sign-off name or email was inferred or synthesized from provider account metadata.
+9. Any history rewrite was followed by a fresh raw author/committer/trailer check on the new exact SHA.
+10. Issue-closing syntax, if desired, appears only in the pull-request body.
+11. No upstream interaction has occurred beyond what the human explicitly authorized.
