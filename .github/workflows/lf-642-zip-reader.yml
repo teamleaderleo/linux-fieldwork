@@ -58,8 +58,16 @@ jobs:
           make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$BASE" mksquashfs
           rm /tmp/sq/squashfs-tools/zipfile.o
           make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$SAN" zipfile.o
-          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$BASE" EXTRA_LDFLAGS='-fsanitize=implicit-integer-truncation,signed-integer-overflow' mksquashfs
-          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-zip-reader-san
+          cd /tmp/sq/squashfs-tools
+          clang -fsanitize=implicit-integer-truncation,signed-integer-overflow \
+            mksquashfs.o read_fs.o action.o swap.o pseudo.o compressor.o sort.o \
+            progressbar.o info.o restore.o process_fragments.o caches-queues-lists.o \
+            reader.o tar.o zipfile.o date.o memory.o mksquashfs_help.o print_pager.o \
+            symbolic_mode.o thread.o nprocessors_compat.o limit.o virt_disk_pos.o \
+            uid_gid.o archive.o gzip_wrapper.o lzo_wrapper.o lz4_wrapper.o xz_wrapper.o \
+            zstd_wrapper.o xattr.o read_xattrs.o tar_xattr.o pseudo_xattr.o xattr_system.o \
+            -lpthread -lm -lz -llzo2 -llz4 -llzma -lzstd -lz -o /tmp/mksquashfs-zip-reader-san
+          cd -
           export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
 
           /tmp/mksquashfs-zip-reader-san /tmp/valid.zip /tmp/out-valid.sqfs -zip -b 4096 -noappend -no-progress -no-duplicates -no-xattrs > /tmp/evidence/valid.log 2>&1
