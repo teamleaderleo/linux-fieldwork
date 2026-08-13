@@ -131,7 +131,7 @@ jobs:
               test "$dir" -eq 0
             else
               test "$mounted" -eq 1
-              "$bin" --machine="$machine" --cleanup >>"$log" 2>&1
+              "$bin" --directory="$root" --machine="$machine" --cleanup >>"$log" 2>&1
               sleep 0.1
               mountpoint -q "$EXPORT_PATH" && after_cleanup_mounted=1 || after_cleanup_mounted=0
               [ -d "$EXPORT_PATH" ] && after_cleanup_dir=1 || after_cleanup_dir=0
