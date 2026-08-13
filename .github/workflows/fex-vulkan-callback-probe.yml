@@ -1,0 +1,247 @@
+name: FEX Vulkan callback probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - probe/fex-vulkan-callback-ci
+    paths:
+      - .github/workflows/fex-vulkan-callback-probe.yml
+      - investigations/fex-vulkan-thunk-lifecycle/fex_vulkan_callback_probe.c
+
+jobs:
+  callback-probe:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    env:
+      FEX_SHA: 71afe476751deac24adabd1adb575fd2337b6e0a
+
+    steps:
+      - name: Checkout fieldwork probe
+        uses: actions/checkout@v4
+
+      - name: Checkout exact FEX source
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/FEX
+          ref: ${{ env.FEX_SHA }}
+          path: fex
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install ARM64 build and x86 cross dependencies
+        run: |
+          set -euxo pipefail
+          sudo dpkg --add-architecture amd64
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build clang lld clang-tools libclang-dev llvm-dev pkg-config git ccache \
+            gcc-x86-64-linux-gnu g++-x86-64-linux-gnu gcc-i686-linux-gnu g++-i686-linux-gnu \
+            libcap-dev libglfw3-dev libepoxy-dev python3-dev libsdl2-dev \
+            libasound2-dev libdrm-dev libwayland-dev libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libxrender-dev \
+            libgl-dev libegl-dev libvulkan-dev mesa-vulkan-drivers docker.io
+
+      - name: Configure FEX with clang thunks
+        working-directory: fex
+        run: |
+          set -euxo pipefail
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/fex-install" \
+            -DUSE_LINKER=lld \
+            -DENABLE_LTO=False \
+            -DENABLE_ASSERTIONS=True \
+            -DBUILD_TESTING=False \
+            -DBUILD_THUNKS=True \
+            -DBUILD_FEXCONFIG=False \
+            -DENABLE_CLANG_THUNKS=True \
+            -DRANGES_NATIVE=OFF
+
+      - name: Build and install FEX
+        working-directory: fex
+        run: |
+          set -euxo pipefail
+          cmake --build build -j"$(nproc)"
+          cmake --install build
+          find "$GITHUB_WORKSPACE/fex-install" -type f \( -name 'FEX' -o -name 'libvulkan-host.so' -o -name 'libvulkan-guest.so' -o -name 'ThunksDB.json' \) -print
+
+      - name: Build native and x86 probes
+        run: |
+          set -euxo pipefail
+          PROBE=investigations/fex-vulkan-thunk-lifecycle/fex_vulkan_callback_probe.c
+          cc -std=c11 -O2 -Wall -Wextra -Werror "$PROBE" -ldl -o /tmp/probe-arm64
+          x86_64-linux-gnu-gcc -std=c11 -O2 -Wall -Wextra -Werror "$PROBE" -ldl -o /tmp/probe-x86_64
+          file /tmp/probe-arm64 /tmp/probe-x86_64
+
+      - name: Native llvmpipe fixture control
+        run: |
+          set -euxo pipefail
+          ICD=$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' | head -1)
+          test -n "$ICD"
+          echo "VK_ICD_FILENAMES=$ICD" >> "$GITHUB_ENV"
+          VK_ICD_FILENAMES="$ICD" /tmp/probe-arm64 report gipa 1 2>&1 | tee /tmp/native-report.log
+          VK_ICD_FILENAMES="$ICD" /tmp/probe-arm64 utils gipa 1 2>&1 | tee /tmp/native-utils.log
+
+      - name: Create minimal amd64 rootfs
+        run: |
+          set -euxo pipefail
+          sudo systemctl start docker || true
+          sudo docker pull --platform linux/amd64 ubuntu:24.04
+          cid=$(sudo docker create --platform linux/amd64 ubuntu:24.04)
+          mkdir -p "$GITHUB_WORKSPACE/rootfs"
+          sudo docker export "$cid" | sudo tar -C "$GITHUB_WORKSPACE/rootfs" -xf -
+          sudo docker rm "$cid"
+          cd /tmp
+          apt-get download libvulkan1:amd64
+          sudo dpkg-deb -x libvulkan1_*_amd64.deb "$GITHUB_WORKSPACE/rootfs"
+          test -e "$GITHUB_WORKSPACE/rootfs/lib64/ld-linux-x86-64.so.2" || test -e "$GITHUB_WORKSPACE/rootfs/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
+          find "$GITHUB_WORKSPACE/rootfs" -name 'libvulkan.so.1*' -print
+
+      - name: Configure FEX Vulkan thunk paths
+        run: |
+          set -euxo pipefail
+          FEX_BIN=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name FEX -perm -111 | head -1)
+          THUNK_CONFIG=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name ThunksDB.json | head -1)
+          GUEST_VK=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name libvulkan-guest.so | head -1)
+          HOST_VK=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name libvulkan-host.so | head -1)
+          test -n "$FEX_BIN"
+          test -n "$THUNK_CONFIG"
+          test -n "$GUEST_VK"
+          test -n "$HOST_VK"
+          echo "FEX_BIN=$FEX_BIN" >> "$GITHUB_ENV"
+          echo "FEX_ROOTFS=$GITHUB_WORKSPACE/rootfs" >> "$GITHUB_ENV"
+          echo "FEX_THUNKCONFIG=$THUNK_CONFIG" >> "$GITHUB_ENV"
+          echo "FEX_THUNKGUESTLIBS=$(dirname "$GUEST_VK")" >> "$GITHUB_ENV"
+          echo "BASELINE_HOSTLIBS=$(dirname "$HOST_VK")" >> "$GITHUB_ENV"
+          mkdir -p "$GITHUB_WORKSPACE/host-report" "$GITHUB_WORKSPACE/host-family"
+          cp "$HOST_VK" "$GITHUB_WORKSPACE/host-report/libvulkan-host.so"
+          mkdir -p "$HOME/.fex-emu"
+          cat > "$HOME/.fex-emu/Config.json" <<JSON
+          {
+            "Config": {
+              "RootFS": "$GITHUB_WORKSPACE/rootfs",
+              "ThunkConfig": "$THUNK_CONFIG"
+            },
+            "ThunksDB": {
+              "Vulkan": 1
+            }
+          }
+          JSON
+          cat "$HOME/.fex-emu/Config.json"
+
+      - name: Baseline FEX dynamic lookup discriminators
+        run: |
+          set -uxo pipefail
+          run_case() {
+            name=$1
+            shift
+            set +e
+            FEX_THUNKHOSTLIBS="$BASELINE_HOSTLIBS" "$FEX_BIN" /tmp/probe-x86_64 "$@" >"/tmp/${name}.log" 2>&1
+            status=$?
+            set -e
+            echo "$name status=$status"
+            cat "/tmp/${name}.log"
+            echo "$status" >"/tmp/${name}.status"
+          }
+          set -e
+          run_case baseline-report report gipa 0
+          run_case baseline-utils utils gipa 0
+
+      - name: Build report-only routing candidate
+        working-directory: fex
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('ThunkLibs/libvulkan/Host.cpp')
+          s = p.read_text()
+          needle = '  } else if (a_1 == "vkAcquireXlibDisplayEXT"sv) {'
+          insert = '''  } else if (a_1 == "vkCreateDebugReportCallbackEXT"sv) {\n    return (PFN_vkVoidFunction)fexfn_impl_libvulkan_vkCreateDebugReportCallbackEXT;\n'''
+          if insert in s:
+              raise SystemExit('report candidate already present')
+          if needle not in s:
+              raise SystemExit('lookup insertion point missing')
+          p.write_text(s.replace(needle, insert + needle, 1))
+          PY
+          cmake --build build --target vulkan-host-64 -j"$(nproc)"
+          HOST_VK=$(find build -type f -name libvulkan-host.so | head -1)
+          test -n "$HOST_VK"
+          cp "$HOST_VK" "$GITHUB_WORKSPACE/host-report/libvulkan-host.so"
+
+      - name: Report-only candidate differential
+        run: |
+          set -uxo pipefail
+          run_case() {
+            name=$1
+            shift
+            set +e
+            FEX_THUNKHOSTLIBS="$GITHUB_WORKSPACE/host-report" "$FEX_BIN" /tmp/probe-x86_64 "$@" >"/tmp/${name}.log" 2>&1
+            status=$?
+            set -e
+            echo "$name status=$status"
+            cat "/tmp/${name}.log"
+            echo "$status" >"/tmp/${name}.status"
+          }
+          set -e
+          run_case candidate-report report gipa 0
+          run_case report-candidate-utils-control utils gipa 0
+
+      - name: Extend candidate to debug-utils routing
+        working-directory: fex
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('ThunkLibs/libvulkan/Host.cpp')
+          s = p.read_text()
+          needle = '  } else if (a_1 == "vkAcquireXlibDisplayEXT"sv) {'
+          insert = '''  } else if (a_1 == "vkCreateDebugUtilsMessengerEXT"sv) {\n    return (PFN_vkVoidFunction)fexfn_impl_libvulkan_vkCreateDebugUtilsMessengerEXT;\n'''
+          if insert in s:
+              raise SystemExit('utils candidate already present')
+          if needle not in s:
+              raise SystemExit('lookup insertion point missing')
+          p.write_text(s.replace(needle, insert + needle, 1))
+          PY
+          cmake --build build --target vulkan-host-64 -j"$(nproc)"
+          HOST_VK=$(find build -type f -name libvulkan-host.so | head -1)
+          test -n "$HOST_VK"
+          cp "$HOST_VK" "$GITHUB_WORKSPACE/host-family/libvulkan-host.so"
+
+      - name: Callback-family candidate differential
+        run: |
+          set -uxo pipefail
+          run_case() {
+            name=$1
+            shift
+            set +e
+            FEX_THUNKHOSTLIBS="$GITHUB_WORKSPACE/host-family" "$FEX_BIN" /tmp/probe-x86_64 "$@" >"/tmp/${name}.log" 2>&1
+            status=$?
+            set -e
+            echo "$name status=$status"
+            cat "/tmp/${name}.log"
+            echo "$status" >"/tmp/${name}.status"
+          }
+          set -e
+          run_case family-report report gipa 0
+          run_case family-utils utils gipa 0
+
+      - name: Summarize discriminator matrix
+        if: always()
+        run: |
+          set -u
+          for f in /tmp/*.status; do
+            test -e "$f" || continue
+            printf '%s=%s\n' "$(basename "$f" .status)" "$(cat "$f")"
+          done | tee /tmp/status-matrix.txt
+
+      - name: Upload callback evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fex-vulkan-callback-probe-${{ github.run_id }}
+          path: |
+            /tmp/*.log
+            /tmp/*.status
+            /tmp/status-matrix.txt
+            fex/ThunkLibs/libvulkan/Host.cpp
+          retention-days: 7
