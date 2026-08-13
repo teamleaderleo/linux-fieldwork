@@ -120,12 +120,16 @@ jobs:
           set -euxo pipefail
           FEX_BIN=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name FEX -perm -111 | head -1)
           THUNK_CONFIG=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name ThunksDB.json | head -1)
-          GUEST_VK=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name libvulkan-guest.so | head -1)
-          HOST_VK=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name libvulkan-host.so | head -1)
+          GUEST_VK=$(find "$GITHUB_WORKSPACE/fex-install" -type f -path '*/GuestThunks/libvulkan-guest.so' | head -1)
+          HOST_VK=$(find "$GITHUB_WORKSPACE/fex-install" -type f -path '*/HostThunks/libvulkan-host.so' | head -1)
           test -n "$FEX_BIN"
           test -n "$THUNK_CONFIG"
           test -n "$GUEST_VK"
           test -n "$HOST_VK"
+          case "$GUEST_VK" in *GuestThunks_32*) echo "selected 32-bit guest thunk for x86-64 probe" >&2; exit 1;; esac
+          case "$HOST_VK" in *HostThunks_32*) echo "selected 32-bit host thunk for x86-64 probe" >&2; exit 1;; esac
+          echo "selected x86-64 guest thunk: $GUEST_VK"
+          echo "selected x86-64 host thunk: $HOST_VK"
           sudo mkdir -p "$GITHUB_WORKSPACE/rootfs/usr/lib/x86_64-linux-gnu"
           sudo cp "$GUEST_VK" "$GITHUB_WORKSPACE/rootfs/usr/lib/x86_64-linux-gnu/libvulkan.so.1"
           echo "FEX_BIN=$FEX_BIN" >> "$GITHUB_ENV"
@@ -149,7 +153,7 @@ jobs:
           JSON
           cat "$HOME/.fex-emu/Config.json"
 
-      - name: Baseline FEX dynamic lookup discriminators
+      - name: Baseline FEX direct and dynamic lookup discriminators
         run: |
           set -uxo pipefail
           run_case() {
@@ -164,6 +168,8 @@ jobs:
             echo "$status" >"/tmp/${name}.status"
           }
           set -e
+          run_case baseline-direct-report report direct 0
+          run_case baseline-direct-utils utils direct 0
           run_case baseline-report report gipa 0
           run_case baseline-utils utils gipa 0
 
@@ -184,8 +190,12 @@ jobs:
           p.write_text(s.replace(needle, insert + needle, 1))
           PY
           cmake --build build --target vulkan-host-64 -j"$(nproc)"
-          HOST_VK=$(find build -type f -name libvulkan-host.so | head -1)
+          rm -rf "$GITHUB_WORKSPACE/install-report"
+          cmake --install build --prefix "$GITHUB_WORKSPACE/install-report"
+          HOST_VK=$(find "$GITHUB_WORKSPACE/install-report" -type f -path '*/HostThunks/libvulkan-host.so' | head -1)
           test -n "$HOST_VK"
+          case "$HOST_VK" in *HostThunks_32*) echo "candidate selected 32-bit host thunk" >&2; exit 1;; esac
+          echo "selected report candidate host thunk: $HOST_VK"
           cp "$HOST_VK" "$GITHUB_WORKSPACE/host-report/libvulkan-host.so"
 
       - name: Report-only candidate differential
@@ -203,6 +213,7 @@ jobs:
             echo "$status" >"/tmp/${name}.status"
           }
           set -e
+          run_case candidate-direct-report report direct 0
           run_case candidate-report report gipa 0
           run_case report-candidate-utils-control utils gipa 0
 
@@ -223,8 +234,12 @@ jobs:
           p.write_text(s.replace(needle, insert + needle, 1))
           PY
           cmake --build build --target vulkan-host-64 -j"$(nproc)"
-          HOST_VK=$(find build -type f -name libvulkan-host.so | head -1)
+          rm -rf "$GITHUB_WORKSPACE/install-family"
+          cmake --install build --prefix "$GITHUB_WORKSPACE/install-family"
+          HOST_VK=$(find "$GITHUB_WORKSPACE/install-family" -type f -path '*/HostThunks/libvulkan-host.so' | head -1)
           test -n "$HOST_VK"
+          case "$HOST_VK" in *HostThunks_32*) echo "candidate selected 32-bit host thunk" >&2; exit 1;; esac
+          echo "selected callback-family candidate host thunk: $HOST_VK"
           cp "$HOST_VK" "$GITHUB_WORKSPACE/host-family/libvulkan-host.so"
 
       - name: Callback-family candidate differential
@@ -242,6 +257,8 @@ jobs:
             echo "$status" >"/tmp/${name}.status"
           }
           set -e
+          run_case family-direct-report report direct 0
+          run_case family-direct-utils utils direct 0
           run_case family-report report gipa 0
           run_case family-utils utils gipa 0
 
