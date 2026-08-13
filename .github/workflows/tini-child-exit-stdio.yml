@@ -1,0 +1,119 @@
+name: Tini child failure stdio exit discriminator
+
+on:
+  push:
+    branches:
+      - execute/tini-child-exit-stdio
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out Linux Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out exact Tini source
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/tini
+          ref: 369448a167e8b3da4ca5bca0b3307500c3371828
+          path: tini
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Build exact baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C tini rev-parse HEAD)" = 369448a167e8b3da4ca5bca0b3307500c3371828
+          cmake -S tini -B tini/build
+          cmake --build tini/build -j2
+
+      - name: Prove child normal exit duplicates inherited stdout buffer
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/tini/build/tini"
+          set +e
+          TINI_SUBREAPER=1 TINI_VERBOSITY=4 "$bin" /definitely/missing-fieldwork-command > baseline.out 2> baseline.err
+          rc=$?
+          set -e
+          cat baseline.out
+          cat baseline.err >&2
+          test "$rc" -eq 127
+          count=$(grep -Fc 'Registered as child subreaper' baseline.out)
+          printf 'baseline_registered_count=%s\n' "$count" | tee baseline-count.txt
+          test "$count" -eq 2
+          grep -Fq 'exec /definitely/missing-fieldwork-command failed' baseline.err
+
+      - name: Apply child _exit candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 executions/tini-child-exit-stdio/apply_candidate.py tini/src/tini.c
+          cmake --build tini/build -j2
+          git -C tini diff --check
+          git -C tini diff -- src/tini.c > candidate.diff
+
+      - name: Prove candidate flushes inherited stdout only once
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/tini/build/tini"
+          set +e
+          TINI_SUBREAPER=1 TINI_VERBOSITY=4 "$bin" /definitely/missing-fieldwork-command > candidate.out 2> candidate.err
+          rc=$?
+          set -e
+          cat candidate.out
+          cat candidate.err >&2
+          test "$rc" -eq 127
+          count=$(grep -Fc 'Registered as child subreaper' candidate.out)
+          printf 'candidate_registered_count=%s\n' "$count" | tee candidate-count.txt
+          test "$count" -eq 1
+          grep -Fq 'exec /definitely/missing-fieldwork-command failed' candidate.err
+
+      - name: Preserve 126 and ordinary success controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/tini/build/tini"
+          printf '#!/bin/sh\nexit 0\n' > noexec.sh
+          chmod 0644 noexec.sh
+          set +e
+          "$bin" "$GITHUB_WORKSPACE/noexec.sh" >/dev/null 2> candidate-126.err
+          rc126=$?
+          set -e
+          test "$rc126" -eq 126
+          "$bin" /bin/true >/dev/null 2> candidate-true.err
+
+      - name: Source fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C tini diff --name-only)" = 'src/tini.c'
+          test "$(grep -o '_exit(' tini/src/tini.c | wc -l)" -eq 3
+
+      - name: Retain exact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tini-child-exit-stdio-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            baseline.out
+            baseline.err
+            baseline-count.txt
+            candidate.out
+            candidate.err
+            candidate-count.txt
+            candidate-126.err
+            candidate-true.err
+            candidate.diff
+          if-no-files-found: warn
+          retention-days: 14
