@@ -1,0 +1,26 @@
+name: FEX Vulkan CustomIR retirement probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - probe/fex-vulkan-customir-retirement
+    paths:
+      - .github/workflows/fex-vulkan-customir-retirement.yml
+      - investigations/fex-vulkan-thunk-lifecycle/**
+
+jobs:
+  customir-retirement:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run retained research gate
+        run: bash investigations/fex-vulkan-thunk-lifecycle/run_customir_retirement_ci.sh
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fex-vulkan-customir-retirement-${{ github.run_id }}
+          path: /tmp/fex-customir-evidence
+          retention-days: 14
