@@ -5,29 +5,36 @@ Owning issue: #590
 Fieldwork base: `fee128d20bbcdc99bb62e75b3575247356d64a16`
 Exact Cloud Hypervisor source: `1af93ac7035cda77cd87b0c18b1134ebb0928052`
 TD-Shim spec/source: `confidential-containers/td-shim@e3a692b1e58c59b40647d919f6de8ae69b2c8846`
+Tested Fieldwork head: `823e2343518d0db667e68c9b2417b0299e3de8dd`
 External-contact state: false; upstream remains read-only
-State: STAGED — BASELINE ONLY
+State: **PROVEN SPEC/CONSUMER GAP — CANDIDATE PENDING SOURCE-RANGE/PRECEDENCE COMPOSITION**
 
-## Narrow question
+## Result
 
-Can exact-current Cloud Hypervisor parse a spec-valid TDVF `Payload` section whose `RawDataSize` is nonzero because the payload is embedded in the TD-Shim firmware image, yet skip loading those raw bytes solely because no separate `--kernel` file was supplied?
+Exact-current Cloud Hypervisor accepts a TDVF `Payload` section whose `RawDataSize` is nonzero because the payload is embedded in the TD-Shim firmware image, and the corresponding raw bytes are present/readable in the firmware. But the production `Payload` arm has no firmware raw-data copy path: all work is gated on a separate `self.kernel` file.
+
+Therefore firmware-only TDX with a spec-valid embedded Payload skips the payload bytes entirely.
+
+This case is supported by the current TD-Shim specification and validator. It does not depend on the separate #654 TDX direct-kernel validation repair because firmware-only TDX is already a valid exact-current configuration.
 
 ## TD-Shim contract
 
-Current TD-Shim specification and implementation make this a real supported metadata form, not a field-name inference:
+TD-Shim exact source `e3a692b1e58c59b40647d919f6de8ae69b2c8846` establishes:
 
 - the VMM shall follow each TDVF section's `MemoryAddress` and load the corresponding component;
-- for `Payload`, `RawDataSize` must be nonzero when the whole TD-Shim image includes the payload, otherwise it must be zero;
+- for `Payload`, `RawDataSize` must be nonzero when the whole image includes the payload, otherwise it must be zero;
 - there may be zero or one Payload section;
 - `MemoryDataSize >= RawDataSize` when raw data is present;
 - `doc/tdshim_spec.md` explicitly describes a “TD-Shim with container OS” use case where the OS kernel is included as `Payload` so TD-Shim does not need to load it from other storage;
 - `td-shim-interface/src/metadata.rs::validate_sections()` implements the same Payload rule.
 
-## Exact-current Cloud Hypervisor boundary
+The handoff question is also resolved by the current spec: when the final binary includes the payload and TD-Shim knows the payload type, **the VMM does not need to create a PayloadInfo HOB**. The VMM still has the responsibility to load the payload into TD private memory. PayloadInfo is the VMM handoff for the external/dynamic payload case where the host knows the external payload type.
+
+## Exact-current Cloud Hypervisor owner
 
 `parse_tdvf_sections()` accepts valid `TdvfSectionType::Payload` records and returns their `data_offset`, `data_size`, `address`, and `size`.
 
-But `Vm::populate_tdx_sections()` handles `Payload` as:
+`Vm::populate_tdx_sections()` currently handles Payload as:
 
 ```rust
 TdvfSectionType::Payload => {
@@ -39,13 +46,18 @@ TdvfSectionType::Payload => {
 }
 ```
 
-The production arm contains no path that seeks `firmware_file` to `section.data_offset` and copies `section.data_size` when `self.kernel` is `None`.
+The exact production arm contains:
 
-Firmware-only TDX configuration is already valid on exact-current source, so this embedded-Payload case does not depend on the separate #654 direct-kernel validation repair.
+```text
+external_kernel_gate = true
+firmware_raw_copy = false
+```
+
+It does not seek `firmware_file` to `section.data_offset`, does not consume `section.data_size`, and has no embedded-Payload branch.
 
 ## Baseline fixture
 
-Construct a byte-valid one-section TDVF firmware:
+Byte-valid one-section TDVF firmware:
 
 ```text
 type        = Payload (5)
@@ -56,29 +68,66 @@ size        = 0x1000
 attributes  = 0
 ```
 
-The 16 raw payload bytes at file offset `0x1000` are all `0x7c`. `MemoryDataSize` is 4 KiB aligned and larger than `RawDataSize`, and the source bytes are fully inside the file.
+The 16 raw payload bytes at file offset `0x1000` are all `0x7c`. `MemoryDataSize` is 4 KiB aligned and larger than `RawDataSize`; the source range is fully inside the file.
 
-Baseline must prove:
+## Execution history
 
-1. exact-current parser accepts and returns the Payload record;
-2. the raw bytes are present and readable from the returned `data_offset/data_size`;
-3. exact production `Payload` arm still gates all work on `self.kernel.as_mut()` and contains no `firmware_file` raw-copy path;
-4. a normal invariant requiring an embedded-payload copy path is expected red.
+First run:
 
-This is deliberately a source + executable-fixture proof. It does not claim a full TDX boot was executed.
+- run `31667413341`
+- job `94344826916`
+- artifact `9168439187`
 
-## Candidate stop condition
+Source/spec checks passed, but the fixture test failed to compile because the probe formatted `section.r#type` directly from a packed TDVF struct, triggering Rust E0793. This was harness-only; no parser/product conclusion was taken from that run.
 
-Do **not** implement the first obvious copy-only patch yet.
+The probe was repaired by copying packed fields to locals before formatting/comparison.
 
-TD-Shim's dynamic Linux path boots from the Payload memory slice when a `PayloadInfo` GUID HOB is present; without one it falls back to its built-in firmware-volume payload. Therefore a complete embedded-Payload repair may need both raw-byte loading and a correct PayloadInfo handoff, depending on the embedded payload image contract.
+Authoritative baseline rerun:
 
-Also resolve source precedence before candidate work:
+- run `31667565640`
+- job `94345291529`
+- tested Fieldwork head `823e2343518d0db667e68c9b2417b0299e3de8dd`
+- artifact `9168493865`
+- artifact digest `sha256:99df68661a347912b5236279c30dcd6ddc63839698a698831bf289299d7d2e04`
+- bundle `embedded-payload-baseline-final.zip`
 
-- embedded payload (`RawDataSize > 0`) with no external kernel is clearly valid and must be supported;
-- metadata with `RawDataSize == 0` plus external `--kernel` is the existing dynamic-kernel form;
-- if both an embedded payload and an external kernel are supplied, do not silently choose one until the intended override/conflict rule is sourced.
+Exact TD-Shim contract and exact Cloud Hypervisor owner gates passed.
 
-## Initial disposition target
+Parser/raw-byte fixture:
 
-If baseline confirms the four points above: **PROVEN SPEC/CONSUMER GAP; CANDIDATE PENDING HANDOFF SEMANTICS.**
+```text
+TDVF_EMBEDDED_PAYLOAD_PARSE offset=0x1000 raw=0x10 address=0x200000 memory=0x1000 type=Payload
+TDVF_EMBEDDED_PAYLOAD_BYTES len=16 first=0x7c last=0x7c
+```
+
+Production-owner receipt:
+
+```text
+TDVF_EMBEDDED_PAYLOAD_OWNER external_kernel_gate=true firmware_raw_copy=false
+```
+
+Expected production invariant:
+
+```text
+TDVF_EMBEDDED_PAYLOAD_INVARIANT_RC=1
+AssertionError: spec-valid embedded Payload has no firmware raw-data copy path
+```
+
+This is a source + executable-fixture proof, not a claim that a full TDX guest was booted in the hosted runner.
+
+## Candidate boundary now clarified
+
+A minimal embedded-Payload repair does **not** need to synthesize PayloadInfo for the embedded/known-type case.
+
+However, do not collapse the following owners into one unreviewed patch:
+
+1. **Embedded raw source range.** Earlier BFV/CFV source-range validation was intentionally scoped to those types because Payload was believed to come only from a separate kernel file. Embedded Payload shows that `Payload` with `data_size > 0` also needs firmware raw-source range validation.
+2. **Embedded raw copy.** When `data_size > 0` and no external kernel is supplied, the VMM must load the raw bytes from `firmware_file[data_offset..data_offset+data_size]` into the Payload memory address.
+3. **Guest-memory/runtime I/O errors.** The copy must propagate destination/read failures rather than add another unwrap or ignored short-copy path.
+4. **Ambiguous dual source.** If metadata embeds a Payload (`RawDataSize > 0`) and the user also supplies an external `--kernel`, do not silently choose precedence without a sourced rule. This ambiguity does not block fixing the clearly valid firmware-only embedded case.
+
+## Disposition
+
+**PROVEN SPEC/CONSUMER GAP.** Exact-current Cloud Hypervisor parses a supported embedded TDVF Payload and its raw bytes, but the VMM lacks the required firmware-to-Payload-memory load path when no external kernel file exists.
+
+Candidate work should proceed as controlled composition of the raw-source validation and copy/error owners, not as a speculative PayloadInfo change.
