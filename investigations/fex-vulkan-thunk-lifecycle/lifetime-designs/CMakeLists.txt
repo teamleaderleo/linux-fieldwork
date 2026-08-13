@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(fex_thunk_lifetime_lab LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_executable(lifetime_lab lifetime_lab.cpp)
+target_compile_options(lifetime_lab PRIVATE -Wall -Wextra -Wpedantic -Werror)
+find_package(Threads REQUIRED)
+target_link_libraries(lifetime_lab PRIVATE Threads::Threads)
