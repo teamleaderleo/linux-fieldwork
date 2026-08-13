@@ -7,11 +7,9 @@ marker = "tdx_firmware_kernel_is_rejected_baseline"
 if marker in text:
     raise SystemExit(f"probe marker already present in {path}")
 
-anchor = "#[cfg(test)]\nmod tests {"
-if text.count(anchor) != 1:
-    raise SystemExit("unexpected config unit-test anchor count")
+probe = r'''
 
-probe = r'''#[cfg(test)]
+#[cfg(test)]
 mod tdx_payload_validation_probe_tests {
     use super::*;
 
@@ -111,7 +109,6 @@ mod tdx_payload_validation_probe_tests {
         assert_eq!(cmdline.as_deref(), Some("console=hvc0 root=/dev/vda"));
     }
 }
-
 '''
 
-path.write_text(text.replace(anchor, probe + anchor, 1))
+path.write_text(text + probe)
