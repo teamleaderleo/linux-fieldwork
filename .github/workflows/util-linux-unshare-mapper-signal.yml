@@ -1,0 +1,166 @@
+name: util-linux unshare mapper signal-status matrix
+
+on:
+  push:
+    branches:
+      - execute/util-linux-unshare-mapper-signal
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out Linux Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out exact util-linux source
+        uses: actions/checkout@v4
+        with:
+          repository: util-linux/util-linux
+          ref: bf2071da692a96c6e3c82b0fce984c55f9ebcffa
+          path: util-linux
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+          sudo apt-get build-dep -y util-linux
+          sudo apt-get install -y --no-install-recommends meson ninja-build uidmap
+
+      - name: Build exact unshare
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C util-linux rev-parse HEAD)" = bf2071da692a96c6e3c82b0fce984c55f9ebcffa
+          meson setup util-linux/build util-linux -Dbuild-python=disabled -Dnls=disabled
+          meson compile -C util-linux/build unshare
+          util-linux/build/unshare --version | tee unshare-version.txt
+
+      - name: Prepare fake mapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fieldwork-mapper
+          cat >/tmp/fieldwork-mapper/newuidmap <<'SH'
+          #!/bin/sh
+          echo "fake-newuidmap mode=${MAPPER_MODE}" >&2
+          case "${MAPPER_MODE}" in
+            success) exit 0 ;;
+            exit42) exit 42 ;;
+            term) kill -TERM $$ ;;
+            kill) kill -KILL $$ ;;
+            *) exit 99 ;;
+          esac
+          SH
+          chmod 0755 /tmp/fieldwork-mapper/newuidmap
+          cp /tmp/fieldwork-mapper/newuidmap /tmp/fieldwork-mapper/newgidmap
+          chmod 0755 /tmp/fieldwork-mapper/newgidmap
+
+      - name: Prove baseline ignores signaled mapper failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/util-linux/build/unshare"
+          run_case() {
+            mode=$1
+            out="baseline-${mode}.out"
+            err="baseline-${mode}.err"
+            set +e
+            sudo -u nobody env PATH="/tmp/fieldwork-mapper:/usr/bin:/bin" MAPPER_MODE="$mode" \
+              "$bin" --map-users 0:65534:1 sh -c 'echo payload-ran uid=$(id -u)' >"$out" 2>"$err"
+            rc=$?
+            set -e
+            printf '%s=%s\n' "$mode" "$rc" >> baseline-status.txt
+          }
+          : > baseline-status.txt
+          run_case success
+          run_case exit42
+          run_case term
+          run_case kill
+          cat baseline-status.txt
+          cat baseline-term.err >&2
+          cat baseline-kill.err >&2
+
+          grep -Fq 'payload-ran' baseline-success.out
+          test "$(awk -F= '$1=="success"{print $2}' baseline-status.txt)" -eq 0
+          test "$(awk -F= '$1=="exit42"{print $2}' baseline-status.txt)" -eq 42
+          test ! -s baseline-exit42.out
+          test "$(awk -F= '$1=="term"{print $2}' baseline-status.txt)" -eq 0
+          test "$(awk -F= '$1=="kill"{print $2}' baseline-status.txt)" -eq 0
+          grep -Fq 'payload-ran' baseline-term.out
+          grep -Fq 'payload-ran' baseline-kill.out
+
+      - name: Apply mapper signal-status candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 executions/util-linux-unshare-mapper-signal/apply_candidate.py util-linux/sys-utils/unshare.c
+          meson compile -C util-linux/build unshare
+          git -C util-linux diff --check
+          git -C util-linux diff -- sys-utils/unshare.c > candidate.diff
+
+      - name: Prove candidate propagates signaled mapper failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/util-linux/build/unshare"
+          run_case() {
+            mode=$1
+            out="candidate-${mode}.out"
+            err="candidate-${mode}.err"
+            set +e
+            sudo -u nobody env PATH="/tmp/fieldwork-mapper:/usr/bin:/bin" MAPPER_MODE="$mode" \
+              "$bin" --map-users 0:65534:1 sh -c 'echo payload-ran uid=$(id -u)' >"$out" 2>"$err"
+            rc=$?
+            set -e
+            printf '%s=%s\n' "$mode" "$rc" >> candidate-status.txt
+          }
+          : > candidate-status.txt
+          run_case success
+          run_case exit42
+          run_case term
+          run_case kill
+          cat candidate-status.txt
+
+          test "$(awk -F= '$1=="success"{print $2}' candidate-status.txt)" -eq 0
+          grep -Fq 'payload-ran' candidate-success.out
+          test "$(awk -F= '$1=="exit42"{print $2}' candidate-status.txt)" -eq 42
+          test ! -s candidate-exit42.out
+          test "$(awk -F= '$1=="term"{print $2}' candidate-status.txt)" -eq 143
+          test "$(awk -F= '$1=="kill"{print $2}' candidate-status.txt)" -eq 137
+          test ! -s candidate-term.out
+          test ! -s candidate-kill.out
+
+      - name: Source fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'WTERMSIG(status) + 128' util-linux/sys-utils/unshare.c
+          test "$(git -C util-linux diff --name-only)" = 'sys-utils/unshare.c'
+
+      - name: Retain exact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: util-linux-unshare-mapper-signal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            unshare-version.txt
+            baseline-*.out
+            baseline-*.err
+            baseline-status.txt
+            candidate-*.out
+            candidate-*.err
+            candidate-status.txt
+            candidate.diff
+          if-no-files-found: warn
+          retention-days: 14
