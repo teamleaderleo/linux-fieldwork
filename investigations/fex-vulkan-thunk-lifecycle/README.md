@@ -9,6 +9,8 @@ Two independent FEX Vulkan thunk failures were isolated while bringing an x86-64
 
 The final pinned-thunk run enumerates `Virtio-GPU Venus (Apple M5)` and exits 0, proving x86-64 Vulkan → FEX → ARM64 Vulkan thunk → Venus → virtio-gpu → Apple M5 under the declared environment.
 
+The second finding has now received an explicit adversarial source/history review. See [`ADVERSARIAL_REVIEW.md`](./ADVERSARIAL_REVIEW.md). The narrower leading hypothesis is stale dynamic-PFN CustomIR state, but the immediate dispatch edge remains unproved until a post-unload `CustomIRHandlers` hit is captured. The review preserves competing explanations and a discriminating experiment matrix rather than treating the current hypothesis as settled.
+
 No upstream contact has been made. FEX currently states `No AI/ML/LLM/etc code contributions.` and its `AGENTS.md` says AI must not generate code for contributions. The source edit used during this investigation is therefore **diagnostic evidence only, not an upstream-submittable code contribution**. A human considering a FEX patch must independently derive and implement it in compliance with FEX policy.
 
 ## Explain like I'm five
@@ -57,13 +59,15 @@ The observed workload is not a synthetic call to one private helper: Fedora x86-
 
 - State: `REVIEW`
 - Fieldwork branch: `investigation/fex-vulkan-thunk-lifecycle`
-- Exact Fieldwork head: recorded after packet materialization
+- Exact Fieldwork head: advanced by the adversarial review record
 - Source revision executed: FEX tag `FEX-2608` → `e869aa644a16e4332cdc15c1ea0b4d13d482385d`
 - Current upstream source checked: `main` → `71afe476751deac24adabd1adb575fd2337b6e0a`
 - Latest authoritative gate: x86-64 `vulkaninfo --summary` with FEX Vulkan guest thunk pinned, Venus path selected, exit `0`
-- First incomplete step: independently reproduce/trace the guest-thunk unload owner and determine the smallest source-level fix; separately, a human must independently implement any upstream code candidate because FEX disallows AI-generated contribution code
+- Leading unload hypothesis after adversarial review: stale dynamic-PFN CustomIR registration whose guest target lives in the unloaded thunk image
+- Exact proof gap: no retained trace yet shows post-unload `CustomIRHandlers` dispatch selecting the dead `CallHostFunction` target
+- First incomplete step: capture `REGISTER → UNMAP → CUSTOMIR HIT → dead target`, then run a forced changed-base reload; separately, a human must independently implement any upstream code candidate because FEX disallows AI-generated contribution code
 - Cleanup state: `/tmp` recovered after coredump exhaustion; retained 2 GiB diagnostic core in guest home; no upstream state changed
-- Next safe action: independent review of this packet and exact local FEX diff; then reduce the unload failure or human-reimplement the callback lookup candidate if desired
+- Next safe action: execute the discriminating local controls in `ADVERSARIAL_REVIEW.md` before choosing a source-level fix
 - External-contact state: **none authorized or made**
 
 ## Intent and precedent
@@ -95,7 +99,7 @@ Under the declared ARM64 Fedora/FEX environment:
 ## Source
 
 - Project: FEX-Emu/FEX
-- Repository: `https://github.com/FEX-Emu/FEX`
+- Repository: `https://redirect.github.com/FEX-Emu/FEX`
 - Requested/executed revision: tag `FEX-2608`
 - Resolved tag commit: `e869aa644a16e4332cdc15c1ea0b4d13d482385d`
 - Current-main source review: `71afe476751deac24adabd1adb575fd2337b6e0a`
@@ -265,7 +269,7 @@ LD_PRELOAD=$PWD/does-not-exist.so ... vulkaninfo --summary
 
 Result: exit `139`.
 
-This rules out the explanation that merely setting `LD_PRELOAD` or producing loader warnings changes the result.
+This rules out the explanation that merely setting `LD_PRELOAD` or producing preload warnings changes the result.
 
 ### Control 3: pin only FEX's Vulkan guest thunk
 
@@ -322,9 +326,12 @@ llvmpipe is also enumerated as a fallback device.
 
 The second failure is a guest-thunk lifecycle/unload problem: unloading `libvulkan-guest.so` leaves FEX with execution/JIT/thunk state that can still resolve or return into the old guest thunk image.
 
+The adversarial review narrows the leading mechanism to stale dynamic-PFN CustomIR state while keeping ordinary guest pointers, host-to-guest trampolines, ordinary JIT/lookup invalidation, code-cache relocation, Vulkan teardown ordering, and generic thunk-library lifetime as explicit competitors until the direct dispatch trace is captured.
+
 ### Not yet established
 
 - The exact FEX source owner that must retain/invalidate thunk execution state across `dlclose()`.
+- Whether stale CustomIR is the immediate dispatch edge in the observed teardown fault.
 - Whether the second bug is Vulkan-specific or a generic thunk-library unload defect exposed by Vulkan.
 - The minimal upstream source fix for the unload defect.
 - Whether `vkDestroyDebugReportCallbackEXT` also requires an explicit custom lookup entry independently of the create fix; the tested destroy entry is plausible and its wrapper runs, but no isolated baseline/candidate A/B was performed for it.
@@ -356,15 +363,18 @@ It does not establish:
 
 ## Next step
 
-1. Independent reviewer checks this record against the retained local source diff and confirms the two-defect separation.
-2. Reduce the unload failure around FEX thunk-library `dlopen`/`dlclose` lifecycle and determine whether stale address-link/JIT state is generic or Vulkan-specific.
-3. If a human wants to propose a callback-routing patch upstream, the human independently derives and implements the code because FEX prohibits AI-generated code contributions.
-4. Prepare a human-submittable issue/reproduction report, not an AI-generated code PR.
-5. Only after the Vulkan thunk record is frozen should the Battle Brothers path resume with a writable x86-64 userspace and Wine/Proton.
+1. Capture the direct CustomIR causal trace and prove exact `GuestMunmap` invalidation coverage.
+2. Force an unload/reload at a changed guest base and record native PFN stability plus old/new guest invoker addresses.
+3. Split dynamic-PFN registration from host-to-guest callback registration, then exercise another thunked library such as libGL.
+4. If a human wants to propose a callback-routing patch upstream, the human independently derives and implements the code because FEX prohibits AI-generated code contributions.
+5. Prepare a human-submittable issue/reproduction report, not an AI-generated code PR.
+6. Only after the Vulkan thunk record is frozen should the Battle Brothers path resume with a writable x86-64 userspace and Wine/Proton.
+
+Detailed controls and interpretation rules are retained in [`ADVERSARIAL_REVIEW.md`](./ADVERSARIAL_REVIEW.md).
 
 ## Authority
 
-- Automated upstream contact: **not authorized and not performed**.
-- Upstream issue/PR/comment/review: none created by this work.
-- Owned-repository work: this investigation branch only.
+- Automated FEX upstream contact: **not authorized and not performed**.
+- FEX upstream issue/PR/comment/review/reaction/push/discussion: none created by this work.
+- Owned-repository work: writable; investigation records and local/owned experimental work may be committed here.
 - FEX contribution policy: AI-generated code contributions are prohibited; diagnostic source edits are retained only as evidence.
