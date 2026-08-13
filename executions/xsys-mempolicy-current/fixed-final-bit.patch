@@ -1,7 +1,7 @@
 diff --git a/unix/syscall_linux.go b/unix/syscall_linux.go
 --- a/unix/syscall_linux.go
 +++ b/unix/syscall_linux.go
-@@
+@@ -2568,3 +2568,3 @@
  func SetMemPolicy(mode int, mask *CPUSet) error {
 -	return setMemPolicy(mode, unsafe.Pointer(mask), _CPU_SETSIZE)
 +	return setMemPolicy(mode, unsafe.Pointer(mask), _CPU_SETSIZE+1)
