@@ -137,6 +137,113 @@ This class hides behind normal success paths:
 
 The lesson is to test bridge systems under explicit `load -> acquire callable -> use -> unload -> late-use/reload` scenarios, not only initialization and steady-state calls.
 
+## Applied residency experiments
+
+### Owned FEX Vulkan self-pin branch
+
+An owned-fork diagnostic branch now turns the successful preload pinning control into source behavior:
+
+- fork: `teamleaderleo/FEX`;
+- base: FEX-2608 `e869aa644a16e4332cdc15c1ea0b4d13d482385d`;
+- branch: `diagnostic/fex2608-vulkan-thunk-nodelete`;
+- commit: `1bd6d42766f1122275e70e7e8fa2e921e7275243`;
+- changed file: `ThunkLibs/libvulkan/Guest.cpp`.
+
+Its guest constructor reopens `libvulkan.so.1` with `RTLD_NODELETE` and logs success/failure. This is a coarse containment experiment: if it produces the same exit-0 result as external guest-thunk pinning, it establishes that process-lifetime residency can be expressed as an explicit thunk policy rather than an external preload accident.
+
+The branch has not run on the target Fedora VM in the continuation session because that VM is outside the attached runtime. No GitHub Actions run was associated with the commit. Treat it as written, unexecuted diagnostic code.
+
+### Local glibc `RTLD_NOLOAD | RTLD_NODELETE` promotion probe
+
+A separate local loader probe tested a more generic containment technique against glibc:
+
+1. `dlopen()` a test DSO normally;
+2. save a callable function pointer from it;
+3. use `dladdr()` to identify the DSO that owns the function;
+4. reopen that already-loaded DSO with `RTLD_LAZY | RTLD_NOLOAD | RTLD_NODELETE`;
+5. immediately `dlclose()` the extra handle;
+6. `dlclose()` the original handle;
+7. check `/proc/self/maps` and invoke the saved function pointer.
+
+Observed result:
+
+```text
+owner=./libprobe.so before=1 value=42
+pin=<non-null> err=none
+after_pin_close mapped=1
+after_original_close mapped=1 value_after=42
+```
+
+The DSO stayed mapped after both handles were closed, the saved function remained callable, and the DSO destructor ran at process exit.
+
+This demonstrates, for the glibc environment used by the probe, that an already-loaded DSO can be **promoted** to process-lifetime `NODELETE` state without retaining an extra reference handle. That suggests a containment policy stronger than Vulkan-specific self-pinning: when FEX publishes a guest code address into host-owned bridge state, the guest side can mark the code owner's DSO `NODELETE` at publication time.
+
+FEX's guest-thunk build deliberately assigns the real library SONAME to each generated guest thunk so later `RTLD_NOLOAD` calls can find the already-resident thunk by SONAME. This aligns well with a bridge-publication residency policy.
+
+### What the promotion idea would cover
+
+For a dynamic host function pointer:
+
+```text
+LinkAddressToFunction(native H, guest helper T)
+```
+
+promote the DSO containing `T` to `NODELETE` before publishing the bridge.
+
+For a host-to-guest callback trampoline that retains both `GuestUnpacker` and `GuestTarget`, promote the owner of every retained guest code address whose lifetime is otherwise able to end independently.
+
+This prevents the use-after-unmap class by making the bridge's executable dependencies process-resident.
+
+It is deliberately conservative. Pinning arbitrary callback owners can alter plugin unload behavior and retain TLS/data/resources longer than the application expects. A generic implementation therefore needs a clear policy boundary rather than silently pinning every callback target forever.
+
+## Current design choice: three levels
+
+The investigation now separates three levels instead of treating the most elaborate design as the only answer.
+
+### Level 1 — residency containment
+
+Make guest code that is published into long-lived FEX bridge state process-resident, for example with `RTLD_NODELETE`.
+
+Advantages:
+
+- directly prevents this dead-code destination class;
+- simple enough to reason about;
+- compatible with the existing successful Vulkan pinning control;
+- avoids a pre-unmap race because the executable bytes never disappear.
+
+Costs:
+
+- gives up normal DSO reclamation for selected owners;
+- can change plugin/reload/destructor expectations;
+- leaves obsolete bridge metadata allocated;
+- requires an explicit policy about which bridge owners are safe to promote.
+
+For foundational graphics thunk DSOs that are normally process-long anyway, this may be a reasonable product policy rather than merely a debugging trick. That needs execution and compatibility testing before promotion.
+
+### Level 2 — causal bridge retirement
+
+Before physical unmap, find bridge registrations whose guest target belongs to the retiring DSO and remove them using the existing CustomIR removal path, then invalidate their native-keyed cached code.
+
+This is the strongest next causal experiment for the leading dynamic-PFN theory. A range-based implementation is suitable as a diagnostic; a final implementation needs stronger ownership identity because address reuse, aliases, callbacks, and concurrent execution complicate simple range matching.
+
+### Level 3 — full unload/reload semantics
+
+Give each guest thunk load an explicit generation/token. Register both PFN bridges and callback bridges under it. On unload:
+
+```text
+mark generation draining
+  -> block new acquisitions
+  -> revoke/rebind bridge entries
+  -> invalidate translated paths
+  -> drain already-acquired execution
+  -> unmap guest DSO
+  -> reclaim metadata
+```
+
+This preserves real unload/reload behavior but has the highest implementation and synchronization cost.
+
+The right choice depends on FEX's desired contract. If generated guest thunks that export persistent executable bridges are allowed to become process-resident, Level 1 may be the cleanest rule. If unload/reload fidelity is a requirement, Level 3 is the appropriate destination and Level 2 remains a useful causal stepping stone.
+
 ## Distinguishing trace for this class
 
 For a suspected stale bridge, record these events in one ordered stream:
@@ -163,6 +270,8 @@ For FEX's dynamic-PFN CustomIR path, guest `r11` is especially useful because th
 The Vulkan investigation demonstrates execution reaches an address in the former `libvulkan-guest.so` image after unload and that retaining that image repairs the failure. Source review establishes multiple FEX bridge objects capable of retaining guest code addresses beyond ordinary guest mapping lifetime.
 
 The retained target run does not yet prove which surviving bridge performs the immediate final transfer. Dynamic-PFN CustomIR is the leading mechanism because the dead location resolves inside `CallHostFunction<...>`. Host-to-guest callback trampolines and an already-selected translated path remain competitors until the final caller is captured.
+
+The owned `NODELETE` source branch and local glibc promotion probe strengthen residency as a plausible containment design. Only the local loader probe has executed in the continuation session; the FEX target branch still needs a target run.
 
 ## Practical review checklist
 
