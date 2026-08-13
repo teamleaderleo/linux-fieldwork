@@ -6,17 +6,21 @@ Carrier: Linux Fieldwork PR 669; Finding A review: issue 670.
 
 - `vk_debug_report_repro.c`: minimal `VK_EXT_debug_report` instance, dynamic create lookup, guest callback registration, and explicit `vkDebugReportMessageEXT` injection.
 - `vk_debug_utils_repro.c`: analogous `VK_EXT_debug_utils` instance, dynamic messenger creation, guest callback registration, and explicit `vkSubmitDebugUtilsMessageEXT` injection.
+- `vk_allocator_instance_probe.c`: `VkAllocationCallbacks` instance-lifetime probe for create/destroy allocator asymmetry.
+- `ALLOCATOR_NATIVE_RECEIPT.md`: compact native SwiftShader allocator control results.
+- `ALLOCATOR_PROBE_NOTES.md`: source rationale, evidence boundary, and target FEX discriminator for the allocator probe.
 - `NATIVE_SWIFTSHADER_RECEIPT.txt`: native x86 software-Vulkan execution receipt.
 - `CALLBACK_ENTRY_RECEIPT.txt`: x86 debug-report callback entry-byte discriminator.
 - `SOURCE_REVIEW_RECEIPT.md`: FEX-2608 and current-main adjacent source review.
 
-Both programs keep `libvulkan.so.1` resident through process exit so this callback experiment remains separate from the guest-thunk unload finding.
+Both debug callback programs keep `libvulkan.so.1` resident through process exit so this callback experiment remains separate from the guest-thunk unload finding.
 
 ## Build
 
 ```sh
 cc -std=c11 -O2 -g -Wall -Wextra -Werror -o vk_debug_report_repro vk_debug_report_repro.c -ldl
 cc -std=c11 -O2 -g -Wall -Wextra -Werror -o vk_debug_utils_repro vk_debug_utils_repro.c -ldl
+cc -std=c11 -O2 -g -Wall -Wextra -Werror -o vk_allocator_instance_probe vk_allocator_instance_probe.c -ldl
 ```
 
 The committed sources compile as x86-64 ELF executables on the execution host.
@@ -100,3 +104,11 @@ First, debug-report create-info is removed from the application's supplied pNext
 Second, the same `vkCreateInstance` handling covers debug-report create-info but has no corresponding debug-utils create-info handling. A native control with `VkDebugUtilsMessengerCreateInfoEXT` in `VkInstanceCreateInfo.pNext` plus an intentionally missing instance extension receives 27 debug-utils callbacks while `vkCreateInstance` returns `VK_ERROR_EXTENSION_NOT_PRESENT`. Removing only the pNext node produces the same return value with zero callbacks.
 
 This debug-utils pNext route is independent of `vkGetInstanceProcAddr`; correcting only the dynamic custom-function lookup cannot cover it. The next decisive step is the same positive/negative pair under the existing owned ARM64/Lavapipe FEX lane.
+
+## 2026-08-14 `VkAllocationCallbacks` lifetime follow-up
+
+The allocator probe is a separate callback family that does not depend on proc-address lookup. A valid guest supplies the same non-null allocator object to `vkCreateInstance` and `vkDestroyInstance`; reviewed FEX source drops that allocator on the custom create path while destruction remains generic.
+
+Native SwiftShader with the valid allocator pair observed 43 allocations, 1 reallocation, and 42 frees, then exited 0. The deliberately host-invalid mismatch simulation (`create` with no allocator, `destroy` with the callback object) entered destruction and terminated with status 139. That simulation is retained only as a control model, not as FEX runtime evidence.
+
+The target proof is the normal guest-valid mode under the owned ARM64/FEX fixture. `ALLOCATOR_PROBE_NOTES.md` records the exact interpretation boundary and raw callback-entry discriminator.
