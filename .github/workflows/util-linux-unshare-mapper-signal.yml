@@ -45,6 +45,8 @@ jobs:
           meson setup util-linux/build util-linux -Dbuild-python=disabled -Dnls=disabled
           meson compile -C util-linux/build unshare
           util-linux/build/unshare --version | tee unshare-version.txt
+          cp util-linux/build/unshare /tmp/fieldwork-unshare
+          chmod 0755 /tmp/fieldwork-unshare
 
       - name: Prepare fake mapper
         shell: bash
@@ -70,7 +72,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bin="$GITHUB_WORKSPACE/util-linux/build/unshare"
+          bin=/tmp/fieldwork-unshare
           run_case() {
             mode=$1
             out="baseline-${mode}.out"
@@ -108,12 +110,14 @@ jobs:
           meson compile -C util-linux/build unshare
           git -C util-linux diff --check
           git -C util-linux diff -- sys-utils/unshare.c > candidate.diff
+          cp util-linux/build/unshare /tmp/fieldwork-unshare
+          chmod 0755 /tmp/fieldwork-unshare
 
       - name: Prove candidate propagates signaled mapper failure
         shell: bash
         run: |
           set -euo pipefail
-          bin="$GITHUB_WORKSPACE/util-linux/build/unshare"
+          bin=/tmp/fieldwork-unshare
           run_case() {
             mode=$1
             out="candidate-${mode}.out"
