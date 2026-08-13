@@ -1,0 +1,102 @@
+name: lf-642 writer-local block-count discriminator
+
+on:
+  push:
+    branches: [lf-642-large-input-exec]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  writer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      UPSTREAM_HEAD: ab9d0f2c5c44dd72ce253e6e894e2f0edc9205b4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instrument writer count arithmetic only
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang zlib1g-dev liblzma-dev liblzo2-dev liblz4-dev libzstd-dev
+          rm -rf /tmp/sq /tmp/evidence /tmp/out-*.sqfs
+          mkdir -p /tmp/evidence
+          uname -a | tee /tmp/evidence/environment.txt
+          clang --version | tee -a /tmp/evidence/environment.txt
+          git --version | tee -a /tmp/evidence/environment.txt
+
+          git clone https://github.com/plougher/squashfs-tools.git /tmp/sq
+          git -C /tmp/sq checkout --detach "$UPSTREAM_HEAD"
+          test "$(git -C /tmp/sq rev-parse HEAD)" = "$UPSTREAM_HEAD"
+          git -C /tmp/sq show -s --format='%H %cI %s' HEAD | tee /tmp/evidence/upstream-head.txt
+
+          python3 <<'PY' | tee /tmp/evidence/fixtures.txt
+          import binascii, hashlib, struct, zipfile
+          from pathlib import Path
+          p16=lambda x:struct.pack('<H',x); p32=lambda x:struct.pack('<I',x); p64=lambda x:struct.pack('<Q',x)
+          dt=0; dd=0x21; name=b'a'
+
+          # Independent valid one-byte control, exercising write_file_blocks().
+          with zipfile.ZipFile('/tmp/valid.zip','w',compression=zipfile.ZIP_STORED,allowZip64=True) as z:
+              z.writestr('a',b'Z')
+          with zipfile.ZipFile('/tmp/valid.zip') as z: assert z.read('a')==b'Z'
+          print('valid.zip',Path('/tmp/valid.zip').stat().st_size,hashlib.sha256(Path('/tmp/valid.zip').read_bytes()).hexdigest())
+
+          # Tiny metadata-only ZIP64 entry.  Current source reaches the writer
+          # for the 8 TiB variant before failing on block-list allocation.
+          def make(path, usize):
+              csize=0
+              lex=p16(1)+p16(16)+p64(usize)+p64(csize)
+              local=b''.join([p32(0x04034b50),p16(45),p16(0),p16(0),p16(dt),p16(dd),p32(0),p32(0xffffffff),p32(0xffffffff),p16(1),p16(len(lex)),name,lex])
+              cex=p16(1)+p16(24)+p64(usize)+p64(csize)+p64(0)
+              cd=b''.join([p32(0x02014b50),p16((3<<8)|45),p16(45),p16(0),p16(0),p16(dt),p16(dd),p32(0),p32(0xffffffff),p32(0xffffffff),p16(1),p16(len(cex)),p16(0),p16(0),p16(0),p32(0o100644<<16),p32(0xffffffff),name,cex])
+              eocd=b''.join([p32(0x06054b50),p16(0),p16(0),p16(1),p16(1),p32(len(cd)),p32(len(local)),p16(0)])
+              data=local+cd+eocd
+              Path('/tmp',path).write_bytes(data)
+              print(path,len(data),hashlib.sha256(data).hexdigest(),'usize',usize)
+          make('blocks.zip',8796093022208)
+          make('llmax.zip',(1<<63)-1)
+          PY
+
+          BASE='-O1 -g'
+          SAN='-O1 -g -fsanitize=implicit-integer-truncation,implicit-integer-sign-change,signed-integer-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer'
+          make -C /tmp/sq/squashfs-tools clean
+          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$BASE" mksquashfs
+          rm /tmp/sq/squashfs-tools/mksquashfs.o
+          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$SAN" mksquashfs.o
+          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$BASE" EXTRA_LDFLAGS='-fsanitize=implicit-integer-truncation,implicit-integer-sign-change,signed-integer-overflow' mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-writer-san
+          export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
+
+          /tmp/mksquashfs-writer-san /tmp/valid.zip /tmp/out-valid.sqfs -zip -b 4096 -noappend -no-progress -no-duplicates -no-xattrs > /tmp/evidence/valid.log 2>&1
+          ! grep -q 'runtime error:' /tmp/evidence/valid.log
+
+          run_bad() {
+              local label="$1" image="$2"
+              set +e
+              /tmp/mksquashfs-writer-san "$image" "/tmp/out-${label}.sqfs" -zip -b 4096 -noappend -no-progress -no-duplicates -no-xattrs > "/tmp/evidence/${label}.log" 2>&1
+              local st=$?
+              set -e
+              echo status=$st >> "/tmp/evidence/${label}.log"
+              test "$st" -ne 0
+              cat "/tmp/evidence/${label}.log"
+          }
+
+          run_bad blocks /tmp/blocks.zip
+          grep -Eq "implicit conversion from type 'long long'.*2147483648.*type 'int'.*-2147483648" /tmp/evidence/blocks.log
+          grep -q 'write_file_blocks' /tmp/evidence/blocks.log
+
+          run_bad llmax /tmp/llmax.zip
+          grep -q 'signed integer overflow: 9223372036854775807 + 4095 cannot be represented in type' /tmp/evidence/llmax.log
+          grep -q 'write_file_blocks' /tmp/evidence/llmax.log
+
+          echo 'ALL LF-642 WRITER-LOCAL ASSERTIONS PASSED' | tee /tmp/evidence/result.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lf-642-writer-evidence
+          path: /tmp/evidence
