@@ -18,6 +18,9 @@ jobs:
       FEX_SHA: 71afe476751deac24adabd1adb575fd2337b6e0a
       CC: clang
       CXX: clang++
+      FEX_PORTABLE: 1
+      FEX_SILENTLOG: 0
+      FEX_OUTPUTLOG: stderr
 
     steps:
       - name: Checkout fieldwork probe
