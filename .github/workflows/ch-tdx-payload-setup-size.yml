@@ -1,0 +1,264 @@
+name: Cloud Hypervisor TDX Payload setup-size validation
+
+on:
+  push:
+    branches: [research/ch-tdx-payload-setup-size]
+    paths:
+      - .github/workflows/ch-tdx-payload-setup-size.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdx-payload-setup-size:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      CONFIG_SHA: 921b7ecd5ee25889000d1fcaabbcc578a4cbbc69
+      CONFIG_DIFF_SHA: 0af9d875fd2b82099fe15f7f6a910d9500293990846bda6d677da1ea16b0da5e
+      CONFIG_TEST: config::tdx_payload_validation_probe_tests::tdx_firmware_kernel_should_validate
+      WITNESS: vm::unit_tests::tdx_payload_truncated_setup_is_accepted_baseline
+      LOADER_CONTROL: vm::unit_tests::pinned_linux_loader_rejects_truncated_setup_control
+      VALID_CONTROL: vm::unit_tests::tdx_payload_valid_setup_size_control
+      INVARIANT: vm::unit_tests::tdx_payload_setup_area_must_fit_file
+      CANDIDATE_TEST: vm::unit_tests::tdx_payload_setup_size_validation
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source, toolchains, and #654 materializers
+        id: source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0 --path cloud-hypervisor
+          rustc --version | tee tdx-payload-setup-rust-version.txt
+          rustc +nightly --version | tee tdx-payload-setup-nightly-version.txt
+          git -C cloud-hypervisor rev-parse HEAD | tee tdx-payload-setup-source-sha.txt
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git -C cloud-hypervisor status --short)"
+          grep -F 'linux-loader = { version = "0.14.0"' cloud-hypervisor/Cargo.toml
+
+          git -C fieldwork fetch --no-tags origin "$CONFIG_SHA"
+          git -C fieldwork show "$CONFIG_SHA:investigations/cloud-hypervisor-tdx-payload-validation/apply_candidate.py" > /tmp/config_candidate.py
+          git -C fieldwork show "$CONFIG_SHA:investigations/cloud-hypervisor-tdx-payload-validation/apply_probe.py" > /tmp/config_probe.py
+
+      - name: Apply and verify immutable #654 reachability layer
+        id: config_layer
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/config_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/config.rs vmm/src/vm_config.rs > ../tdx-payload-setup-config.diff
+          sha256sum ../tdx-payload-setup-config.diff | tee ../tdx-payload-setup-config-sha256.txt
+          actual=$(awk '{print $1}' ../tdx-payload-setup-config-sha256.txt)
+          test "$actual" = "$CONFIG_DIFF_SHA"
+
+      - name: Apply reachability and setup-size baseline probes
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/config_probe.py
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdx-payload-setup-size/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+
+      - name: Build and discover baseline matrix
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib --no-run
+          cargo test --locked -p vmm --features "$FEATURES" --lib -- --list | tee ../tdx-payload-setup-test-list.txt
+          for test_name in "$CONFIG_TEST" "$WITNESS" "$LOADER_CONTROL" "$VALID_CONTROL" "$INVARIANT"; do
+            grep -F "$test_name: test" ../tdx-payload-setup-test-list.txt
+          done
+
+      - name: Prove restored TDX direct-kernel reachability
+        id: reachability
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONFIG_TEST" -- --exact --nocapture 2>&1 | tee ../tdx-payload-setup-config-control.log
+          grep -F 'kernel_result=Ok' ../tdx-payload-setup-config-control.log
+
+      - name: Baseline valid setup-size control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$VALID_CONTROL" -- --exact --nocapture 2>&1 | tee ../tdx-payload-setup-valid-control.log
+          grep -F 'TDX_PAYLOAD_SETUP_CONTROL payload_size=0xa00 setup_size=0xa00 accepted=true' ../tdx-payload-setup-valid-control.log
+
+      - name: Pinned normal bzImage loader rejects same truncated relationship
+        id: loader_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$LOADER_CONTROL" -- --exact --nocapture 2>&1 | tee ../tdx-payload-setup-linux-loader-control.log
+          grep -F 'TDX_PAYLOAD_SETUP_CONTROL linux_loader_result=Bzimage(Underflow)' ../tdx-payload-setup-linux-loader-control.log
+
+      - name: Prove TDX baseline accepts truncated setup area
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$WITNESS" -- --ignored --exact --nocapture 2>&1 | tee ../tdx-payload-setup-baseline-witness.log
+          grep -F 'TDX_PAYLOAD_SETUP_BASELINE payload_size=0x212 setup_size=0xa00 accepted=true' ../tdx-payload-setup-baseline-witness.log
+
+      - name: Prove setup-area invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INVARIANT" -- --exact --nocapture > ../tdx-payload-setup-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "TDX_PAYLOAD_SETUP_BASELINE_INVARIANT_RC=$rc" | tee ../tdx-payload-setup-baseline-invariant-status.txt
+          cat ../tdx-payload-setup-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F 'TDX bzImage payload must not pass header checks when its setup area is truncated' ../tdx-payload-setup-baseline-invariant.log
+
+      - name: Restore exact source after baseline
+        id: restore
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git checkout -- vmm/src/config.rs vmm/src/vm_config.rs vmm/src/vm.rs
+          test -z "$(git status --short)"
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Reapply #654 and apply setup-size candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/config_candidate.py
+          cargo +nightly fmt --all
+          git diff -- vmm/src/config.rs vmm/src/vm_config.rs > ../tdx-payload-setup-config-candidate.diff
+          actual=$(sha256sum ../tdx-payload-setup-config-candidate.diff | awk '{print $1}')
+          test "$actual" = "$CONFIG_DIFF_SHA"
+
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdx-payload-setup-size/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdx-payload-setup-candidate-only.diff
+          sha256sum ../tdx-payload-setup-candidate-only.diff | tee ../tdx-payload-setup-candidate-diff-sha256.txt
+          git diff -- vmm/src/config.rs vmm/src/vm_config.rs vmm/src/vm.rs > ../tdx-payload-setup-stacked-product.diff
+          sha256sum ../tdx-payload-setup-stacked-product.diff | tee ../tdx-payload-setup-stacked-product-sha256.txt
+          git diff --stat | tee ../tdx-payload-setup-stacked-product-stat.txt
+          grep -F 'InvalidPayloadSetupSize' vmm/src/vm.rs
+          grep -F 'validate_tdx_payload_setup_size' vmm/src/vm.rs
+
+      - name: Apply cleaned reachability probe and run focused candidate matrix
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/config_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONFIG_TEST" -- --exact --nocapture 2>&1 | tee ../tdx-payload-setup-candidate-config.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --exact --nocapture 2>&1 | tee ../tdx-payload-setup-candidate-focused.log
+          grep -F 'kernel_result=Ok' ../tdx-payload-setup-candidate-config.log
+          grep -F 'TDX_PAYLOAD_SETUP_CANDIDATE truncated_result=InvalidPayloadSetupSize { payload_size: 530, setup_size: 2560 }' ../tdx-payload-setup-candidate-focused.log
+          grep -F 'TDX_PAYLOAD_SETUP_CANDIDATE default_setup_control=ok' ../tdx-payload-setup-candidate-focused.log
+          grep -F 'TDX_PAYLOAD_SETUP_CANDIDATE explicit_setup_control=ok' ../tdx-payload-setup-candidate-focused.log
+
+      - name: Full VMM TDX KVM library tests
+        id: broad
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib 2>&1 | tee ../tdx-payload-setup-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations \
+            2>&1 | tee ../tdx-payload-setup-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdx-payload-setup-final-status.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "config_materializer=$CONFIG_SHA"
+            echo "expected_config_diff_sha=$CONFIG_DIFF_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "config_layer=${{ steps.config_layer.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "reachability_gate=${{ steps.reachability.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "loader_control=${{ steps.loader_control.outcome }}"
+            echo "baseline_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "restore=${{ steps.restore.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "focused=${{ steps.focused.outcome }}"
+            echo "broad=${{ steps.broad.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdx-payload-setup-config-sha256.txt && cat tdx-payload-setup-config-sha256.txt
+            test -f tdx-payload-setup-baseline-invariant-status.txt && cat tdx-payload-setup-baseline-invariant-status.txt
+            test -f tdx-payload-setup-candidate-diff-sha256.txt && cat tdx-payload-setup-candidate-diff-sha256.txt
+            test -f tdx-payload-setup-stacked-product-sha256.txt && cat tdx-payload-setup-stacked-product-sha256.txt
+          } | tee tdx-payload-setup-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdx-payload-setup-size
+          if-no-files-found: warn
+          path: |
+            tdx-payload-setup-*.txt
+            tdx-payload-setup-*.log
+            tdx-payload-setup-*.diff
