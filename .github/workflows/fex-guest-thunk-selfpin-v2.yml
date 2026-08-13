@@ -1,17 +1,22 @@
-name: FEX guest thunk self-pin v2
+name: FEX Vulkan combined repair
 on:
   workflow_dispatch:
   push:
-    branches: [probe/fex-guest-thunk-selfpin]
+    branches: [probe/fex-vulkan-combined-repair]
 jobs:
   probe:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - run: bash investigations/fex-vulkan-thunk-lifecycle/run_guest_thunk_selfpin_ci.sh
+      - name: Prove guest-thunk self-pin differential
+        run: bash investigations/fex-vulkan-thunk-lifecycle/run_guest_thunk_selfpin_ci.sh
+      - name: Run unisolated Vulkan routing and lifetime gate
+        run: python3 investigations/fex-vulkan-thunk-lifecycle/prepare_customir_v4.py
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: selfpin-evidence
-          path: /tmp/fex-selfpin-evidence
+          name: combined-vulkan-evidence-${{ github.run_id }}
+          path: |
+            /tmp/fex-selfpin-evidence
+            /tmp/fex-vulkan-combined-evidence
