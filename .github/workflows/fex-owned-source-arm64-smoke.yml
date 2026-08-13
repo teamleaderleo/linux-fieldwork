@@ -42,6 +42,7 @@ jobs:
           set -euxo pipefail
           cmake -S FEX -B FEX/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_DISABLE_FIND_PACKAGE_fmt=TRUE \
             -DENABLE_LTO=OFF \
             -DENABLE_CCACHE=OFF \
             -DENABLE_GDB_SYMBOLS=OFF \
