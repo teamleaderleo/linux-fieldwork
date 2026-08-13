@@ -1,0 +1,156 @@
+name: Cloud Hypervisor TDX Payload header I/O v2
+
+on:
+  push:
+    branches: [research/ch-tdx-payload-header-io]
+    paths:
+      - .github/workflows/ch-tdx-payload-header-io-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdx-payload-header-io-final:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      CONFIG_SHA: 921b7ecd5ee25889000d1fcaabbcc578a4cbbc69
+      CONFIG_DIFF_SHA: 0af9d875fd2b82099fe15f7f6a910d9500293990846bda6d677da1ea16b0da5e
+      CONFIG_TEST: config::tdx_payload_validation_probe_tests::tdx_firmware_kernel_should_validate
+      CANDIDATE_TEST: vm::unit_tests::tdx_payload_header_read_propagates_error
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source, toolchains, and immutable #654 materializers
+        id: source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0 --path cloud-hypervisor
+          rustc --version | tee tdx-payload-header-final-rust-version.txt
+          rustc +nightly --version | tee tdx-payload-header-final-nightly-version.txt
+          git -C cloud-hypervisor rev-parse HEAD | tee tdx-payload-header-final-source-sha.txt
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git -C cloud-hypervisor status --short)"
+          git -C fieldwork fetch --no-tags origin "$CONFIG_SHA"
+          git -C fieldwork show "$CONFIG_SHA:investigations/cloud-hypervisor-tdx-payload-validation/apply_candidate.py" > /tmp/config_candidate.py
+          git -C fieldwork show "$CONFIG_SHA:investigations/cloud-hypervisor-tdx-payload-validation/apply_probe.py" > /tmp/config_probe.py
+
+      - name: Apply and verify immutable #654 layer
+        id: config
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/config_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/config.rs vmm/src/vm_config.rs > ../tdx-payload-header-final-config.diff
+          sha256sum ../tdx-payload-header-final-config.diff | tee ../tdx-payload-header-final-config-sha256.txt
+          actual=$(awk '{print $1}' ../tdx-payload-header-final-config-sha256.txt)
+          test "$actual" = "$CONFIG_DIFF_SHA"
+
+      - name: Apply cleaned header candidate and capture diff
+        id: candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdx-payload-header-io/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdx-payload-header-final-candidate-only.diff
+          sha256sum ../tdx-payload-header-final-candidate-only.diff | tee ../tdx-payload-header-final-candidate-diff-sha256.txt
+          git diff -- vmm/src/config.rs vmm/src/vm_config.rs vmm/src/vm.rs > ../tdx-payload-header-final-stacked.diff
+          sha256sum ../tdx-payload-header-final-stacked.diff | tee ../tdx-payload-header-final-stacked-sha256.txt
+          git diff --stat | tee ../tdx-payload-header-final-stat.txt
+
+      - name: Apply cleaned #654 probe and run focused matrix
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/config_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONFIG_TEST" -- --exact --nocapture 2>&1 | tee ../tdx-payload-header-final-config-test.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --exact --nocapture 2>&1 | tee ../tdx-payload-header-final-focused.log
+          grep -F 'kernel_result=Ok' ../tdx-payload-header-final-config-test.log
+          grep -F 'TDX_PAYLOAD_HEADER_CANDIDATE directory_result=LoadPayloadHeader' ../tdx-payload-header-final-focused.log
+          grep -F 'TDX_PAYLOAD_HEADER_CANDIDATE regular_file_read=ok' ../tdx-payload-header-final-focused.log
+
+      - name: Full VMM TDX KVM library tests
+        id: broad
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib 2>&1 | tee ../tdx-payload-header-final-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations \
+            2>&1 | tee ../tdx-payload-header-final-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdx-payload-header-final-status.txt
+
+      - name: Write final receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "config_materializer=$CONFIG_SHA"
+            echo "expected_config_diff_sha=$CONFIG_DIFF_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "config_gate=${{ steps.config.outcome }}"
+            echo "candidate_gate=${{ steps.candidate.outcome }}"
+            echo "focused_gate=${{ steps.focused.outcome }}"
+            echo "broad_gate=${{ steps.broad.outcome }}"
+            echo "quality_gate=${{ steps.quality.outcome }}"
+            test -f tdx-payload-header-final-config-sha256.txt && cat tdx-payload-header-final-config-sha256.txt
+            test -f tdx-payload-header-final-candidate-diff-sha256.txt && cat tdx-payload-header-final-candidate-diff-sha256.txt
+            test -f tdx-payload-header-final-stacked-sha256.txt && cat tdx-payload-header-final-stacked-sha256.txt
+          } | tee tdx-payload-header-final-receipt.txt
+
+      - name: Upload final evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdx-payload-header-io-v2
+          if-no-files-found: warn
+          path: |
+            tdx-payload-header-final-*.txt
+            tdx-payload-header-final-*.log
+            tdx-payload-header-final-*.diff
