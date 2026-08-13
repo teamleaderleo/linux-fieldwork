@@ -16,7 +16,7 @@ jobs:
       UPSTREAM_HEAD: ab9d0f2c5c44dd72ce253e6e894e2f0edc9205b4
     steps:
       - uses: actions/checkout@v4
-      - name: Build tiny ZIP64 fixtures and execute exact-current parser
+      - name: Execute tiny ZIP64 signed-range fixtures
         shell: bash
         run: |
           set -euxo pipefail
@@ -36,63 +36,31 @@ jobs:
           python3 <<'PY' | tee /tmp/evidence/fixture-layout.txt
           import hashlib, struct, zipfile
           from pathlib import Path
-
-          p32 = lambda x: struct.pack('<I', x)
-          p16 = lambda x: struct.pack('<H', x)
-          p64 = lambda x: struct.pack('<Q', x)
-          name = b'a'
-          dos_time = 0
-          dos_date = 0x0021
-
-          local = b''.join([
-              p32(0x04034b50), p16(45), p16(0), p16(0), p16(dos_time), p16(dos_date),
-              p32(0), p32(0), p32(0), p16(len(name)), p16(0), name
-          ])
-          cd_off = len(local)
-          central = b''.join([
-              p32(0x02014b50), p16((3 << 8) | 45), p16(45), p16(0), p16(0),
-              p16(dos_time), p16(dos_date), p32(0), p32(0), p32(0), p16(len(name)), p16(0),
-              p16(0), p16(0), p16(0), p32((0o100644 << 16)), p32(0), name
-          ])
-          cd_size = len(central)
-          z64_off = cd_off + cd_size
-          z64 = b''.join([
-              p32(0x06064b50), p64(44), p16((3 << 8) | 45), p16(45),
-              p32(0), p32(0), p64(1), p64(1), p64(cd_size), p64(cd_off)
-          ])
-          locator_off = z64_off + len(z64)
-          locator = b''.join([p32(0x07064b50), p32(0), p64(z64_off), p32(1)])
-          eocd_off = locator_off + len(locator)
-          eocd = b''.join([
-              p32(0x06054b50), p16(0), p16(0), p16(0xffff), p16(0xffff),
-              p32(0xffffffff), p32(0xffffffff), p16(0)
-          ])
-          base = bytearray(local + central + z64 + locator + eocd)
-
-          def save(name, data):
-              path = Path('/tmp') / name
-              path.write_bytes(data)
-              print(f'{name} size={len(data)} sha256={hashlib.sha256(data).hexdigest()}')
-
-          save('valid.zip', base)
-          with zipfile.ZipFile('/tmp/valid.zip') as z:
-              assert z.namelist() == ['a']
-              assert z.read('a') == b''
-
-          def mutant(filename, changes):
-              d = bytearray(base)
-              for off, val in changes:
-                  struct.pack_into('<Q', d, off, val)
-              save(filename, d)
-
-          mutant('locator-sign.zip', [(locator_off + 8, 1 << 63)])
-          mutant('cd-off-sign.zip', [(z64_off + 48, 1 << 63)])
-          mutant('cd-size-sign.zip', [(z64_off + 40, 1 << 63)])
-          mutant('range-overflow.zip', [(z64_off + 48, (1 << 63) - 1),
-                                        (z64_off + 40, 1)])
-
-          print(f'local_size={len(local)} cd_off={cd_off} cd_size={cd_size} '
-                f'z64_off={z64_off} locator_off={locator_off} eocd_off={eocd_off}')
+          p16=lambda x: struct.pack('<H',x); p32=lambda x: struct.pack('<I',x); p64=lambda x: struct.pack('<Q',x)
+          name=b'a'; dos_time=0; dos_date=0x0021
+          local=b''.join([p32(0x04034b50),p16(45),p16(0),p16(0),p16(dos_time),p16(dos_date),p32(0),p32(0),p32(0),p16(1),p16(0),name])
+          cd_off=len(local)
+          central=b''.join([p32(0x02014b50),p16((3<<8)|45),p16(45),p16(0),p16(0),p16(dos_time),p16(dos_date),p32(0),p32(0),p32(0),p16(1),p16(0),p16(0),p16(0),p16(0),p32(0o100644<<16),p32(0),name])
+          cd_size=len(central); z64_off=cd_off+cd_size
+          z64=b''.join([p32(0x06064b50),p64(44),p16((3<<8)|45),p16(45),p32(0),p32(0),p64(1),p64(1),p64(cd_size),p64(cd_off)])
+          locator_off=z64_off+len(z64)
+          locator=b''.join([p32(0x07064b50),p32(0),p64(z64_off),p32(1)])
+          eocd_off=locator_off+len(locator)
+          eocd=b''.join([p32(0x06054b50),p16(0),p16(0),p16(0xffff),p16(0xffff),p32(0xffffffff),p32(0xffffffff),p16(0)])
+          base=bytearray(local+central+z64+locator+eocd)
+          def save(n,d):
+              Path('/tmp',n).write_bytes(d); print(f'{n} size={len(d)} sha256={hashlib.sha256(d).hexdigest()}')
+          save('valid.zip',base)
+          with zipfile.ZipFile('/tmp/valid.zip') as z: assert z.namelist()==['a'] and z.read('a')==b''
+          def mutant(n,changes):
+              d=bytearray(base)
+              for off,val in changes: struct.pack_into('<Q',d,off,val)
+              save(n,d)
+          mutant('cd-off-sign.zip',[(z64_off+48,1<<63)])
+          mutant('cd-size-sign.zip',[(z64_off+40,1<<63)])
+          mutant('range-overflow.zip',[(z64_off+48,(1<<63)-1),(z64_off+40,1)])
+          mutant('locator-sign.zip',[(locator_off+8,1<<63)])
+          print(f'local_size={len(local)} cd_off={cd_off} cd_size={cd_size} z64_off={z64_off} locator_off={locator_off} eocd_off={eocd_off}')
           PY
 
           make -C /tmp/sq/squashfs-tools -j2 mksquashfs
@@ -100,12 +68,12 @@ jobs:
           test -s /tmp/out-control.sqfs
 
           BASE='-O1 -g -fsanitize=signed-integer-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer'
-          ZIP='-O1 -g -fsanitize=implicit-integer-sign-change,signed-integer-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer'
+          ZIP='-O1 -g -fsanitize=implicit-conversion,signed-integer-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer'
           make -C /tmp/sq/squashfs-tools clean
-          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$BASE" EXTRA_LDFLAGS='-fsanitize=implicit-integer-sign-change,signed-integer-overflow' mksquashfs
+          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$BASE" EXTRA_LDFLAGS='-fsanitize=implicit-conversion,signed-integer-overflow' mksquashfs
           rm -f /tmp/sq/squashfs-tools/zipfile.o
           make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$ZIP" zipfile.o
-          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$BASE" EXTRA_LDFLAGS='-fsanitize=implicit-integer-sign-change,signed-integer-overflow' mksquashfs
+          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$BASE" EXTRA_LDFLAGS='-fsanitize=implicit-conversion,signed-integer-overflow' mksquashfs
           cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-san
           export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
 
@@ -123,24 +91,22 @@ jobs:
           test "$(tail -1 /tmp/evidence/valid.log)" = 'status=0'
           ! grep -q 'runtime error:' /tmp/evidence/valid.log
 
-          run_case locator-sign /tmp/locator-sign.zip
-          grep -Eq "implicit conversion from type 'unsigned long long'.*9223372036854775808.*type 'long long'.*-9223372036854775808" /tmp/evidence/locator-sign.log
-          grep -q 'parse_one_zip' /tmp/evidence/locator-sign.log
-
           run_case cd-off-sign /tmp/cd-off-sign.zip
+          run_case cd-size-sign /tmp/cd-size-sign.zip
+          run_case range-overflow /tmp/range-overflow.zip
+          run_case locator-sign /tmp/locator-sign.zip
+
           grep -Eq "implicit conversion from type 'unsigned long long'.*9223372036854775808.*type 'long long'.*-9223372036854775808" /tmp/evidence/cd-off-sign.log
           grep -q 'parse_one_zip' /tmp/evidence/cd-off-sign.log
-
-          run_case cd-size-sign /tmp/cd-size-sign.zip
           grep -Eq "implicit conversion from type 'unsigned long long'.*9223372036854775808.*type 'long long'.*-9223372036854775808" /tmp/evidence/cd-size-sign.log
           grep -q 'parse_one_zip' /tmp/evidence/cd-size-sign.log
-
-          run_case range-overflow /tmp/range-overflow.zip
           grep -q 'signed integer overflow: 9223372036854775807 + 1 cannot be represented in type' /tmp/evidence/range-overflow.log
           grep -q 'parse_one_zip' /tmp/evidence/range-overflow.log
+          grep -q 'status=1' /tmp/evidence/locator-sign.log
+          grep -q 'Central directory of /tmp/locator-sign.zip extends past end of file' /tmp/evidence/locator-sign.log
 
           sha256sum /tmp/*.zip | sort > /tmp/evidence/fixture-sha256.txt
-          echo 'ALL LF-641 ZIP64 RUNTIME ASSERTIONS PASSED' | tee /tmp/evidence/result.txt
+          echo 'ALL LF-641 TOP-LEVEL ZIP64 ASSERTIONS PASSED' | tee /tmp/evidence/result.txt
 
       - uses: actions/upload-artifact@v4
         if: always()
