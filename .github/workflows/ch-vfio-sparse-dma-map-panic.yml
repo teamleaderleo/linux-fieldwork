@@ -1,0 +1,203 @@
+name: Cloud Hypervisor VFIO sparse DMA map panic
+
+on:
+  push:
+    branches: [research/ch-vfio-sparse-dma-map-panic]
+    paths:
+      - .github/workflows/ch-vfio-sparse-dma-map-panic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vfio-sparse-dma-map-panic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source, toolchains, and guest-to-host owner chain
+        id: source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0 --path cloud-hypervisor
+          git -C cloud-hypervisor rev-parse HEAD | tee vfio-sparse-source-sha.txt
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git -C cloud-hypervisor status --short)"
+
+          python3 - <<'PY' | tee vfio-sparse-source-boundary.txt
+          from pathlib import Path
+
+          iommu = Path('cloud-hypervisor/virtio-devices/src/iommu.rs').read_text()
+          vfio = Path('cloud-hypervisor/pci/src/vfio.rs').read_text()
+
+          assert 'ext_map.map(req.virt_start, req.phys_start, size)' in iommu
+          assert '.check_range(gpa, size)' in vfio
+          assert '.find_user_address(gpa, size)?' in vfio
+          assert 'size <= len - offset_from_start' in vfio
+          assert 'VfioRegionInfoCap::SparseMmap' in vfio
+          assert 'sparse_areas.push(VfioRegionSparseMmapArea' in vfio
+          assert 'region.user_memory_regions.push(user_memory_region)' in vfio
+          print('VFIO_SPARSE_SOURCE guest_map_to_external_dma=true')
+          print('VFIO_SPARSE_SOURCE whole_bar_check_then_subregion_lookup=true')
+          print('VFIO_SPARSE_SOURCE sparse_user_regions=true')
+          print('VFIO_SPARSE_SOURCE crossing_size_assert=true')
+          PY
+
+      - name: Apply baseline sparse-BAR probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-vfio-sparse-dma-map-panic/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- pci/src/vfio.rs > ../vfio-sparse-baseline-probe.diff
+          cargo test --locked -p pci --features kvm --lib --no-run
+          cargo test --locked -p pci --features kvm --lib -- --list | tee ../vfio-sparse-test-list.txt
+          grep -F 'vfio_sparse_in_subregion_control: test' ../vfio-sparse-test-list.txt
+          grep -F 'vfio_sparse_hole_control: test' ../vfio-sparse-test-list.txt
+          grep -F 'vfio_sparse_crossing_range_panics_baseline: test' ../vfio-sparse-test-list.txt
+          grep -F 'vfio_sparse_crossing_range_must_return_error: test' ../vfio-sparse-test-list.txt
+
+      - name: Baseline valid subregion and hole controls
+        id: controls
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p pci --features kvm --lib vfio_sparse_in_subregion_control -- --nocapture 2>&1 | tee ../vfio-sparse-subregion-control.log
+          cargo test --locked -p pci --features kvm --lib vfio_sparse_hole_control -- --nocapture 2>&1 | tee ../vfio-sparse-hole-control.log
+          grep -F 'VFIO_SPARSE_DMA_CONTROL in_subregion_result=ok' ../vfio-sparse-subregion-control.log
+          grep -F 'VFIO_SPARSE_DMA_CONTROL hole_result=err' ../vfio-sparse-hole-control.log
+
+      - name: Prove baseline crossing-range panic
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p pci --features kvm --lib vfio_sparse_crossing_range_panics_baseline -- --ignored --nocapture 2>&1 | tee ../vfio-sparse-baseline-witness.log
+          grep -F 'VFIO_SPARSE_DMA_BASELINE crossing_panicked=true' ../vfio-sparse-baseline-witness.log
+          grep -F 'Attempt to read 4096 bytes at offset 2048 into a region of size 4096' ../vfio-sparse-baseline-witness.log
+
+      - name: Prove no-panic invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p pci --features kvm --lib vfio_sparse_crossing_range_must_return_error -- --nocapture > ../vfio-sparse-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "VFIO_SPARSE_BASELINE_INVARIANT_RC=$rc" | tee ../vfio-sparse-baseline-invariant-status.txt
+          cat ../vfio-sparse-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F 'guest-controlled sparse VFIO DMA range must not panic the VMM' ../vfio-sparse-baseline-invariant.log
+
+      - name: Restore exact source and apply candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git checkout -- pci/src/vfio.rs
+          test -z "$(git status --short)"
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          python3 ../fieldwork/investigations/cloud-hypervisor-vfio-sparse-dma-map-panic/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- pci/src/vfio.rs > ../vfio-sparse-candidate-only.diff
+          sha256sum ../vfio-sparse-candidate-only.diff | tee ../vfio-sparse-candidate-diff-sha256.txt
+          git diff --stat | tee ../vfio-sparse-candidate-stat.txt
+          grep -F 'if size > len - offset_from_start {' pci/src/vfio.rs
+
+      - name: Run candidate focused matrix
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-vfio-sparse-dma-map-panic/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          cargo test --locked -p pci --features kvm --lib vfio_sparse_crossing_range_must_return_error -- --nocapture 2>&1 | tee ../vfio-sparse-candidate-focused.log
+          cargo test --locked -p pci --features kvm --lib vfio_sparse_in_subregion_control -- --nocapture 2>&1 | tee ../vfio-sparse-candidate-control.log
+          grep -F 'VFIO_SPARSE_DMA_INVARIANT crossing_result=err' ../vfio-sparse-candidate-focused.log
+          grep -F 'VFIO_SPARSE_DMA_CONTROL in_subregion_result=ok' ../vfio-sparse-candidate-control.log
+
+      - name: Full PCI tests and dependent compile
+        id: broad
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p pci --features kvm --lib 2>&1 | tee ../vfio-sparse-pci-tests.log
+          cargo check --locked -p virtio-devices --features kvm 2>&1 | tee ../vfio-sparse-virtio-check.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p pci --features kvm --all-targets -- -D warnings 2>&1 | tee ../vfio-sparse-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../vfio-sparse-final-status.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "controls=${{ steps.controls.outcome }}"
+            echo "baseline_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "focused=${{ steps.focused.outcome }}"
+            echo "broad=${{ steps.broad.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f vfio-sparse-baseline-invariant-status.txt && cat vfio-sparse-baseline-invariant-status.txt
+            test -f vfio-sparse-candidate-diff-sha256.txt && cat vfio-sparse-candidate-diff-sha256.txt
+          } | tee vfio-sparse-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-vfio-sparse-dma-map-panic
+          if-no-files-found: warn
+          path: |
+            vfio-sparse-*.txt
+            vfio-sparse-*.log
+            vfio-sparse-*.diff
