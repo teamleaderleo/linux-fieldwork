@@ -51,11 +51,9 @@ jobs:
         run: |
           set -euo pipefail
           bin="$GITHUB_WORKSPACE/util-linux/build/setsid"
-          "$bin" --fork --wait sh -c 'exit 42'
-          rc42=$?
-          test "$rc42" -eq 42
-
           set +e
+          "$bin" --fork --wait sh -c 'exit 42' > baseline-42.out 2> baseline-42.err
+          rc42=$?
           "$bin" --fork --wait sh -c 'kill -TERM $$' > baseline-term.out 2> baseline-term.err
           term_rc=$?
           "$bin" --fork --wait sh -c 'kill -KILL $$' > baseline-kill.out 2> baseline-kill.err
@@ -64,9 +62,10 @@ jobs:
           direct_rc=$?
           set -e
 
-          printf 'forced_term=%s forced_kill=%s direct_term=%s\n' "$term_rc" "$kill_rc" "$direct_rc" | tee baseline-status.txt
+          printf 'exit42=%s forced_term=%s forced_kill=%s direct_term=%s\n' "$rc42" "$term_rc" "$kill_rc" "$direct_rc" | tee baseline-status.txt
           cat baseline-term.err >&2
           cat baseline-kill.err >&2
+          test "$rc42" -eq 42
           test "$term_rc" -eq 15
           test "$kill_rc" -eq 9
           test "$direct_rc" -eq 143
@@ -121,6 +120,8 @@ jobs:
           name: util-linux-setsid-signal-status-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             setsid-version.txt
+            baseline-42.out
+            baseline-42.err
             baseline-term.out
             baseline-term.err
             baseline-kill.out
