@@ -1,0 +1,15 @@
+active: first host->guest registration accepted                        PASS
+active: dispatch reaches registered guest wrapper                      PASS
+erase cleanup: stale host key falls through to ordinary frontend decode PASS
+tombstone: stale host key is rejected instead of decoded as guest code PASS
+tombstone: synthetic/native host key identity is retained              PASS
+reload: tombstoned native PFN can bind to new guest wrapper            PASS
+reload: same native PFN dispatches to new guest image                  PASS
+collision: first active claim accepted                                 PASS
+collision: different active wrapper remains rejected                   PASS
+collision: first active wrapper remains authoritative                  PASS
+cross-owner: first DSO claim accepted                                  PASS
+cross-owner: equivalent-signature second DSO target is still not retained PASS
+cross-owner: unloading first owner cannot promote an unrecorded second owner PASS
+
+RESULT passed=13 failed=0
