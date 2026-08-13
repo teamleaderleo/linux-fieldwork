@@ -88,8 +88,10 @@ if text.count(anchor) != 1:
 test = r'''    #[cfg(feature = "tdx")]
     #[test]
     fn tdx_payload_setup_size_validation() {
-        let mut header = bootparam::setup_header::default();
-        header.setup_sects = 0;
+        let header = bootparam::setup_header {
+            setup_sects: 0,
+            ..Default::default()
+        };
         let err = Vm::validate_tdx_payload_setup_size(0x212, &header).unwrap_err();
         println!("TDX_PAYLOAD_SETUP_CANDIDATE truncated_result={err:?}");
         assert!(matches!(
@@ -103,8 +105,11 @@ test = r'''    #[cfg(feature = "tdx")]
         Vm::validate_tdx_payload_setup_size(0xa00, &header).unwrap();
         println!("TDX_PAYLOAD_SETUP_CANDIDATE default_setup_control=ok");
 
-        header.setup_sects = 1;
-        Vm::validate_tdx_payload_setup_size(0x400, &header).unwrap();
+        let explicit_header = bootparam::setup_header {
+            setup_sects: 1,
+            ..Default::default()
+        };
+        Vm::validate_tdx_payload_setup_size(0x400, &explicit_header).unwrap();
         println!("TDX_PAYLOAD_SETUP_CANDIDATE explicit_setup_control=ok");
     }
 
