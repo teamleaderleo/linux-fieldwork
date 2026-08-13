@@ -21,7 +21,7 @@ jobs:
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends git strace
 
-      - name: Fetch exact current x/sys and create variants
+      - name: Fetch exact x/sys source and apply separate variants
         shell: bash
         run: |
           set -euo pipefail
@@ -31,142 +31,74 @@ jobs:
           cp -a /tmp/xsys-baseline /tmp/xsys-dynamic
           cp -a /tmp/xsys-baseline /tmp/xsys-fixed
           cp -a /tmp/xsys-baseline /tmp/xsys-both
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          def replace(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              if text.count(old) != 1:
-                  raise SystemExit(f'{path}: anchor count={text.count(old)}')
-              p.write_text(text.replace(old, new, 1))
-
-          fixed_old = 'return setMemPolicy(mode, unsafe.Pointer(mask), _CPU_SETSIZE)'
-          fixed_new = 'return setMemPolicy(mode, unsafe.Pointer(mask), _CPU_SETSIZE+1)'
-          dyn_old = 'return setMemPolicy(mode, mask.pointer(), mask.size())'
-          dyn_new = '''maxnode := uintptr(len(mask)) * _NCPUBITS
-	if maxnode != 0 {
-		maxnode++
-	}
-	return setMemPolicy(mode, mask.pointer(), maxnode)'''
-
-          replace('/tmp/xsys-dynamic/unix/syscall_linux.go', dyn_old, dyn_new)
-          replace('/tmp/xsys-fixed/unix/syscall_linux.go', fixed_old, fixed_new)
-          replace('/tmp/xsys-both/unix/syscall_linux.go', fixed_old, fixed_new)
-          replace('/tmp/xsys-both/unix/syscall_linux.go', dyn_old, dyn_new)
-          PY
-
+          dynamic_patch="$GITHUB_WORKSPACE/executions/xsys-mempolicy-current/dynamic-final-bit.patch"
+          fixed_patch="$GITHUB_WORKSPACE/executions/xsys-mempolicy-current/fixed-final-bit.patch"
+          git -C /tmp/xsys-dynamic apply --check "$dynamic_patch"
+          git -C /tmp/xsys-dynamic apply "$dynamic_patch"
+          git -C /tmp/xsys-fixed apply --check "$fixed_patch"
+          git -C /tmp/xsys-fixed apply "$fixed_patch"
+          git -C /tmp/xsys-both apply "$dynamic_patch"
+          git -C /tmp/xsys-both apply "$fixed_patch"
           for tree in baseline dynamic fixed both; do
             git -C "/tmp/xsys-$tree" diff --check
           done
 
-      - name: Build syscall argument probe
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/mempolicy-probe
-          cat >/tmp/mempolicy-probe/main.go <<'EOF'
-          package main
-
-          import (
-            "fmt"
-            "math/bits"
-            "runtime"
-            "unsafe"
-
-            "golang.org/x/sys/unix"
-          )
-
-          func reset() {
-            _, _, _ = unix.Syscall(unix.SYS_SET_MEMPOLICY, uintptr(unix.MPOL_DEFAULT), 0, 0)
-          }
-
-          func main() {
-            if bits.UintSize != 64 {
-              panic("64-bit host required")
-            }
-            runtime.LockOSThread()
-            defer runtime.UnlockOSThread()
-
-            dynamic := unix.NewCPUSet(64)
-            dynamic.Set(63)
-            dynamicErr := unix.SetMemPolicyDynamic(unix.MPOL_BIND|unix.MPOL_F_RELATIVE_NODES, dynamic)
-            if dynamicErr == nil { reset() }
-
-            var fixed unix.CPUSet
-            fixed.Set(1023)
-            fixedErr := unix.SetMemPolicy(unix.MPOL_BIND|unix.MPOL_F_RELATIVE_NODES, &fixed)
-            if fixedErr == nil { reset() }
-
-            _, _, raw64 := unix.Syscall(unix.SYS_SET_MEMPOLICY,
-              uintptr(unix.MPOL_BIND|unix.MPOL_F_RELATIVE_NODES),
-              uintptr(unsafe.Pointer(&[]uintptr{uintptr(1) << 63}[0])), 64)
-            if raw64 == 0 { reset() }
-            _, _, raw65 := unix.Syscall(unix.SYS_SET_MEMPOLICY,
-              uintptr(unix.MPOL_BIND|unix.MPOL_F_RELATIVE_NODES),
-              uintptr(unsafe.Pointer(&[]uintptr{uintptr(1) << 63}[0])), 65)
-            if raw65 == 0 { reset() }
-
-            fmt.Printf("dynamic=%v fixed=%v raw64=%v raw65=%v\n", dynamicErr, fixedErr, raw64, raw65)
-          }
-          EOF
-          cat >/tmp/mempolicy-probe/go.mod <<'EOF'
-          module fieldwork/xsys-mempolicy-probe
-
-          go 1.25.0
-
-          require golang.org/x/sys v0.0.0
-          EOF
-
-      - name: Execute four source variants and capture syscall arguments
+      - name: Execute variants under strace
         shell: bash
         run: |
           set -euo pipefail
           : > xsys-mempolicy-matrix.txt
+          probe="$GITHUB_WORKSPACE/executions/xsys-mempolicy-current"
           for tree in baseline dynamic fixed both; do
-            cp /tmp/mempolicy-probe/go.mod /tmp/mempolicy-probe/go.mod.work
-            cd /tmp/mempolicy-probe
-            mv go.mod.work go.mod
+            rm -rf /tmp/probe-work
+            mkdir /tmp/probe-work
+            cp "$probe/probe.go" "$probe/go.mod" /tmp/probe-work/
+            cd /tmp/probe-work
             go mod edit -replace=golang.org/x/sys="/tmp/xsys-$tree"
             go mod tidy
-            strace -f -e trace=set_mempolicy -o "$GITHUB_WORKSPACE/$tree.strace" go run . \
-              > "$GITHUB_WORKSPACE/$tree.out"
+            strace -f -e trace=set_mempolicy -o "$GITHUB_WORKSPACE/$tree.strace" go run . > "$GITHUB_WORKSPACE/$tree.out"
             printf '%s\t' "$tree" >> "$GITHUB_WORKSPACE/xsys-mempolicy-matrix.txt"
             cat "$GITHUB_WORKSPACE/$tree.out" >> "$GITHUB_WORKSPACE/xsys-mempolicy-matrix.txt"
           done
           cd "$GITHUB_WORKSPACE"
           cat xsys-mempolicy-matrix.txt
 
-      - name: Assert wrapper maxnode domains
+      - name: Assert syscall argument domains
         shell: bash
         run: |
           set -euo pipefail
-          # First mempolicy call is dynamic wrapper; second wrapper call is fixed CPUSet.
-          dynamic_arg() { grep 'set_mempolicy(MPOL_BIND|MPOL_F_RELATIVE_NODES' "$1.strace" | sed -n '1s/.*,[[:space:]]*\([0-9][0-9]*\))[[:space:]]*=.*/\1/p'; }
-          fixed_arg() { grep 'set_mempolicy(MPOL_BIND|MPOL_F_RELATIVE_NODES' "$1.strace" | sed -n '2s/.*,[[:space:]]*\([0-9][0-9]*\))[[:space:]]*=.*/\1/p'; }
+          python3 - <<'PY'
+          import pathlib, re
 
-          printf 'baseline dynamic=%s fixed=%s\n' "$(dynamic_arg baseline)" "$(fixed_arg baseline)"
-          printf 'dynamic  dynamic=%s fixed=%s\n' "$(dynamic_arg dynamic)" "$(fixed_arg dynamic)"
-          printf 'fixed    dynamic=%s fixed=%s\n' "$(dynamic_arg fixed)" "$(fixed_arg fixed)"
-          printf 'both     dynamic=%s fixed=%s\n' "$(dynamic_arg both)" "$(fixed_arg both)"
-
-          test "$(dynamic_arg baseline)" = 8
-          test "$(fixed_arg baseline)" = 1024
-          test "$(dynamic_arg dynamic)" = 65
-          test "$(fixed_arg dynamic)" = 1024
-          test "$(dynamic_arg fixed)" = 8
-          test "$(fixed_arg fixed)" = 1025
-          test "$(dynamic_arg both)" = 65
-          test "$(fixed_arg both)" = 1025
+          expected = {
+              'baseline': (8, 1024),
+              'dynamic': (65, 1024),
+              'fixed': (8, 1025),
+              'both': (65, 1025),
+          }
+          for name, want in expected.items():
+              text = pathlib.Path(f'{name}.strace').read_text()
+              values = []
+              for line in text.splitlines():
+                  if 'set_mempolicy(MPOL_BIND|MPOL_F_RELATIVE_NODES' not in line:
+                      continue
+                  match = re.search(r',\s*([0-9]+)\)\s*=', line)
+                  if match:
+                      values.append(int(match.group(1)))
+              if len(values) < 2:
+                  raise SystemExit(f'{name}: missing wrapper syscalls: {values}')
+              got = tuple(values[:2])
+              print(f'{name}: dynamic={got[0]} fixed={got[1]}')
+              if got != want:
+                  raise SystemExit(f'{name}: got {got}, want {want}')
+          PY
 
       - name: Preserve dynamic affinity byte-size behavior
         shell: bash
         run: |
           set -euo pipefail
           for tree in baseline dynamic fixed both; do
-            (cd "/tmp/xsys-$tree" && go test ./unix -run '^TestSchedSetaffinityDynamic$' -count=1) \
-              | tee "$GITHUB_WORKSPACE/$tree-affinity.txt"
+            (cd "/tmp/xsys-$tree" && go test ./unix -run '^TestSchedSetaffinityDynamic$' -count=1) | tee "$GITHUB_WORKSPACE/$tree-affinity.txt"
           done
 
       - name: Retain matrix
