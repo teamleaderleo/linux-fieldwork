@@ -1,4 +1,4 @@
-name: Cloud Hypervisor VFIO sparse DMA map panic
+name: Cloud Hypervisor VFIO sparse DMA map panic v2
 
 on:
   push:
@@ -16,6 +16,7 @@ jobs:
     timeout-minutes: 45
     env:
       CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      EXPECTED_CANDIDATE_SHA: acce404b520229080b0eea3185892d05e8b02003c62af608d0594a85eecc19b7
 
     steps:
       - name: Check out Fieldwork carrier
@@ -132,6 +133,8 @@ jobs:
           git diff --check
           git diff -- pci/src/vfio.rs > ../vfio-sparse-candidate-only.diff
           sha256sum ../vfio-sparse-candidate-only.diff | tee ../vfio-sparse-candidate-diff-sha256.txt
+          actual=$(sha256sum ../vfio-sparse-candidate-only.diff | awk '{print $1}')
+          test "$actual" = "$EXPECTED_CANDIDATE_SHA"
           git diff --stat | tee ../vfio-sparse-candidate-stat.txt
           grep -F 'if size > len - offset_from_start {' pci/src/vfio.rs
 
@@ -178,6 +181,7 @@ jobs:
           {
             echo "fieldwork_head=${GITHUB_SHA}"
             echo "source=$CH_SHA"
+            echo "expected_candidate_sha=$EXPECTED_CANDIDATE_SHA"
             echo "source_gate=${{ steps.source.outcome }}"
             echo "probe_gate=${{ steps.probe.outcome }}"
             echo "controls=${{ steps.controls.outcome }}"
@@ -195,7 +199,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ch-vfio-sparse-dma-map-panic
+          name: ch-vfio-sparse-dma-map-panic-v2
           if-no-files-found: warn
           path: |
             vfio-sparse-*.txt
