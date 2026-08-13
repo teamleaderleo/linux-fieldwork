@@ -1,0 +1,151 @@
+name: lf-642 large input block-count reproducer
+
+on:
+  push:
+    branches: [lf-642-large-input-exec]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  filesystem:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      UPSTREAM_HEAD: ab9d0f2c5c44dd72ce253e6e894e2f0edc9205b4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reproduce native sparse-file count narrowing
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang zlib1g-dev liblzma-dev liblzo2-dev liblz4-dev libzstd-dev
+          rm -rf /tmp/sq /tmp/src-small /tmp/src-huge /tmp/evidence-fs /tmp/out-*.sqfs
+          mkdir -p /tmp/src-small /tmp/src-huge /tmp/evidence-fs
+          printf Z > /tmp/src-small/file
+          truncate -s 8796093022208 /tmp/src-huge/huge
+          test "$(stat -c %s /tmp/src-huge/huge)" = 8796093022208
+          du -B1 /tmp/src-huge/huge | tee /tmp/evidence-fs/sparse-allocation.txt
+          uname -a | tee /tmp/evidence-fs/environment.txt
+          clang --version | tee -a /tmp/evidence-fs/environment.txt
+          git --version | tee -a /tmp/evidence-fs/environment.txt
+
+          git clone https://github.com/plougher/squashfs-tools.git /tmp/sq
+          git -C /tmp/sq checkout --detach "$UPSTREAM_HEAD"
+          test "$(git -C /tmp/sq rev-parse HEAD)" = "$UPSTREAM_HEAD"
+          git -C /tmp/sq show -s --format='%H %cI %s' HEAD | tee /tmp/evidence-fs/upstream-head.txt
+
+          BASE='-O1 -g'
+          SAN='-O1 -g -fsanitize=implicit-integer-truncation,implicit-integer-sign-change,signed-integer-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer'
+          make -C /tmp/sq/squashfs-tools clean
+          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$BASE" mksquashfs
+          rm /tmp/sq/squashfs-tools/reader.o
+          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$SAN" reader.o
+          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$BASE" EXTRA_LDFLAGS='-fsanitize=implicit-integer-truncation,implicit-integer-sign-change,signed-integer-overflow' mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-reader-san
+          export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
+
+          /tmp/mksquashfs-reader-san /tmp/src-small /tmp/out-small.sqfs -b 4096 -noappend -no-progress -no-duplicates -no-xattrs > /tmp/evidence-fs/small.log 2>&1
+          ! grep -q 'runtime error:' /tmp/evidence-fs/small.log
+
+          set +e
+          /tmp/mksquashfs-reader-san /tmp/src-huge /tmp/out-huge.sqfs -b 4096 -noappend -no-progress -no-duplicates -no-xattrs > /tmp/evidence-fs/huge.log 2>&1
+          st=$?
+          set -e
+          echo status=$st >> /tmp/evidence-fs/huge.log
+          test "$st" -ne 0
+          grep -Eq "implicit conversion from type 'long long'.*2147483648.*type 'int'.*-2147483648" /tmp/evidence-fs/huge.log
+          grep -q 'reader_read_file' /tmp/evidence-fs/huge.log
+          cat /tmp/evidence-fs/huge.log
+          echo 'LF-642 FILESYSTEM REPRO PASSED' | tee /tmp/evidence-fs/result.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lf-642-filesystem-evidence
+          path: /tmp/evidence-fs
+
+  zip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      UPSTREAM_HEAD: ab9d0f2c5c44dd72ce253e6e894e2f0edc9205b4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reproduce ZIP reader count narrowing and ceiling overflow
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang zlib1g-dev liblzma-dev liblzo2-dev liblz4-dev libzstd-dev
+          rm -rf /tmp/sq /tmp/evidence-zip /tmp/out-*.sqfs
+          mkdir -p /tmp/evidence-zip
+          uname -a | tee /tmp/evidence-zip/environment.txt
+          clang --version | tee -a /tmp/evidence-zip/environment.txt
+          git --version | tee -a /tmp/evidence-zip/environment.txt
+
+          git clone https://github.com/plougher/squashfs-tools.git /tmp/sq
+          git -C /tmp/sq checkout --detach "$UPSTREAM_HEAD"
+          test "$(git -C /tmp/sq rev-parse HEAD)" = "$UPSTREAM_HEAD"
+          git -C /tmp/sq show -s --format='%H %cI %s' HEAD | tee /tmp/evidence-zip/upstream-head.txt
+
+          python3 <<'PY' | tee /tmp/evidence-zip/fixtures.txt
+          import hashlib, struct, zipfile
+          from pathlib import Path
+          p16=lambda x:struct.pack('<H',x); p32=lambda x:struct.pack('<I',x); p64=lambda x:struct.pack('<Q',x)
+          dt=0; dd=0x21; name=b'a'
+          def make(path, usize):
+              csize=0
+              lex=p16(1)+p16(16)+p64(usize)+p64(csize)
+              local=b''.join([p32(0x04034b50),p16(45),p16(0),p16(0),p16(dt),p16(dd),p32(0),p32(0xffffffff),p32(0xffffffff),p16(1),p16(len(lex)),name,lex])
+              cex=p16(1)+p16(24)+p64(usize)+p64(csize)+p64(0)
+              cd=b''.join([p32(0x02014b50),p16((3<<8)|45),p16(45),p16(0),p16(0),p16(dt),p16(dd),p32(0),p32(0xffffffff),p32(0xffffffff),p16(1),p16(len(cex)),p16(0),p16(0),p16(0),p32(0o100644<<16),p32(0xffffffff),name,cex])
+              eocd=b''.join([p32(0x06054b50),p16(0),p16(0),p16(1),p16(1),p32(len(cd)),p32(len(local)),p16(0)])
+              data=local+cd+eocd
+              Path('/tmp',path).write_bytes(data)
+              print(path,'usize=',usize,'bytes=',len(data),'sha256=',hashlib.sha256(data).hexdigest())
+          make('zip-valid.zip',0)
+          make('zip-2gblocks.zip',8796093022208)
+          make('zip-llmax.zip',(1<<63)-1)
+          with zipfile.ZipFile('/tmp/zip-valid.zip') as z: assert z.read('a')==b''
+          PY
+
+          BASE='-O1 -g'
+          SAN='-O1 -g -fsanitize=implicit-integer-truncation,implicit-integer-sign-change,signed-integer-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer'
+          make -C /tmp/sq/squashfs-tools clean
+          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$BASE" mksquashfs
+          rm /tmp/sq/squashfs-tools/zipfile.o
+          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$SAN" zipfile.o
+          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$BASE" EXTRA_LDFLAGS='-fsanitize=implicit-integer-truncation,implicit-integer-sign-change,signed-integer-overflow' mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-zip-san
+          export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
+
+          /tmp/mksquashfs-zip-san /tmp/zip-valid.zip /tmp/out-valid.sqfs -zip -b 4096 -noappend -no-progress -no-duplicates -no-xattrs > /tmp/evidence-zip/valid.log 2>&1
+          ! grep -q 'runtime error:' /tmp/evidence-zip/valid.log
+
+          run_bad() {
+              local label="$1" image="$2"
+              set +e
+              /tmp/mksquashfs-zip-san "$image" "/tmp/out-${label}.sqfs" -zip -b 4096 -noappend -no-progress -no-duplicates -no-xattrs > "/tmp/evidence-zip/${label}.log" 2>&1
+              local st=$?
+              set -e
+              echo status=$st >> "/tmp/evidence-zip/${label}.log"
+              test "$st" -ne 0
+              cat "/tmp/evidence-zip/${label}.log"
+          }
+          run_bad blocks /tmp/zip-2gblocks.zip
+          grep -Eq "implicit conversion from type 'long long'.*2147483648.*type 'int'.*-2147483648" /tmp/evidence-zip/blocks.log
+          grep -q 'read_zip_data' /tmp/evidence-zip/blocks.log
+
+          run_bad llmax /tmp/zip-llmax.zip
+          grep -q 'signed integer overflow: 9223372036854775807 + 4095 cannot be represented in type' /tmp/evidence-zip/llmax.log
+          grep -q 'read_zip_data' /tmp/evidence-zip/llmax.log
+          echo 'LF-642 ZIP REPRO PASSED' | tee /tmp/evidence-zip/result.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lf-642-zip-evidence
+          path: /tmp/evidence-zip
