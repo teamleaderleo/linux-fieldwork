@@ -34,19 +34,14 @@ jobs:
           git -C /tmp/sq show -s --format='%H %cI %s' HEAD | tee /tmp/evidence/upstream-head.txt
 
           python3 <<'PY' | tee /tmp/evidence/fixtures.txt
-          import binascii, hashlib, struct, zipfile
+          import hashlib, struct, zipfile
           from pathlib import Path
           p16=lambda x:struct.pack('<H',x); p32=lambda x:struct.pack('<I',x); p64=lambda x:struct.pack('<Q',x)
           dt=0; dd=0x21; name=b'a'
-
-          # Independent valid one-byte control, exercising write_file_blocks().
           with zipfile.ZipFile('/tmp/valid.zip','w',compression=zipfile.ZIP_STORED,allowZip64=True) as z:
               z.writestr('a',b'Z')
           with zipfile.ZipFile('/tmp/valid.zip') as z: assert z.read('a')==b'Z'
           print('valid.zip',Path('/tmp/valid.zip').stat().st_size,hashlib.sha256(Path('/tmp/valid.zip').read_bytes()).hexdigest())
-
-          # Tiny metadata-only ZIP64 entry.  Current source reaches the writer
-          # for the 8 TiB variant before failing on block-list allocation.
           def make(path, usize):
               csize=0
               lex=p16(1)+p16(16)+p64(usize)+p64(csize)
@@ -67,8 +62,17 @@ jobs:
           make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$BASE" mksquashfs
           rm /tmp/sq/squashfs-tools/mksquashfs.o
           make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$SAN" mksquashfs.o
-          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$BASE" EXTRA_LDFLAGS='-fsanitize=implicit-integer-truncation,implicit-integer-sign-change,signed-integer-overflow' mksquashfs
-          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-writer-san
+
+          cd /tmp/sq/squashfs-tools
+          clang -fsanitize=implicit-integer-truncation,implicit-integer-sign-change,signed-integer-overflow \
+            mksquashfs.o read_fs.o action.o swap.o pseudo.o compressor.o sort.o \
+            progressbar.o info.o restore.o process_fragments.o caches-queues-lists.o \
+            reader.o tar.o zipfile.o date.o memory.o mksquashfs_help.o print_pager.o \
+            symbolic_mode.o thread.o nprocessors_compat.o limit.o virt_disk_pos.o \
+            uid_gid.o archive.o gzip_wrapper.o lzo_wrapper.o lz4_wrapper.o xz_wrapper.o \
+            zstd_wrapper.o xattr.o read_xattrs.o tar_xattr.o pseudo_xattr.o xattr_system.o \
+            -lpthread -lm -lz -llzo2 -llz4 -llzma -lzstd -lz -o /tmp/mksquashfs-writer-san
+          cd -
           export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
 
           /tmp/mksquashfs-writer-san /tmp/valid.zip /tmp/out-valid.sqfs -zip -b 4096 -noappend -no-progress -no-duplicates -no-xattrs > /tmp/evidence/valid.log 2>&1
