@@ -16,11 +16,18 @@ mod sparse_dma_map_probe_tests {
     use std::os::fd::AsFd;
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::process::id;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::*;
 
+    static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
+
     fn sparse_mmio_regions() -> Vec<MmioRegion> {
-        let path = temp_dir().join(format!("cloud-hypervisor-vfio-sparse-{id}", id = id()));
+        let serial = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let path = temp_dir().join(format!(
+            "cloud-hypervisor-vfio-sparse-{}-{serial}",
+            id()
+        ));
         let file = OpenOptions::new()
             .read(true)
             .write(true)
