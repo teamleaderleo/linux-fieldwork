@@ -1,0 +1,139 @@
+name: Cloud Hypervisor TDX payload validation regression v3
+
+on:
+  push:
+    branches: [research/ch-tdx-payload-validation-regression]
+    paths:
+      - .github/workflows/ch-tdx-payload-validation-regression-v3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdx-payload-validation-final:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      EXPECTED_DIFF_SHA: 0af9d875fd2b82099fe15f7f6a910d9500293990846bda6d677da1ea16b0da5e
+      INV_KERNEL: config::tdx_payload_validation_probe_tests::tdx_firmware_kernel_should_validate
+      INV_CMDLINE: config::tdx_payload_validation_probe_tests::tdx_firmware_cmdline_should_be_preserved
+      CONTROL_KERNEL: config::tdx_payload_validation_probe_tests::non_tdx_firmware_kernel_remains_rejected_control
+      CONTROL_CMDLINE: config::tdx_payload_validation_probe_tests::non_tdx_firmware_cmdline_is_removed_control
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../tdx-payload-validation-final-rust-version.txt
+          rustc +nightly --version | tee ../tdx-payload-validation-final-nightly-version.txt
+          git rev-parse HEAD | tee ../tdx-payload-validation-final-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Apply exact candidate and verify immutable diff
+        id: candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdx-payload-validation/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/config.rs vmm/src/vm_config.rs > ../tdx-payload-validation-final-candidate-only.diff
+          sha256sum ../tdx-payload-validation-final-candidate-only.diff | tee ../tdx-payload-validation-final-candidate-diff-sha256.txt
+          actual=$(awk '{print $1}' ../tdx-payload-validation-final-candidate-diff-sha256.txt)
+          test "$actual" = "$EXPECTED_DIFF_SHA"
+          git diff --stat | tee ../tdx-payload-validation-final-candidate-stat.txt
+
+      - name: Apply cleaned probe and focused matrix
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdx-payload-validation/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INV_KERNEL" -- --exact --nocapture 2>&1 | tee ../tdx-payload-validation-final-kernel.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INV_CMDLINE" -- --exact --nocapture 2>&1 | tee ../tdx-payload-validation-final-cmdline.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL_KERNEL" -- --exact --nocapture 2>&1 | tee ../tdx-payload-validation-final-control-kernel.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL_CMDLINE" -- --exact --nocapture 2>&1 | tee ../tdx-payload-validation-final-control-cmdline.log
+          grep -F 'kernel_result=Ok' ../tdx-payload-validation-final-kernel.log
+          grep -F 'cmdline_after=Some("console=hvc0 root=/dev/vda")' ../tdx-payload-validation-final-cmdline.log
+          grep -F 'FirmwarePlusOtherPayloads' ../tdx-payload-validation-final-control-kernel.log
+          grep -F 'cmdline_after=None' ../tdx-payload-validation-final-control-cmdline.log
+
+      - name: Full VMM TDX KVM library tests
+        id: broad
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib 2>&1 | tee ../tdx-payload-validation-final-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations \
+            2>&1 | tee ../tdx-payload-validation-final-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdx-payload-validation-final-status.txt
+
+      - name: Write final receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "expected_candidate_diff_sha=$EXPECTED_DIFF_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "candidate_gate=${{ steps.candidate.outcome }}"
+            echo "focused_gate=${{ steps.focused.outcome }}"
+            echo "broad_gate=${{ steps.broad.outcome }}"
+            echo "quality_gate=${{ steps.quality.outcome }}"
+            test -f tdx-payload-validation-final-candidate-diff-sha256.txt && cat tdx-payload-validation-final-candidate-diff-sha256.txt
+          } | tee tdx-payload-validation-final-receipt.txt
+
+      - name: Upload final evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdx-payload-validation-regression-v3
+          if-no-files-found: warn
+          path: |
+            tdx-payload-validation-final-*.txt
+            tdx-payload-validation-final-*.log
+            tdx-payload-validation-final-*.diff
