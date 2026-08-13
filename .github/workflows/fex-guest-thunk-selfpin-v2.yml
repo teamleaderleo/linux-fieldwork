@@ -1,0 +1,14 @@
+name: FEX guest thunk self-pin v2
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash investigations/fex-vulkan-thunk-lifecycle/run_guest_thunk_selfpin_ci.sh
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selfpin-evidence
+          path: /tmp/fex-selfpin-evidence
