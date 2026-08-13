@@ -131,13 +131,14 @@ static void Finish(int status) {
 int main(int argc, char **argv) {
   if (argc != 4 || (strcmp(argv[1], "report") && strcmp(argv[1], "utils")) ||
       (strcmp(argv[2], "gipa") && strcmp(argv[2], "direct"))) {
-    fprintf(stderr, "usage: %s report|utils gipa|direct expected-count\n", argv[0]);
+    fprintf(stderr, "usage: %s report|utils gipa|direct expected-count|positive\n", argv[0]);
     return 64;
   }
 
   const int is_report = strcmp(argv[1], "report") == 0;
   const int direct = strcmp(argv[2], "direct") == 0;
-  const int expected = atoi(argv[3]);
+  const int expect_positive = strcmp(argv[3], "positive") == 0;
+  const int expected = expect_positive ? -1 : atoi(argv[3]);
   void *vulkan = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
   if (!vulkan) { fprintf(stderr, "DLERROR %s\n", dlerror()); return 2; }
   PFN_vkGetInstanceProcAddr gipa = (PFN_vkGetInstanceProcAddr)dlsym(vulkan, "vkGetInstanceProcAddr");
@@ -189,6 +190,6 @@ int main(int argc, char **argv) {
     fire(instance, VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT, &data);
   }
 
-  fprintf(stderr, "AFTER_FIRE callback_count=%d expected=%d\n", callback_count, expected);
-  Finish(callback_count == expected ? 0 : 20);
+  fprintf(stderr, "AFTER_FIRE callback_count=%d expected=%s\n", callback_count, argv[3]);
+  Finish(expect_positive ? (callback_count > 0 ? 0 : 20) : (callback_count == expected ? 0 : 20));
 }
