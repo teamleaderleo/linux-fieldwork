@@ -1,0 +1,158 @@
+name: FEX guest phase probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - probe/fex-vulkan-callback-ci
+    paths:
+      - .github/workflows/fex-guest-phase-probe.yml
+      - investigations/fex-vulkan-thunk-lifecycle/fex_guest_phase_probe.c
+
+jobs:
+  phase-probe:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    env:
+      FEX_SHA: 71afe476751deac24adabd1adb575fd2337b6e0a
+      CC: clang
+      CXX: clang++
+      FEX_PORTABLE: 1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout exact FEX source
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/FEX
+          ref: ${{ env.FEX_SHA }}
+          path: fex
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Record runner CPU
+        run: |
+          uname -a
+          lscpu
+          cat /proc/cpuinfo
+
+      - name: Install dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build clang lld clang-tools libclang-dev llvm-dev pkg-config git ccache \
+            gcc-x86-64-linux-gnu g++-x86-64-linux-gnu gcc-i686-linux-gnu g++-i686-linux-gnu \
+            libcap-dev libglfw3-dev libepoxy-dev python3-dev libsdl2-dev \
+            libasound2-dev libdrm-dev libwayland-dev libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libxrender-dev \
+            libgl-dev libegl-dev libvulkan-dev mesa-vulkan-drivers
+
+      - name: Configure and build exact FEX
+        working-directory: fex
+        run: |
+          set -euxo pipefail
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/fex-install" \
+            -DUSE_LINKER=lld \
+            -DENABLE_LTO=False \
+            -DENABLE_ASSERTIONS=True \
+            -DBUILD_TESTING=False \
+            -DBUILD_THUNKS=True \
+            -DBUILD_FEXCONFIG=False \
+            -DENABLE_CLANG_THUNKS=True \
+            -DRANGES_NATIVE=OFF
+          cmake --build build -j"$(nproc)"
+          cmake --install build
+
+      - name: Build x86 phase probes
+        run: |
+          set -euxo pipefail
+          SRC=investigations/fex-vulkan-thunk-lifecycle/fex_guest_phase_probe.c
+          x86_64-linux-gnu-gcc -std=c11 -O2 -Wall -Wextra -Werror "$SRC" -ldl -o /tmp/fex-phase-dynamic
+          cat >/tmp/fex_static_smoke.c <<'EOF'
+          #include <unistd.h>
+          int main(void) {
+            static const char text[] = "STATIC_SMOKE_MAIN\n";
+            return write(2, text, sizeof(text) - 1) == (ssize_t)(sizeof(text) - 1) ? 0 : 1;
+          }
+          EOF
+          x86_64-linux-gnu-gcc -static -O2 /tmp/fex_static_smoke.c -o /tmp/fex-static-smoke
+          file /tmp/fex-phase-dynamic /tmp/fex-static-smoke
+
+      - name: Create amd64 rootfs
+        run: |
+          set -euxo pipefail
+          sudo systemctl start docker || true
+          sudo docker pull --platform linux/amd64 ubuntu:24.04
+          cid=$(sudo docker create --platform linux/amd64 ubuntu:24.04)
+          mkdir -p "$GITHUB_WORKSPACE/rootfs"
+          sudo docker export "$cid" | sudo tar -C "$GITHUB_WORKSPACE/rootfs" -xf -
+          sudo docker rm "$cid"
+          sudo mkdir -p "$GITHUB_WORKSPACE/rootfs/tmp"
+          sudo cp /tmp/fex-static-smoke /tmp/fex-phase-dynamic "$GITHUB_WORKSPACE/rootfs/tmp/"
+
+      - name: Locate FEX and thunk artifacts
+        run: |
+          set -euxo pipefail
+          FEX_BIN=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name FEX -perm -111 | head -1)
+          THUNK_CONFIG=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name ThunksDB.json | head -1)
+          GUEST_VK=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name libvulkan-guest.so | head -1)
+          HOST_VK=$(find "$GITHUB_WORKSPACE/fex-install" -type f -name libvulkan-host.so | head -1)
+          test -n "$FEX_BIN"
+          test -n "$THUNK_CONFIG"
+          test -n "$GUEST_VK"
+          test -n "$HOST_VK"
+          echo "FEX_BIN=$FEX_BIN" >> "$GITHUB_ENV"
+          echo "FEX_ROOTFS=$GITHUB_WORKSPACE/rootfs" >> "$GITHUB_ENV"
+          echo "FEX_THUNKCONFIG=$THUNK_CONFIG" >> "$GITHUB_ENV"
+          echo "FEX_THUNKGUESTLIBS=$(dirname "$GUEST_VK")" >> "$GITHUB_ENV"
+          echo "FEX_THUNKHOSTLIBS=$(dirname "$HOST_VK")" >> "$GITHUB_ENV"
+          sudo mkdir -p "$GITHUB_WORKSPACE/rootfs/usr/lib/x86_64-linux-gnu"
+          sudo cp "$GUEST_VK" "$GITHUB_WORKSPACE/rootfs/usr/lib/x86_64-linux-gnu/libvulkan.so.1"
+          mkdir -p "$HOME/.fex-emu"
+          cat > "$HOME/.fex-emu/Config.json" <<JSON
+          {
+            "Config": {
+              "RootFS": "$GITHUB_WORKSPACE/rootfs",
+              "ThunkConfig": "$THUNK_CONFIG"
+            },
+            "ThunksDB": {
+              "Vulkan": 1
+            }
+          }
+          JSON
+          cat "$HOME/.fex-emu/Config.json"
+
+      - name: Run guest phase discriminators
+        run: |
+          set -uxo pipefail
+          run_case() {
+            name=$1
+            shift
+            set +e
+            "$FEX_BIN" "$@" >"/tmp/${name}.log" 2>&1
+            status=$?
+            set -e
+            printf '%s=%s\n' "$name" "$status" | tee "/tmp/${name}.status"
+            cat "/tmp/${name}.log"
+          }
+          set -e
+          run_case static-smoke /tmp/fex-static-smoke
+          run_case dynamic-plain /tmp/fex-phase-dynamic plain
+          run_case dynamic-vulkan /tmp/fex-phase-dynamic vulkan
+          for f in /tmp/*.status; do cat "$f"; done | tee /tmp/phase-matrix.txt
+
+      - name: Upload phase evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fex-guest-phase-${{ github.run_id }}
+          path: |
+            /tmp/static-smoke.log
+            /tmp/dynamic-plain.log
+            /tmp/dynamic-vulkan.log
+            /tmp/*.status
+            /tmp/phase-matrix.txt
+          retention-days: 7
