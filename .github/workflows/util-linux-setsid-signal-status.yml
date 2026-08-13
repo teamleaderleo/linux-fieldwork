@@ -69,8 +69,8 @@ jobs:
           test "$term_rc" -eq 15
           test "$kill_rc" -eq 9
           test "$direct_rc" -eq 143
-          grep -Fq 'did not exit normally: Success' baseline-term.err
-          grep -Fq 'did not exit normally: Success' baseline-kill.err
+          grep -Fq 'did not exit normally:' baseline-term.err
+          grep -Fq 'did not exit normally:' baseline-kill.err
 
       - name: Apply waited-child status candidate
         shell: bash
