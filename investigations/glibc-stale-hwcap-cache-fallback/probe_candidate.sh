@@ -17,12 +17,12 @@ for command in git make bison gawk python3; do
 done
 
 if [[ $(uname -m) != x86_64 ]]; then
-  printf 'this first native candidate fixture is intentionally x86_64-only\n' >&2
+  printf 'this native candidate fixture is intentionally x86_64-only\n' >&2
   exit 77
 fi
 
 readonly glibc_repository=https://github.com/gnutools/glibc.git
-readonly glibc_commit=bd57d3231d7e700d03424854bd8b50b6ce169cc6
+readonly glibc_commit=ae646973c5957b7eed06cb80d49d13b42178072d
 
 work_root=$(mktemp -d "${RUNNER_TEMP:-/tmp}/glibc-stale-hwcap-candidate.XXXXXX")
 cleanup() {
@@ -51,10 +51,17 @@ if [[ "$observed_commit" != "$glibc_commit" ]]; then
 fi
 
 printf 'candidate_transform\n' >"$stage"
-python3 investigations/glibc-stale-hwcap-cache-fallback/apply_candidate_v2.py "$src" \
+python3 investigations/glibc-stale-hwcap-cache-fallback/apply_candidate_v3.py "$src" \
   >"$output_dir/transform.txt"
 git -C "$src" diff --check
 git -C "$src" diff >"$output_dir/candidate.diff"
+
+grep -Fqx $'classification\tcandidate_v3_transform_applied' "$output_dir/transform.txt"
+grep -Fqx $'exact_cache_key_filter\tfalse' "$output_dir/transform.txt"
+if grep -Fq 'strcmp (name, string_table + key_entry->key)' "$src/elf/dl-cache.c"; then
+  printf 'candidate crossed into exact-byte cache-key identity policy\n' >&2
+  exit 1
+fi
 
 printf 'configure\n' >"$stage"
 if ! (cd "$build" && "$src/configure" \
@@ -121,6 +128,8 @@ run_test elf/tst-dl-cache-long-path
   printf 'classification\tcandidate_native_tests_passed\n'
   printf 'glibc_commit\t%s\n' "$observed_commit"
   printf 'execution_uid\t%s\n' "$(id -u)"
+  printf 'identity_policy\tunchanged_comparator_group\n'
+  printf 'identity_runtime_oracle\tfieldwork_502\n'
   printf 'test\telf/tst-glibc-hwcaps-prepend-cache\tpass\n'
   printf 'test\telf/tst-ldconfig-cache\tpass\n'
   printf 'test\telf/tst-dl-cache-long-path\tpass\n'
