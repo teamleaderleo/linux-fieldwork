@@ -145,16 +145,57 @@ Diagnostic non-null X11 helpers: `0`.
 
 Conclusion: the hosted Vulkan-load SIGILL was a minimal-rootfs harness failure. The guest Vulkan constructor expected X11 helper symbols, received null guest targets, and FEX's assertion path deliberately trapped on host ARM64. It is not evidence against Vulkan thunk loading or Finding A.
 
-## Consequence for Finding A
-
-The hosted ARM64 lane is now usable through guest Vulkan library loading. For the actual callback-routing A/B, provide real x86-64 X11 runtime libraries or retain the inert diagnostic helpers for a headless callback probe that does not exercise X11 presentation.
-
-The next useful test is the original direct/GIPA callback matrix with this rootfs repair:
+## Trace run 4 — repaired rootfs reaches the callback-routing failure
 
 ```text
-direct debug-report callback
-GIPA debug-report callback on exact baseline
-GIPA debug-report callback after diagnostic host lookup route
+Actions run: 31736385632
+job: 94568925322
+CI commit: 8ded2659370d3568ef89427e5a1ced3876ede2d9
+source under test: 71afe476751deac24adabd1adb575fd2337b6e0a
+fieldwork probe: 1b268a6742768086aa8355e997c10b4423319ba6
+artifact: 9195430863
+artifact zip SHA-256: 96446e1a21f0acdcf9f4b25973116de48e7c78de0fa092500ad10ef63097f1ed
 ```
 
-That is the experiment the hosted lane was created to run.
+Native ARM64 Lavapipe control delivered the forced debug-report callback twice and exited `0`.
+
+The repaired x86/FEX cases diverged:
+
+```text
+direct=20
+gipa=132
+```
+
+Direct stderr showed:
+
+```text
+CREATE_INSTANCE kind=report lookup=direct result=0
+PROC create=<guest FEX wrapper> fire=<linked proc>
+CREATE_CALLBACK result=0
+AFTER_FIRE callback_count=0 expected=positive
+PROBE_FINISH callback_count=0 status=20
+```
+
+GIPA stderr reached callback creation and then died while firing the message:
+
+```text
+CREATE_INSTANCE kind=report lookup=gipa result=0
+Linking address <native vkCreateDebugReportCallbackEXT> to host invoker <guest thunk invoker>
+PROC create=<linked native proc> fire=<linked proc>
+CREATE_CALLBACK result=0
+[host SIGILL / exit 132 during fire]
+```
+
+Source interpretation: the direct symbol resolves through FEX's custom `fexfn_impl_libvulkan_vkCreateDebugReportCallbackEXT`, which replaces the guest callback with `DummyVkDebugReportCallback`; callback delivery is intentionally suppressed, so count `0` is the baseline policy. `vkGetInstanceProcAddr`, however, does not list `vkCreateDebugReportCallbackEXT` in `LookupCustomVulkanFunction()` at this source SHA. It therefore exposes the native host callback-creating entrypoint through the generic guest mapping path. Callback creation succeeds with an unsafe guest callback pointer, and native Vulkan traps the host process when that callback path is exercised.
+
+This is the hosted reproduction the CI lane was created to obtain.
+
+## Candidate under test
+
+Fieldwork commit `1b268a6742768086aa8355e997c10b4423319ba6` contains `apply_native_first_callback_candidate.py`. It:
+
+1. adds custom routes for `vkCreateDebugReportCallbackEXT`, `vkDestroyDebugReportCallbackEXT`, and `vkCreateDebugUtilsMessengerEXT`;
+2. asks native Vulkan whether a queried proc is available before substituting a FEX custom implementation;
+3. preserves the existing callback-suppression policy while preventing the unsafe native callback-creating function pointer from escaping through GIPA/GDPA.
+
+Acceptance for the focused debug-report A/B is therefore clean completion with callback count `0` through both direct and GIPA routes. A later policy change could implement real guest callback delivery separately.
