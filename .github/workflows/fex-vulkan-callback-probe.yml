@@ -8,6 +8,7 @@ on:
     paths:
       - .github/workflows/fex-vulkan-callback-probe.yml
       - investigations/fex-vulkan-thunk-lifecycle/fex_vulkan_callback_probe.c
+      - investigations/fex-vulkan-thunk-lifecycle/audit_custom_lookup.py
 
 jobs:
   callback-probe:
@@ -29,6 +30,18 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
+      - name: Audit custom dynamic lookup registry
+        run: |
+          set -euxo pipefail
+          python3 investigations/fex-vulkan-thunk-lifecycle/audit_custom_lookup.py \
+            fex/ThunkLibs/libvulkan/libvulkan_interface.cpp \
+            fex/ThunkLibs/libvulkan/Host.cpp \
+            --expect-missing \
+              vkCreateDebugReportCallbackEXT \
+              vkCreateDebugUtilsMessengerEXT \
+              vkDestroyDebugReportCallbackEXT \
+            | tee /tmp/custom-lookup-audit.log
+
       - name: Install ARM64 build and x86 cross dependencies
         run: |
           set -euxo pipefail
@@ -38,7 +51,8 @@ jobs:
             gcc-x86-64-linux-gnu g++-x86-64-linux-gnu gcc-i686-linux-gnu g++-i686-linux-gnu \
             libcap-dev libglfw3-dev libepoxy-dev python3-dev libsdl2-dev \
             libasound2-dev libdrm-dev libwayland-dev libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libxrender-dev \
-            libgl-dev libegl-dev libvulkan-dev mesa-vulkan-drivers docker.io
+            libgl-dev libegl-dev libvulkan-dev mesa-vulkan-drivers
+          docker --version
 
       - name: Configure FEX with clang thunks
         working-directory: fex
@@ -85,6 +99,7 @@ jobs:
         run: |
           set -euxo pipefail
           sudo systemctl start docker || true
+          sudo docker info
           sudo docker pull --platform linux/amd64 ubuntu:24.04
           cid=$(sudo docker create --platform linux/amd64 ubuntu:24.04)
           mkdir -p "$GITHUB_WORKSPACE/rootfs"
@@ -240,5 +255,6 @@ jobs:
             /tmp/*.log
             /tmp/*.status
             /tmp/status-matrix.txt
+            /tmp/custom-lookup-audit.log
             fex/ThunkLibs/libvulkan/Host.cpp
           retention-days: 7
