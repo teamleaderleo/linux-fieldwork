@@ -1,0 +1,164 @@
+name: lf-641 parser-local candidate validation
+
+on:
+  push:
+    branches: [lf-641-zip64-exec]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      UPSTREAM_HEAD: ab9d0f2c5c44dd72ce253e6e894e2f0edc9205b4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate checked ZIP64 conversions
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang zlib1g-dev liblzma-dev liblzo2-dev liblz4-dev libzstd-dev
+          rm -rf /tmp/sq /tmp/evidence /tmp/out-*.sqfs
+          mkdir -p /tmp/evidence
+          uname -a | tee /tmp/evidence/environment.txt
+          clang --version | tee -a /tmp/evidence/environment.txt
+          gcc --version | head -1 | tee -a /tmp/evidence/environment.txt
+
+          git clone https://github.com/plougher/squashfs-tools.git /tmp/sq
+          git -C /tmp/sq checkout --detach "$UPSTREAM_HEAD"
+          test "$(git -C /tmp/sq rev-parse HEAD)" = "$UPSTREAM_HEAD"
+          git -C /tmp/sq show -s --format='%H %cI %s' HEAD | tee /tmp/evidence/upstream-head.txt
+
+          python3 <<'PY' | tee /tmp/evidence/fixtures.txt
+          import hashlib, struct, zipfile
+          from pathlib import Path
+          p16=lambda x:struct.pack('<H',x); p32=lambda x:struct.pack('<I',x); p64=lambda x:struct.pack('<Q',x)
+          dt=0; dd=0x21
+          def save(n,d):
+              Path('/tmp',n).write_bytes(d)
+              print(n,len(d),hashlib.sha256(d).hexdigest())
+
+          # ZIP64 EOCD fixture with one empty file.
+          n=b'a'
+          lh=b''.join([p32(0x04034b50),p16(45),p16(0),p16(0),p16(dt),p16(dd),p32(0),p32(0),p32(0),p16(1),p16(0),n])
+          co=len(lh)
+          cd=b''.join([p32(0x02014b50),p16((3<<8)|45),p16(45),p16(0),p16(0),p16(dt),p16(dd),p32(0),p32(0),p32(0),p16(1),p16(0),p16(0),p16(0),p16(0),p32(0o100644<<16),p32(0),n])
+          cs=len(cd); zo=co+cs
+          z64=b''.join([p32(0x06064b50),p64(44),p16((3<<8)|45),p16(45),p32(0),p32(0),p64(1),p64(1),p64(cs),p64(co)])
+          lo=zo+len(z64)
+          loc=b''.join([p32(0x07064b50),p32(0),p64(zo),p32(1)])
+          eo=b''.join([p32(0x06054b50),p16(0),p16(0),p16(0xffff),p16(0xffff),p32(0xffffffff),p32(0xffffffff),p16(0)])
+          top=bytearray(lh+cd+z64+loc+eo); save('top-valid.zip',top)
+          with zipfile.ZipFile('/tmp/top-valid.zip') as z: assert z.read('a')==b''
+          def tm(n,off,val):
+              d=bytearray(top); struct.pack_into('<Q',d,off,val); save(n,d)
+          tm('top-locator-sign.zip',lo+8,1<<63)
+          tm('top-entries-sign.zip',zo+32,1<<63)
+          tm('top-cd-size-sign.zip',zo+40,1<<63)
+          tm('top-cd-off-sign.zip',zo+48,1<<63)
+          d=bytearray(top); struct.pack_into('<Q',d,zo+48,(1<<63)-1); struct.pack_into('<Q',d,zo+40,1); save('top-range-overflow.zip',d)
+
+          # ZIP64 extra fixture is a directory, so parser fields are exercised
+          # without entering regular-file data I/O.
+          n=b'd/'
+          lh=b''.join([p32(0x04034b50),p16(45),p16(0),p16(0),p16(dt),p16(dd),p32(0),p32(0),p32(0),p16(2),p16(0),n])
+          co=len(lh); data=p64(0)+p64(0)+p64(0); ex=p16(1)+p16(24)+data
+          cd=b''.join([p32(0x02014b50),p16((3<<8)|45),p16(45),p16(0),p16(0),p16(dt),p16(dd),p32(0),p32(0xffffffff),p32(0xffffffff),p16(2),p16(len(ex)),p16(0),p16(0),p16(0),p32(0o40755<<16),p32(0xffffffff),n,ex])
+          cs=len(cd); eo=b''.join([p32(0x06054b50),p16(0),p16(0),p16(1),p16(1),p32(cs),p32(co),p16(0)])
+          ent=bytearray(lh+cd+eo); save('entry-valid.zip',ent)
+          with zipfile.ZipFile('/tmp/entry-valid.zip') as z: assert z.infolist()[0].is_dir()
+          off=co+46+2+4
+          for name,i in [('entry-uncomp-sign.zip',0),('entry-comp-sign.zip',1),('entry-offset-sign.zip',2)]:
+              d=bytearray(ent); struct.pack_into('<Q',d,off+8*i,1<<63); save(name,d)
+          PY
+
+          python3 <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/sq/squashfs-tools/zipfile.c'); s=p.read_text()
+          a='''static unsigned long long get64(unsigned char *p)\n{\n\treturn (unsigned long long) get32(p) |\n\t\t((unsigned long long) get32(p + 4) << 32);\n}\n'''
+          h=a+'''\n\nstatic int get64_signed(unsigned char *p, long long *value)\n{\n\tunsigned long long result = get64(p);\n\n\tif(result > LLONG_MAX)\n\t\treturn FALSE;\n\n\t*value = (long long) result;\n\treturn TRUE;\n}\n'''
+          assert s.count(a)==1; s=s.replace(a,h,1)
+          s=s.replace('static void parse_extra(struct zip_entry *entry, unsigned char *extra,\n','static int parse_extra(struct zip_entry *entry, unsigned char *extra,\n',1)
+          old='''\t\t\tif(size32 && left >= 8) {\n\t\t\t\tentry->uncomp_size = get64(p);\n\t\t\t\tfile->buf.st_size = entry->uncomp_size;\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n\t\t\tif(csize32 && left >= 8) {\n\t\t\t\tentry->comp_size = get64(p);\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n\t\t\tif(off32 && left >= 8) {\n\t\t\t\tentry->offset = get64(p);\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n'''
+          new='''\t\t\tif(size32 && left >= 8) {\n\t\t\t\tif(get64_signed(p, &entry->uncomp_size) == FALSE)\n\t\t\t\t\treturn FALSE;\n\t\t\t\tfile->buf.st_size = entry->uncomp_size;\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n\t\t\tif(csize32 && left >= 8) {\n\t\t\t\tif(get64_signed(p, &entry->comp_size) == FALSE)\n\t\t\t\t\treturn FALSE;\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n\t\t\tif(off32 && left >= 8) {\n\t\t\t\tif(get64_signed(p, &entry->offset) == FALSE)\n\t\t\t\t\treturn FALSE;\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n'''
+          assert s.count(old)==1; s=s.replace(old,new,1)
+          end='''\t\textra += 4 + len;\n\t\textra_len -= 4 + len;\n\t}\n}\n\n\n/*\n * Parse one central-directory record'''
+          assert s.count(end)==1; s=s.replace(end,'''\t\textra += 4 + len;\n\t\textra_len -= 4 + len;\n\t}\n\n\treturn TRUE;\n}\n\n\n/*\n * Parse one central-directory record''',1)
+          call='''\tparse_extra(entry, cd + ZIP_CENTRAL_SIZE + name_len, extra_len,\n\t\tsize32, csize32, off32);\n'''
+          assert s.count(call)==1; s=s.replace(call,'''\tif(parse_extra(entry, cd + ZIP_CENTRAL_SIZE + name_len, extra_len,\n\t\t\tsize32, csize32, off32) == FALSE) {\n\t\tfree_tar_xattrs(file);\n\t\tfree(file->pathname);\n\t\tfree(file);\n\t\tentry->file = NULL;\n\t\treturn -1;\n\t}\n''',1)
+          z='''\t\t\tlong long z64_off = get64(buffer + loc_pos + 8);\n\t\t\tunsigned char z64[56];\n'''
+          assert s.count(z)==1; s=s.replace(z,'''\t\t\tlong long z64_off;\n\t\t\tunsigned char z64[56];\n\n\t\t\tif(get64_signed(buffer + loc_pos + 8, &z64_off) == FALSE)\n\t\t\t\tBAD_ERROR("ZIP64 end record offset in %s is too large\\n",\n\t\t\t\t\tzip_name[zip]);\n''',1)
+          vals='''\t\t\t\tcd_entries = get64(z64 + 32);\n\t\t\t\tcd_size = get64(z64 + 40);\n\t\t\t\tcd_off = get64(z64 + 48);\n'''
+          assert s.count(vals)==1; s=s.replace(vals,'''\t\t\t\tif(get64_signed(z64 + 32, &cd_entries) == FALSE ||\n\t\t\t\t\t\tget64_signed(z64 + 40, &cd_size) == FALSE ||\n\t\t\t\t\t\tget64_signed(z64 + 48, &cd_off) == FALSE)\n\t\t\t\t\tBAD_ERROR("ZIP64 central directory values in %s "\n\t\t\t\t\t\t"are too large\\n", zip_name[zip]);\n''',1)
+          b='''\tif(cd_off + cd_size > fsize)\n\t\tBAD_ERROR("Central directory of %s extends past end of file\\n",\n\t\t\tzip_name[zip]);\n'''
+          assert s.count(b)==1; s=s.replace(b,'''\tif(cd_off > fsize || cd_size > fsize - cd_off)\n\t\tBAD_ERROR("Central directory of %s extends past end of file\\n",\n\t\t\tzip_name[zip]);\n''',1)
+          p.write_text(s)
+          PY
+
+          git -C /tmp/sq diff --check
+          git -C /tmp/sq diff -- squashfs-tools/zipfile.c | tee /tmp/evidence/candidate.diff
+          test "$(git -C /tmp/sq diff --name-only)" = squashfs-tools/zipfile.c
+
+          # Full normal build is the compatibility build gate.
+          make -C /tmp/sq/squashfs-tools clean
+          make -C /tmp/sq/squashfs-tools -j2
+          echo NORMAL_FULL_BUILD_OK | tee /tmp/evidence/normal-build.txt
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-normal
+
+          run_case() {
+              local bin="$1" label="$2" image="$3"
+              rm -f "/tmp/out-${label}.sqfs"
+              set +e
+              "$bin" "$image" "/tmp/out-${label}.sqfs" -zip -noappend -no-progress -no-duplicates -no-xattrs > "/tmp/evidence/${label}.log" 2>&1
+              local st=$?
+              set -e
+              echo status=$st >> "/tmp/evidence/${label}.log"
+          }
+          ok() { run_case "$1" "$2" "$3"; grep -q 'status=0' "/tmp/evidence/$2.log"; }
+          reject() { run_case "$1" "$2" "$3"; grep -q 'status=1' "/tmp/evidence/$2.log"; grep -q "$4" "/tmp/evidence/$2.log"; }
+
+          ok /tmp/mksquashfs-normal normal-top-valid /tmp/top-valid.zip
+          ok /tmp/mksquashfs-normal normal-entry-valid /tmp/entry-valid.zip
+          reject /tmp/mksquashfs-normal normal-locator /tmp/top-locator-sign.zip 'ZIP64 end record offset'
+          reject /tmp/mksquashfs-normal normal-entries /tmp/top-entries-sign.zip 'ZIP64 central directory values'
+          reject /tmp/mksquashfs-normal normal-cdsize /tmp/top-cd-size-sign.zip 'ZIP64 central directory values'
+          reject /tmp/mksquashfs-normal normal-cdoff /tmp/top-cd-off-sign.zip 'ZIP64 central directory values'
+          reject /tmp/mksquashfs-normal normal-range /tmp/top-range-overflow.zip 'extends past end of file'
+          reject /tmp/mksquashfs-normal normal-euncomp /tmp/entry-uncomp-sign.zip 'Corrupt central directory record'
+          reject /tmp/mksquashfs-normal normal-ecomp /tmp/entry-comp-sign.zip 'Corrupt central directory record'
+          reject /tmp/mksquashfs-normal normal-eoff /tmp/entry-offset-sign.zip 'Corrupt central directory record'
+
+          # Rebuild only zipfile.o with UBSan, then relink.  This keeps the
+          # sanitizer focused on the changed parser and avoids unrelated
+          # whole-program diagnostics on valid empty-file inputs.
+          make -C /tmp/sq/squashfs-tools clean
+          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS='-O1 -g' mksquashfs
+          rm /tmp/sq/squashfs-tools/zipfile.o
+          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS='-O1 -g -fsanitize=undefined -fno-sanitize-recover=all -fno-omit-frame-pointer' zipfile.o
+          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS='-O1 -g' EXTRA_LDFLAGS='-fsanitize=undefined' mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-zipubsan
+          export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
+
+          ok /tmp/mksquashfs-zipubsan ubsan-top-valid /tmp/top-valid.zip
+          ok /tmp/mksquashfs-zipubsan ubsan-entry-valid /tmp/entry-valid.zip
+          reject /tmp/mksquashfs-zipubsan ubsan-locator /tmp/top-locator-sign.zip 'ZIP64 end record offset'
+          reject /tmp/mksquashfs-zipubsan ubsan-entries /tmp/top-entries-sign.zip 'ZIP64 central directory values'
+          reject /tmp/mksquashfs-zipubsan ubsan-cdsize /tmp/top-cd-size-sign.zip 'ZIP64 central directory values'
+          reject /tmp/mksquashfs-zipubsan ubsan-cdoff /tmp/top-cd-off-sign.zip 'ZIP64 central directory values'
+          reject /tmp/mksquashfs-zipubsan ubsan-range /tmp/top-range-overflow.zip 'extends past end of file'
+          reject /tmp/mksquashfs-zipubsan ubsan-euncomp /tmp/entry-uncomp-sign.zip 'Corrupt central directory record'
+          reject /tmp/mksquashfs-zipubsan ubsan-ecomp /tmp/entry-comp-sign.zip 'Corrupt central directory record'
+          reject /tmp/mksquashfs-zipubsan ubsan-eoff /tmp/entry-offset-sign.zip 'Corrupt central directory record'
+          ! grep -ER 'runtime error:|UndefinedBehaviorSanitizer' /tmp/evidence/ubsan-*.log
+
+          echo 'ALL LF-641 PARSER-LOCAL ASSERTIONS PASSED' | tee /tmp/evidence/result.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lf-641-parser-local-evidence
+          path: /tmp/evidence
