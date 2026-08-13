@@ -16,6 +16,8 @@ jobs:
     timeout-minutes: 90
     env:
       FEX_SHA: 71afe476751deac24adabd1adb575fd2337b6e0a
+      CC: clang
+      CXX: clang++
 
     steps:
       - name: Checkout fieldwork probe
