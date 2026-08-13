@@ -1,66 +1,78 @@
-# Cloud Hypervisor TDVF Payload guest-memory destination panic
+# Cloud Hypervisor TDVF Payload guest-memory destination reachability
 
 Updated: 2026-08-13
 Owning issue: #590
 Worker/variant: LF-R590Q
 Fieldwork base: `f9a45e6a311b59aed58dd6ed525a5d38df1e30b6`
 Exact Cloud Hypervisor source: `1af93ac7035cda77cd87b0c18b1134ebb0928052`
+Tested Fieldwork head: `3b671c290a675d86f3c606f99185c5c94488fe77`
 External-contact state: false; upstream remains read-only
-State: STAGED
+State: **NEGATIVE FOR SUPPORTED TDX CONFIGURATION / CANDIDATE NOT SELECTED**
 
-## Narrow question
+## Question and disposition
 
-When a TDVF `Payload` section names a guest address that is not backed by guest memory, does exact-current `Vm::populate_tdx_sections()` panic at the payload `mem.read_volatile_from(...).unwrap()` boundary? Can the minimum repair propagate that guest-memory failure as a payload-specific typed VMM error while preserving a valid payload copy?
+Exact-current `Vm::populate_tdx_sections()` contains an unwrapped guest-memory copy in the `TdvfSectionType::Payload` arm. An isolated production-shaped helper proves that an unmapped destination panics and that a tiny typed propagation candidate would remove the panic.
 
-This is separate from:
+However, source reachability review after execution established that the `Payload` arm's file-backed body is not entered by a supported, validated TDX boot configuration:
 
-- `PayloadParam`, whose generated command line is written with `write_slice()`;
-- BFV/CFV firmware-copy destination handling;
-- payload-file header I/O and exact-read semantics;
-- later `init_tdx_memory()` host-range validation.
+1. `PayloadConfig::validate()` rejects `firmware + kernel` with `FirmwarePlusOtherPayloads`.
+2. `VmConfig::validate()` requires `firmware` when TDX is enabled.
+3. `Vm::new()` re-runs `config.validate()` before VM construction, including configurations previously accepted/stored by the HTTP `vm.create` path.
+4. The `TdvfSectionType::Payload` arm performs header/body work only inside `if let Some(payload_file) = self.kernel.as_mut()`.
 
-## Exact source owner
+Therefore a validated TDX configuration has `firmware = Some(...)` and `kernel = None`, so the branch containing the remaining Payload header/body unwraps is skipped.
 
-The `Payload` arm already maps file seek/rewind failures through `Error::LoadPayload(io::Error)`, but the actual payload-to-guest copy is:
+**Disposition:** do not promote the candidate and do not count this as a supported-configuration Cloud Hypervisor bug. Preserve the run as negative reachability evidence and revisit only if the configuration contract changes or another supported construction path supplies `self.kernel` for TDX.
 
-```rust
-mem.read_volatile_from(
-    GuestAddress(section.address),
-    payload_file,
-    payload_size as usize,
-)
-.unwrap();
+## Isolated execution evidence
+
+Authoritative hosted run:
+
+- run `31662905270`
+- job `94331272368`
+- tested head `3b671c290a675d86f3c606f99185c5c94488fe77`
+- artifact `9166870995`
+- artifact digest `sha256:c0d0c92b167bf395c2e7b3f72cbc85688e69cbbbdc764377e3325558341086fd`
+
+The isolated baseline used an ordinary 64-byte file and a 4 KiB `GuestMemoryMmap`:
+
+```text
+valid destination 0x800 -> copied=16, bytes all 0x6b
+invalid destination 0x2000 -> InvalidGuestAddress(GuestAddress(8192)) -> current unwrap panics
+TDVF_PAYLOAD_DEST_BASELINE_INVARIANT_RC=101
 ```
 
-A `GuestMemoryError` at this boundary is therefore converted into a VMM panic.
+The experimental candidate added `Error::LoadPayloadMemory(GuestMemoryError)`, wrapped only the existing Payload copy, and returned:
 
-## Baseline discriminator
+```text
+TDVF_PAYLOAD_DEST_CANDIDATE invalid_result=LoadPayloadMemory(InvalidGuestAddress(GuestAddress(8192)))
+TDVF_PAYLOAD_DEST_CANDIDATE copied=16 bytes=[107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107, 107]
+```
 
-Use an ordinary 64-byte file and a 4 KiB `GuestMemoryMmap`:
+Candidate-only diff SHA-256:
 
-- valid control: destination `0x800`, copy 16 bytes -> returns 16 and exact bytes are present;
-- ignored malformed witness: destination `0x2000` -> current `.unwrap()` panics on `InvalidGuestAddress`;
-- normal expected-red invariant: the same invalid destination must not panic.
+`298ac3ea1ce3062f3967880098d1ed142487a38bc90c64729ae6682289e13772`
 
-No TDX hardware is needed because the test exercises the exact guest-memory copy primitive and the same unwrap contract as the production Payload arm.
+The experimental candidate also passed:
 
-## Minimum candidate
+```text
+full VMM tdx,kvm library: 105 passed, 0 failed, 0 ignored
+candidate focused propagation: success
+clippy: success
+nightly rustfmt: success
+git diff --check: success
+```
 
-1. add typed `Error::LoadPayloadMemory(GuestMemoryError)`;
-2. add a tiny `copy_tdx_payload()` helper around the existing non-exact `read_volatile_from()` call;
-3. replace only the Payload arm unwrap with `...?`;
-4. focused regression proves invalid destination returns the typed payload-memory error and valid copy count/content are unchanged.
+Those green gates establish that the local repair is mechanically viable; they do **not** establish product reachability and are not grounds to select it.
 
-This lane deliberately leaves successful-short-copy semantics unchanged so payload exact-read behavior can be owned separately.
+## Why the HTTP path does not reopen the claim
 
-## Gates
+`/api/v1/vm.create` deserializes and stores a `VmConfig` without validating it at that endpoint. That initially looked like a possible route to `firmware + kernel`.
 
-- exact upstream source pin and clean tree;
-- baseline valid control;
-- baseline invalid-destination panic witness;
-- baseline no-panic invariant expected red;
-- restore exact source before candidate;
-- focused typed propagation + valid-content control;
-- full `vmm` library tests with `tdx,kvm`;
-- Clippy, nightly rustfmt, `git diff --check`;
-- complete candidate-only diff and SHA-256 receipt.
+The later boot path closes it: `Vm::new()` calls `config.validate()` before construction. Thus an HTTP-stored invalid payload combination still fails validation before `self.kernel` is opened or `populate_tdx_sections()` executes.
+
+## Remaining useful research
+
+Keep separate and prioritize reachable TDVF semantics, especially relationships between BFV/CFV `data_size` (bytes copied from the firmware file) and `size` (declared memory extent later initialized/measured by TDX).
+
+Do not create a Payload header/body exact-read candidate unless a supported TDX configuration path that reaches `self.kernel` is first demonstrated.
