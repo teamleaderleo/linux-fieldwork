@@ -44,7 +44,6 @@ mod embedded_payload_probe_tests {
 
         bytes[DATA_OFFSET as usize..DATA_OFFSET as usize + DATA_SIZE as usize].fill(0x7c);
 
-        // Deprecated metadata pointer 32 bytes from EOF points to descriptor at offset 0.
         let pointer_offset = FILE_LEN - 0x20;
         bytes[pointer_offset..pointer_offset + 4].copy_from_slice(&0u32.to_le_bytes());
 
@@ -65,11 +64,11 @@ mod embedded_payload_probe_tests {
         let data_size = section.data_size;
         let address = section.address;
         let memory_size = section.size;
+        let section_type = section.r#type;
         println!(
-            "TDVF_EMBEDDED_PAYLOAD_PARSE offset=0x{data_offset:x} raw=0x{data_size:x} address=0x{address:x} memory=0x{memory_size:x} type={:?}",
-            section.r#type
+            "TDVF_EMBEDDED_PAYLOAD_PARSE offset=0x{data_offset:x} raw=0x{data_size:x} address=0x{address:x} memory=0x{memory_size:x} type={section_type:?}"
         );
-        assert!(matches!(section.r#type, TdvfSectionType::Payload));
+        assert!(matches!(section_type, TdvfSectionType::Payload));
         assert_eq!(data_offset, DATA_OFFSET);
         assert_eq!(data_size, DATA_SIZE);
         assert_eq!(address, ADDRESS);
