@@ -82,8 +82,15 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C cloud-hypervisor diff --name-only)" = 'vmm/src/lib.rs'
-          test "$(grep -F 'event!("'"'vm'"'", "'"'migration-receive-failed'"'");' cloud-hypervisor/vmm/src/lib.rs | wc -l)" -eq 1
-          grep -Fq 'let receive_result: result::Result<(), MigratableError>' cloud-hypervisor/vmm/src/lib.rs
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('cloud-hypervisor/vmm/src/lib.rs').read_text()
+          owner = 'event!("vm", "migration-receive-failed");'
+          if text.count(owner) != 1:
+              raise SystemExit(f'failure event owners={text.count(owner)}, want 1')
+          if 'let receive_result: result::Result<(), MigratableError>' not in text:
+              raise SystemExit('missing terminal receive-result owner')
+          PY
 
       - name: Retain exact evidence
         if: always()
