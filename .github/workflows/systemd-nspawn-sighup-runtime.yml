@@ -1,0 +1,170 @@
+name: systemd-nspawn SIGHUP unix-export runtime matrix
+
+on:
+  push:
+    branches:
+      - execute/systemd-nspawn-sighup-runtime
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out exact systemd source
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/systemd
+          ref: d66923ea07223808cf81de4ea3d0fcf7c04847a2
+          path: systemd
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install build and fixture dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+          sudo apt-get build-dep -y systemd
+          sudo apt-get install -y --no-install-recommends meson ninja-build busybox-static
+
+      - name: Build exact systemd-nspawn
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C systemd rev-parse HEAD)" = d66923ea07223808cf81de4ea3d0fcf7c04847a2
+          meson setup systemd/build systemd -Dmode=developer -Dtests=false -Dman=false
+          meson compile -C systemd/build systemd-nspawn
+          systemd/build/systemd-nspawn --version | tee nspawn-version.txt
+
+      - name: Build minimal static root
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/tmp/fieldwork-nspawn-root
+          rm -rf "$root"
+          mkdir -p "$root/usr/bin" "$root/bin" "$root/etc"
+          cp /bin/busybox "$root/usr/bin/busybox"
+          ln -s ../usr/bin/busybox "$root/bin/sh"
+          ln -s busybox "$root/usr/bin/sleep"
+          printf 'NAME=Fieldwork\nID=fieldwork\n' > "$root/etc/os-release"
+
+      - name: Execute SIGTERM/SIGHUP/cleanup matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/systemd/build/systemd-nspawn"
+          root=/tmp/fieldwork-nspawn-root
+          sudo -E bash -s -- "$bin" "$root" "$GITHUB_WORKSPACE" <<'ROOT'
+          set -euo pipefail
+          bin=$1
+          root=$2
+          out=$3/nspawn-matrix.txt
+          : > "$out"
+
+          start_machine() {
+            machine=$1
+            log=$2
+            "$bin" \
+              --directory="$root" \
+              --machine="$machine" \
+              --register=no \
+              --private-users=no \
+              --network-veth=no \
+              --console=pipe \
+              /usr/bin/sleep 600 >"$log" 2>&1 &
+            NSPAWN_PID=$!
+            EXPORT_PATH="/run/systemd/nspawn/$machine/unix-export"
+            CHILD_PID=""
+            for _ in $(seq 1 400); do
+              if mountpoint -q "$EXPORT_PATH"; then
+                CHILD_PID=$(pgrep -P "$NSPAWN_PID" | head -n1 || true)
+                return 0
+              fi
+              if ! kill -0 "$NSPAWN_PID" 2>/dev/null; then
+                echo "nspawn exited before unix-export became mounted" >&2
+                cat "$log" >&2
+                return 1
+              fi
+              sleep 0.025
+            done
+            echo "unix-export did not become a mount point: $EXPORT_PATH" >&2
+            cat "$log" >&2
+            return 1
+          }
+
+          cleanup_processes() {
+            if [ -n "${CHILD_PID:-}" ] && kill -0 "$CHILD_PID" 2>/dev/null; then
+              kill -KILL "$CHILD_PID" 2>/dev/null || true
+              sleep 0.1
+            fi
+          }
+
+          run_signal_case() {
+            label=$1
+            sig=$2
+            machine="fw-${label}-$$"
+            log="$out.$label.log"
+            start_machine "$machine" "$log"
+            printf '%s before: mounted=1 dir=%s nspawn_pid=%s child_pid=%s\n' \
+              "$label" "$([ -d "$EXPORT_PATH" ] && echo 1 || echo 0)" "$NSPAWN_PID" "${CHILD_PID:-none}" >> "$out"
+
+            kill -"$sig" "$NSPAWN_PID"
+            set +e
+            wait "$NSPAWN_PID"
+            rc=$?
+            set -e
+            sleep 0.25
+
+            mounted=0
+            dir=0
+            mountpoint -q "$EXPORT_PATH" && mounted=1 || true
+            [ -d "$EXPORT_PATH" ] && dir=1 || true
+            printf '%s after: rc=%s mounted=%s dir=%s child_alive=%s\n' \
+              "$label" "$rc" "$mounted" "$dir" "$([ -n "${CHILD_PID:-}" ] && kill -0 "$CHILD_PID" 2>/dev/null && echo 1 || echo 0)" >> "$out"
+
+            if [ "$label" = term ]; then
+              test "$mounted" -eq 0
+              test "$dir" -eq 0
+            else
+              test "$mounted" -eq 1
+              "$bin" --machine="$machine" --cleanup >>"$log" 2>&1
+              sleep 0.1
+              mountpoint -q "$EXPORT_PATH" && after_cleanup_mounted=1 || after_cleanup_mounted=0
+              [ -d "$EXPORT_PATH" ] && after_cleanup_dir=1 || after_cleanup_dir=0
+              printf '%s cleanup: mounted=%s dir=%s\n' "$label" "$after_cleanup_mounted" "$after_cleanup_dir" >> "$out"
+              test "$after_cleanup_mounted" -eq 0
+              test "$after_cleanup_dir" -eq 0
+            fi
+            cleanup_processes
+          }
+
+          run_signal_case term TERM
+          run_signal_case hup HUP
+          cat "$out"
+          ROOT
+
+      - name: Source ownership fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'sigprocmask_many(SIG_BLOCK, NULL, SIGCHLD, SIGWINCH, SIGTERM, SIGINT, SIGRTMIN+18)' systemd/src/nspawn/nspawn.c
+          ! grep -F 'sigprocmask_many(SIG_BLOCK, NULL, SIGCHLD, SIGWINCH, SIGHUP' systemd/src/nspawn/nspawn.c
+          grep -F 'cleanup_propagation_and_export_directories(runtime_dir);' systemd/src/nspawn/nspawn.c
+
+      - name: Retain exact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: systemd-nspawn-sighup-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            nspawn-version.txt
+            nspawn-matrix.txt
+            nspawn-matrix.txt.term.log
+            nspawn-matrix.txt.hup.log
+          if-no-files-found: warn
+          retention-days: 14
