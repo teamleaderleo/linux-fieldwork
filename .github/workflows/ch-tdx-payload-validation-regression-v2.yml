@@ -1,0 +1,214 @@
+name: Cloud Hypervisor TDX payload validation regression v2
+
+on:
+  push:
+    branches: [research/ch-tdx-payload-validation-regression]
+    paths:
+      - .github/workflows/ch-tdx-payload-validation-regression-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdx-payload-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      BASE_KERNEL: config::tdx_payload_validation_probe_tests::tdx_firmware_kernel_is_rejected_baseline
+      BASE_CMDLINE: config::tdx_payload_validation_probe_tests::tdx_firmware_cmdline_is_silently_removed_baseline
+      INV_KERNEL: config::tdx_payload_validation_probe_tests::tdx_firmware_kernel_should_validate
+      INV_CMDLINE: config::tdx_payload_validation_probe_tests::tdx_firmware_cmdline_should_be_preserved
+      CONTROL_KERNEL: config::tdx_payload_validation_probe_tests::non_tdx_firmware_kernel_remains_rejected_control
+      CONTROL_CMDLINE: config::tdx_payload_validation_probe_tests::non_tdx_firmware_cmdline_is_removed_control
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../tdx-payload-validation-rust-version.txt
+          rustc +nightly --version | tee ../tdx-payload-validation-nightly-version.txt
+          git rev-parse HEAD | tee ../tdx-payload-validation-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+          grep -F 'FirmwarePlusOtherPayloads' vmm/src/vm_config.rs
+          grep -F 'Ignoring cmdline parameter as firmware is provided as the payload' vmm/src/vm_config.rs
+
+      - name: Apply baseline probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdx-payload-validation/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+
+      - name: Build and discover baseline matrix
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib --no-run
+          cargo test --locked -p vmm --features "$FEATURES" --lib -- --list | tee ../tdx-payload-validation-test-list.txt
+          for test_name in "$BASE_KERNEL" "$BASE_CMDLINE" "$INV_KERNEL" "$INV_CMDLINE" "$CONTROL_KERNEL" "$CONTROL_CMDLINE"; do
+            grep -F "$test_name: test" ../tdx-payload-validation-test-list.txt
+          done
+
+      - name: Baseline controls and witnesses
+        id: baseline
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL_KERNEL" -- --exact --nocapture 2>&1 | tee ../tdx-payload-validation-control-kernel.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL_CMDLINE" -- --exact --nocapture 2>&1 | tee ../tdx-payload-validation-control-cmdline.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$BASE_KERNEL" -- --ignored --exact --nocapture 2>&1 | tee ../tdx-payload-validation-baseline-kernel.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$BASE_CMDLINE" -- --ignored --exact --nocapture 2>&1 | tee ../tdx-payload-validation-baseline-cmdline.log
+          grep -F 'FirmwarePlusOtherPayloads' ../tdx-payload-validation-control-kernel.log
+          grep -F 'cmdline_after=None' ../tdx-payload-validation-control-cmdline.log
+          grep -F 'FirmwarePlusOtherPayloads' ../tdx-payload-validation-baseline-kernel.log
+          grep -F 'cmdline_after=None' ../tdx-payload-validation-baseline-cmdline.log
+
+      - name: Baseline expected-red invariants
+        id: invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INV_KERNEL" -- --exact --nocapture > ../tdx-payload-validation-invariant-kernel.log 2>&1
+          kernel_rc=$?
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INV_CMDLINE" -- --exact --nocapture > ../tdx-payload-validation-invariant-cmdline.log 2>&1
+          cmdline_rc=$?
+          set -e
+          echo "TDX_PAYLOAD_VALIDATION_KERNEL_INVARIANT_RC=$kernel_rc" | tee ../tdx-payload-validation-invariant-kernel-status.txt
+          echo "TDX_PAYLOAD_VALIDATION_CMDLINE_INVARIANT_RC=$cmdline_rc" | tee ../tdx-payload-validation-invariant-cmdline-status.txt
+          cat ../tdx-payload-validation-invariant-kernel.log
+          cat ../tdx-payload-validation-invariant-cmdline.log
+          test "$kernel_rc" -ne 0
+          test "$cmdline_rc" -ne 0
+          grep -F 'TDX firmware plus kernel is an intended direct-kernel boot mode' ../tdx-payload-validation-invariant-kernel.log
+          grep -F 'cmdline_after=None' ../tdx-payload-validation-invariant-cmdline.log
+
+      - name: Restore exact source
+        id: restore
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git checkout -- vmm/src/config.rs vmm/src/vm_config.rs
+          test -z "$(git status --short)"
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply candidate and capture product-only diff
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdx-payload-validation/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/config.rs vmm/src/vm_config.rs > ../tdx-payload-validation-candidate-only.diff
+          sha256sum ../tdx-payload-validation-candidate-only.diff | tee ../tdx-payload-validation-candidate-diff-sha256.txt
+          git diff --stat | tee ../tdx-payload-validation-candidate-diff-stat.txt
+
+      - name: Apply candidate probe and focused matrix
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdx-payload-validation/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INV_KERNEL" -- --exact --nocapture 2>&1 | tee ../tdx-payload-validation-candidate-kernel.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INV_CMDLINE" -- --exact --nocapture 2>&1 | tee ../tdx-payload-validation-candidate-cmdline.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL_KERNEL" -- --exact --nocapture 2>&1 | tee ../tdx-payload-validation-candidate-control-kernel.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL_CMDLINE" -- --exact --nocapture 2>&1 | tee ../tdx-payload-validation-candidate-control-cmdline.log
+          grep -F 'kernel_result=Ok' ../tdx-payload-validation-candidate-kernel.log
+          grep -F 'cmdline_after=Some("console=hvc0 root=/dev/vda")' ../tdx-payload-validation-candidate-cmdline.log
+          grep -F 'FirmwarePlusOtherPayloads' ../tdx-payload-validation-candidate-control-kernel.log
+          grep -F 'cmdline_after=None' ../tdx-payload-validation-candidate-control-cmdline.log
+
+      - name: Full VMM TDX KVM library tests
+        id: broad
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib 2>&1 | tee ../tdx-payload-validation-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations \
+            2>&1 | tee ../tdx-payload-validation-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdx-payload-validation-final-status.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline=${{ steps.baseline.outcome }}"
+            echo "baseline_invariants=${{ steps.invariant.outcome }}"
+            echo "restore=${{ steps.restore.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "focused=${{ steps.focused.outcome }}"
+            echo "broad=${{ steps.broad.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            test -f tdx-payload-validation-invariant-kernel-status.txt && cat tdx-payload-validation-invariant-kernel-status.txt
+            test -f tdx-payload-validation-invariant-cmdline-status.txt && cat tdx-payload-validation-invariant-cmdline-status.txt
+            test -f tdx-payload-validation-candidate-diff-sha256.txt && cat tdx-payload-validation-candidate-diff-sha256.txt
+          } | tee tdx-payload-validation-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdx-payload-validation-regression-v2
+          if-no-files-found: warn
+          path: |
+            tdx-payload-validation-*.txt
+            tdx-payload-validation-*.log
+            tdx-payload-validation-*.diff
