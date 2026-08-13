@@ -73,6 +73,7 @@ test = r'''    #[cfg(feature = "tdx")]
     fn tdx_payload_header_read_propagates_error() {
         use std::env::temp_dir;
         use std::fs::{File, OpenOptions, create_dir, remove_dir, remove_file, write};
+        use std::mem::size_of;
         use std::process::id;
 
         let dir = temp_dir().join(format!("cloud-hypervisor-tdx-payload-header-candidate-{}", id()));
@@ -83,7 +84,7 @@ test = r'''    #[cfg(feature = "tdx")]
         println!("TDX_PAYLOAD_HEADER_CANDIDATE directory_result={err:?}");
         assert!(matches!(err, Error::LoadPayloadHeader(_)));
 
-        let len = 0x1f1 + std::mem::size_of::<bootparam::setup_header>() + 16;
+        let len = 0x1f1 + size_of::<bootparam::setup_header>() + 16;
         let path = temp_dir().join(format!("cloud-hypervisor-tdx-payload-header-control-{}.bin", id()));
         write(&path, vec![0u8; len]).unwrap();
         let mut file = OpenOptions::new().read(true).open(&path).unwrap();
