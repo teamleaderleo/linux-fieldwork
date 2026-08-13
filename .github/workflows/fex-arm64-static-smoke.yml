@@ -1,0 +1,54 @@
+name: FEX hosted ARM64 static smoke
+
+on:
+  push:
+    branches:
+      - probe/fex-nodelete-gha
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Install FEX and x86 compiler
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(uname -m)" = aarch64
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common gcc-x86-64-linux-gnu file
+          sudo add-apt-repository -y ppa:fex-emu/fex
+          sudo apt-get update
+          sudo apt-get install -y fex-emu-armv8.0
+
+      - name: Build static x86-64 guest
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat > guest.c <<'EOF'
+          #include <stdio.h>
+          #include <sys/utsname.h>
+          int main(void) {
+            struct utsname u;
+            if (uname(&u) != 0) return 11;
+            printf("FEX_STATIC_GUEST machine=%s answer=%d\n", u.machine, 6 * 7);
+            return 0;
+          }
+          EOF
+          x86_64-linux-gnu-gcc -static -O2 guest.c -o guest-x86_64
+          file guest-x86_64
+          readelf -h guest-x86_64 | grep -E 'Class:|Machine:'
+
+      - name: Execute through FEX
+        shell: bash
+        run: |
+          set -euxo pipefail
+          FEX_BIN="$(command -v FEX || true)"
+          if [ -z "$FEX_BIN" ]; then
+            FEX_BIN="$(find /usr -type f -name FEX -perm -111 2>/dev/null | head -n 1)"
+          fi
+          test -n "$FEX_BIN"
+          echo "FEX_BIN=$FEX_BIN"
+          "$FEX_BIN" "$PWD/guest-x86_64" 2>&1 | tee fex-static.log
+          grep -q 'FEX_STATIC_GUEST' fex-static.log
+          grep -q 'answer=42' fex-static.log
