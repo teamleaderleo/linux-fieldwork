@@ -1,0 +1,96 @@
+name: FEX NODELETE runner probe
+
+on:
+  push:
+    branches:
+      - probe/fex-nodelete-gha
+  workflow_dispatch:
+
+jobs:
+  nodelete:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            expected_arch: x86_64
+          - runner: ubuntu-24.04-arm
+            expected_arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Record runner identity
+        shell: bash
+        run: |
+          set -euxo pipefail
+          uname -a
+          test "$(uname -m)" = "${{ matrix.expected_arch }}"
+          cc --version
+          ld --version | head -n 2
+          readelf --version | head -n 1
+
+      - name: Build NODELETE and ordinary controls
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat > probe.c <<'EOF'
+          #include <stdio.h>
+          __attribute__((constructor)) static void ctor(void) { fprintf(stderr, "PROBE ctor\n"); }
+          __attribute__((destructor)) static void dtor(void) { fprintf(stderr, "PROBE dtor\n"); }
+          int probe_value(void) { return 42; }
+          EOF
+
+          cc -shared -fPIC probe.c -Wl,-soname,libprobe-nodelete.so.1 -Wl,-z,nodelete -o libprobe-nodelete.so
+          cc -shared -fPIC probe.c -Wl,-soname,libprobe-normal.so.1 -o libprobe-normal.so
+
+          readelf -d libprobe-nodelete.so | tee nodelete.dynamic
+          grep -q 'NODELETE' nodelete.dynamic
+          ! readelf -d libprobe-normal.so | grep -q 'NODELETE'
+
+          cat > driver.c <<'EOF'
+          #define _GNU_SOURCE
+          #include <dlfcn.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+
+          static int mapped(const char *needle) {
+            FILE *f = fopen("/proc/self/maps", "r");
+            if (!f) return -1;
+            char *line = NULL;
+            size_t n = 0;
+            int found = 0;
+            while (getline(&line, &n, f) != -1) {
+              if (strstr(line, needle)) { found = 1; break; }
+            }
+            free(line);
+            fclose(f);
+            return found;
+          }
+
+          static int one(const char *path, const char *needle, int expect_resident) {
+            void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+            if (!h) { fprintf(stderr, "dlopen %s: %s\n", path, dlerror()); return 10; }
+            int (*fn)(void) = (int (*)(void))dlsym(h, "probe_value");
+            if (!fn || fn() != 42) return 11;
+            printf("loaded path=%s mapped=%d value=%d\n", path, mapped(needle), fn());
+            if (dlclose(h) != 0) return 12;
+            int after = mapped(needle);
+            printf("closed path=%s mapped=%d\n", path, after);
+            if (after != expect_resident) return 13;
+            if (expect_resident && fn() != 42) return 14;
+            return 0;
+          }
+
+          int main(void) {
+            int a = one("./libprobe-normal.so", "libprobe-normal.so", 0);
+            if (a) return a;
+            int b = one("./libprobe-nodelete.so", "libprobe-nodelete.so", 1);
+            if (b) return b;
+            puts("NODELETE_PROBE_PASS");
+            return 0;
+          }
+          EOF
+
+          cc driver.c -ldl -o driver
+          ./driver 2>&1 | tee probe.log
+          grep -q 'NODELETE_PROBE_PASS' probe.log
