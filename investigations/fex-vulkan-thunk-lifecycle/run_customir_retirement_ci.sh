@@ -30,11 +30,11 @@ from pathlib import Path
 p = Path('fex/ThunkLibs/libvulkan/Guest.cpp')
 s = p.read_text()
 start = s.find('void OnInit() {')
-marker = '\n}\nLOAD_LIB_INIT(libvulkan, OnInit)'
+marker = '\n}\n\nLOAD_LIB_INIT(libvulkan, OnInit)'
 end = s.find(marker, start)
 if start < 0 or end < 0:
     raise SystemExit('Vulkan OnInit anchors not found')
-s = s[:start] + 'void OnInit() {}\nLOAD_LIB_INIT(libvulkan, OnInit)' + s[end + len(marker):]
+s = s[:start] + 'void OnInit() {}\n\nLOAD_LIB_INIT(libvulkan, OnInit)' + s[end + len(marker):]
 p.write_text(s)
 PY
 
