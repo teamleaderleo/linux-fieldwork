@@ -11,6 +11,7 @@ probe = r'''
 
 #[cfg(test)]
 mod sparse_dma_map_probe_tests {
+    use std::env::temp_dir;
     use std::fs::{OpenOptions, remove_file};
     use std::os::fd::AsFd;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -19,7 +20,7 @@ mod sparse_dma_map_probe_tests {
     use super::*;
 
     fn sparse_mmio_regions() -> Vec<MmioRegion> {
-        let path = std::env::temp_dir().join(format!("cloud-hypervisor-vfio-sparse-{id}" , id = id()));
+        let path = temp_dir().join(format!("cloud-hypervisor-vfio-sparse-{id}", id = id()));
         let file = OpenOptions::new()
             .read(true)
             .write(true)
