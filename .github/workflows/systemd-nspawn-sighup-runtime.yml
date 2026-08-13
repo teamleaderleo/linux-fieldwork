@@ -74,7 +74,6 @@ jobs:
               --machine="$machine" \
               --register=no \
               --private-users=no \
-              --network-veth=no \
               --console=pipe \
               /usr/bin/sleep 600 >"$log" 2>&1 &
             NSPAWN_PID=$!
