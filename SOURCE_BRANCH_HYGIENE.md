@@ -1,20 +1,24 @@
 # Source Branch Hygiene
 
-These rules apply whenever Linux Fieldwork prepares a candidate change in an owned fork for possible upstream review.
+These rules apply **only when the human has designated a branch or commit series in an owned fork as a candidate for possible upstream review**.
 
-## Keep source branches boring
+They do not constrain ordinary internal research. Until that designation occurs, owned-fork research branches may contain diagnostic instrumentation, temporary workflows, failed experiments, throwaway fixtures, generated material, intermediate commits, or other research churn that helps answer the investigation.
+
+Once a branch is designated as an upstream candidate, clean it up according to the rules below. The human controls the boundary between internal research and upstream-candidate preparation.
+
+## Keep source candidates boring
 
 A source candidate branch should contain only the product change and the tests or documentation that belong with that change.
 
 For a trivial source edit, make the edit directly on the candidate branch with ordinary Git operations. Do not introduce a GitHub Actions materializer, trigger file, carrier commit, transformer, self-modifying workflow, or other execution machinery merely to write the source change.
 
-Temporary execution machinery belongs on a separate disposable branch or in Linux Fieldwork. It must never become part of the candidate branch's surviving history.
+Temporary execution machinery may exist on internal research branches, but it must never become part of the candidate branch's surviving history.
 
 Before presenting a candidate branch for review, compare it against the intended upstream base and require that the diff contains only the intended product files.
 
 ## Never put issue or pull-request references in commit messages
 
-Do not include external issue numbers, pull-request numbers, shorthand references, or URLs in commit subjects or bodies.
+Do not include external issue numbers, pull-request numbers, shorthand references, or URLs in candidate commit subjects or bodies.
 
 This includes forms such as:
 
@@ -60,15 +64,15 @@ Do not leave behind:
 - failed automation attempts;
 - intermediate rename or repair commits that can be cleanly folded into the candidate.
 
-If temporary commits were created while preparing the branch, rebuild or squash the candidate before presenting it. The final branch should read as if the intended product change had been made directly from the correct upstream base.
+If temporary commits were created during research, rebuild or squash the candidate before presenting it. The final branch should read as if the intended product change had been made directly from the correct upstream base.
 
 ## External interaction remains separate
 
-Creating or editing an owned-fork branch is not permission to contact upstream.
+Creating, editing, testing, or heavily iterating on an owned-fork research branch is not permission to contact upstream.
 
-Do not open, edit, comment on, review, or otherwise interact with an upstream issue or pull request unless that external action has been explicitly authorized. Preparing a clean branch and draft wording is allowed when repository authority permits it; publication is a separate decision.
+Do not open, edit, comment on, review, react to, or otherwise interact with an upstream issue or pull request unless that external action has been explicitly authorized. Preparing source, tests, comparison data, draft wording, and CI evidence in owned repositories is allowed under the owned-fork research authority; publication is a separate decision.
 
-## Final source-branch check
+## Final source-candidate check
 
 Before handing a candidate to a human for upstream submission, verify all of the following:
 
