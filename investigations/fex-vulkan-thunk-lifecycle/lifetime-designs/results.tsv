@@ -1,0 +1,106 @@
+design	test	result	detail
+deregister	unload_reload	PASS	before=EXEC, after_close=REJECT, reload=EXEC, base=0x300000
+deregister	same_native_pfn_reused	PASS	dispatch=EXEC, gen1=1, gen2=2
+deregister	different_guest_load_bases	PASS	old_base=0x111000, new_base=0x777000, old_gen=1, new_gen=2
+deregister	aliases_one_native_address	FAIL	regA=1, regB=1, newest=EXEC, B_unmapped=1, after_unload_B=REJECT
+deregister	alias_abi_conflict_rejected	PASS	first=1, incompatible_second=0
+deregister	multiple_thunk_dsos	PASS	A_after=REJECT, B_after=EXEC
+deregister	host_to_guest_callback	FAIL	before=EXEC, after_close=UAF
+deregister	guest_to_host_dynamic_pfn	PASS	held_pfn=0x9000, first=EXEC, after_reload=EXEC
+deregister	code_cache_stale_target	FAIL	compiled_before=EXEC, compiled_after_close=UAF
+deregister	code_cache_reload_same_pfn	FAIL	old_unmapped=1, cached_after_reload=UAF, fresh=EXEC, new_base=0x600000
+deregister	concurrent_unload_dispatch	FAIL	call=UAF, close_completed_while_paused=1, unmapped=1
+deregister	invalidation_before_unmap	PASS	registry_invalidate>unmap
+deregister	stale_entries_100_cycles	PASS	registry=0, callbacks=0, host_slots=0
+deregister	metadata_growth_100_unique_pfns	PASS	registry=0, callbacks=0, host_slots=0
+deregister	guest_mapping_residency_40_cycles	PASS	live_guest_mappings=0, close_requested_live=0, host_slots=0
+bulk_owner	unload_reload	PASS	before=EXEC, after_close=REJECT, reload=EXEC, base=0x300000
+bulk_owner	same_native_pfn_reused	PASS	dispatch=EXEC, gen1=1, gen2=2
+bulk_owner	different_guest_load_bases	PASS	old_base=0x111000, new_base=0x777000, old_gen=1, new_gen=2
+bulk_owner	aliases_one_native_address	PASS	regA=1, regB=1, newest=EXEC, B_unmapped=1, after_unload_B=EXEC
+bulk_owner	alias_abi_conflict_rejected	PASS	first=1, incompatible_second=0
+bulk_owner	multiple_thunk_dsos	PASS	A_after=REJECT, B_after=EXEC
+bulk_owner	host_to_guest_callback	FAIL	before=EXEC, after_close=UAF
+bulk_owner	guest_to_host_dynamic_pfn	PASS	held_pfn=0x9000, first=EXEC, after_reload=EXEC
+bulk_owner	code_cache_stale_target	FAIL	compiled_before=EXEC, compiled_after_close=UAF
+bulk_owner	code_cache_reload_same_pfn	FAIL	old_unmapped=1, cached_after_reload=UAF, fresh=EXEC, new_base=0x600000
+bulk_owner	concurrent_unload_dispatch	FAIL	call=UAF, close_completed_while_paused=1, unmapped=1
+bulk_owner	invalidation_before_unmap	PASS	registry_invalidate>unmap
+bulk_owner	stale_entries_100_cycles	PASS	registry=0, callbacks=0, host_slots=0
+bulk_owner	metadata_growth_100_unique_pfns	PASS	registry=0, callbacks=0, host_slots=0
+bulk_owner	guest_mapping_residency_40_cycles	PASS	live_guest_mappings=0, close_requested_live=0, host_slots=0
+stable_slot	unload_reload	PASS	before=EXEC, after_close=REJECT, reload=EXEC, base=0x300000
+stable_slot	same_native_pfn_reused	PASS	dispatch=EXEC, gen1=1, gen2=2
+stable_slot	different_guest_load_bases	PASS	old_base=0x111000, new_base=0x777000, old_gen=1, new_gen=2
+stable_slot	aliases_one_native_address	PASS	regA=1, regB=1, newest=EXEC, B_unmapped=1, after_unload_B=EXEC
+stable_slot	alias_abi_conflict_rejected	PASS	first=1, incompatible_second=0
+stable_slot	multiple_thunk_dsos	PASS	A_after=REJECT, B_after=EXEC
+stable_slot	host_to_guest_callback	PASS	before=EXEC, after_close=REJECT
+stable_slot	guest_to_host_dynamic_pfn	PASS	held_pfn=0x9000, first=EXEC, after_reload=EXEC
+stable_slot	code_cache_stale_target	PASS	compiled_before=EXEC, compiled_after_close=REJECT
+stable_slot	code_cache_reload_same_pfn	PASS	old_unmapped=1, cached_after_reload=EXEC, fresh=EXEC, new_base=0x600000
+stable_slot	concurrent_unload_dispatch	FAIL	call=UAF, close_completed_while_paused=1, unmapped=1
+stable_slot	invalidation_before_unmap	PASS	slot_invalidate>unmap
+stable_slot	stale_entries_100_cycles	PASS	registry=0, callbacks=0, host_slots=100
+stable_slot	metadata_growth_100_unique_pfns	FAIL	registry=0, callbacks=0, host_slots=100
+stable_slot	guest_mapping_residency_40_cycles	PASS	live_guest_mappings=0, close_requested_live=0, host_slots=1
+generation	unload_reload	PASS	before=EXEC, after_close=REJECT, reload=EXEC, base=0x300000
+generation	same_native_pfn_reused	PASS	dispatch=EXEC, gen1=1, gen2=2
+generation	different_guest_load_bases	PASS	old_base=0x111000, new_base=0x777000, old_gen=1, new_gen=2
+generation	aliases_one_native_address	PASS	regA=1, regB=1, newest=EXEC, B_unmapped=1, after_unload_B=EXEC
+generation	alias_abi_conflict_rejected	PASS	first=1, incompatible_second=0
+generation	multiple_thunk_dsos	PASS	A_after=REJECT, B_after=EXEC
+generation	host_to_guest_callback	PASS	before=EXEC, after_close=REJECT
+generation	guest_to_host_dynamic_pfn	PASS	held_pfn=0x9000, first=EXEC, after_reload=EXEC
+generation	code_cache_stale_target	PASS	compiled_before=EXEC, compiled_after_close=REJECT
+generation	code_cache_reload_same_pfn	PASS	old_unmapped=1, cached_after_reload=REJECT, fresh=EXEC, new_base=0x600000
+generation	concurrent_unload_dispatch	FAIL	call=UAF, close_completed_while_paused=1, unmapped=1
+generation	invalidation_before_unmap	PASS	generation_dead>unmap
+generation	stale_entries_100_cycles	PASS	registry=0, callbacks=0, host_slots=0
+generation	metadata_growth_100_unique_pfns	PASS	registry=0, callbacks=0, host_slots=0
+generation	guest_mapping_residency_40_cycles	PASS	live_guest_mappings=0, close_requested_live=0, host_slots=0
+stale_reject	unload_reload	PASS	before=EXEC, after_close=REJECT, reload=EXEC, base=0x300000
+stale_reject	same_native_pfn_reused	PASS	dispatch=EXEC, gen1=1, gen2=2
+stale_reject	different_guest_load_bases	PASS	old_base=0x111000, new_base=0x777000, old_gen=1, new_gen=2
+stale_reject	aliases_one_native_address	PASS	regA=1, regB=1, newest=EXEC, B_unmapped=1, after_unload_B=EXEC
+stale_reject	alias_abi_conflict_rejected	PASS	first=1, incompatible_second=0
+stale_reject	multiple_thunk_dsos	PASS	A_after=REJECT, B_after=EXEC
+stale_reject	host_to_guest_callback	PASS	before=EXEC, after_close=REJECT
+stale_reject	guest_to_host_dynamic_pfn	PASS	held_pfn=0x9000, first=EXEC, after_reload=EXEC
+stale_reject	code_cache_stale_target	FAIL	compiled_before=EXEC, compiled_after_close=UAF
+stale_reject	code_cache_reload_same_pfn	FAIL	old_unmapped=1, cached_after_reload=UAF, fresh=EXEC, new_base=0x600000
+stale_reject	concurrent_unload_dispatch	FAIL	call=UAF, close_completed_while_paused=1, unmapped=1
+stale_reject	invalidation_before_unmap	FAIL	unmap
+stale_reject	stale_entries_100_cycles	FAIL	registry=100, callbacks=0, host_slots=0
+stale_reject	metadata_growth_100_unique_pfns	FAIL	registry=100, callbacks=0, host_slots=0
+stale_reject	guest_mapping_residency_40_cycles	PASS	live_guest_mappings=0, close_requested_live=0, host_slots=0
+pin_refcount	unload_reload	FAIL	before=EXEC, after_close=EXEC, reload=EXEC, base=0x100000
+pin_refcount	same_native_pfn_reused	FAIL	dispatch=EXEC, gen1=1, gen2=1
+pin_refcount	different_guest_load_bases	FAIL	old_base=0x111000, new_base=0x111000, old_gen=1, new_gen=1
+pin_refcount	aliases_one_native_address	FAIL	regA=1, regB=1, newest=EXEC, B_unmapped=0, after_unload_B=EXEC
+pin_refcount	alias_abi_conflict_rejected	PASS	first=1, incompatible_second=0
+pin_refcount	multiple_thunk_dsos	FAIL	A_after=EXEC, B_after=EXEC
+pin_refcount	host_to_guest_callback	FAIL	before=EXEC, after_close=EXEC
+pin_refcount	guest_to_host_dynamic_pfn	FAIL	held_pfn=0x9000, first=EXEC, after_reload=EXEC
+pin_refcount	code_cache_stale_target	FAIL	compiled_before=EXEC, compiled_after_close=EXEC
+pin_refcount	code_cache_reload_same_pfn	FAIL	old_unmapped=0, cached_after_reload=EXEC, fresh=EXEC, new_base=0x100000
+pin_refcount	concurrent_unload_dispatch	FAIL	call=EXEC, close_completed_while_paused=1, unmapped=0
+pin_refcount	invalidation_before_unmap	FAIL	close_deferred_pin
+pin_refcount	stale_entries_100_cycles	FAIL	registry=100, callbacks=0, host_slots=0
+pin_refcount	metadata_growth_100_unique_pfns	FAIL	registry=100, callbacks=0, host_slots=0
+pin_refcount	guest_mapping_residency_40_cycles	FAIL	live_guest_mappings=1, close_requested_live=1, host_slots=0
+lease_slot	unload_reload	PASS	before=EXEC, after_close=REJECT, reload=EXEC, base=0x300000
+lease_slot	same_native_pfn_reused	PASS	dispatch=EXEC, gen1=1, gen2=2
+lease_slot	different_guest_load_bases	PASS	old_base=0x111000, new_base=0x777000, old_gen=1, new_gen=2
+lease_slot	aliases_one_native_address	PASS	regA=1, regB=1, newest=EXEC, B_unmapped=1, after_unload_B=EXEC
+lease_slot	alias_abi_conflict_rejected	PASS	first=1, incompatible_second=0
+lease_slot	multiple_thunk_dsos	PASS	A_after=REJECT, B_after=EXEC
+lease_slot	host_to_guest_callback	PASS	before=EXEC, after_close=REJECT
+lease_slot	guest_to_host_dynamic_pfn	PASS	held_pfn=0x9000, first=EXEC, after_reload=EXEC
+lease_slot	code_cache_stale_target	PASS	compiled_before=EXEC, compiled_after_close=REJECT
+lease_slot	code_cache_reload_same_pfn	PASS	old_unmapped=1, cached_after_reload=REJECT, fresh=EXEC, new_base=0x600000
+lease_slot	concurrent_unload_dispatch	PASS	call=EXEC, close_completed_while_paused=0, unmapped=1
+lease_slot	invalidation_before_unmap	PASS	generation_draining>slot_invalidate>code_cache_invalidate>drain_complete>unmap
+lease_slot	stale_entries_100_cycles	PASS	registry=0, callbacks=0, host_slots=0
+lease_slot	metadata_growth_100_unique_pfns	PASS	registry=0, callbacks=0, host_slots=0
+lease_slot	guest_mapping_residency_40_cycles	PASS	live_guest_mappings=0, close_requested_live=0, host_slots=0
