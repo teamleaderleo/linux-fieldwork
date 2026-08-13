@@ -1,0 +1,229 @@
+name: Tini native parent-death startup discriminator v2
+
+on:
+  pull_request:
+    paths:
+      - "investigations/tini-parent-death-startup-race/**"
+      - ".github/workflows/tini-native-parent-death-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-current:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential cmake git python3
+
+      - name: Fetch exact Tini source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/krallin/tini.git /tmp/tini-baseline
+          git -C /tmp/tini-baseline checkout 369448a167e8b3da4ca5bca0b3307500c3371828
+          test "$(git -C /tmp/tini-baseline rev-parse HEAD)" = 369448a167e8b3da4ca5bca0b3307500c3371828
+          cp -a /tmp/tini-baseline /tmp/tini-candidate
+
+      - name: Apply parent-identity candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/tini-candidate/src/tini.c')
+          text = p.read_text()
+          old_start = '''int main(int argc, char *argv[]) {\n\tpid_t child_pid;\n'''
+          new_start = '''int main(int argc, char *argv[]) {\n\tpid_t child_pid;\n\tpid_t initial_parent_pid = getppid();\n'''
+          old_prctl = '''\t/* Trigger signal on this process when the parent process exits. */\n\tif (parent_death_signal && prctl(PR_SET_PDEATHSIG, parent_death_signal)) {\n\t\tPRINT_FATAL("Failed to set up parent death signal");\n\t\treturn 1;\n\t }\n'''
+          new_prctl = '''\t/* Trigger signal on this process when the parent process exits. */\n\tif (parent_death_signal) {\n\t\tif (prctl(PR_SET_PDEATHSIG, parent_death_signal)) {\n\t\t\tPRINT_FATAL("Failed to set up parent death signal");\n\t\t\treturn 1;\n\t\t}\n\n\t\tif (getppid() != initial_parent_pid && kill(getpid(), parent_death_signal)) {\n\t\t\tPRINT_FATAL("Failed to queue missed parent death signal");\n\t\t\treturn 1;\n\t\t}\n\t}\n'''
+          if text.count(old_start) != 1 or text.count(old_prctl) != 1:
+              raise SystemExit('Tini main/prctl source boundary changed')
+          p.write_text(text.replace(old_start, new_start, 1).replace(old_prctl, new_prctl, 1))
+          PY
+          git -C /tmp/tini-candidate diff --check
+          git -C /tmp/tini-candidate diff -- src/tini.c | tee /tmp/tini-pdeath-candidate.diff
+
+      - name: Build baseline and candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S /tmp/tini-baseline -B /tmp/build-baseline -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build /tmp/build-baseline --parallel 2
+          cmake -S /tmp/tini-candidate -B /tmp/build-candidate -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build /tmp/build-candidate --parallel 2
+
+      - name: Build forced pre-prctl parent-death fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/pdeath-preload.c <<'EOF'
+          #define _GNU_SOURCE
+          #include <dlfcn.h>
+          #include <stdarg.h>
+          #include <stdlib.h>
+          #include <sys/prctl.h>
+          #include <time.h>
+          #include <unistd.h>
+
+          typedef int (*real_prctl_t)(int, unsigned long, unsigned long, unsigned long, unsigned long);
+
+          int prctl(int option, ...) {
+            va_list ap;
+            va_start(ap, option);
+            unsigned long arg2 = va_arg(ap, unsigned long);
+            va_end(ap);
+            real_prctl_t real_prctl = (real_prctl_t)dlsym(RTLD_NEXT, "prctl");
+            if (!real_prctl) _exit(211);
+
+            if (option == PR_SET_PDEATHSIG) {
+              const char *fd_text = getenv("FIELDWORK_PDEATH_NOTIFY_FD");
+              if (fd_text && *fd_text) {
+                int fd = atoi(fd_text);
+                pid_t parent = getppid();
+                char byte = 'x';
+                if (write(fd, &byte, 1) != 1) _exit(212);
+                struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
+                for (int i = 0; i < 5000 && getppid() == parent; i++)
+                  nanosleep(&delay, 0);
+                if (getppid() == parent) _exit(213);
+              }
+            }
+            return real_prctl(option, arg2, 0, 0, 0);
+          }
+          EOF
+
+          cat >/tmp/pdeath-child.c <<'EOF'
+          #include <time.h>
+          int main(void) {
+            struct timespec ts = {.tv_sec = 0, .tv_nsec = 300000000};
+            nanosleep(&ts, 0);
+            return 0;
+          }
+          EOF
+
+          cat >/tmp/pdeath-launcher.c <<'EOF'
+          #define _GNU_SOURCE
+          #include <errno.h>
+          #include <signal.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <sys/prctl.h>
+          #include <sys/wait.h>
+          #include <unistd.h>
+
+          static int run_one(const char *tini, const char *preload, const char *child) {
+            if (prctl(PR_SET_CHILD_SUBREAPER, 1) < 0) return 221;
+            int notify_pipe[2], pid_pipe[2];
+            if (pipe(notify_pipe) < 0 || pipe(pid_pipe) < 0) return 222;
+
+            pid_t parent = fork();
+            if (parent < 0) return 223;
+            if (parent == 0) {
+              close(pid_pipe[0]);
+              pid_t tini_pid = fork();
+              if (tini_pid < 0) _exit(224);
+              if (tini_pid == 0) {
+                close(notify_pipe[0]);
+                close(pid_pipe[1]);
+                char fd_text[32];
+                snprintf(fd_text, sizeof fd_text, "%d", notify_pipe[1]);
+                setenv("LD_PRELOAD", preload, 1);
+                setenv("FIELDWORK_PDEATH_NOTIFY_FD", fd_text, 1);
+                execl(tini, tini, "-p", "SIGUSR1", "--", child, (char *)0);
+                _exit(225);
+              }
+
+              close(notify_pipe[1]);
+              if (write(pid_pipe[1], &tini_pid, sizeof tini_pid) != sizeof tini_pid) _exit(226);
+              close(pid_pipe[1]);
+              char byte;
+              if (read(notify_pipe[0], &byte, 1) != 1) _exit(227);
+              _exit(0);
+            }
+
+            close(notify_pipe[0]);
+            close(notify_pipe[1]);
+            close(pid_pipe[1]);
+            pid_t tini_pid;
+            if (read(pid_pipe[0], &tini_pid, sizeof tini_pid) != sizeof tini_pid) return 228;
+            close(pid_pipe[0]);
+
+            int parent_status;
+            if (waitpid(parent, &parent_status, 0) != parent || !WIFEXITED(parent_status) || WEXITSTATUS(parent_status) != 0)
+              return 229;
+
+            int tini_status;
+            pid_t got;
+            do {
+              got = waitpid(tini_pid, &tini_status, 0);
+            } while (got < 0 && errno == EINTR);
+            if (got != tini_pid || !WIFEXITED(tini_status)) return 230;
+            return WEXITSTATUS(tini_status);
+          }
+
+          int main(int argc, char **argv) {
+            if (argc != 5) return 2;
+            int n = atoi(argv[4]);
+            int missed = 0, observed = 0, other = 0;
+            for (int i = 0; i < n; i++) {
+              int rc = run_one(argv[1], argv[2], argv[3]);
+              if (rc == 0) missed++;
+              else if (rc == 128 + SIGUSR1) observed++;
+              else {
+                other++;
+                fprintf(stderr, "unexpected_rc[%d]=%d\n", i, rc);
+              }
+            }
+            printf("iterations=%d missed=%d observed=%d other=%d\n", n, missed, observed, other);
+            return 0;
+          }
+          EOF
+
+          cc -O2 -Wall -Wextra -Werror -fPIC -shared /tmp/pdeath-preload.c -ldl -o /tmp/pdeath-preload.so
+          cc -O2 -Wall -Wextra -Werror /tmp/pdeath-child.c -o /tmp/pdeath-child
+          cc -O2 -Wall -Wextra -Werror /tmp/pdeath-launcher.c -o /tmp/pdeath-launcher
+
+      - name: Execute forced pre-prctl discriminator
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline=$(/tmp/pdeath-launcher /tmp/build-baseline/tini /tmp/pdeath-preload.so /tmp/pdeath-child 30)
+          candidate=$(/tmp/pdeath-launcher /tmp/build-candidate/tini /tmp/pdeath-preload.so /tmp/pdeath-child 30)
+          printf '%s\n%s\n' "$baseline" "$candidate" | tee /tmp/tini-pdeath-result.txt
+          grep -Eq 'iterations=30 missed=30 observed=0 other=0' <<<"$baseline"
+          grep -Eq 'iterations=30 missed=0 observed=30 other=0' <<<"$candidate"
+
+      - name: Preserve existing steady-state parent-death behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          for tree in baseline candidate; do
+            rm -f "/tmp/pdeath-$tree-ok"
+            python3 "/tmp/tini-$tree/test/pdeathsignal/stage_1.py" \
+              "/tmp/build-$tree/tini" "/tmp/pdeath-$tree-ok"
+            for _ in $(seq 1 100); do
+              test -f "/tmp/pdeath-$tree-ok" && break
+              sleep 0.05
+            done
+            test "$(cat "/tmp/pdeath-$tree-ok")" = ok
+            echo "$tree-steady-state: ok"
+          done | tee /tmp/tini-pdeath-steady-state.txt
+
+      - name: Retain evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tini-native-parent-death-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/tini-pdeath-result.txt
+            /tmp/tini-pdeath-steady-state.txt
+            /tmp/tini-pdeath-candidate.diff
+          if-no-files-found: warn
+          retention-days: 14
