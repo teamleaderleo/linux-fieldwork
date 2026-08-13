@@ -94,8 +94,8 @@ jobs:
           ICD=$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' | head -1)
           test -n "$ICD"
           echo "VK_ICD_FILENAMES=$ICD" >> "$GITHUB_ENV"
-          VK_ICD_FILENAMES="$ICD" /tmp/probe-arm64 report gipa 1 2>&1 | tee /tmp/native-report.log
-          VK_ICD_FILENAMES="$ICD" /tmp/probe-arm64 utils gipa 1 2>&1 | tee /tmp/native-utils.log
+          VK_ICD_FILENAMES="$ICD" /tmp/probe-arm64 report gipa positive 2>&1 | tee /tmp/native-report.log
+          VK_ICD_FILENAMES="$ICD" /tmp/probe-arm64 utils gipa positive 2>&1 | tee /tmp/native-utils.log
 
       - name: Create minimal amd64 rootfs
         run: |
@@ -108,6 +108,9 @@ jobs:
           sudo docker export "$cid" | sudo tar -C "$GITHUB_WORKSPACE/rootfs" -xf -
           sudo docker rm "$cid"
           test -e "$GITHUB_WORKSPACE/rootfs/lib64/ld-linux-x86-64.so.2" || test -e "$GITHUB_WORKSPACE/rootfs/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
+          sudo mkdir -p "$GITHUB_WORKSPACE/rootfs/tmp"
+          sudo cp /tmp/probe-x86_64 "$GITHUB_WORKSPACE/rootfs/tmp/probe-x86_64"
+          sudo chmod 0755 "$GITHUB_WORKSPACE/rootfs/tmp/probe-x86_64"
 
       - name: Configure FEX Vulkan thunk paths
         run: |
