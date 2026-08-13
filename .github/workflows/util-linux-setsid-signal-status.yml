@@ -1,0 +1,142 @@
+name: util-linux setsid waited-signal status matrix
+
+on:
+  push:
+    branches:
+      - execute/util-linux-setsid-signal-status
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out Linux Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out exact util-linux source
+        uses: actions/checkout@v4
+        with:
+          repository: util-linux/util-linux
+          ref: bf2071da692a96c6e3c82b0fce984c55f9ebcffa
+          path: util-linux
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+          sudo apt-get build-dep -y util-linux
+          sudo apt-get install -y --no-install-recommends meson ninja-build
+
+      - name: Build exact setsid
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C util-linux rev-parse HEAD)" = bf2071da692a96c6e3c82b0fce984c55f9ebcffa
+          meson setup util-linux/build util-linux -Dbuild-python=disabled -Dnls=disabled
+          meson compile -C util-linux/build setsid
+          util-linux/build/setsid --version | tee setsid-version.txt
+
+      - name: Prove baseline raw signal statuses
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/util-linux/build/setsid"
+          "$bin" --fork --wait sh -c 'exit 42'
+          rc42=$?
+          test "$rc42" -eq 42
+
+          set +e
+          "$bin" --fork --wait sh -c 'kill -TERM $$' > baseline-term.out 2> baseline-term.err
+          term_rc=$?
+          "$bin" --fork --wait sh -c 'kill -KILL $$' > baseline-kill.out 2> baseline-kill.err
+          kill_rc=$?
+          "$bin" --wait sh -c 'kill -TERM $$' > baseline-direct.out 2> baseline-direct.err
+          direct_rc=$?
+          set -e
+
+          printf 'forced_term=%s forced_kill=%s direct_term=%s\n' "$term_rc" "$kill_rc" "$direct_rc" | tee baseline-status.txt
+          cat baseline-term.err >&2
+          cat baseline-kill.err >&2
+          test "$term_rc" -eq 15
+          test "$kill_rc" -eq 9
+          test "$direct_rc" -eq 143
+          grep -Fq 'did not exit normally: Success' baseline-term.err
+          grep -Fq 'did not exit normally: Success' baseline-kill.err
+
+      - name: Apply waited-child status candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 executions/util-linux-setsid-signal-status/apply_candidate.py util-linux/sys-utils/setsid.c
+          meson compile -C util-linux/build setsid
+          git -C util-linux diff --check
+          git -C util-linux diff -- sys-utils/setsid.c > candidate.diff
+
+      - name: Prove candidate signal parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/util-linux/build/setsid"
+          set +e
+          "$bin" --fork --wait sh -c 'kill -TERM $$' > candidate-term.out 2> candidate-term.err
+          term_rc=$?
+          "$bin" --fork --wait sh -c 'kill -KILL $$' > candidate-kill.out 2> candidate-kill.err
+          kill_rc=$?
+          "$bin" --wait sh -c 'kill -TERM $$' > candidate-direct.out 2> candidate-direct.err
+          direct_rc=$?
+          "$bin" --fork --wait sh -c 'exit 42' > candidate-42.out 2> candidate-42.err
+          rc42=$?
+          set -e
+
+          printf 'forced_term=%s forced_kill=%s direct_term=%s exit42=%s\n' "$term_rc" "$kill_rc" "$direct_rc" "$rc42" | tee candidate-status.txt
+          test "$term_rc" -eq 143
+          test "$kill_rc" -eq 137
+          test "$direct_rc" -eq 143
+          test "$rc42" -eq 42
+          test ! -s candidate-term.err
+          test ! -s candidate-kill.err
+
+      - name: Project-local convention and source fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'WTERMSIG(status) + 128' util-linux/sys-utils/flock.c
+          grep -F 'WTERMSIG(status) + 128' util-linux/sys-utils/setsid.c
+          test "$(git -C util-linux diff --name-only)" = 'sys-utils/setsid.c'
+
+      - name: Retain exact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: util-linux-setsid-signal-status-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            setsid-version.txt
+            baseline-term.out
+            baseline-term.err
+            baseline-kill.out
+            baseline-kill.err
+            baseline-direct.out
+            baseline-direct.err
+            baseline-status.txt
+            candidate-term.out
+            candidate-term.err
+            candidate-kill.out
+            candidate-kill.err
+            candidate-direct.out
+            candidate-direct.err
+            candidate-42.out
+            candidate-42.err
+            candidate-status.txt
+            candidate.diff
+          if-no-files-found: warn
+          retention-days: 14
