@@ -65,6 +65,8 @@ int main(void) {
   if (result != VK_SUCCESS || !instance) return 10;
 
   failures += Check("instance-gipa-self", gipa(instance, "vkGetInstanceProcAddr"), 1);
+  failures += Check("instance-create-device", gipa(instance, "vkCreateDevice"), 1);
+  failures += Check("instance-get-device-proc-addr", gipa(instance, "vkGetDeviceProcAddr"), 1);
   failures += Check("disabled-debug-report-create", gipa(instance, "vkCreateDebugReportCallbackEXT"), 0);
   failures += Check("disabled-debug-utils-create", gipa(instance, "vkCreateDebugUtilsMessengerEXT"), 0);
 
