@@ -1,0 +1,91 @@
+name: Cloud Hypervisor receive failure-event discriminator
+
+on:
+  push:
+    branches:
+      - execute/cloud-hypervisor-receive-failure-events
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out Linux Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/cloud-hypervisor
+          ref: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+          path: cloud-hypervisor
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Add exact event-sequence discriminator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = 1af93ac7035cda77cd87b0c18b1134ebb0928052
+          python3 executions/cloud-hypervisor-receive-failure-events/add_test.py cloud-hypervisor/vmm/src/lib.rs
+          (cd cloud-hypervisor && cargo fmt --all)
+          git -C cloud-hypervisor diff --check
+
+      - name: Prove baseline returns error without failure event
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd cloud-hypervisor
+          set +e
+          cargo test -p vmm --features kvm test_receive_request_eof_emits_failure_event -- --nocapture > ../baseline.txt 2>&1
+          rc=$?
+          set -e
+          cat ../baseline.txt
+          test "$rc" -ne 0
+          grep -Fq 'receive attempt returned an error without a failure event' ../baseline.txt
+          grep -Fq 'migration-receive-ready' ../baseline.txt
+          grep -Fq 'migration-receive-started' ../baseline.txt
+
+      - name: Apply terminal failure-event owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 executions/cloud-hypervisor-receive-failure-events/apply_candidate.py cloud-hypervisor/vmm/src/lib.rs
+          (cd cloud-hypervisor && cargo fmt --all)
+          git -C cloud-hypervisor diff --check
+          git -C cloud-hypervisor diff -- vmm/src/lib.rs > candidate.diff
+
+      - name: Prove candidate emits terminal failure event
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd cloud-hypervisor
+          cargo test -p vmm --features kvm test_receive_request_eof_emits_failure_event -- --nocapture | tee ../candidate.txt
+          cargo check -p vmm --features kvm |& tee ../kvm-check.txt
+
+      - name: Source fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C cloud-hypervisor diff --name-only)" = 'vmm/src/lib.rs'
+          test "$(grep -F 'event!("'"'vm'"'", "'"'migration-receive-failed'"'");' cloud-hypervisor/vmm/src/lib.rs | wc -l)" -eq 1
+          grep -Fq 'let receive_result: result::Result<(), MigratableError>' cloud-hypervisor/vmm/src/lib.rs
+
+      - name: Retain exact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-hypervisor-receive-failure-events-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            baseline.txt
+            candidate.txt
+            kvm-check.txt
+            candidate.diff
+          if-no-files-found: warn
+          retention-days: 14
