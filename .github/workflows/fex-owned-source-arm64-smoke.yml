@@ -32,7 +32,6 @@ jobs:
           set -euxo pipefail
           git clone --depth 1 --branch diagnostic/vulkan-elf-nodelete-clean https://github.com/teamleaderleo/FEX.git FEX
           cd FEX
-          git rev-parse HEAD
           test "$(git rev-parse HEAD)" = 5982a38f1a8e6fcd8aadd2e58e033223c865714f
           git submodule update --init --recursive --depth 1
 
@@ -51,12 +50,12 @@ jobs:
             -DBUILD_FEX_LINUX_TESTS=OFF \
             -DBUILD_THUNKS=OFF
 
-      - name: Build FEX runtime
+      - name: Build FEX runtime and server
         shell: bash
         run: |
           set -euxo pipefail
-          cmake --build FEX/build --target FEX
-          file FEX/build/Bin/FEX
+          cmake --build FEX/build --target FEX FEXServer
+          file FEX/build/Bin/FEX FEX/build/Bin/FEXServer
 
       - name: Execute static x86-64 guest through source build
         shell: bash
@@ -73,5 +72,6 @@ jobs:
           }
           EOF
           x86_64-linux-gnu-gcc -static -O2 guest.c -o guest-x86_64
+          export PATH="$PWD/FEX/build/Bin:$PATH"
           FEX/build/Bin/FEX "$PWD/guest-x86_64" 2>&1 | tee source-smoke.log
           grep -q 'OWNED_FEX_SOURCE_GUEST machine=x86_64 answer=42' source-smoke.log
