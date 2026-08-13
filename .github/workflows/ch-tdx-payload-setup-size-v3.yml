@@ -1,0 +1,133 @@
+name: Cloud Hypervisor TDX Payload setup-size validation v3
+
+on:
+  push:
+    branches: [research/ch-tdx-payload-setup-size]
+    paths:
+      - .github/workflows/ch-tdx-payload-setup-size-v3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdx-payload-setup-size-final:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      CONFIG_SHA: 921b7ecd5ee25889000d1fcaabbcc578a4cbbc69
+      CONFIG_DIFF_SHA: 0af9d875fd2b82099fe15f7f6a910d9500293990846bda6d677da1ea16b0da5e
+      CONFIG_TEST: config::tdx_payload_validation_probe_tests::tdx_firmware_kernel_should_validate
+      CANDIDATE_TEST: vm::unit_tests::tdx_payload_setup_size_validation
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin exact source and immutable #654 materializers
+        id: source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0 --path cloud-hypervisor
+          git -C cloud-hypervisor rev-parse HEAD | tee tdx-payload-setup-v3-source-sha.txt
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git -C cloud-hypervisor status --short)"
+          git -C fieldwork fetch --no-tags origin "$CONFIG_SHA"
+          git -C fieldwork show "$CONFIG_SHA:investigations/cloud-hypervisor-tdx-payload-validation/apply_candidate.py" > /tmp/config_candidate.py
+          git -C fieldwork show "$CONFIG_SHA:investigations/cloud-hypervisor-tdx-payload-validation/apply_probe.py" > /tmp/config_probe.py
+
+      - name: Apply immutable reachability layer and cleaned setup-size candidate
+        id: candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/config_candidate.py
+          cargo +nightly fmt --all
+          git diff -- vmm/src/config.rs vmm/src/vm_config.rs > ../tdx-payload-setup-v3-config.diff
+          actual=$(sha256sum ../tdx-payload-setup-v3-config.diff | awk '{print $1}')
+          echo "$actual  tdx-payload-setup-v3-config.diff" | tee ../tdx-payload-setup-v3-config-sha256.txt
+          test "$actual" = "$CONFIG_DIFF_SHA"
+
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdx-payload-setup-size/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdx-payload-setup-v3-candidate-only.diff
+          sha256sum ../tdx-payload-setup-v3-candidate-only.diff | tee ../tdx-payload-setup-v3-candidate-diff-sha256.txt
+          git diff -- vmm/src/config.rs vmm/src/vm_config.rs vmm/src/vm.rs > ../tdx-payload-setup-v3-stacked-product.diff
+          sha256sum ../tdx-payload-setup-v3-stacked-product.diff | tee ../tdx-payload-setup-v3-stacked-product-sha256.txt
+          git diff --stat | tee ../tdx-payload-setup-v3-stacked-product-stat.txt
+
+      - name: Focused reachability and setup-size candidate
+        id: focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 /tmp/config_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONFIG_TEST" -- --exact --nocapture 2>&1 | tee ../tdx-payload-setup-v3-config-test.log
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --exact --nocapture 2>&1 | tee ../tdx-payload-setup-v3-focused.log
+          grep -F 'kernel_result=Ok' ../tdx-payload-setup-v3-config-test.log
+          grep -F 'TDX_PAYLOAD_SETUP_CANDIDATE truncated_result=InvalidPayloadSetupSize { payload_size: 530, setup_size: 2560 }' ../tdx-payload-setup-v3-focused.log
+          grep -F 'TDX_PAYLOAD_SETUP_CANDIDATE default_setup_control=ok' ../tdx-payload-setup-v3-focused.log
+          grep -F 'TDX_PAYLOAD_SETUP_CANDIDATE explicit_setup_control=ok' ../tdx-payload-setup-v3-focused.log
+
+      - name: Full VMM TDX KVM tests and quality
+        id: broad
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib 2>&1 | tee ../tdx-payload-setup-v3-vmm-tests.log
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations \
+            2>&1 | tee ../tdx-payload-setup-v3-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdx-payload-setup-v3-final-status.txt
+
+      - name: Write final receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "candidate_gate=${{ steps.candidate.outcome }}"
+            echo "focused_gate=${{ steps.focused.outcome }}"
+            echo "broad_quality_gate=${{ steps.broad.outcome }}"
+            test -f tdx-payload-setup-v3-config-sha256.txt && cat tdx-payload-setup-v3-config-sha256.txt
+            test -f tdx-payload-setup-v3-candidate-diff-sha256.txt && cat tdx-payload-setup-v3-candidate-diff-sha256.txt
+            test -f tdx-payload-setup-v3-stacked-product-sha256.txt && cat tdx-payload-setup-v3-stacked-product-sha256.txt
+          } | tee tdx-payload-setup-v3-receipt.txt
+
+      - name: Upload final evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdx-payload-setup-size-v3
+          if-no-files-found: warn
+          path: |
+            tdx-payload-setup-v3-*.txt
+            tdx-payload-setup-v3-*.log
+            tdx-payload-setup-v3-*.diff
