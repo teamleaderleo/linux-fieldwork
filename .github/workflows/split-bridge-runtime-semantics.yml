@@ -38,6 +38,7 @@ jobs:
           EOF
 
           cc -shared -fPIC bridge.c -Wl,-soname,libfexbridge.so.1 -Wl,-z,nodelete -o libfexbridge.so
+          ln -s libfexbridge.so libfexbridge.so.1
           cc -shared -fPIC wrapper.c -L. -Wl,-rpath,'$ORIGIN' -lfexbridge -Wl,-soname,libwrapper.so.1 -o libwrapper.so
           readelf -d libfexbridge.so | grep NODELETE
           ! readelf -d libwrapper.so | grep -q NODELETE
@@ -86,8 +87,6 @@ jobs:
             int bridge_maps = maps("libfexbridge.so");
             if (bridge_maps <= 0 || maps("libwrapper.so") <= 0) return 14;
 
-            /* The FEX-like invariant: after wrapper close, callers must never
-             * retain target (which belongs to wrapper), only the stable adapter. */
             if (dlclose(w)) return 15;
             if (maps("libwrapper.so") != 0) return 16;
             if (maps("libfexbridge.so") != bridge_maps) return 17;
