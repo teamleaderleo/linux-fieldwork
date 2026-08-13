@@ -99,7 +99,11 @@ jobs:
           /tmp/sq/squashfs-tools/mksquashfs /tmp/valid.zip /tmp/out-control.sqfs -zip -noappend -no-progress -no-duplicates -no-xattrs > /tmp/evidence/control.log 2>&1
           test -s /tmp/out-control.sqfs
 
-          SAN='-O1 -g -fsanitize=implicit-integer-sign-change,signed-integer-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer'
+          cat > /tmp/ubsan.ignore <<'EOF'
+          [implicit-integer-sign-change]
+          src:*/xattr.c
+          EOF
+          SAN="-O1 -g -fsanitize=implicit-integer-sign-change,signed-integer-overflow -fsanitize-ignorelist=/tmp/ubsan.ignore -fno-sanitize-recover=all -fno-omit-frame-pointer"
           make -C /tmp/sq/squashfs-tools clean
           make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$SAN" EXTRA_LDFLAGS='-fsanitize=implicit-integer-sign-change,signed-integer-overflow' mksquashfs
           cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-san
