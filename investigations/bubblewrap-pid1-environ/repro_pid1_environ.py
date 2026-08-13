@@ -109,6 +109,23 @@ def bwrap_case(path, name, env_args, as_pid_1=False):
     return completed.returncode, completed.stdout
 
 
+def empty_environment_case(path):
+    cmd = [
+        path,
+        "--unshare-pid",
+        "--dev-bind", "/", "/",
+        "--proc", "/proc",
+        "--clearenv",
+        "--", "/usr/bin/python3", "-c",
+        "import os; print('env_count='+str(len(os.environ)))",
+    ]
+    completed = subprocess.run(cmd, env={}, text=True, capture_output=True, check=False)
+    output = completed.stdout.strip().replace("\n", "; ")
+    error = completed.stderr.strip().replace("\n", "; ")
+    print(f"empty-env-clearenv: rc={completed.returncode} stdout=[{output}] stderr=[{error}]")
+    return completed.returncode == 0 and "env_count=0" in completed.stdout
+
+
 def run_bwrap(path, expect_scrubbed=False):
     helper_old = False if expect_scrubbed else True
     clear_control = False if expect_scrubbed else True
@@ -137,6 +154,10 @@ def run_bwrap(path, expect_scrubbed=False):
             or got_control != expect_control
         ):
             rc = max(rc, 1)
+
+    if not empty_environment_case(path):
+        rc = max(rc, 1)
+
     return rc
 
 
