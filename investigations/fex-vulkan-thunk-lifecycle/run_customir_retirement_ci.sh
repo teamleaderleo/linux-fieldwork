@@ -71,12 +71,12 @@ sudo cp /tmp/probe-x86_64 "$ROOTFS/tmp/probe-x86_64"
 sudo chmod 0755 "$ROOTFS/tmp/probe-x86_64"
 
 FEX_BIN=$(find "$INSTALL" -type f -name FEX -perm -111 | head -1)
-THUNK_CONFIG=$(find "$INSTALL" -type f -name ThunksDB.json | head -1)
+THUNK_CONFIG="$FEX/Data/CI/VulkanThunks.json"
 GUEST_VK=$(find "$INSTALL" -type f -name libvulkan-guest.so | head -1)
 HOST_VK=$(find "$INSTALL" -type f -name libvulkan-host.so | head -1)
 ICD=$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' | head -1)
 test -n "$FEX_BIN"
-test -n "$THUNK_CONFIG"
+test -f "$THUNK_CONFIG"
 test -n "$GUEST_VK"
 test -n "$HOST_VK"
 test -n "$ICD"
@@ -84,18 +84,18 @@ test -n "$ICD"
 sudo mkdir -p "$ROOTFS/usr/lib/x86_64-linux-gnu"
 sudo cp "$GUEST_VK" "$ROOTFS/usr/lib/x86_64-linux-gnu/libvulkan.so.1"
 HOST_LIB_DIR=$(dirname "$HOST_VK")
+GUEST_LIB_DIR=$(dirname "$GUEST_VK")
 mkdir -p "$HOME/.fex-emu"
 cat > "$HOME/.fex-emu/Config.json" <<JSON
 {
   "Config": {
     "RootFS": "$ROOTFS",
     "ThunkConfig": "$THUNK_CONFIG"
-  },
-  "ThunksDB": {
-    "Vulkan": 1
   }
 }
 JSON
+cat "$HOME/.fex-emu/Config.json"
+cat "$THUNK_CONFIG"
 
 run_case() {
   phase=$1
@@ -103,7 +103,9 @@ run_case() {
   set +e
   timeout 30s env \
     VK_DRIVER_FILES="$ICD" \
+    FEX_THUNKCONFIG="$THUNK_CONFIG" \
     FEX_THUNKHOSTLIBS="$HOST_LIB_DIR" \
+    FEX_THUNKGUESTLIBS="$GUEST_LIB_DIR" \
     "$FEX_BIN" /tmp/probe-x86_64 "$mode" >"$EVIDENCE/${phase}-${mode}.log" 2>&1
   status=$?
   set -e
