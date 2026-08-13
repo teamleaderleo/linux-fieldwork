@@ -1,0 +1,30 @@
+name: FEX Vulkan CustomIR retirement probe v4
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [probe/fex-vulkan-customir-retirement]
+    paths:
+      - .github/workflows/fex-vulkan-customir-retirement-v4.yml
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Provision i686 cross sysroot
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-i686-linux-gnu g++-i686-linux-gnu libc6-dev-i386-cross
+      - name: Prepare corrected harness
+        run: python3 investigations/fex-vulkan-thunk-lifecycle/prepare_customir_v4.py
+      - name: Run differential
+        run: bash investigations/fex-vulkan-thunk-lifecycle/run_customir_retirement_ci.sh
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fex-vulkan-customir-retirement-v4-${{ github.run_id }}
+          path: /tmp/fex-customir-evidence
+          retention-days: 14
