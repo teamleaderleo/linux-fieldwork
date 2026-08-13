@@ -90,3 +90,13 @@ Executed here: compile plus native software-Vulkan positive and negative control
 Source-read: FEX-2608 and current `main` debug-report/debug-utils custom implementations and dynamic lookup behavior.
 
 Remaining target execution: run the reduced binaries under the retained ARM64 Fedora/FEX environment against pristine and local candidate host thunks. FEX upstream remained read-only throughout this work.
+
+## 2026-08-14 `vkCreateInstance` pNext follow-up
+
+Peer review found two adjacent behaviors in FEX's custom `vkCreateInstance` at FEX-2608 and reviewed current `main`.
+
+First, debug-report create-info is removed from the application's supplied pNext chain by assigning through `const_cast`. A native SwiftShader integrity control preserves the input chain; the corresponding FEX probe should detect whether `VkInstanceCreateInfo.pNext` is changed after the call.
+
+Second, the same `vkCreateInstance` handling covers debug-report create-info but has no corresponding debug-utils create-info handling. A native control with `VkDebugUtilsMessengerCreateInfoEXT` in `VkInstanceCreateInfo.pNext` plus an intentionally missing instance extension receives 27 debug-utils callbacks while `vkCreateInstance` returns `VK_ERROR_EXTENSION_NOT_PRESENT`. Removing only the pNext node produces the same return value with zero callbacks.
+
+This debug-utils pNext route is independent of `vkGetInstanceProcAddr`; correcting only the dynamic custom-function lookup cannot cover it. The next decisive step is the same positive/negative pair under the existing owned ARM64/Lavapipe FEX lane.
