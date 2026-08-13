@@ -1,0 +1,42 @@
+name: FEX Vulkan custom lookup invariant
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [probe/fex-vulkan-callback-ci]
+    paths:
+      - investigations/fex-vulkan-thunk-lifecycle/audit_internal_custom_lookup.py
+      - .github/workflows/fex-vulkan-registry-invariant.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/FEX
+          ref: linux-fieldwork/vulkan-procaddr-native-first-experiment
+          path: fex
+          fetch-depth: 1
+
+      - name: Confirm baseline mismatch
+        run: |
+          python3 investigations/fex-vulkan-thunk-lifecycle/audit_internal_custom_lookup.py \
+            fex/ThunkLibs/libvulkan/libvulkan_interface.cpp \
+            fex/ThunkLibs/libvulkan/Host.cpp \
+            --expect-missing \
+              vkCreateDebugReportCallbackEXT \
+              vkCreateDebugUtilsMessengerEXT \
+              vkDestroyDebugReportCallbackEXT
+
+      - name: Confirm V3 registry completeness
+        run: |
+          git -C fex apply LINUX_FIELDWORK_NATIVE_FIRST_V3.patch
+          python3 investigations/fex-vulkan-thunk-lifecycle/audit_internal_custom_lookup.py \
+            fex/ThunkLibs/libvulkan/libvulkan_interface.cpp \
+            fex/ThunkLibs/libvulkan/Host.cpp \
+            --expect-missing
