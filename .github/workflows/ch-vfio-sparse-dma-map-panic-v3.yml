@@ -1,0 +1,86 @@
+name: Cloud Hypervisor VFIO sparse DMA map final
+
+on:
+  push:
+    branches: [research/ch-vfio-sparse-dma-map-panic]
+    paths:
+      - .github/workflows/ch-vfio-sparse-dma-map-panic-v3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vfio-sparse-final:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      EXPECTED_CANDIDATE_SHA: acce404b520229080b0eea3185892d05e8b02003c62af608d0594a85eecc19b7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+      - name: Pin and materialize exact candidate
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0 --path .
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+          python3 ../fieldwork/investigations/cloud-hypervisor-vfio-sparse-dma-map-panic/apply_candidate.py
+          cargo +nightly fmt --all
+          git diff --check
+          git diff -- pci/src/vfio.rs > ../vfio-sparse-final-candidate.diff
+          actual=$(sha256sum ../vfio-sparse-final-candidate.diff | awk '{print $1}')
+          echo "$actual  vfio-sparse-final-candidate.diff" | tee ../vfio-sparse-final-candidate-sha256.txt
+          test "$actual" = "$EXPECTED_CANDIDATE_SHA"
+          python3 ../fieldwork/investigations/cloud-hypervisor-vfio-sparse-dma-map-panic/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+      - name: Focused and broad gates
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p pci --features kvm --lib vfio_sparse_crossing_range_must_return_error -- --nocapture 2>&1 | tee ../vfio-sparse-final-focused.log
+          grep -F 'VFIO_SPARSE_DMA_INVARIANT crossing_result=err' ../vfio-sparse-final-focused.log
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p pci --features kvm --lib 2>&1 | tee ../vfio-sparse-final-pci-tests.log
+          cargo check --locked -p virtio-devices --features kvm 2>&1 | tee ../vfio-sparse-final-virtio-check.log
+          cargo clippy --locked -p pci --features kvm --all-targets -- -D warnings 2>&1 | tee ../vfio-sparse-final-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../vfio-sparse-final-status.txt
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "expected_candidate_sha=$EXPECTED_CANDIDATE_SHA"
+            test -f vfio-sparse-final-candidate-sha256.txt && cat vfio-sparse-final-candidate-sha256.txt
+          } | tee vfio-sparse-final-receipt.txt
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-vfio-sparse-dma-map-panic-final
+          if-no-files-found: warn
+          path: |
+            vfio-sparse-final-*.txt
+            vfio-sparse-final-*.log
+            vfio-sparse-final-*.diff
