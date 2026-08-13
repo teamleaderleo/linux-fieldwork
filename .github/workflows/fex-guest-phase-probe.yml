@@ -18,6 +18,8 @@ jobs:
       CC: clang
       CXX: clang++
       FEX_PORTABLE: 1
+      FEX_SILENTLOG: 0
+      FEX_OUTPUTLOG: stderr
 
     steps:
       - uses: actions/checkout@v4
@@ -71,14 +73,24 @@ jobs:
           set -euxo pipefail
           SRC=investigations/fex-vulkan-thunk-lifecycle/fex_guest_phase_probe.c
           x86_64-linux-gnu-gcc -std=c11 -O2 -Wall -Wextra -Werror "$SRC" -ldl -o /tmp/fex-phase-dynamic
-          cat >/tmp/fex_static_smoke.c <<'EOF'
-          #include <unistd.h>
-          int main(void) {
-            static const char text[] = "STATIC_SMOKE_MAIN\n";
-            return write(2, text, sizeof(text) - 1) == (ssize_t)(sizeof(text) - 1) ? 0 : 1;
-          }
+          cat >/tmp/fex_static_smoke.S <<'EOF'
+          .global _start
+          .section .rodata
+          text:
+            .ascii "STATIC_SMOKE_START\n"
+          text_end:
+          .section .text
+          _start:
+            mov $1, %rax
+            mov $2, %rdi
+            lea text(%rip), %rsi
+            mov $(text_end-text), %rdx
+            syscall
+            xor %rdi, %rdi
+            mov $60, %rax
+            syscall
           EOF
-          x86_64-linux-gnu-gcc -static -O2 /tmp/fex_static_smoke.c -o /tmp/fex-static-smoke
+          x86_64-linux-gnu-gcc -nostdlib -static -Wl,-e,_start /tmp/fex_static_smoke.S -o /tmp/fex-static-smoke
           file /tmp/fex-phase-dynamic /tmp/fex-static-smoke
 
       - name: Create amd64 rootfs
