@@ -18,7 +18,9 @@ On the FEX host side, `fex:loadlib` for 64-bit `libvulkan` resolves the matching
 ${FEX_THUNKHOSTLIBS}/libvulkan-host.so
 ```
 
-The focused hosted lane stages exactly that filename, so the expected host-thunk path convention is already satisfied.
+The focused hosted lane stages exactly that filename, so the expected host-thunk path convention is satisfied.
+
+FEX's Linux x86 decoder reserves two-byte opcode `0x0f 0x3f` for `ThunkOp`. `OpDispatchBuilder::ThunkOp` reads the SHA-256 bytes immediately after the opcode and emits a thunk IR operation using the guest argument pointer.
 
 ## Trace method
 
@@ -41,9 +43,7 @@ and then:
 3. records guest-thunk disassembly around `0f 3f` sites;
 4. exports an amd64 Ubuntu 24.04 rootfs;
 5. installs an x86-64 SIGILL handler before calling `dlopen("libvulkan.so.1")`;
-6. on SIGILL, records `si_addr`, guest RIP when available, and `/proc/self/maps`.
-
-A guest RIP that lands on one of the generated `0f 3f` sites points directly at the thunk transition/recognition boundary. A later RIP moves the first owner farther into host-thunk load or Vulkan guest initialization.
+6. records whether that guest handler receives the failure.
 
 ## Trace run 1 — hosted runner Clang discovery failure
 
@@ -55,13 +55,13 @@ artifact: 9194030381
 artifact zip SHA-256: 1040216d003d9d3ac9b4a3e36f81f02482c261822f55c501b6a099eababcae6f
 ```
 
-The run stopped in host CMake configure before product compilation. The newer `ubuntu-24.04-arm` runner image exposed a stale Clang 17 CMake package whose imported `clangBasic` target pointed at a deleted file:
+The run stopped in host CMake configure before product compilation. The newer hosted image exposed a stale Clang 17 CMake package whose imported `clangBasic` target pointed at a deleted file:
 
 ```text
 /usr/lib/llvm-17/lib/libclangBasic.a
 ```
 
-The apt transaction installed the LLVM/Clang 18 development tree. The failure is runner-image/tool-discovery noise, not FEX behavior.
+The apt transaction installed the LLVM/Clang 18 development tree. The failure belongs to runner-image/tool discovery.
 
 Correction: install and select LLVM/Clang 18 explicitly:
 
@@ -76,16 +76,51 @@ CC=clang-18
 CXX=clang++-18
 ```
 
-Corrected owned-fork CI commit:
-
-```text
-a8910a6bbfb691b8775a4bc8a5ab9da6e7d728fe
-```
-
-Corrected run:
+## Trace run 2 — guest handler does not receive SIGILL
 
 ```text
 Actions run: 31733412988
+job: 94559124732
+CI commit: a8910a6bbfb691b8775a4bc8a5ab9da6e7d728fe
+source under test: 71afe476751deac24adabd1adb575fd2337b6e0a
+artifact: 9194264601
+artifact zip SHA-256: 721b04e3e8ceafd017fc827af0aaaec3b7926d24557552c5942211ab3742e9a7
 ```
 
-Status when this note was written: in progress.
+This run completed the full focused build and execution recipe successfully as a diagnostic job. The guest probe process itself still ended with exit `132`.
+
+The generated guest Vulkan thunk disassembly contains:
+
+```text
+00000000000144f0 <fexthunks_fex_loadlib>:
+   144f0: 0f 3f
+```
+
+followed by the expected built-in `fex:loadlib` hash bytes. Many generated Vulkan API thunk entries likewise begin with `0f 3f`.
+
+The x86 probe installed a guest SIGILL handler before `dlopen("libvulkan.so.1")` and printed:
+
+```text
+TRACE_BEFORE_DLOPEN
+```
+
+The process then terminated as:
+
+```text
+Illegal instruction (core dumped)
+exit 132
+```
+
+Crucially, none of the handler markers (`SIGILL_CAUGHT`, guest RIP, or guest maps) appeared.
+
+Interpretation boundary: the failure is observed as a SIGILL terminating the host FEX process while the guest is inside Vulkan `dlopen`; the installed guest SIGILL handler does not receive it. This makes an ordinary guest SIGILL at the generated `0f 3f` site a poor fit for the observed behavior. The next useful receipt is a host-side signal address plus mmap/open history so the fault can be assigned to FEX JIT/runtime code, the host Vulkan thunk, or another host mapping.
+
+## Next discriminator
+
+Run the same exact build/rootfs/probe under a host signal tracer and record:
+
+- SIGILL `si_addr`;
+- host file mappings/opened DSOs around that address;
+- any immediately preceding host library load activity.
+
+Keep the callback-routing candidate out of this lane until the Vulkan guest library itself loads successfully.
