@@ -15,6 +15,18 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      - name: Correct retained FEX-2608 anchor in disposable checkout
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('investigations/fex-vulkan-thunk-lifecycle/apply_customir_retirement_probe.py')
+          s = p.read_text()
+          old = '#include <unistd.h>\\n\\nnamespace FEX::HLE {\\n'
+          new = '#include <Linux/Utils/ELFParser.h>\\n\\nnamespace FEX::HLE {\\n'
+          if s.count(old) != 1:
+              raise SystemExit(f'expected one stale munmap include anchor, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          PY
       - name: Run retained research gate
         run: bash investigations/fex-vulkan-thunk-lifecycle/run_customir_retirement_ci.sh
       - name: Upload evidence
