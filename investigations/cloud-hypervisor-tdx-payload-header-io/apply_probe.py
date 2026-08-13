@@ -80,10 +80,9 @@ probe = r'''    #[cfg(feature = "tdx")]
         }));
         remove_dir(path).unwrap();
         println!("TDX_PAYLOAD_HEADER_INVARIANT panicked={}", result.is_err());
-        assert!(
-            result.is_ok(),
-            "TDX Payload setup-header read error must not panic the VMM"
-        );
+        if result.is_err() {
+            panic!("TDX Payload setup-header read error must not panic the VMM");
+        }
     }
 
 '''
