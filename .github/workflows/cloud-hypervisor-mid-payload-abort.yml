@@ -1,0 +1,91 @@
+name: Cloud Hypervisor mid-payload abort discriminator
+
+on:
+  push:
+    branches:
+      - execute/cloud-hypervisor-mid-payload-abort
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out Linux Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/cloud-hypervisor
+          ref: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+          path: cloud-hypervisor
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Add exact stalled-payload discriminator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = 1af93ac7035cda77cd87b0c18b1134ebb0928052
+          python3 executions/cloud-hypervisor-mid-payload-abort/add_test.py cloud-hypervisor/vmm/src/migration/transport.rs
+          (cd cloud-hypervisor && cargo fmt --all)
+          git -C cloud-hypervisor diff --check
+
+      - name: Prove current worker ignores kill event mid-payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd cloud-hypervisor
+          set +e
+          timeout 600 cargo test -p vmm --features kvm test_memory_worker_abort_interrupts_stalled_payload -- --nocapture > ../baseline.txt 2>&1
+          rc=$?
+          set -e
+          cat ../baseline.txt
+          test "$rc" -ne 0
+          grep -Fq 'memory worker did not stop after kill event while payload was stalled' ../baseline.txt
+
+      - name: Apply abort-aware payload candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 executions/cloud-hypervisor-mid-payload-abort/apply_candidate.py cloud-hypervisor/vmm/src/migration/transport.rs
+          (cd cloud-hypervisor && cargo fmt --all)
+          git -C cloud-hypervisor diff --check
+          git -C cloud-hypervisor diff -- vmm/src/migration/transport.rs > candidate.diff
+
+      - name: Prove candidate interrupts the stalled payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd cloud-hypervisor
+          cargo test -p vmm --features kvm test_memory_worker_abort_interrupts_stalled_payload -- --nocapture | tee ../candidate.txt
+          cargo test -p vmm --features kvm test_tcp_address_to_server_name -- --nocapture | tee ../transport-controls.txt
+          cargo check -p vmm --features kvm |& tee ../kvm-check.txt
+
+      - name: Source review fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C cloud-hypervisor diff --name-only)" = 'vmm/src/migration/transport.rs'
+          grep -Fq 'receive_memory_ranges_abortable' cloud-hypervisor/vmm/src/migration/transport.rs
+          grep -Fq 'Failed to poll memory payload fds' cloud-hypervisor/vmm/src/migration/transport.rs
+
+      - name: Retain exact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-hypervisor-mid-payload-abort-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            baseline.txt
+            candidate.txt
+            transport-controls.txt
+            kvm-check.txt
+            candidate.diff
+          if-no-files-found: warn
+          retention-days: 14
