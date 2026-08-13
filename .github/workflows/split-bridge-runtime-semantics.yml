@@ -1,0 +1,135 @@
+name: Split resident bridge runtime semantics
+
+on:
+  push:
+    branches:
+      - probe/fex-nodelete-gha
+  workflow_dispatch:
+
+jobs:
+  split-runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Build resident bridge and unloadable wrapper
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat > bridge.c <<'EOF'
+          static int bridge_calls;
+          int bridge_adapter(int (*target)(int), int x) {
+            ++bridge_calls;
+            return target(x);
+          }
+          int bridge_call_count(void) { return bridge_calls; }
+          EOF
+
+          cat > wrapper.c <<'EOF'
+          extern int bridge_adapter(int (*target)(int), int);
+          static int generation_state;
+          __attribute__((constructor)) static void wrapper_ctor(void) { generation_state = 100; }
+          int wrapper_bump(void) { return ++generation_state; }
+          int wrapper_state(void) { return generation_state; }
+          int target_plus_seven(int x) { return x + 7; }
+          void *wrapper_bridge_address(void) { return (void*)bridge_adapter; }
+          EOF
+
+          cc -shared -fPIC bridge.c -Wl,-soname,libfexbridge.so.1 -Wl,-z,nodelete -o libfexbridge.so
+          cc -shared -fPIC wrapper.c -L. -Wl,-rpath,'$ORIGIN' -lfexbridge -Wl,-soname,libwrapper.so.1 -o libwrapper.so
+          readelf -d libfexbridge.so | grep NODELETE
+          ! readelf -d libwrapper.so | grep -q NODELETE
+
+      - name: Prove bridge survives while wrapper unloads and resets
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat > split.c <<'EOF'
+          #define _GNU_SOURCE
+          #include <dlfcn.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+
+          typedef int (*fn0)(void);
+          typedef int (*target_fn)(int);
+          typedef int (*adapter_fn)(target_fn, int);
+          typedef void *(*ptr_fn)(void);
+
+          static int maps(const char *needle) {
+            FILE *f = fopen("/proc/self/maps", "r");
+            if (!f) return -1;
+            char *line = 0;
+            size_t n = 0;
+            int count = 0;
+            while (getline(&line, &n, f) != -1) if (strstr(line, needle)) ++count;
+            free(line);
+            fclose(f);
+            return count;
+          }
+
+          int main(void) {
+            void *w = dlopen("./libwrapper.so", RTLD_NOW | RTLD_LOCAL);
+            if (!w) { fprintf(stderr, "%s\n", dlerror()); return 10; }
+            fn0 bump = (fn0)dlsym(w, "wrapper_bump");
+            fn0 state = (fn0)dlsym(w, "wrapper_state");
+            target_fn target = (target_fn)dlsym(w, "target_plus_seven");
+            ptr_fn bridge_addr = (ptr_fn)dlsym(w, "wrapper_bridge_address");
+            if (!bump || !state || !target || !bridge_addr) return 11;
+            if (state() != 100 || bump() != 101) return 12;
+
+            adapter_fn adapter = (adapter_fn)bridge_addr();
+            if (!adapter || adapter(target, 35) != 42) return 13;
+            void *first_adapter = (void*)adapter;
+            int bridge_maps = maps("libfexbridge.so");
+            if (bridge_maps <= 0 || maps("libwrapper.so") <= 0) return 14;
+
+            /* The FEX-like invariant: after wrapper close, callers must never
+             * retain target (which belongs to wrapper), only the stable adapter. */
+            if (dlclose(w)) return 15;
+            if (maps("libwrapper.so") != 0) return 16;
+            if (maps("libfexbridge.so") != bridge_maps) return 17;
+
+            void *b = dlopen("./libfexbridge.so", RTLD_NOW | RTLD_NOLOAD);
+            if (!b) return 18;
+            fn0 bridge_count = (fn0)dlsym(b, "bridge_call_count");
+            if (!bridge_count || bridge_count() != 1) return 19;
+            if (dlclose(b)) return 20;
+
+            w = dlopen("./libwrapper.so", RTLD_NOW | RTLD_LOCAL);
+            if (!w) return 21;
+            bump = (fn0)dlsym(w, "wrapper_bump");
+            state = (fn0)dlsym(w, "wrapper_state");
+            target = (target_fn)dlsym(w, "target_plus_seven");
+            bridge_addr = (ptr_fn)dlsym(w, "wrapper_bridge_address");
+            if (!bump || !state || !target || !bridge_addr) return 22;
+            if (state() != 100 || bump() != 101) return 23;
+            if (bridge_addr() != first_adapter) return 24;
+            adapter = (adapter_fn)bridge_addr();
+            if (adapter(target, 35) != 42) return 25;
+            if (dlclose(w)) return 26;
+
+            for (int i = 0; i < 1000; ++i) {
+              w = dlopen("./libwrapper.so", RTLD_NOW | RTLD_LOCAL);
+              if (!w) return 27;
+              if (dlclose(w)) return 28;
+            }
+            if (maps("libwrapper.so") != 0) return 29;
+            if (maps("libfexbridge.so") != bridge_maps) return 30;
+
+            b = dlopen("./libfexbridge.so", RTLD_NOW | RTLD_NOLOAD);
+            if (!b) return 31;
+            bridge_count = (fn0)dlsym(b, "bridge_call_count");
+            if (!bridge_count || bridge_count() != 2) return 32;
+            if (dlclose(b)) return 33;
+
+            printf("SPLIT_BRIDGE_PASS adapter=%p bridge_maps=%d wrapper_resets=1 bridge_calls=2\n",
+                   first_adapter, bridge_maps);
+            return 0;
+          }
+          EOF
+          cc split.c -ldl -o split
+          ./split 2>&1 | tee split.log
+          grep -q SPLIT_BRIDGE_PASS split.log
