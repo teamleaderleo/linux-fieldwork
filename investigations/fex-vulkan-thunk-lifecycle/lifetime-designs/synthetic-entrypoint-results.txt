@@ -1,0 +1,18 @@
+Synthetic guest entrypoint focused model
+
+PASS	raw_h_identity_collapse	old_H=EXEC, new_H=EXEC, indistinguishable=1
+PASS	synthetic_reload_identity	S1!=S2, old=REJECT, new=EXEC
+PASS	incompatible_alias_identity	same_H=1, distinct_S=1, distinct_signature=1
+PASS	multiple_owners_same_h	owner1=EXEC, owner2=REJECT
+PASS	compiled_route_keeps_slot	after_retire=REJECT
+PASS	callback_generation_by_slot	old=REJECT, new=EXEC
+PASS	identity_without_execution_lease	paused_call=UAF
+PASS	synthetic_identity_retention	slots=100, no_address_reuse=1
+SUMMARY	8/8 PASS
+
+Repeatability: 20/20 GCC executions byte-identical.
+Clang output: byte-identical to GCC.
+Source SHA-256: cbe65f58cc6f393166ffdcaec1c92ccf4a0e77403c41172b3160745078477469
+Result SHA-256: 1cf8604eea1ecbb19200934f6dd28606fbf2c0d2b405d0a74da9035e41c416b5
+
+Interpretation boundary: synthetic bridge identity preserves reload/alias ownership but does not solve an already-selected target racing with unmap; the forced race intentionally reproduces UAF.
