@@ -1,0 +1,11 @@
+FEX-specific build verification
+UTC 2026-08-13T17:28:59Z
+
+Successful commands:
+
+make -C fex-linkaddress-guest clean all
+make -C fex-full-thunk-pair clean all
+
+Both dedicated FEX fixtures compiled successfully with warnings treated as errors. Post-build inspection confirmed that the guest invoker preserves the internal host-address argument expected by the custom thunk ABI and that the callback packer reads the generated trampoline metadata through that ABI.
+
+This execution environment had no runnable FEX executable, so FEX-specific runtime results remain pending in the retained FEX-2608 target environment. The independent native ownership model was executed completely; see RESULTS.native.txt.
