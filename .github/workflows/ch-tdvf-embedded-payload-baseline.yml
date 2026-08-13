@@ -1,0 +1,164 @@
+name: Cloud Hypervisor embedded TDVF Payload baseline
+
+on:
+  push:
+    branches: [research/ch-tdvf-embedded-payload]
+    paths:
+      - .github/workflows/ch-tdvf-embedded-payload-baseline.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  embedded-payload-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      TDSHIM_SHA: e3a692b1e58c59b40647d919f6de8ae69b2c8846
+      FEATURES: arch/tdx,arch/kvm,hypervisor/tdx,hypervisor/kvm
+      PROBE: x86_64::tdx::embedded_payload_probe_tests::tdvf_embedded_payload_metadata_and_bytes_are_accepted
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Check out exact TD-Shim source
+        uses: actions/checkout@v4
+        with:
+          repository: confidential-containers/td-shim
+          ref: ${{ env.TDSHIM_SHA }}
+          path: td-shim
+          persist-credentials: false
+
+      - name: Pin sources and toolchains
+        id: source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0 --path cloud-hypervisor
+          git -C cloud-hypervisor rev-parse HEAD | tee embedded-payload-ch-sha.txt
+          git -C td-shim rev-parse HEAD | tee embedded-payload-tdshim-sha.txt
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CH_SHA"
+          test "$(git -C td-shim rev-parse HEAD)" = "$TDSHIM_SHA"
+          test -z "$(git -C cloud-hypervisor status --short)"
+
+      - name: Verify TD-Shim embedded Payload contract
+        id: spec
+        shell: bash
+        run: |
+          set -euxo pipefail
+          grep -F 'The RawDataSize of Payload must be' td-shim/td-shim-interface/src/metadata.rs | tee embedded-payload-tdshim-rule.txt
+          grep -F 'if payload_cnt > 1' td-shim/td-shim-interface/src/metadata.rs
+          grep -F 'TDX_METADATA_SECTION_TYPE_PAYLOAD' td-shim/td-shim-interface/src/metadata.rs
+          grep -F 'TD-Shim with container OS' td-shim/doc/tdshim_spec.md | tee embedded-payload-tdshim-usecase.txt
+
+      - name: Verify exact-current Cloud Hypervisor Payload owner
+        id: owner
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY' | tee embedded-payload-ch-owner.txt
+          from pathlib import Path
+          text = Path('cloud-hypervisor/vmm/src/vm.rs').read_text()
+          start = text.index('TdvfSectionType::Payload => {')
+          end = text.index('TdvfSectionType::PayloadParam => {', start)
+          arm = text[start:end]
+          assert 'if let Some(payload_file) = self.kernel.as_mut()' in arm
+          assert 'firmware_file' not in arm
+          assert 'section.data_offset' not in arm
+          assert 'section.data_size' not in arm
+          print('TDVF_EMBEDDED_PAYLOAD_OWNER external_kernel_gate=true firmware_raw_copy=false')
+          PY
+
+      - name: Apply and format embedded Payload fixture probe
+        id: probe_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-embedded-payload/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- arch/src/x86_64/tdx/mod.rs > ../embedded-payload-probe.diff
+
+      - name: Execute exact parser and raw-byte fixture
+        id: fixture
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p arch -p hypervisor --features "$FEATURES" --lib "$PROBE" -- --exact --nocapture \
+            2>&1 | tee ../embedded-payload-fixture.log
+          grep -F 'TDVF_EMBEDDED_PAYLOAD_PARSE offset=0x1000 raw=0x10 address=0x200000 memory=0x1000 type=Payload' ../embedded-payload-fixture.log
+          grep -F 'TDVF_EMBEDDED_PAYLOAD_BYTES len=16 first=0x7c last=0x7c' ../embedded-payload-fixture.log
+
+      - name: Prove production embedded-copy invariant loses on exact source
+        id: invariant
+        shell: bash
+        run: |
+          set +e
+          python3 - <<'PY' > embedded-payload-invariant.log 2>&1
+          from pathlib import Path
+          text = Path('cloud-hypervisor/vmm/src/vm.rs').read_text()
+          start = text.index('TdvfSectionType::Payload => {')
+          end = text.index('TdvfSectionType::PayloadParam => {', start)
+          arm = text[start:end]
+          assert 'firmware_file' in arm and 'section.data_offset' in arm and 'section.data_size' in arm, (
+              'spec-valid embedded Payload has no firmware raw-data copy path'
+          )
+          PY
+          rc=$?
+          set -e
+          echo "TDVF_EMBEDDED_PAYLOAD_INVARIANT_RC=$rc" | tee embedded-payload-invariant-status.txt
+          cat embedded-payload-invariant.log
+          test "$rc" -ne 0
+          grep -F 'spec-valid embedded Payload has no firmware raw-data copy path' embedded-payload-invariant.log
+
+      - name: Quality and receipt
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../embedded-payload-final-status.txt
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "cloud_hypervisor=$CH_SHA"
+            echo "td_shim=$TDSHIM_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "spec_gate=${{ steps.spec.outcome }}"
+            echo "owner_gate=${{ steps.owner.outcome }}"
+            echo "probe_apply=${{ steps.probe_apply.outcome }}"
+            echo "fixture_gate=${{ steps.fixture.outcome }}"
+            echo "production_invariant_expected_red=${{ steps.invariant.outcome }}"
+            cat ../embedded-payload-invariant-status.txt
+          } | tee ../embedded-payload-baseline-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-embedded-payload-baseline
+          if-no-files-found: warn
+          path: |
+            embedded-payload-*.txt
+            embedded-payload-*.log
+            embedded-payload-*.diff
