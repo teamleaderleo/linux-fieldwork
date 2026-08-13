@@ -1,0 +1,159 @@
+name: Bubblewrap oversized FD parser bounds
+
+on:
+  push:
+    branches:
+      - execute/bubblewrap-fd-parser-bounds
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out Linux Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out exact Bubblewrap source
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/bubblewrap
+          ref: 2f55bae38468d0c50cf5df87b1e481e882b63acb
+          path: bubblewrap
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+          sudo apt-get build-dep -y bubblewrap
+          sudo apt-get install -y --no-install-recommends meson ninja-build
+
+      - name: Build exact baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C bubblewrap rev-parse HEAD)" = 2f55bae38468d0c50cf5df87b1e481e882b63acb
+          meson setup bubblewrap/_build bubblewrap
+          meson compile -C bubblewrap/_build
+          bubblewrap/_build/bwrap --version | tee baseline-version.txt
+
+      - name: Prove oversized FD aliases stdin in two consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/bubblewrap/_build/bwrap"
+          printf 'file-fd-alias-proof\n' > fd-marker.txt
+
+          sudo bash -c 'exec 0<"$1"; exec "$2" --ro-bind / / --tmpfs /tmp --file 4294967296 /tmp/alias -- cat /tmp/alias' \
+            _ "$GITHUB_WORKSPACE/fd-marker.txt" "$bin" > baseline-file.txt 2> baseline-file.err
+          cat baseline-file.txt
+          grep -Fxq 'file-fd-alias-proof' baseline-file.txt
+
+          printf '%s\0' '--version' | "$bin" --args 4294967296 > baseline-args.txt 2> baseline-args.err
+          cat baseline-args.txt
+          grep -Fq 'bubblewrap' baseline-args.txt
+
+          set +e
+          "$bin" --args 2147483648 > /dev/null 2> baseline-intmax.err
+          intmax_rc=$?
+          "$bin" --args -1 > /dev/null 2> baseline-negative.err
+          negative_rc=$?
+          "$bin" --args 7junk > /dev/null 2> baseline-junk.err
+          junk_rc=$?
+          set -e
+          test "$intmax_rc" -ne 0
+          test "$negative_rc" -ne 0
+          test "$junk_rc" -ne 0
+
+      - name: Apply shared bounded FD parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 executions/bubblewrap-fd-parser-bounds/apply_candidate.py bubblewrap/bubblewrap.c
+          meson compile -C bubblewrap/_build
+          git -C bubblewrap diff --check
+          git -C bubblewrap diff -- bubblewrap.c > candidate.diff
+
+      - name: Prove candidate rejects overflow before FD use
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/bubblewrap/_build/bwrap"
+
+          set +e
+          printf '%s\0' '--version' | "$bin" --args 4294967296 > candidate-args.txt 2> candidate-args.err
+          args_rc=$?
+          sudo bash -c 'exec 0<"$1"; exec "$2" --ro-bind / / --tmpfs /tmp --file 4294967296 /tmp/alias -- cat /tmp/alias' \
+            _ "$GITHUB_WORKSPACE/fd-marker.txt" "$bin" > candidate-file.txt 2> candidate-file.err
+          file_rc=$?
+          "$bin" --args 2147483648 > /dev/null 2> candidate-intmax.err
+          intmax_rc=$?
+          set -e
+
+          test "$args_rc" -ne 0
+          test "$file_rc" -ne 0
+          test "$intmax_rc" -ne 0
+          grep -Fq 'Invalid fd: 4294967296' candidate-args.err
+          grep -Fq 'Invalid fd: 4294967296' candidate-file.err
+          grep -Fq 'Invalid fd: 2147483648' candidate-intmax.err
+          test ! -s candidate-args.txt
+          test ! -s candidate-file.txt
+
+      - name: Preserve ordinary valid FD behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$GITHUB_WORKSPACE/bubblewrap/_build/bwrap"
+          sudo bash -c 'exec 9<"$1"; exec "$2" --ro-bind / / --tmpfs /tmp --file 9 /tmp/alias -- cat /tmp/alias' \
+            _ "$GITHUB_WORKSPACE/fd-marker.txt" "$bin" > candidate-valid.txt 2> candidate-valid.err
+          grep -Fxq 'file-fd-alias-proof' candidate-valid.txt
+
+      - name: Run project tests and source fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          meson test -C bubblewrap/_build --print-errorlogs | tee meson-tests.txt
+          test "$(git -C bubblewrap diff --name-only)" = 'bubblewrap.c'
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('bubblewrap/bubblewrap.c').read_text()
+          assert text.count('parse_fd (argv[1]);') == 15
+          assert 'die ("Invalid fd: %s", argv[1]);' not in text
+          assert 'parsed > INT_MAX' in text
+          assert 'errno == ERANGE' in text
+          PY
+
+      - name: Retain exact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bubblewrap-fd-parser-bounds-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            baseline-version.txt
+            baseline-file.txt
+            baseline-file.err
+            baseline-args.txt
+            baseline-args.err
+            baseline-intmax.err
+            baseline-negative.err
+            baseline-junk.err
+            candidate-file.txt
+            candidate-file.err
+            candidate-args.txt
+            candidate-args.err
+            candidate-intmax.err
+            candidate-valid.txt
+            candidate-valid.err
+            candidate.diff
+            meson-tests.txt
+          if-no-files-found: warn
+          retention-days: 14
