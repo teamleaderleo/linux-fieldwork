@@ -1,0 +1,116 @@
+# Experimental local-only candidate against teamleaderleo/FEX @ 71afe476751deac24adabd1adb575fd2337b6e0a
+# Purpose: remove thunk CustomIR redirections whose captured guest target is unmapped,
+# and invalidate the synthetic native-PFN lookup-cache keys in one batched operation.
+# This is research code. Full FEX compilation was unavailable in this sandbox because the
+# complete checkout could not be materialized; the matching lifecycle semantics are built
+# and executed by custom_ir_lifetime_probe.cpp.
+
+diff --git a/FEXCore/include/FEXCore/Core/Context.h b/FEXCore/include/FEXCore/Core/Context.h
+--- a/FEXCore/include/FEXCore/Core/Context.h
++++ b/FEXCore/include/FEXCore/Core/Context.h
+@@
+   FEX_DEFAULT_VISIBILITY virtual void AddThunkTrampolineIRHandler(uintptr_t Entrypoint, uintptr_t GuestThunkEntrypoint) = 0;
++
++  // Removes thunk redirections whose guest-side invoker lies in [Start, Start + Length).
++  // Returns the synthetic entrypoints that must be invalidated from translated-code caches.
++  FEX_DEFAULT_VISIBILITY virtual fextl::vector<uintptr_t>
++  RemoveThunkTrampolineIRHandlersInRange(uintptr_t Start, uint64_t Length) = 0;
+ 
+   /**
+    * @brief Adds additional per-instruction granularity TSO enable/disable information for the given range.
+
+diff --git a/FEXCore/Source/Interface/Context/Context.h b/FEXCore/Source/Interface/Context/Context.h
+--- a/FEXCore/Source/Interface/Context/Context.h
++++ b/FEXCore/Source/Interface/Context/Context.h
+@@
+   void AddThunkTrampolineIRHandler(uintptr_t Entrypoint, uintptr_t GuestThunkEntrypoint) override;
++  fextl::vector<uintptr_t> RemoveThunkTrampolineIRHandlersInRange(uintptr_t Start, uint64_t Length) override;
+ 
+   void AddForceTSOInformation(const IntervalList<uint64_t>& ValidRanges, fextl::set<uint64_t>&& Instructions) override;
+
+diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
+--- a/FEXCore/Source/Interface/Core/Core.cpp
++++ b/FEXCore/Source/Interface/Core/Core.cpp
+@@
+ void ContextImpl::AddThunkTrampolineIRHandler(uintptr_t Entrypoint, uintptr_t GuestThunkEntrypoint) {
+@@
+ }
++
++fextl::vector<uintptr_t>
++ContextImpl::RemoveThunkTrampolineIRHandlersInRange(uintptr_t Start, uint64_t Length) {
++  fextl::vector<uintptr_t> RemovedEntrypoints;
++  if (Length == 0) {
++    return RemovedEntrypoints;
++  }
++
++  std::unique_lock lk(CustomIRMutex);
++  for (auto It = CustomIRHandlers.begin(); It != CustomIRHandlers.end();) {
++    const auto Target = reinterpret_cast<uintptr_t>(It->second.Data);
++    const bool IsThunk = It->second.Creator == ThunkHandler;
++    const bool TargetInRange = Target >= Start && Target - Start < Length;
++
++    if (IsThunk && TargetInRange) {
++      RemovedEntrypoints.emplace_back(It->first);
++      It = CustomIRHandlers.erase(It);
++    } else {
++      ++It;
++    }
++  }
++
++  HasCustomIRHandlers = !CustomIRHandlers.empty();
++  return RemovedEntrypoints;
++}
+ 
+ void ContextImpl::RemoveCustomIREntrypoint(FEXCore::Core::InternalThreadState* Thread, uintptr_t Entrypoint) {
+@@
+ }
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/ThreadManager.h
+@@
+ #include <optional>
++#include <span>
+@@
+   void InvalidateGuestCodeRange(FEXCore::Core::InternalThreadState* CallingThread, uint64_t Start, uint64_t Length) {
+@@
+   }
++
++  void InvalidateGuestCodeEntrypoints(FEXCore::Core::InternalThreadState* CallingThread,
++                                      std::span<const uintptr_t> Entrypoints) {
++    if (Entrypoints.empty()) {
++      return;
++    }
++
++    std::lock_guard lk(ThreadCreationMutex);
++    auto CodeInvalidationlk =
++      FEXCore::GuardSignalDeferringSectionWithFallback(CTX->GetCodeInvalidationMutex(), CallingThread);
++
++    for (const auto Entrypoint : Entrypoints) {
++      CTX->InvalidateCodeBuffersCodeRange(Entrypoint, 1);
++    }
++    for (auto& Thread : Threads) {
++      for (const auto Entrypoint : Entrypoints) {
++        CTX->InvalidateThreadCachedCodeRange(Thread->Thread, Entrypoint, 1);
++      }
++    }
++  }
+ 
+   void InvalidateGuestCodeRange(FEXCore::Core::InternalThreadState* CallingThread, uint64_t Start, uint64_t Length,
+
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/SyscallsSMCTracking.cpp
+@@
+ uint64_t SyscallHandler::GuestMunmap(bool Is64Bit, FEXCore::Core::InternalThreadState* Thread, void* addr, uint64_t length) {
+@@
+   }
++
++  // Custom thunk IR is cached under native host function addresses, so invalidating the
++  // unmapped guest range cannot reach those cache keys. Retire redirections whose guest
++  // invoker was in this mapping and explicitly invalidate each synthetic key.
++  auto RemovedThunkEntrypoints =
++    CTX->RemoveThunkTrampolineIRHandlersInRange(reinterpret_cast<uintptr_t>(addr), Size);
++  TM.InvalidateGuestCodeEntrypoints(Thread, RemovedThunkEntrypoints);
++
+   InvalidateCodeRangeIfNecessary(Thread, reinterpret_cast<uint64_t>(addr), Size, PendingResourceDeletion);
