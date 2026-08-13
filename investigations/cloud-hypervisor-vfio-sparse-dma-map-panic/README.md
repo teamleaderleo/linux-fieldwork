@@ -1,107 +1,115 @@
 # Cloud Hypervisor — guest virtio-IOMMU MAP can panic across a sparse VFIO BAR subregion
 
 Updated: 2026-08-13
+Owning Fieldwork issue: #659
 Fieldwork base: `fee128d20bbcdc99bb62e75b3575247356d64a16`
 Exact Cloud Hypervisor source: `1af93ac7035cda77cd87b0c18b1134ebb0928052`
 External-contact state: false; upstream remains read-only
-State: STAGED
+State: **PROVEN — running-guest-triggerable VMM DoS; minimum candidate verified**
 
-## Security-oriented question
+## Security boundary
 
-Can a malicious guest issue a virtio-IOMMU MAP request whose GPA range is inside a VFIO BAR as a whole but crosses the boundary of one host-mapped sparse BAR subregion, causing Cloud Hypervisor to panic inside the unsafe GPA-to-host-pointer translator instead of returning a mapping error?
+A malicious running guest using virtio-IOMMU with an attached VFIO endpoint can submit a MAP request whose GPA range fits inside a logical VFIO BAR but crosses the boundary of one actually host-mapped sparse BAR subregion. Exact-current Cloud Hypervisor accepts the whole-BAR range and then panics inside the unsafe GPA-to-host-pointer translator.
 
-This is a guest-triggerable VMM availability boundary. No host-memory corruption or guest escape is claimed.
+Demonstrated impact is **VMM denial of service**. No host-memory corruption, cross-VM access, or guest escape has been established.
 
-## Exact-current ownership chain
+## Ownership chain
 
-`virtio-devices/src/iommu.rs` parses guest `VirtioIommuReqMap` fields and computes `size = virt_end - virt_start + 1` with checked arithmetic and page-alignment checks. For each attached endpoint it calls:
+`virtio-devices/src/iommu.rs` parses guest `VirtioIommuReqMap` and calls:
 
 ```rust
 ext_map.map(req.virt_start, req.phys_start, size)
 ```
 
-For VFIO, `ExternalDmaMapping::map()` first checks ordinary guest RAM. If the GPA is not RAM, it allows a VFIO MMIO path when:
+VFIO's external DMA mapping permits the MMIO path after:
 
 ```rust
 self.mmio_regions.lock().unwrap().check_range(gpa, size)
 ```
 
-and then calls:
+then calls `find_user_address(gpa, size)` before `vfio_dma_map()`.
 
-```rust
-find_user_address(gpa, size)
-```
+The mismatch is that `check_range()` validates the entire logical BAR, while a BAR may contain multiple smaller `user_memory_regions` created for VFIO sparse-mmap capability and MSI-X table/PBA carving. Exact-current `find_user_address()` selects a subregion containing only the starting GPA and then asserts that the full requested size fits there.
 
-before passing the returned host pointer to `vfio_dma_map()`.
-
-## Mismatched validation domains
-
-`MmioRegionRange::check_range()` validates against each whole `MmioRegion`:
-
-```text
-BAR start <= gpa
-and
-gpa + size <= BAR end
-```
-
-But one `MmioRegion` may contain multiple smaller `user_memory_regions`. Cloud Hypervisor deliberately creates these from VFIO sparse-mmap capabilities and when carving/trapping MSI-X table/PBA ranges.
-
-`find_user_address()` chooses a `user_memory_region` containing only the starting GPA, then currently executes:
-
-```rust
-assert!(size <= len - offset_from_start, ...);
-```
-
-So the outer whole-BAR check does not imply the inner subregion assertion.
-
-## Reduced discriminator
-
-Create one logical BAR:
+## Executable discriminator
 
 ```text
 BAR:             [0x1000, 0x5000)
 user mapping A:  [0x1000, 0x2000)
 hole:            [0x2000, 0x3000)
 user mapping B:  [0x3000, 0x4000)
+
+guest MAP GPA:   0x1800
+size:             0x1000
 ```
 
-Request:
+The whole range `[0x1800,0x2800)` fits inside the BAR, but only 0x800 bytes remain in mapping A.
+
+Baseline witness:
 
 ```text
-gpa  = 0x1800
-size = 0x1000
+Attempt to read 4096 bytes at offset 2048 into a region of size 4096
+VFIO_SPARSE_DMA_BASELINE crossing_panicked=true
+VFIO_SPARSE_BASELINE_INVARIANT_RC=101
 ```
 
-The range `[0x1800,0x2800)` is inside the BAR, so `check_range()` returns true. It starts inside mapping A but only 0x800 bytes remain there, so current `find_user_address()` hits the assertion.
-
 Controls:
+- a range wholly inside mapping A returns a valid host pointer;
+- a range beginning in the sparse hole returns an ordinary error.
 
-- `[0x1800,0x2000)` fits in mapping A and returns a valid pointer;
-- a request starting in the hole returns an ordinary error.
-
-No VFIO hardware is needed to reproduce the first-failing owner because the panic occurs before the VFIO ioctl.
+No VFIO hardware is needed because the first failing owner occurs before the VFIO ioctl.
 
 ## Minimum candidate
 
-Inside `find_user_address()`, if the requested size does not fit wholly inside the selected `user_memory_region`, do not assert. Continue searching and ultimately return the existing `unable to find user address` error if no single actual host mapping contains the full range.
+Replace the subregion assertion with a containment check:
 
-This preserves the unsafe trait's documented contract: return either an error or a pointer valid for the complete requested size.
+```rust
+if size > len - offset_from_start {
+    continue;
+}
+```
 
-Do not relax whole-BAR checks, alter virtio-IOMMU map policy, stitch non-contiguous host mappings, or change VFIO ioctl behavior.
+If no actual host mapping contains the complete range, the existing `unable to find user address` error is returned. This preserves the unsafe mapper contract: return either an error or a pointer valid for the complete requested size.
 
-## Gates
+Candidate-only SHA-256:
 
-- exact source pin;
-- source gate proving guest MAP -> `ext_map.map(... phys_start, size)`;
-- source gate proving sparse/MSI-X BARs create multiple `user_memory_regions`;
-- baseline in-subregion success control;
-- baseline hole error control;
-- baseline crossing-range panic witness;
-- no-panic invariant expected red;
-- restore exact source;
-- candidate returns an ordinary error for crossing range;
+```text
+acce404b520229080b0eea3185892d05e8b02003c62af608d0594a85eecc19b7
+```
+
+Complete candidate diff: one file, `pci/src/vfio.rs`, 3 insertions / 5 deletions. Reviewed in full; no unrelated product changes.
+
+## Execution receipt
+
+Baseline product run:
+
+```text
+run=31669892039
+job=94352152390
+```
+
+Final all-green candidate carrier:
+
+```text
+fieldwork_head=70b159cedfd271ef6d958a0ccfb88e0c7cbebd20
+run=31670217043
+job=94353102520
+source=1af93ac7035cda77cd87b0c18b1134ebb0928052
+candidate_sha=acce404b520229080b0eea3185892d05e8b02003c62af608d0594a85eecc19b7
+artifact=9169420439
+artifact_digest=sha256:f31492dbb665e686a29a2d5c831fede5c7320550932e8b76a6d8c1e61a7ea127
+```
+
+Final gates:
+- crossing-range candidate returns ordinary error;
 - in-subregion control remains valid;
-- full `pci` library tests with `kvm` feature;
-- dependent `virtio-devices` compile check;
-- Clippy, nightly rustfmt, `git diff --check`;
-- complete candidate-only diff hash.
+- PCI library: 42 passed, 0 failed, 1 intentionally ignored baseline witness;
+- dependent `virtio-devices --features kvm` compile green;
+- Clippy green;
+- nightly rustfmt green;
+- `git diff --check` green;
+- immutable candidate hash matched exactly.
+
+## Disposition
+
+**PROVEN.** This is the first finding in the current security-oriented pass with a direct running-guest → host VMM process failure chain. Current evidence supports a guest-triggerable availability issue, not an isolation escape.
