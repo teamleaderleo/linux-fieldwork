@@ -190,7 +190,7 @@ Source interpretation: the direct symbol resolves through FEX's custom `fexfn_im
 
 This is the hosted reproduction the CI lane was created to obtain.
 
-## Candidate under test
+## Candidate
 
 Fieldwork commit `1b268a6742768086aa8355e997c10b4423319ba6` contains `apply_native_first_callback_candidate.py`. It:
 
@@ -198,4 +198,52 @@ Fieldwork commit `1b268a6742768086aa8355e997c10b4423319ba6` contains `apply_nati
 2. asks native Vulkan whether a queried proc is available before substituting a FEX custom implementation;
 3. preserves the existing callback-suppression policy while preventing the unsafe native callback-creating function pointer from escaping through GIPA/GDPA.
 
-Acceptance for the focused debug-report A/B is therefore clean completion with callback count `0` through both direct and GIPA routes. A later policy change could implement real guest callback delivery separately.
+Acceptance for the focused debug-report A/B is clean completion with callback count `0` through both direct and GIPA routes. A later policy change could implement real guest callback delivery separately.
+
+## Trace run 5 — candidate closes the GIPA crash
+
+```text
+Actions run: 31739829897
+job: 94580235422
+CI commit: 51da719d001d09f7fd4dd54e6a23f2a7b3e86103
+source under test: 71afe476751deac24adabd1adb575fd2337b6e0a
+candidate source: 1b268a6742768086aa8355e997c10b4423319ba6
+artifact: 9196735724
+artifact zip SHA-256: dfadddc83314ad0e089922879de29008c32970ffae2695872657396d24b0f1e1
+```
+
+The candidate applied with `git diff --check`, built the same focused FEX/Vulkan thunk pair, used the same repaired guest rootfs, and passed the same native ARM64 Lavapipe callback control.
+
+Focused result:
+
+```text
+direct=0
+gipa=0
+```
+
+Direct route:
+
+```text
+CREATE_INSTANCE kind=report lookup=direct result=0
+CREATE_CALLBACK result=0
+AFTER_FIRE callback_count=0 expected=0
+PROBE_FINISH callback_count=0 status=0
+```
+
+GIPA route:
+
+```text
+CREATE_INSTANCE kind=report lookup=gipa result=0
+PROC create=<linked FEX custom route> fire=<linked proc>
+CREATE_CALLBACK result=0
+AFTER_FIRE callback_count=0 expected=0
+PROBE_FINISH callback_count=0 status=0
+```
+
+Compared with the exact-source baseline, the GIPA path changed from host SIGILL / exit `132` to clean exit `0` while matching the direct route's existing callback-suppression policy.
+
+Conclusion: the focused candidate fixes the demonstrated callback-routing failure. The evidence supports the missing custom callback-family route as the crash cause. The native-first availability check is compatible with this focused case and preserves Vulkan's null-proc availability result before custom substitution.
+
+## Next engineering step
+
+Turn this A/B into a regression test close to FEX's Vulkan thunk tests. Keep the test assertion on routing/safe completion and current callback policy. Treat real guest debug callback delivery as a separate behavior change.
