@@ -32,7 +32,6 @@ jobs:
       - name: Install ARM64 build and x86 cross dependencies
         run: |
           set -euxo pipefail
-          sudo dpkg --add-architecture amd64
           sudo apt-get update
           sudo apt-get install -y \
             build-essential cmake ninja-build clang lld clang-tools libclang-dev llvm-dev pkg-config git ccache \
@@ -91,11 +90,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/rootfs"
           sudo docker export "$cid" | sudo tar -C "$GITHUB_WORKSPACE/rootfs" -xf -
           sudo docker rm "$cid"
-          cd /tmp
-          apt-get download libvulkan1:amd64
-          sudo dpkg-deb -x libvulkan1_*_amd64.deb "$GITHUB_WORKSPACE/rootfs"
           test -e "$GITHUB_WORKSPACE/rootfs/lib64/ld-linux-x86-64.so.2" || test -e "$GITHUB_WORKSPACE/rootfs/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
-          find "$GITHUB_WORKSPACE/rootfs" -name 'libvulkan.so.1*' -print
 
       - name: Configure FEX Vulkan thunk paths
         run: |
@@ -108,6 +103,8 @@ jobs:
           test -n "$THUNK_CONFIG"
           test -n "$GUEST_VK"
           test -n "$HOST_VK"
+          sudo mkdir -p "$GITHUB_WORKSPACE/rootfs/usr/lib/x86_64-linux-gnu"
+          sudo cp "$GUEST_VK" "$GITHUB_WORKSPACE/rootfs/usr/lib/x86_64-linux-gnu/libvulkan.so.1"
           echo "FEX_BIN=$FEX_BIN" >> "$GITHUB_ENV"
           echo "FEX_ROOTFS=$GITHUB_WORKSPACE/rootfs" >> "$GITHUB_ENV"
           echo "FEX_THUNKCONFIG=$THUNK_CONFIG" >> "$GITHUB_ENV"
