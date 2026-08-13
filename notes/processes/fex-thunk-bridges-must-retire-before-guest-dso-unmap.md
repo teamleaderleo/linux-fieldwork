@@ -180,6 +180,23 @@ This demonstrates, for the glibc environment used by the probe, that an already-
 
 FEX's guest-thunk build deliberately assigns the real library SONAME to each generated guest thunk so later `RTLD_NOLOAD` calls can find the already-resident thunk by SONAME. This aligns well with a bridge-publication residency policy.
 
+### SONAME and constructor-specific confirmation
+
+Two follow-up local probes matched FEX's guest-thunk loading pattern more closely.
+
+First, a test file named `libprobe-guest.so` was linked with ELF SONAME `libprobe.so.1`. It was loaded by filename and then promoted by SONAME with `RTLD_LAZY | RTLD_NOLOAD | RTLD_NODELETE`. After closing the temporary promotion handle and the original application handle, `/proc/self/maps` still contained `libprobe-guest.so` and the saved function pointer still returned `42`.
+
+Second, the same promotion was performed from inside the DSO constructor. Both forms worked in the tested glibc environment:
+
+```text
+constructor -> dlopen(self SONAME, RTLD_NODELETE) -> retain handle
+constructor -> dlopen(self SONAME, RTLD_NOLOAD | RTLD_NODELETE) -> immediately dlclose temporary handle
+```
+
+After the outer application handle closed, the mapping remained resident and the saved test function remained callable. Finalization occurred at process exit.
+
+These probes validate the loader mechanics used by the owned Vulkan self-pin experiment and show that the cleaner temporary-handle promotion form is viable under the tested glibc behavior.
+
 ### What the promotion idea would cover
 
 For a dynamic host function pointer:
@@ -271,7 +288,7 @@ The Vulkan investigation demonstrates execution reaches an address in the former
 
 The retained target run does not yet prove which surviving bridge performs the immediate final transfer. Dynamic-PFN CustomIR is the leading mechanism because the dead location resolves inside `CallHostFunction<...>`. Host-to-guest callback trampolines and an already-selected translated path remain competitors until the final caller is captured.
 
-The owned `NODELETE` source branch and local glibc promotion probe strengthen residency as a plausible containment design. Only the local loader probe has executed in the continuation session; the FEX target branch still needs a target run.
+The owned `NODELETE` source branch and local glibc promotion probes strengthen residency as a plausible containment design. The loader probes executed in the continuation session; the FEX target branch still needs a target run.
 
 ## Practical review checklist
 
