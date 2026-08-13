@@ -15,10 +15,11 @@ permissions:
 jobs:
   sender-cleanup:
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
     env:
       CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
       BASELINE_TEST: migration::transport::sender_channel_liveness_tests::full_queue_loses_cleanup_disconnect_while_sender_stays_alive
-      CANDIDATE_TEST: migration::transport::sender_cleanup_candidate_tests::cleanup_closes_full_queue_and_joins_worker
+      CANDIDATE_TEST_PREFIX: migration::transport::sender_cleanup_tests::
     steps:
       - name: Check out Fieldwork carrier
         uses: actions/checkout@v4
@@ -60,7 +61,7 @@ jobs:
           git clean -fd
           test "$(git rev-parse HEAD)" = "$CH_SHA"
 
-      - name: Apply channel-close cleanup candidate
+      - name: Apply repaired channel-close cleanup candidate
         working-directory: cloud-hypervisor
         run: |
           set -euo pipefail
@@ -70,11 +71,16 @@ jobs:
           test "$(git diff --name-only)" = "vmm/src/migration/transport.rs"
           git diff -- vmm/src/migration/transport.rs
 
-      - name: Prove cleanup terminal condition
+      - name: Prove cleanup and receiver-guard invariants
         working-directory: cloud-hypervisor
+        shell: bash
         run: |
           set -euo pipefail
-          cargo test -p vmm --features kvm --lib "$CANDIDATE_TEST" -- --exact --nocapture
+          cargo test -p vmm --features kvm --lib -- --list | tee ../candidate-test-list.txt
+          grep -F "${CANDIDATE_TEST_PREFIX}cleanup_closes_full_queue_and_joins_worker: test" ../candidate-test-list.txt
+          grep -F "${CANDIDATE_TEST_PREFIX}workers_release_receiver_before_waiting_at_gate: test" ../candidate-test-list.txt
+          timeout --signal=TERM --kill-after=2s 15s \
+            cargo test -p vmm --features kvm --lib "$CANDIDATE_TEST_PREFIX" -- --nocapture
           cargo test -p vmm --features kvm --lib migration::transport::tests:: -- --nocapture
           cargo check -p vmm --features kvm
           cargo clippy -p vmm --features kvm --lib --tests -- -D warnings -A unfulfilled-lint-expectations

@@ -3,7 +3,7 @@ from pathlib import Path
 
 path = Path("vmm/src/migration/transport.rs")
 text = path.read_text()
-marker = "sender_cleanup_candidate_tests"
+marker = "sender_cleanup_tests"
 if marker in text:
     raise SystemExit(f"candidate marker already present in {path}")
 
@@ -29,24 +29,34 @@ old_recv = '''            let message = message_rx
                     notify_tx.send(SendMemoryThreadNotify::Error).ok();
                 })?;
 '''
-new_recv = '''            let message_rx = message_rx
-                .lock()
-                .map_err(|_| MigratableError::MigrateSend(anyhow!("message_rx mutex is poisoned")))
-                .inspect_err(|_| {
-                    worker_error.store(true, Ordering::Relaxed);
-                    // We ignore errors during error handling.
-                    notify_tx.send(SendMemoryThreadNotify::Error).ok();
-                })?;
-            let message = match message_rx.recv() {
-                Ok(message) => message,
-                // The main thread closes the work channel as the guaranteed terminal
-                // condition during cleanup. Queued work is drained before this point.
-                Err(_) => return Ok(()),
+new_recv = '''            let message = {
+                let message_rx = message_rx
+                    .lock()
+                    .map_err(|_| {
+                        MigratableError::MigrateSend(anyhow!("message_rx mutex is poisoned"))
+                    })
+                    .inspect_err(|_| {
+                        worker_error.store(true, Ordering::Relaxed);
+                        // We ignore errors during error handling.
+                        notify_tx.send(SendMemoryThreadNotify::Error).ok();
+                    })?;
+                match message_rx.recv() {
+                    Ok(message) => message,
+                    // The main thread closes the work channel as the guaranteed terminal
+                    // condition during cleanup. Queued work is drained before this point.
+                    Err(_) => return Ok(()),
+                }
             };
 '''
 if text.count(old_recv) != 1:
     raise SystemExit("unexpected worker receive block count")
 text = text.replace(old_recv, new_recv, 1)
+
+old_cleanup_doc = "    /// Sends disconnect messages to all workers and joins them.\n"
+new_cleanup_doc = "    /// Closes the work channel and joins all workers.\n"
+if text.count(old_cleanup_doc) != 1:
+    raise SystemExit("unexpected cleanup doc comment count")
+text = text.replace(old_cleanup_doc, new_cleanup_doc, 1)
 
 old_cleanup = '''        // Send disconnect messages to all workers.
         for _ in 0..self.threads.len() {
@@ -73,12 +83,13 @@ if text.count(anchor) != 1:
     raise SystemExit("unexpected transport test module anchor count")
 
 test_module = r'''#[cfg(test)]
-mod sender_cleanup_candidate_tests {
+mod sender_cleanup_tests {
     use std::os::unix::net::UnixStream;
     use std::sync::atomic::AtomicBool;
     use std::sync::mpsc::{channel, sync_channel};
     use std::sync::{Arc, Mutex};
     use std::thread;
+    use std::time::Duration;
 
     use vm_migration::MigratableError;
 
@@ -86,14 +97,18 @@ mod sender_cleanup_candidate_tests {
 
     use super::{
         GuestAddress, GuestMemoryAtomic, GuestMemoryMmap, SendAdditionalConnections,
-        SendMemoryThreadMessage, SocketStream,
+        SendMemoryThreadMessage, SendMemoryThreadNotify, SocketStream,
     };
+
+    fn guest_memory() -> GuestMemoryAtomic<GuestMemoryMmap> {
+        GuestMemoryAtomic::new(
+            GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x1000)]).unwrap(),
+        )
+    }
 
     #[test]
     fn cleanup_closes_full_queue_and_joins_worker() {
-        let guest_memory = GuestMemoryAtomic::new(
-            GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x1000)]).unwrap(),
-        );
+        let guest_memory = guest_memory();
         let (message_tx, message_rx) = sync_channel(1);
         let gate = Arc::new(Gate::new());
         gate.open();
@@ -130,6 +145,59 @@ mod sender_cleanup_candidate_tests {
         connections.cleanup().unwrap();
         assert!(connections.threads.is_empty());
         drop(peer);
+    }
+
+    #[test]
+    fn workers_release_receiver_before_waiting_at_gate() {
+        let guest_memory = guest_memory();
+        let (message_tx, message_rx) = sync_channel(2);
+        let message_rx = Arc::new(Mutex::new(message_rx));
+        let worker_error = Arc::new(AtomicBool::new(false));
+        let (notify_tx, notify_rx) = channel();
+        let gate = Arc::new(Gate::new());
+
+        message_tx
+            .send(SendMemoryThreadMessage::Gate(gate.clone()))
+            .unwrap();
+        message_tx
+            .send(SendMemoryThreadMessage::Gate(gate.clone()))
+            .unwrap();
+
+        let mut workers = Vec::new();
+        let mut peers = Vec::new();
+        for _ in 0..2 {
+            let (socket, peer) = UnixStream::pair().unwrap();
+            peers.push(peer);
+            let mut socket = SocketStream::Unix(socket);
+            let guest_memory_t = guest_memory.clone();
+            let message_rx_t = message_rx.clone();
+            let worker_error_t = worker_error.clone();
+            let notify_tx_t = notify_tx.clone();
+            workers.push(thread::spawn(move || -> Result<(), MigratableError> {
+                SendAdditionalConnections::worker_send_memory(
+                    &mut socket,
+                    &guest_memory_t,
+                    &message_rx_t,
+                    &worker_error_t,
+                    &notify_tx_t,
+                )
+            }));
+        }
+        drop(notify_tx);
+
+        for _ in 0..2 {
+            assert!(matches!(
+                notify_rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+                SendMemoryThreadNotify::Gate
+            ));
+        }
+
+        gate.open();
+        drop(message_tx);
+        for worker in workers {
+            worker.join().unwrap().unwrap();
+        }
+        drop(peers);
     }
 }
 
