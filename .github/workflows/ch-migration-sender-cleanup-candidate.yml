@@ -19,7 +19,7 @@ jobs:
     env:
       CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
       BASELINE_TEST: migration::transport::sender_channel_liveness_tests::full_queue_loses_cleanup_disconnect_while_sender_stays_alive
-      CANDIDATE_TEST_PREFIX: migration::transport::sender_cleanup_tests::
+      CANDIDATE_TEST_PREFIX: "migration::transport::sender_cleanup_tests::"
     steps:
       - name: Check out Fieldwork carrier
         uses: actions/checkout@v4
