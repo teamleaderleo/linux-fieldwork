@@ -1,0 +1,159 @@
+name: Tini native startup signal discriminator
+
+on:
+  pull_request:
+    paths:
+      - "investigations/tini-process-group-startup-signal-race/**"
+      - ".github/workflows/tini-native-startup-signal.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-current:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential cmake git
+
+      - name: Fetch exact Tini source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/krallin/tini.git /tmp/tini-baseline
+          git -C /tmp/tini-baseline checkout 369448a167e8b3da4ca5bca0b3307500c3371828
+          test "$(git -C /tmp/tini-baseline rev-parse HEAD)" = 369448a167e8b3da4ca5bca0b3307500c3371828
+          cp -a /tmp/tini-baseline /tmp/tini-candidate
+
+      - name: Apply parent-PGID discriminator candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/tini-candidate/src/tini.c')
+          text = p.read_text()
+          old = '''\t} else {\n\t\t// Parent\n\t\tPRINT_INFO("Spawned child process '%s' with pid '%i'", argv[0], pid);\n\t\t*child_pid_ptr = pid;\n\t\treturn 0;\n\t}\n'''
+          new = '''\t} else {\n\t\t// Parent\n\t\tif (kill_process_group && setpgid(pid, pid) < 0 && errno != EACCES && errno != ESRCH) {\n\t\t\tPRINT_FATAL("setpgid failed in parent: %s", strerror(errno));\n\t\t\treturn 1;\n\t\t}\n\t\tPRINT_INFO("Spawned child process '%s' with pid '%i'", argv[0], pid);\n\t\t*child_pid_ptr = pid;\n\t\treturn 0;\n\t}\n'''
+          if text.count(old) != 1:
+              raise SystemExit('parent spawn block changed')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          git -C /tmp/tini-candidate diff --check
+          git -C /tmp/tini-candidate diff -- src/tini.c | tee /tmp/tini-candidate.diff
+
+      - name: Build baseline and candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S /tmp/tini-baseline -B /tmp/build-baseline -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build /tmp/build-baseline --parallel 2
+          cmake -S /tmp/tini-candidate -B /tmp/build-candidate -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build /tmp/build-candidate --parallel 2
+          /tmp/build-baseline/tini --version
+          /tmp/build-candidate/tini --version
+
+      - name: Build deterministic pending-signal launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >/tmp/tini-child.c <<'EOF'
+          #include <signal.h>
+          #include <time.h>
+          int main(void) {
+            sigset_t set;
+            sigemptyset(&set);
+            sigaddset(&set, SIGUSR1);
+            if (sigprocmask(SIG_UNBLOCK, &set, 0) < 0) return 111;
+            struct timespec ts = {.tv_sec = 0, .tv_nsec = 10000000};
+            nanosleep(&ts, 0);
+            return 0;
+          }
+          EOF
+          cat >/tmp/tini-launcher.c <<'EOF'
+          #define _GNU_SOURCE
+          #include <errno.h>
+          #include <fcntl.h>
+          #include <signal.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <sys/wait.h>
+          #include <unistd.h>
+
+          static int one(const char *tini, const char *child, int group) {
+            sigset_t set, old;
+            sigemptyset(&set);
+            sigaddset(&set, SIGUSR1);
+            if (sigprocmask(SIG_BLOCK, &set, &old) < 0) return 201;
+            pid_t pid = fork();
+            if (pid < 0) return 202;
+            if (pid == 0) {
+              int devnull = open("/dev/null", O_WRONLY);
+              if (devnull >= 0) dup2(devnull, STDERR_FILENO);
+              if (group)
+                execl(tini, tini, "-g", "--", child, (char *)0);
+              else
+                execl(tini, tini, "--", child, (char *)0);
+              _exit(203);
+            }
+            if (kill(pid, SIGUSR1) < 0) return 204;
+            if (sigprocmask(SIG_SETMASK, &old, 0) < 0) return 205;
+            int status;
+            if (waitpid(pid, &status, 0) != pid) return 206;
+            if (!WIFEXITED(status)) return 207;
+            return WEXITSTATUS(status);
+          }
+
+          int main(int argc, char **argv) {
+            if (argc != 5) {
+              fprintf(stderr, "usage: %s TINI CHILD group|direct ITERATIONS\n", argv[0]);
+              return 2;
+            }
+            int group = strcmp(argv[3], "group") == 0;
+            int n = atoi(argv[4]);
+            int forwarded = 0, lost = 0, other = 0;
+            for (int i = 0; i < n; i++) {
+              int rc = one(argv[1], argv[2], group);
+              if (rc == 128 + SIGUSR1) forwarded++;
+              else if (rc == 0) lost++;
+              else other++;
+            }
+            printf("mode=%s iterations=%d forwarded=%d lost=%d other=%d\n",
+                   group ? "group" : "direct", n, forwarded, lost, other);
+            if (other != 0) return 3;
+            return 0;
+          }
+          EOF
+          cc -O2 -Wall -Wextra -Werror /tmp/tini-child.c -o /tmp/tini-child
+          cc -O2 -Wall -Wextra -Werror /tmp/tini-launcher.c -o /tmp/tini-launcher
+
+      - name: Execute baseline and candidate discriminator
+        shell: bash
+        run: |
+          set -euo pipefail
+          direct=$(/tmp/tini-launcher /tmp/build-baseline/tini /tmp/tini-child direct 100)
+          baseline=$(/tmp/tini-launcher /tmp/build-baseline/tini /tmp/tini-child group 300)
+          candidate=$(/tmp/tini-launcher /tmp/build-candidate/tini /tmp/tini-child group 300)
+          printf '%s\n%s\n%s\n' "$direct" "$baseline" "$candidate" | tee /tmp/tini-native-result.txt
+          grep -Eq 'mode=direct iterations=100 forwarded=100 lost=0 other=0' <<<"$direct"
+          baseline_lost=$(sed -n 's/.* lost=\([0-9][0-9]*\) .*/\1/p' <<<"$baseline")
+          test "$baseline_lost" -gt 0
+          grep -Eq 'mode=group iterations=300 forwarded=300 lost=0 other=0' <<<"$candidate"
+
+      - name: Retain evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tini-native-startup-signal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/tini-native-result.txt
+            /tmp/tini-candidate.diff
+          if-no-files-found: warn
+          retention-days: 14
