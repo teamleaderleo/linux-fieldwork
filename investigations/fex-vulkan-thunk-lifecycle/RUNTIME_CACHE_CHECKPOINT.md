@@ -70,6 +70,19 @@ The pre-unmap H->T diagnostic strengthens this separation: it repairs generation
 
 Run `31737446041` establishes another cross-ISA callback defect outside proc-address routing and unload lifetime. A generated `vkCreateBuffer` call with `pAllocator=nullptr` completes successfully. The same call with a real x86 `VkAllocationCallbacks` reaches `BEFORE_CREATE_BUFFER` and dies `132/SIGILL` before returning. FEX currently marks `VkAllocationCallbacks` opaque with a TODO for function-pointer support, so generated functions pass guest callback addresses through to the ARM64 host driver. Existing handwritten Vulkan wrappers already suppress allocator callbacks for a subset of APIs.
 
-This should be tracked separately from the unload diagnosis; `vkCreateBuffer` is a representative reproducer for a broad `VkAllocationCallbacks*` API family.
+Run `31744752378` (job `94596461255`, artifact `9198630191`) supplies the causal candidate. Only `vkCreateBuffer` and `vkDestroyBuffer` are switched to custom host implementations, and those wrappers follow FEX's existing compatibility policy by discarding the guest allocator pointer and calling the native device commands with `nullptr`.
+
+The same real-x86-allocator probe then reports:
+
+```text
+BEFORE calls=0
+AFTER_CREATE result=0 calls=0
+AFTER_DESTROY calls=0
+exit=30
+```
+
+The baseline for this case is `132/SIGILL`; the candidate completes Vulkan create/destroy with zero guest allocator invocations. This directly identifies raw `VkAllocationCallbacks` pass-through as the crash cause and demonstrates that suppression repairs this representative API pair.
+
+The buffer wrappers are diagnostic evidence rather than the desired family-wide implementation. `VkAllocationCallbacks*` appears across a large Vulkan API surface, so the product direction should be chosen explicitly: either apply FEX's current allocator-suppression policy consistently across the generated family, or add real function-pointer repacking/trampolines for the five allocator callbacks. The latter preserves guest allocator semantics but also inherits the generic host->guest callback lifetime requirements described above.
 
 All source edits described here are diagnostic work on owned surfaces. No upstream FEX interaction occurred.
