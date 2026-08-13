@@ -1,6 +1,6 @@
 # End-to-end Landlock snapshot-restore differential
 
-Updated: 2026-08-12
+Updated: 2026-08-13
 
 Parent: `investigations/cloud-hypervisor-landlock-restore-order/README.md`
 Candidate evolution: `CANDIDATE_EVOLUTION.md`
@@ -9,9 +9,11 @@ QCOW mechanism: `QCOW_ORDER_PROBE.md`
 Exact upstream base: `1af93ac7035cda77cd87b0c18b1134ebb0928052`
 External-contact state: **disabled / no upstream contact performed**
 
-## TL;DR
+## Current status
 
-The final product-level discriminator is materialized with **byte-identical test code** on baseline and candidate.
+**HOLD — repair and re-unify the validator before claiming an end-to-end differential.**
+
+The product mechanism remains supported by the already-executed generic pre-open and QCOW backing-chain probes, but the current candidate/baseline integration carriers are not yet a valid byte-identical runtime pair.
 
 Product candidate:
 
@@ -22,35 +24,48 @@ head: f0d19b3c3f85f06d0987f188156f97552d01f61d
 product tree: 037b3e9a3376a5f67048047ec262bdab03ee7f14
 ```
 
-Candidate validation:
+Candidate validator:
 
 ```text
-PR: teamleaderleo/cloud-hypervisor#34
-head: 2c841b719b118f0f640a82249a3b9b5c3f21260f
-parent: f0d19b3c3f85f06d0987f188156f97552d01f61d
+teamleaderleo/cloud-hypervisor#34
+branch: linux-fieldwork/landlock-restore-order-v4-validation
+head: e1b95da99ad772f0eff815ebe20932d6e40346f8
+integration.rs blob: f50510cb98340142063e82758b94f4e64f2ac834
 ```
 
-Baseline validation:
+Baseline validator:
 
 ```text
-PR: teamleaderleo/cloud-hypervisor#35
+teamleaderleo/cloud-hypervisor#35
+branch: linux-fieldwork/landlock-restore-order-baseline-validation
 head: b41f490483f2804f5047ef43ff7ce99494d44000
-parent: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+integration.rs blob: 662b0e72917cd006c7d8ac239de2ad8bda455195
 ```
 
-Both validation branches use the exact same `cloud-hypervisor/tests/integration.rs` blob:
+Those blobs differ because #34 received a later serde-json import cleanup while #35 retained the earlier spelling. More importantly, both current variants still construct the raw backing path with the same compile-broken expression:
 
 ```text
-662b0e72917cd006c7d8ac239de2ad8bda455195
+Path::new(guest.disk_config.disk(DiskType::OperatingSystem).unwrap())
 ```
 
-Therefore the only candidate/control product difference is the four-file v4 Landlock restore-order patch.
+`disk(...)` returns an owned `String`; `Path::new()` needs a borrowed path-like value. The x86 integration compile therefore fails before the intended restore matrix executes.
 
-Runtime result is still pending while the `garm-jammy-16` integration pool is queued. The fixture, branches, run routes, and expected discriminator are already pinned below.
+## Required validator rebuild
+
+The next valid differential must satisfy all of these before runtime interpretation:
+
+1. repair the path construction once;
+2. choose one serde-json spelling and one complete test implementation;
+3. apply the **exact same repaired `cloud-hypervisor/tests/integration.rs` blob** to candidate #34 and baseline #35;
+4. compile both through the same x86 integration route;
+5. verify the two validator blob hashes are identical;
+6. only then execute and compare the restore outcomes.
+
+Do not compare a repaired candidate validator against an unrepaired or textually different baseline validator.
 
 ## Fixture
 
-The test boots one VM without Landlock using:
+The validator boots one VM without Landlock using:
 
 ```text
 raw Ubuntu OS image
@@ -58,24 +73,20 @@ raw Ubuntu OS image
 QCOW2 overlay configured as the VM OS disk
 ```
 
-The QCOW overlay is a configured `DiskConfig` path and therefore receives an exact automatic Landlock rule. The raw backing file is a different file and does not receive that rule.
+The configured QCOW overlay receives the normal exact disk Landlock rule. The raw backing file is a separate path and is deliberately omitted unless the positive control adds an explicit read rule.
 
-Source review confirms `DiskConfig::apply_landlock()` grants the exact configured path, not its parent directory. Keeping overlay and backing below the same disposable test root therefore does not accidentally authorize the backing file.
-
-The source VM boots and snapshots once. Landlock is disabled while the snapshot is produced.
-
-After the source process is stopped, the test mutates **only** `snapshot/config.json`:
+The source VM snapshots once with Landlock disabled. After stopping the source process, the validator changes only `snapshot/config.json` between restore attempts:
 
 ```text
 landlock_enable = true
 landlock_rules = null | [{ exact backing path, access = "r" }]
 ```
 
-The snapshot memory file, VM state bytes, QCOW overlay, raw backing file, and guest disk contents remain unchanged across restore attempts.
+Snapshot memory/state, overlay bytes, backing bytes, and guest disk contents remain unchanged.
 
-## Three candidate restore attempts
+## Intended candidate matrix
 
-### 1. Denied backing control
+### 1. Denied backing
 
 Saved policy:
 
@@ -84,63 +95,33 @@ landlock_enable = true
 no explicit raw-backing rule
 ```
 
-Expected on selected v4 candidate:
+On the selected v4 product, restore should apply the saved policy plus exact restore-only rules before QCOW construction. The raw backing open should fail with `PermissionDenied` for the exact backing path, and the restore process should exit.
 
-```text
-Vm::new(snapshot)
-  -> apply saved VM policy + exact restore-only rules
-  -> QCOW constructor opens configured overlay
-  -> QCOW constructor attempts raw backing open
-  -> PermissionDenied for the exact backing path
-  -> restore process exits
-```
+The validator requires:
 
-The test requires all of:
+- exit within 15 seconds;
+- `Permission denied` in output;
+- exact raw backing path in the error chain.
 
-- restore exits within 15 seconds;
-- output contains `Permission denied`;
-- output contains the exact raw backing path.
+### 2. Explicit backing allow
 
-### 2. Explicit backing allow control
+Saved policy includes the exact raw backing read rule. Eager restore should reach the exact `restored` event and answer API `info` while the VM remains paused.
 
-Saved policy:
+### 3. On-demand restore
 
-```text
-landlock_enable = true
-landlock_rules = [{ exact backing path, access = "r" }]
-```
+The same explicitly allowed snapshot plus `memory_restore_mode=ondemand` should:
 
-Expected on v4:
+- reach `restored`;
+- answer API `info`;
+- log `UFFD restore: demand-paged restore enabled`.
 
-- restore reaches exact `restored` event;
-- HTTP API `info` answers while the restored VM remains paused.
+This exercises the two restore-only resources selected by v4: `source_url/memory-ranges` and conditional `/dev/userfaultfd` access.
 
-The guest is deliberately not resumed. This keeps disk bytes unchanged for the next restore attempt.
+## Intended baseline negative control
 
-### 3. On-demand UFFD control
+The exact same repaired validator blob must be applied directly to upstream base `1af93ac...` with no product change.
 
-Same explicitly allowed snapshot config plus:
-
-```text
-memory_restore_mode=ondemand
-```
-
-Expected on v4:
-
-- restore reaches exact `restored` event;
-- HTTP API `info` answers;
-- logs contain `UFFD restore: demand-paged restore enabled`.
-
-This covers both restore-only Landlock resources selected by v4:
-
-- exact `source_url/memory-ranges` read rule;
-- exact `/dev/userfaultfd` rw rule when on-demand mode selects that existing device node, while preserving syscall fallback when the node is absent.
-
-## Baseline negative control
-
-The exact same integration blob is applied directly to upstream base `1af93ac...` with no product change.
-
-Expected baseline behavior:
+Expected old ordering:
 
 ```text
 Vmm::vm_restore
@@ -150,115 +131,48 @@ Vmm::vm_restore
   -> already-open raw backing FD remains usable
 ```
 
-Therefore the first denied-backing restore remains alive instead of exiting, and the identical test fails this assertion:
+The first denied-backing attempt should therefore remain alive instead of satisfying `denied_exited == true`. That expected test failure is the negative control proving the validator distinguishes the old ordering.
+
+## Already established mechanism evidence
+
+The end-to-end lane is blocked on validator correctness, not on the underlying file-descriptor premise.
+
+Generic pre-open probe:
 
 ```text
-denied_exited == true
+run/job: 31547742820 / 93963728979
+result: PASS
 ```
 
-That baseline failure is the desired negative control. It proves the validator can distinguish the old ordering rather than merely confirming a candidate-specific happy path.
+It proved that after restriction a new unlisted open is denied while an already-open descriptor for that same file remains usable.
 
-## Runtime routes
-
-### Primary focused GARM pair
-
-Candidate runtime branch:
+QCOW backing-chain probe:
 
 ```text
-linux-fieldwork/landlock-restore-candidate-runtime
-workflow head: cc03bc3756d0e364eabfc92b1c27fb5d9d26c4b3
-run: 31550451772
-runner: garm-jammy-16
+run/job: 31548103949 / 93964786948
+result: PASS
 ```
 
-Baseline runtime branch:
+It proved the same ordering distinction through Cloud Hypervisor's real `QcowDisk::new()` path and backing-file reader.
 
-```text
-linux-fieldwork/landlock-restore-baseline-runtime
-workflow head: 5a41aa1892bc81c5a241a2c437c6eb588a478d70
-run: 31550464041
-runner: garm-jammy-16
-```
-
-Both workflows execute:
-
-```text
-scripts/dev_cli.sh tests --integration --libc gnu -- \
-  --test-filter test_snapshot_restore_landlock_qcow_backing
-```
-
-At the time of this record, both jobs are queued with no runner assigned. The upstream-style #33 `integration-x86-64-pr` job is also queued on the same `garm-jammy-16` pool, so this is a runner-capacity boundary rather than a product result.
-
-### GitHub-hosted capability fallback
-
-Candidate branch/run:
-
-```text
-linux-fieldwork/landlock-restore-candidate-hosted
-head: ab529b4ff7bd24b6c8142f01d360da22481492ab
-run: 31550666770
-runner: ubuntu-24.04
-```
-
-Baseline branch uses the exact same workflow bytes on an Ubuntu 24.04 hosted runner.
-
-The hosted path checks `/dev/kvm` before installing dependencies. If nested KVM is absent, it exits immediately with:
-
-```text
-HOSTED_CAPABILITY_MISSING: /dev/kvm is absent
-```
-
-Such a result is classified as environment capability, not product or fixture behavior.
-
-## Product quality boundary
-
-Selected product PR #33 uses exact head:
-
-```text
-f0d19b3c3f85f06d0987f188156f97552d01f61d
-```
-
-Its CI run is:
-
-```text
-31549736699
-```
-
-Already green:
-
-- gitlint;
-- DCO;
-- rustfmt for x86_64 and AArch64;
-- REUSE;
-- package consistency;
-- typos;
-- lychee;
-- preflight;
-- stable/beta/nightly x86 Clippy/build lanes;
-- AArch64 Clippy;
-- RISC-V builds;
-- fuzz build;
-- musl build families;
-- several feature/backend builds.
-
-The workflow remains open because downstream integration/virtio jobs are still queued or running.
+The probe PRs are now archival/completed evidence; #33/#34/#35 own the remaining product-level decision.
 
 ## Stop rule
 
-Promote the v4 product candidate only after the runtime pair distinguishes the two exact product states:
+Promote #33 only after one repaired, byte-identical validator produces the intended differential:
 
 ```text
 baseline identical test -> FAILS because denied backing remains usable
 v4 identical test       -> PASSES denied + explicit allow + UFFD controls
 ```
 
-If candidate fails for a different reason, classify the first owner before changing product code:
+If either side fails before that comparison, classify the first owner before changing product code:
 
+- validator compile/test harness;
 - fixture path/policy;
-- integration harness;
-- runner capability;
-- snapshot format/payload rule;
+- runner/KVM capability;
+- snapshot payload rule;
 - `/dev/userfaultfd` capability;
 - actual product ordering.
 
-Do not widen the product patch until the first distinguishing owner is known.
+Do not widen the product patch until the validator itself is clean and identical on both sides.
