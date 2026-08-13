@@ -1,0 +1,26 @@
+name: FEX Vulkan CustomIR retirement probe v2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [probe/fex-vulkan-customir-retirement]
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix exact FEX-2608 source anchors in disposable checkout
+        run: |
+          python3 -c "from pathlib import Path; p=Path('investigations/fex-vulkan-thunk-lifecycle/apply_customir_retirement_probe.py'); s=p.read_text(); p.write_text(s.replace('#include <unistd.h>\\\\n\\\\nnamespace FEX::HLE {\\\\n','#include <Linux/Utils/ELFParser.h>\\\\n\\\\nnamespace FEX::HLE {\\\\n'))"
+          python3 -c "from pathlib import Path; p=Path('investigations/fex-vulkan-thunk-lifecycle/run_customir_retirement_ci.sh'); s=p.read_text(); p.write_text(s.replace(\"marker = '\\\\n}\\\\nLOAD_LIB_INIT(libvulkan, OnInit)'\",\"marker = '\\\\n}\\\\n\\\\nLOAD_LIB_INIT(libvulkan, OnInit)'\"))"
+      - name: Run retained gate
+        run: bash investigations/fex-vulkan-thunk-lifecycle/run_customir_retirement_ci.sh
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fex-vulkan-customir-retirement-v2-${{ github.run_id }}
+          path: /tmp/fex-customir-evidence
+          retention-days: 14
