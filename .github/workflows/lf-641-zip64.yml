@@ -1,4 +1,4 @@
-name: lf-641 ZIP64 signed-range reproducer
+name: lf-641 ZIP64 candidate validation
 
 on:
   push:
@@ -9,14 +9,14 @@ permissions:
   contents: read
 
 jobs:
-  reproduce:
+  validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       UPSTREAM_HEAD: ab9d0f2c5c44dd72ce253e6e894e2f0edc9205b4
     steps:
       - uses: actions/checkout@v4
-      - name: Execute tiny ZIP64 signed-range fixtures
+      - name: Validate top-level and per-entry ZIP64 signed ranges
         shell: bash
         run: |
           set -euxo pipefail
@@ -26,6 +26,7 @@ jobs:
           mkdir -p /tmp/evidence
           uname -a | tee /tmp/evidence/environment.txt
           clang --version | tee -a /tmp/evidence/environment.txt
+          gcc --version | head -1 | tee -a /tmp/evidence/environment.txt
           git --version | tee -a /tmp/evidence/environment.txt
 
           git clone https://github.com/plougher/squashfs-tools.git /tmp/sq
@@ -37,79 +38,175 @@ jobs:
           import hashlib, struct, zipfile
           from pathlib import Path
           p16=lambda x: struct.pack('<H',x); p32=lambda x: struct.pack('<I',x); p64=lambda x: struct.pack('<Q',x)
-          name=b'a'; dos_time=0; dos_date=0x0021
-          local=b''.join([p32(0x04034b50),p16(45),p16(0),p16(0),p16(dos_time),p16(dos_date),p32(0),p32(0),p32(0),p16(1),p16(0),name])
+          dos_time=0; dos_date=0x0021
+          def save(n,d):
+              Path('/tmp',n).write_bytes(d)
+              print(f'{n} size={len(d)} sha256={hashlib.sha256(d).hexdigest()}')
+
+          # Top-level ZIP64 EOCD control: one empty stored file.
+          name=b'a'
+          local=b''.join([p32(0x04034b50),p16(45),p16(0),p16(0),p16(dos_time),p16(dos_date),p32(0),p32(0),p32(0),p16(len(name)),p16(0),name])
           cd_off=len(local)
-          central=b''.join([p32(0x02014b50),p16((3<<8)|45),p16(45),p16(0),p16(0),p16(dos_time),p16(dos_date),p32(0),p32(0),p32(0),p16(1),p16(0),p16(0),p16(0),p16(0),p32(0o100644<<16),p32(0),name])
+          central=b''.join([p32(0x02014b50),p16((3<<8)|45),p16(45),p16(0),p16(0),p16(dos_time),p16(dos_date),p32(0),p32(0),p32(0),p16(len(name)),p16(0),p16(0),p16(0),p16(0),p32(0o100644<<16),p32(0),name])
           cd_size=len(central); z64_off=cd_off+cd_size
           z64=b''.join([p32(0x06064b50),p64(44),p16((3<<8)|45),p16(45),p32(0),p32(0),p64(1),p64(1),p64(cd_size),p64(cd_off)])
           locator_off=z64_off+len(z64)
           locator=b''.join([p32(0x07064b50),p32(0),p64(z64_off),p32(1)])
-          eocd_off=locator_off+len(locator)
           eocd=b''.join([p32(0x06054b50),p16(0),p16(0),p16(0xffff),p16(0xffff),p32(0xffffffff),p32(0xffffffff),p16(0)])
-          base=bytearray(local+central+z64+locator+eocd)
-          def save(n,d):
-              Path('/tmp',n).write_bytes(d); print(f'{n} size={len(d)} sha256={hashlib.sha256(d).hexdigest()}')
-          save('valid.zip',base)
-          with zipfile.ZipFile('/tmp/valid.zip') as z: assert z.namelist()==['a'] and z.read('a')==b''
-          def mutant(n,changes):
-              d=bytearray(base)
+          top=bytearray(local+central+z64+locator+eocd)
+          save('top-valid.zip',top)
+          with zipfile.ZipFile('/tmp/top-valid.zip') as z: assert z.namelist()==['a'] and z.read('a')==b''
+          def topmut(n,changes):
+              d=bytearray(top)
               for off,val in changes: struct.pack_into('<Q',d,off,val)
               save(n,d)
-          mutant('cd-off-sign.zip',[(z64_off+48,1<<63)])
-          mutant('cd-size-sign.zip',[(z64_off+40,1<<63)])
-          mutant('range-overflow.zip',[(z64_off+48,(1<<63)-1),(z64_off+40,1)])
-          mutant('locator-sign.zip',[(locator_off+8,1<<63)])
-          print(f'local_size={len(local)} cd_off={cd_off} cd_size={cd_size} z64_off={z64_off} locator_off={locator_off} eocd_off={eocd_off}')
+          topmut('top-locator-sign.zip',[(locator_off+8,1<<63)])
+          topmut('top-entries-sign.zip',[(z64_off+32,1<<63)])
+          topmut('top-cd-size-sign.zip',[(z64_off+40,1<<63)])
+          topmut('top-cd-off-sign.zip',[(z64_off+48,1<<63)])
+          topmut('top-range-overflow.zip',[(z64_off+48,(1<<63)-1),(z64_off+40,1)])
+          print(f'top local={len(local)} cd_off={cd_off} cd_size={cd_size} z64_off={z64_off} locator_off={locator_off}')
+
+          # Per-entry ZIP64 control: directory d/.  It exercises parse_extra()
+          # but never enters regular-file or symlink data reading.
+          dname=b'd/'
+          dlocal=b''.join([p32(0x04034b50),p16(45),p16(0),p16(0),p16(dos_time),p16(dos_date),p32(0),p32(0),p32(0),p16(len(dname)),p16(0),dname])
+          d_cd_off=len(dlocal)
+          extra_data=p64(0)+p64(0)+p64(0)
+          extra=p16(0x0001)+p16(len(extra_data))+extra_data
+          dcentral=b''.join([p32(0x02014b50),p16((3<<8)|45),p16(45),p16(0),p16(0),p16(dos_time),p16(dos_date),p32(0),p32(0xffffffff),p32(0xffffffff),p16(len(dname)),p16(len(extra)),p16(0),p16(0),p16(0),p32(0o40755<<16),p32(0xffffffff),dname,extra])
+          d_cd_size=len(dcentral)
+          deocd=b''.join([p32(0x06054b50),p16(0),p16(0),p16(1),p16(1),p32(d_cd_size),p32(d_cd_off),p16(0)])
+          entry=bytearray(dlocal+dcentral+deocd)
+          save('entry-valid.zip',entry)
+          with zipfile.ZipFile('/tmp/entry-valid.zip') as z:
+              info=z.infolist()[0]; assert info.filename=='d/' and info.is_dir()
+          data_off=d_cd_off+46+len(dname)+4
+          def entrymut(n,index):
+              d=bytearray(entry); struct.pack_into('<Q',d,data_off+index*8,1<<63); save(n,d)
+          entrymut('entry-uncomp-sign.zip',0)
+          entrymut('entry-comp-sign.zip',1)
+          entrymut('entry-offset-sign.zip',2)
+          print(f'entry local={len(dlocal)} cd_off={d_cd_off} cd_size={d_cd_size} zip64_data_off={data_off}')
           PY
 
           make -C /tmp/sq/squashfs-tools -j2 mksquashfs
-          /tmp/sq/squashfs-tools/mksquashfs /tmp/valid.zip /tmp/out-control.sqfs -zip -noappend -no-progress -no-duplicates -no-xattrs > /tmp/evidence/control.log 2>&1
-          test -s /tmp/out-control.sqfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-baseline
 
-          BASE='-O1 -g -fsanitize=signed-integer-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer'
-          ZIP='-O1 -g -fsanitize=implicit-conversion,signed-integer-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer'
-          make -C /tmp/sq/squashfs-tools clean
-          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$BASE" EXTRA_LDFLAGS='-fsanitize=implicit-conversion,signed-integer-overflow' mksquashfs
-          rm -f /tmp/sq/squashfs-tools/zipfile.o
-          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$ZIP" zipfile.o
-          make -C /tmp/sq/squashfs-tools CC=clang EXTRA_CFLAGS="$BASE" EXTRA_LDFLAGS='-fsanitize=implicit-conversion,signed-integer-overflow' mksquashfs
-          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-san
-          export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
-
-          run_case() {
-              local label="$1" image="$2"
+          run_raw() {
+              local label="$1" image="$2" bin="$3"
+              rm -f "/tmp/out-${label}.sqfs"
               set +e
-              /tmp/mksquashfs-san "$image" "/tmp/out-${label}.sqfs" -zip -noappend -no-progress -no-duplicates -no-xattrs > "/tmp/evidence/${label}.log" 2>&1
+              "$bin" "$image" "/tmp/out-${label}.sqfs" -zip -noappend -no-progress -no-duplicates -no-xattrs > "/tmp/evidence/${label}.log" 2>&1
               local st=$?
               set -e
               echo "status=$st" >> "/tmp/evidence/${label}.log"
               cat "/tmp/evidence/${label}.log"
           }
 
-          run_case valid /tmp/valid.zip
-          test "$(tail -1 /tmp/evidence/valid.log)" = 'status=0'
-          ! grep -q 'runtime error:' /tmp/evidence/valid.log
+          # Functional baseline controls plus malformed behavior snapshots.
+          run_raw baseline-top-valid /tmp/top-valid.zip /tmp/mksquashfs-baseline
+          run_raw baseline-entry-valid /tmp/entry-valid.zip /tmp/mksquashfs-baseline
+          grep -q 'status=0' /tmp/evidence/baseline-top-valid.log
+          grep -q 'status=0' /tmp/evidence/baseline-entry-valid.log
+          for c in top-locator-sign top-entries-sign top-cd-size-sign top-cd-off-sign entry-uncomp-sign entry-comp-sign entry-offset-sign; do
+              run_raw "baseline-${c}" "/tmp/${c}.zip" /tmp/mksquashfs-baseline
+          done
 
-          run_case cd-off-sign /tmp/cd-off-sign.zip
-          run_case cd-size-sign /tmp/cd-size-sign.zip
-          run_case range-overflow /tmp/range-overflow.zip
-          run_case locator-sign /tmp/locator-sign.zip
+          # Confirm the separate signed-addition defect on exact-current source.
+          SAN_BASE='-O1 -g -fsanitize=signed-integer-overflow -fno-sanitize-recover=all -fno-omit-frame-pointer'
+          make -C /tmp/sq/squashfs-tools clean
+          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$SAN_BASE" EXTRA_LDFLAGS='-fsanitize=signed-integer-overflow' mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-overflow
+          export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
+          run_raw baseline-range-overflow /tmp/top-range-overflow.zip /tmp/mksquashfs-overflow
+          grep -q 'signed integer overflow: 9223372036854775807 + 1 cannot be represented in type' /tmp/evidence/baseline-range-overflow.log
+          grep -q 'parse_one_zip' /tmp/evidence/baseline-range-overflow.log
 
-          grep -Eq "implicit conversion from type 'unsigned long long'.*9223372036854775808.*type 'long long'.*-9223372036854775808" /tmp/evidence/cd-off-sign.log
-          grep -q 'parse_one_zip' /tmp/evidence/cd-off-sign.log
-          grep -Eq "implicit conversion from type 'unsigned long long'.*9223372036854775808.*type 'long long'.*-9223372036854775808" /tmp/evidence/cd-size-sign.log
-          grep -q 'parse_one_zip' /tmp/evidence/cd-size-sign.log
-          grep -q 'signed integer overflow: 9223372036854775807 + 1 cannot be represented in type' /tmp/evidence/range-overflow.log
-          grep -q 'parse_one_zip' /tmp/evidence/range-overflow.log
-          grep -q 'status=1' /tmp/evidence/locator-sign.log
-          grep -q 'Central directory of /tmp/locator-sign.zip extends past end of file' /tmp/evidence/locator-sign.log
+          # Apply the narrow parser-invariant candidate.
+          python3 <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/sq/squashfs-tools/zipfile.c')
+          s=p.read_text()
+          anchor='''static unsigned long long get64(unsigned char *p)\n{\n\treturn (unsigned long long) get32(p) |\n\t\t((unsigned long long) get32(p + 4) << 32);\n}\n'''
+          helper=anchor+'''\n\nstatic int get64_signed(unsigned char *p, long long *value)\n{\n\tunsigned long long result = get64(p);\n\n\tif(result > LLONG_MAX)\n\t\treturn FALSE;\n\n\t*value = (long long) result;\n\treturn TRUE;\n}\n'''
+          if s.count(anchor)!=1: raise SystemExit('get64 anchor mismatch')
+          s=s.replace(anchor,helper,1)
+
+          s=s.replace('static void parse_extra(struct zip_entry *entry, unsigned char *extra,\n',
+                      'static int parse_extra(struct zip_entry *entry, unsigned char *extra,\n',1)
+          old='''\t\t\tif(size32 && left >= 8) {\n\t\t\t\tentry->uncomp_size = get64(p);\n\t\t\t\tfile->buf.st_size = entry->uncomp_size;\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n\t\t\tif(csize32 && left >= 8) {\n\t\t\t\tentry->comp_size = get64(p);\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n\t\t\tif(off32 && left >= 8) {\n\t\t\t\tentry->offset = get64(p);\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n'''
+          new='''\t\t\tif(size32 && left >= 8) {\n\t\t\t\tif(get64_signed(p, &entry->uncomp_size) == FALSE)\n\t\t\t\t\treturn FALSE;\n\t\t\t\tfile->buf.st_size = entry->uncomp_size;\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n\t\t\tif(csize32 && left >= 8) {\n\t\t\t\tif(get64_signed(p, &entry->comp_size) == FALSE)\n\t\t\t\t\treturn FALSE;\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n\t\t\tif(off32 && left >= 8) {\n\t\t\t\tif(get64_signed(p, &entry->offset) == FALSE)\n\t\t\t\t\treturn FALSE;\n\t\t\t\tp += 8; left -= 8;\n\t\t\t}\n'''
+          if s.count(old)!=1: raise SystemExit('parse_extra ZIP64 block mismatch')
+          s=s.replace(old,new,1)
+          end='''\t\textra += 4 + len;\n\t\textra_len -= 4 + len;\n\t}\n}\n\n\n/*\n * Parse one central-directory record'''
+          repl='''\t\textra += 4 + len;\n\t\textra_len -= 4 + len;\n\t}\n\n\treturn TRUE;\n}\n\n\n/*\n * Parse one central-directory record'''
+          if s.count(end)!=1: raise SystemExit('parse_extra end mismatch')
+          s=s.replace(end,repl,1)
+          call='''\tparse_extra(entry, cd + ZIP_CENTRAL_SIZE + name_len, extra_len,\n\t\tsize32, csize32, off32);\n'''
+          callnew='''\tif(parse_extra(entry, cd + ZIP_CENTRAL_SIZE + name_len, extra_len,\n\t\t\tsize32, csize32, off32) == FALSE) {\n\t\tfree_tar_xattrs(file);\n\t\tfree(file->pathname);\n\t\tfree(file);\n\t\tentry->file = NULL;\n\t\treturn -1;\n\t}\n'''
+          if s.count(call)!=1: raise SystemExit('parse_extra call mismatch')
+          s=s.replace(call,callnew,1)
+
+          zdecl='''\t\t\tlong long z64_off = get64(buffer + loc_pos + 8);\n\t\t\tunsigned char z64[56];\n'''
+          znew='''\t\t\tlong long z64_off;\n\t\t\tunsigned char z64[56];\n\n\t\t\tif(get64_signed(buffer + loc_pos + 8, &z64_off) == FALSE)\n\t\t\t\tBAD_ERROR("ZIP64 end record offset in %s is too large\\n",\n\t\t\t\t\tzip_name[zip]);\n'''
+          if s.count(zdecl)!=1: raise SystemExit('z64 offset mismatch')
+          s=s.replace(zdecl,znew,1)
+          vals='''\t\t\t\tcd_entries = get64(z64 + 32);\n\t\t\t\tcd_size = get64(z64 + 40);\n\t\t\t\tcd_off = get64(z64 + 48);\n'''
+          valsnew='''\t\t\t\tif(get64_signed(z64 + 32, &cd_entries) == FALSE ||\n\t\t\t\t\t\tget64_signed(z64 + 40, &cd_size) == FALSE ||\n\t\t\t\t\t\tget64_signed(z64 + 48, &cd_off) == FALSE)\n\t\t\t\t\tBAD_ERROR("ZIP64 central directory values in %s "\n\t\t\t\t\t\t"are too large\\n", zip_name[zip]);\n'''
+          if s.count(vals)!=1: raise SystemExit('ZIP64 EOCD values mismatch')
+          s=s.replace(vals,valsnew,1)
+          bound='''\tif(cd_off + cd_size > fsize)\n\t\tBAD_ERROR("Central directory of %s extends past end of file\\n",\n\t\t\tzip_name[zip]);\n'''
+          boundnew='''\tif(cd_off > fsize || cd_size > fsize - cd_off)\n\t\tBAD_ERROR("Central directory of %s extends past end of file\\n",\n\t\t\tzip_name[zip]);\n'''
+          if s.count(bound)!=1: raise SystemExit('central bound mismatch')
+          p.write_text(s.replace(bound,boundnew,1))
+          PY
+
+          git -C /tmp/sq diff --check
+          git -C /tmp/sq diff -- squashfs-tools/zipfile.c | tee /tmp/evidence/candidate.diff
+          test "$(git -C /tmp/sq diff --name-only)" = 'squashfs-tools/zipfile.c'
+
+          make -C /tmp/sq/squashfs-tools clean
+          make -C /tmp/sq/squashfs-tools -j2
+          echo NORMAL_FULL_BUILD_OK | tee /tmp/evidence/normal-build.txt
+
+          SAN='-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer'
+          make -C /tmp/sq/squashfs-tools clean
+          make -C /tmp/sq/squashfs-tools -j2 CC=clang EXTRA_CFLAGS="$SAN" EXTRA_LDFLAGS='-fsanitize=address,undefined' mksquashfs
+          cp /tmp/sq/squashfs-tools/mksquashfs /tmp/mksquashfs-candidate
+          export ASAN_OPTIONS='halt_on_error=1:abort_on_error=1:detect_leaks=0'
+          export UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'
+
+          candidate_ok() {
+              local label="$1" image="$2"
+              run_raw "candidate-${label}" "$image" /tmp/mksquashfs-candidate
+              grep -q 'status=0' "/tmp/evidence/candidate-${label}.log"
+              ! grep -Eq 'runtime error:|AddressSanitizer|UndefinedBehaviorSanitizer' "/tmp/evidence/candidate-${label}.log"
+          }
+          candidate_reject() {
+              local label="$1" image="$2" needle="$3"
+              run_raw "candidate-${label}" "$image" /tmp/mksquashfs-candidate
+              grep -q 'status=1' "/tmp/evidence/candidate-${label}.log"
+              grep -q "$needle" "/tmp/evidence/candidate-${label}.log"
+              ! grep -Eq 'runtime error:|AddressSanitizer|UndefinedBehaviorSanitizer' "/tmp/evidence/candidate-${label}.log"
+          }
+
+          candidate_ok top-valid /tmp/top-valid.zip
+          candidate_ok entry-valid /tmp/entry-valid.zip
+          candidate_reject top-locator-sign /tmp/top-locator-sign.zip 'ZIP64 end record offset'
+          candidate_reject top-entries-sign /tmp/top-entries-sign.zip 'ZIP64 central directory values'
+          candidate_reject top-cd-size-sign /tmp/top-cd-size-sign.zip 'ZIP64 central directory values'
+          candidate_reject top-cd-off-sign /tmp/top-cd-off-sign.zip 'ZIP64 central directory values'
+          candidate_reject top-range-overflow /tmp/top-range-overflow.zip 'extends past end of file'
+          candidate_reject entry-uncomp-sign /tmp/entry-uncomp-sign.zip 'Corrupt central directory record'
+          candidate_reject entry-comp-sign /tmp/entry-comp-sign.zip 'Corrupt central directory record'
+          candidate_reject entry-offset-sign /tmp/entry-offset-sign.zip 'Corrupt central directory record'
 
           sha256sum /tmp/*.zip | sort > /tmp/evidence/fixture-sha256.txt
-          echo 'ALL LF-641 TOP-LEVEL ZIP64 ASSERTIONS PASSED' | tee /tmp/evidence/result.txt
+          echo 'ALL LF-641 ZIP64 CANDIDATE ASSERTIONS PASSED' | tee /tmp/evidence/result.txt
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lf-641-zip64-evidence
+          name: lf-641-zip64-candidate-evidence
           path: /tmp/evidence
