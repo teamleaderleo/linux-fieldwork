@@ -28,91 +28,14 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Verify exact source and apply reviewed streaming delta
+      - name: Apply retained streaming repair
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C cloud-hypervisor rev-parse HEAD)" = 2038c3cb262ac27604f647729557893a61510f99
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path('cloud-hypervisor/vmm/src/memory_manager.rs')
-          text = p.read_text()
-
-          old = '''    let dirty_bitmap = vm_dirty_log
-        .bitmap
-        .iter()
-        .zip(vmm_dirty_bitmap.iter())
-        .map(|(vm, vmm)| vm | vmm)
-        .collect::<Vec<_>>();
-
-    let tail_bits = (page_count % u64::BITS as u64) as u32;
-    if tail_bits != 0 {
-        let valid_mask = (1u64 << tail_bits) - 1;
-        if let Some(last_word) = dirty_bitmap.last()
-            && last_word & !valid_mask != 0
-        {
-            return Err(anyhow!(
-                "Dirty bitmap contains bits outside the memory region"
-            ));
-        }
-    }
-
-    Ok(MemoryRangeTable::from_dirty_bitmap(
-        dirty_bitmap,
-'''
-          new = '''    let tail_bits = (page_count % u64::BITS as u64) as u32;
-    if tail_bits != 0 {
-        let valid_mask = (1u64 << tail_bits) - 1;
-        let last_word =
-            vm_dirty_log.bitmap[expected_words - 1] | vmm_dirty_bitmap[expected_words - 1];
-        if last_word & !valid_mask != 0 {
-            return Err(anyhow!(
-                "Dirty bitmap contains bits outside the memory region"
-            ));
-        }
-    }
-
-    let dirty_bitmap = vm_dirty_log
-        .bitmap
-        .iter()
-        .zip(vmm_dirty_bitmap.iter())
-        .map(|(vm, vmm)| vm | vmm);
-
-    Ok(MemoryRangeTable::from_dirty_bitmap(
-        dirty_bitmap,
-'''
-          if text.count(old) != 1:
-              raise SystemExit(f'streaming production anchor count={text.count(old)}')
-          text = text.replace(old, new, 1)
-
-          old_test = '''        let error = dirty_bitmap_to_range_table(
-            &dirty_log(vec![1 << 2], bytes_per_bit),
-            &[0],
-            page_size(bytes_per_bit),
-            BASE_GPA,
-            bytes_per_bit * 2,
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains("outside the memory region"));
-'''
-          new_test = '''        for (vm_bitmap, vmm_bitmap) in [(vec![1 << 2], vec![0]), (vec![0], vec![1 << 2])] {
-            let error = dirty_bitmap_to_range_table(
-                &dirty_log(vm_bitmap, bytes_per_bit),
-                &vmm_bitmap,
-                page_size(bytes_per_bit),
-                BASE_GPA,
-                bytes_per_bit * 2,
-            )
-            .unwrap_err();
-            assert!(error.to_string().contains("outside the memory region"));
-        }
-'''
-          if text.count(old_test) != 1:
-              raise SystemExit(f'tail-bit test anchor count={text.count(old_test)}')
-          p.write_text(text.replace(old_test, new_test, 1))
-          PY
-
+          patch="$GITHUB_WORKSPACE/investigations/cloud-hypervisor-kvm-dirty-log-granule/STREAMING_REPAIR.patch"
+          git -C cloud-hypervisor apply --check "$patch"
+          git -C cloud-hypervisor apply "$patch"
           git -C cloud-hypervisor diff --check
           test "$(git -C cloud-hypervisor diff --name-only)" = "vmm/src/memory_manager.rs"
           git -C cloud-hypervisor diff -- vmm/src/memory_manager.rs > dirty-log-streaming.diff
@@ -127,7 +50,7 @@ jobs:
           rustup component add clippy
           rustup target add x86_64-unknown-linux-gnu
 
-      - name: Formatting and focused dirty-log tests
+      - name: Focused dirty-log tests
         working-directory: cloud-hypervisor
         shell: bash
         run: |
@@ -152,13 +75,13 @@ jobs:
           cargo clippy -p vmm --features kvm --all-targets --tests -- -D warnings |& tee ../kvm-clippy.txt
           cargo clippy -p vmm --features mshv --target x86_64-unknown-linux-gnu --all-targets --tests -- -D warnings |& tee ../mshv-clippy.txt
 
-      - name: Prove streaming-only source delta
+      - name: Prove streaming-only delta
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C cloud-hypervisor diff --name-only)" = "vmm/src/memory_manager.rs"
           grep -Fq '.map(|(vm, vmm)| vm | vmm);' cloud-hypervisor/vmm/src/memory_manager.rs
-          if grep -A5 -F 'let dirty_bitmap = vm_dirty_log' cloud-hypervisor/vmm/src/memory_manager.rs | grep -Fq 'collect::<Vec<_>>()'; then
+          if grep -A6 -F 'let dirty_bitmap = vm_dirty_log' cloud-hypervisor/vmm/src/memory_manager.rs | grep -Fq 'collect::<Vec<_>>()'; then
             echo 'streaming repair regressed to a collected merged bitmap' >&2
             exit 1
           fi
