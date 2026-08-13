@@ -1,0 +1,224 @@
+name: Cloud Hypervisor TDVF payload destination R590Q
+
+on:
+  push:
+    branches: [research/ch-tdvf-payload-dest-r590q]
+    paths:
+      - .github/workflows/ch-tdvf-payload-dest-r590q.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tdvf-payload-dest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+      FEATURES: tdx,kvm
+      CONTROL: tdvf_payload_valid_guest_address_control
+      WITNESS: tdvf_payload_invalid_guest_address_panics_baseline
+      INVARIANT: tdvf_payload_invalid_guest_address_should_not_panic
+      CANDIDATE_TEST: tdx_payload_copy_propagates_guest_memory_error
+
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+          persist-credentials: false
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CH_SHA }}
+          path: cloud-hypervisor
+          persist-credentials: false
+
+      - name: Pin source and toolchains
+        id: source
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup component add --toolchain 1.89.0 clippy
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set 1.89.0
+          rustc --version | tee ../tdvf-payload-dest-rust-version.txt
+          rustc +nightly --version | tee ../tdvf-payload-dest-nightly-version.txt
+          git rev-parse HEAD | tee ../tdvf-payload-dest-source-sha.txt
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+          test -z "$(git status --short)"
+
+      - name: Verify exact-current Payload copy boundary
+        id: boundary
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('vmm/src/vm.rs').read_text()
+          start = text.index('TdvfSectionType::Payload => {')
+          end = text.index('TdvfSectionType::PayloadParam => {', start)
+          arm = text[start:end]
+          assert 'mem.read_volatile_from(' in arm
+          assert 'payload_size as usize' in arm
+          assert '.unwrap();' in arm
+          assert 'map_err(Error::LoadPayload)?' in arm
+          print('TDVF_PAYLOAD_DEST_BOUNDARY current_unwrapped_guest_copy=true')
+          PY
+
+      - name: Apply and format baseline probe
+        id: probe
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-payload-dest/apply_probe.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-payload-dest-probe.diff
+
+      - name: Build and discover baseline probes
+        id: discover
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib --no-run
+          cargo test --locked -p vmm --features "$FEATURES" --lib -- --list | tee ../tdvf-payload-dest-test-list.txt
+          grep -F "$CONTROL: test" ../tdvf-payload-dest-test-list.txt
+          grep -F "$WITNESS: test" ../tdvf-payload-dest-test-list.txt
+          grep -F "$INVARIANT: test" ../tdvf-payload-dest-test-list.txt
+
+      - name: Baseline valid Payload destination control
+        id: baseline_control
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CONTROL" -- --nocapture 2>&1 | tee ../tdvf-payload-dest-baseline-control.log
+          grep -F "TDVF_PAYLOAD_DEST_CONTROL copied=16" ../tdvf-payload-dest-baseline-control.log
+
+      - name: Prove baseline Payload destination panic
+        id: baseline_witness
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$WITNESS" -- --ignored --nocapture 2>&1 | tee ../tdvf-payload-dest-baseline-witness.log
+          grep -F "TDVF_PAYLOAD_DEST_BASELINE panicked=true" ../tdvf-payload-dest-baseline-witness.log
+          grep -F "InvalidGuestAddress" ../tdvf-payload-dest-baseline-witness.log
+
+      - name: Prove no-panic invariant loses on baseline
+        id: baseline_invariant
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set +e
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$INVARIANT" -- --nocapture > ../tdvf-payload-dest-baseline-invariant.log 2>&1
+          rc=$?
+          set -e
+          echo "TDVF_PAYLOAD_DEST_BASELINE_INVARIANT_RC=$rc" | tee ../tdvf-payload-dest-baseline-invariant-status.txt
+          cat ../tdvf-payload-dest-baseline-invariant.log
+          test "$rc" -ne 0
+          grep -F "TDVF_PAYLOAD_DEST_INVARIANT panicked=true" ../tdvf-payload-dest-baseline-invariant.log
+          grep -F "invalid TDX Payload guest destination must not panic the VMM" ../tdvf-payload-dest-baseline-invariant.log
+
+      - name: Restore exact source
+        id: restore
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git checkout -- vmm/src/vm.rs
+          test -z "$(git status --short)"
+          test "$(git rev-parse HEAD)" = "$CH_SHA"
+
+      - name: Apply Payload destination candidate
+        id: candidate_apply
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 ../fieldwork/investigations/cloud-hypervisor-tdvf-payload-dest/apply_candidate.py
+          cargo +nightly fmt --all
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git diff -- vmm/src/vm.rs > ../tdvf-payload-dest-candidate-only.diff
+          sha256sum ../tdvf-payload-dest-candidate-only.diff | tee ../tdvf-payload-dest-candidate-diff-sha256.txt
+          grep -F "LoadPayloadMemory" vmm/src/vm.rs
+          grep -F "copy_tdx_payload" vmm/src/vm.rs
+
+      - name: Candidate focused propagation
+        id: candidate_focused
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo test --locked -p vmm --features "$FEATURES" --lib "$CANDIDATE_TEST" -- --nocapture 2>&1 | tee ../tdvf-payload-dest-candidate-focused.log
+          grep -F "TDVF_PAYLOAD_DEST_CANDIDATE invalid_result=LoadPayloadMemory(InvalidGuestAddress" ../tdvf-payload-dest-candidate-focused.log
+          grep -F "TDVF_PAYLOAD_DEST_CANDIDATE copied=16" ../tdvf-payload-dest-candidate-focused.log
+
+      - name: Full VMM TDX KVM library tests
+        id: vmm_tests
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -e /dev/kvm ]; then sudo chmod a+rw /dev/kvm; fi
+          cargo test --locked -p vmm --features "$FEATURES" --lib 2>&1 | tee ../tdvf-payload-dest-vmm-tests.log
+
+      - name: Clippy and hygiene
+        id: quality
+        working-directory: cloud-hypervisor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clippy --locked -p vmm --features "$FEATURES" --all-targets -- \
+            -D warnings -A unreachable-code -A unused-mut -A unused-variables -A unfulfilled-lint-expectations \
+            2>&1 | tee ../tdvf-payload-dest-clippy.log
+          cargo +nightly fmt --all -- --check
+          git diff --check
+          git status --short | tee ../tdvf-payload-dest-final-status.txt
+          git diff --stat | tee ../tdvf-payload-dest-final-diff-stat.txt
+          git diff -- vmm/src/vm.rs | tee ../tdvf-payload-dest-final-diff.txt
+
+      - name: Write receipt
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "fieldwork_head=${GITHUB_SHA}"
+            echo "source=$CH_SHA"
+            echo "source_gate=${{ steps.source.outcome }}"
+            echo "boundary_gate=${{ steps.boundary.outcome }}"
+            echo "probe_gate=${{ steps.probe.outcome }}"
+            echo "discover_gate=${{ steps.discover.outcome }}"
+            echo "baseline_control=${{ steps.baseline_control.outcome }}"
+            echo "baseline_witness=${{ steps.baseline_witness.outcome }}"
+            echo "baseline_invariant_expected_red=${{ steps.baseline_invariant.outcome }}"
+            echo "restore_exact_source=${{ steps.restore.outcome }}"
+            echo "candidate_apply=${{ steps.candidate_apply.outcome }}"
+            echo "candidate_focused=${{ steps.candidate_focused.outcome }}"
+            echo "vmm_tests=${{ steps.vmm_tests.outcome }}"
+            echo "quality=${{ steps.quality.outcome }}"
+            if [ -f tdvf-payload-dest-baseline-invariant-status.txt ]; then cat tdvf-payload-dest-baseline-invariant-status.txt; fi
+            if [ -f tdvf-payload-dest-candidate-diff-sha256.txt ]; then cat tdvf-payload-dest-candidate-diff-sha256.txt; fi
+          } | tee tdvf-payload-dest-execution-receipt.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch-tdvf-payload-dest-r590q
+          if-no-files-found: warn
+          path: |
+            tdvf-payload-dest-*.txt
+            tdvf-payload-dest-*.log
+            tdvf-payload-dest-*.diff
