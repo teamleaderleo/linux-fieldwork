@@ -41,16 +41,18 @@ jobs:
           p16 = lambda x: struct.pack('<H', x)
           p64 = lambda x: struct.pack('<Q', x)
           name = b'a'
+          dos_time = 0
+          dos_date = 0x0021  # 1980-01-01, valid DOS date minimum
 
           # Empty stored file, no extras.  Local header at offset 0.
           local = b''.join([
-              p32(0x04034b50), p16(45), p16(0), p16(0), p16(0), p16(0),
+              p32(0x04034b50), p16(45), p16(0), p16(0), p16(dos_time), p16(dos_date),
               p32(0), p32(0), p32(0), p16(len(name)), p16(0), name
           ])
           cd_off = len(local)
           central = b''.join([
               p32(0x02014b50), p16((3 << 8) | 45), p16(45), p16(0), p16(0),
-              p16(0), p16(0), p32(0), p32(0), p32(0), p16(len(name)), p16(0),
+              p16(dos_time), p16(dos_date), p32(0), p32(0), p32(0), p16(len(name)), p16(0),
               p16(0), p16(0), p16(0), p32((0o100644 << 16)), p32(0), name
           ])
           cd_size = len(central)
