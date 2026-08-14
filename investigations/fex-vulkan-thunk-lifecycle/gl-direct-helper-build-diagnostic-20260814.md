@@ -76,7 +76,7 @@ A compare against the failed carrier head showed this commit was one commit ahea
 
 ## Artifact audit found two more deterministic transform bugs
 
-The failed artifact ZIP was downloaded and inspected directly. Its `product.diff` preserved the transformed wrapper text that the compiler had not yet reached because the bridge TU failed first.
+The first failed artifact ZIP was downloaded and inspected directly. Its `product.diff` preserved transformed wrapper text that the compiler had not yet reached because the bridge TU failed first.
 
 ### Fix 2 — allocator unpacker stayed wrapper-local
 
@@ -168,29 +168,71 @@ Later branch-level Actions polling showed the push runs had registered after a d
 
 The diagnostic PR carrier was closed without merge and retained only as a receipt.
 
-## Current build gate
+## Second direct-helper build: negative result
 
-Build workflow run:
+GitHub Actions run: `31796842469`
 
-`31796842469`
+Job: `94755677208` (`gl-build`)
 
-Head:
+Checked-out diagnostic head: `77a650b725140d597510189af05d569abb91f2b2`
 
-`77a650b725140d597510189af05d569abb91f2b2`
+Results before the failure:
 
-Job:
+- exact-product provenance passed;
+- all direct/helper transforms applied;
+- hardened transformed-source audit passed;
+- `git diff --check` passed;
+- host `thunkgen` built successfully.
 
-`94755677208` (`gl-build`)
+The x86_64 resident bridge then failed immediately with:
 
-At the latest observation it was in progress on the exact-product provenance/dependency step. This run includes all three GL transform fixes above.
+```text
+ThunkLibs/libGL_bridge/Guest.cpp:11:10: fatal error: glcorearb.h: No such file or directory
+   11 | #include "glcorearb.h"
+```
 
-Required success conditions remain:
+The compile command for the companion had generated-output and common thunk include directories, but no `ThunkLibs/libGL` include directory. This differs from the ordinary wrapper because quoted `"glcorearb.h"` naturally resolves beside `ThunkLibs/libGL/libGL_Guest.cpp`; the new companion source lives under `ThunkLibs/libGL_bridge`.
 
-1. `GL-guest` and `GL_bridge-guest` build;
-2. exactly 736 generated `caller=1 unpacker=0` GL roles and zero generated unpacker roles;
-3. unloadable wrapper with `NEEDED libfex-GL-bridge.so` and `$ORIGIN` lookup;
-4. NODELETE only on `libfex-GL-bridge.so`;
-5. resident allocator target + allocator unpacker + fixed X11 unpacker exports.
+The role and ELF gate was skipped because compilation stopped first.
+
+Artifact receipt:
+
+- artifact name: `gl-direct-helper-build-31796842469`
+- artifact ID: `9217732251`
+- artifact SHA-256: `fd8075a0e36cc6491e58633e9a4c8ee1e8ffdb83db4fa7f0cf0bae09f47e8546`
+
+The hardened artifact was downloaded and inspected. Its `product.diff` includes the new bridge source and confirms before this include-path failure:
+
+- `static void OnInit()` is preserved;
+- `malloc_wrapper` is removed;
+- `GL_SetGuestMalloc` receives `&FEXGLBridgeMalloc` plus `fex_gl_bridge_malloc_unpacker()`;
+- the bridge defines the allocator target/unpacker and fixed X11 unpackers.
+
+## Fix 4 — inherit GL's local header directory
+
+Repository inspection confirms the FEX-owned header is:
+
+`ThunkLibs/libGL/glcorearb.h`
+
+The common `add_guest_bridge` helper already supports library-specific `INCLUDE_DIRS`, applying them to the companion dependency target.
+
+FEX diagnostic commit:
+
+`0dc102a565320d28a0b30a1f1bd53b9c5f9a799d`
+
+Commit message:
+
+`fix: expose local GL headers to resident bridge`
+
+The GL bridge integration now adds:
+
+```cmake
+INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/../libGL"
+```
+
+This keeps the bridge C++ include prologue identical to the ordinary GL wrapper while using the common helper's existing include inheritance path.
+
+Because the transform file is in both workflow path filters, this commit is expected to start fresh build/ELF and moved-reload runtime runs after Actions registration.
 
 ## Direct-helper moved-reload runtime gate
 
@@ -202,13 +244,15 @@ Workflow:
 
 `.github/workflows/gl-direct-helper-runtime.yml`
 
-Run:
+Original run from that workflow commit:
 
 `31796930801`
 
 Job:
 
 `94755951349` (`gl-runtime`)
+
+This original run predates Fix 4 and was already in its build step when Fix 4 was committed. Preserve its eventual result independently; a fresh run from `0dc102a565320d28a0b30a1f1bd53b9c5f9a799d` is the relevant post-fix gate.
 
 The runtime gate applies the same exact-product direct-helper transforms and adds runtime-only observability. It deliberately avoids restoring the older companion name-to-caller map. Instead, two magic diagnostic queries in the wrapper expose the already-generated `HostPtrInvokers` caller addresses for `glGetError` and `glXGetFBConfigs` only for the test.
 
@@ -227,8 +271,6 @@ The probe checks:
 - direct hash/type-stable caller `T` addresses are reused from the resident companion;
 - generation-1 retained PFNs still execute after generation 2 closes.
 
-At the latest observation this runtime run was in progress.
-
 ## Promotion rule
 
-Create GL source tranche 2 only after the build/role/ELF run and the moved-reload runtime are green. Keep all diagnostic hooks/workflows/scripts off the clean integration branch.
+Create GL source tranche 2 only after a post-Fix-4 build/role/ELF run and the moved-reload runtime are green. Keep all diagnostic hooks/workflows/scripts off the clean integration branch.
