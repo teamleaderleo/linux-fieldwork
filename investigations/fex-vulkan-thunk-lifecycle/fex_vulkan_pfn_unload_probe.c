@@ -231,9 +231,9 @@ int main(int argc, char **argv) {
   fprintf(stderr, "PROBE after-close maps=%d old-pfn=%p\n", CountGuestVulkanMappings(), (void *)old_fn);
 
   if (!strcmp(argv[1], "close")) {
-    fprintf(stderr, "PROBE about-to-call-stale-pfn=%p\n", (void *)old_fn);
+    fprintf(stderr, "PROBE about-to-call-saved-dynamic-pfn=%p\n", (void *)old_fn);
     CallVersion("after-real-close", old_fn);
-    fprintf(stderr, "PROBE stale call unexpectedly returned\n");
+    fprintf(stderr, "PROBE saved-dynamic-pfn-returned-after-close\n");
     return 0;
   }
 
