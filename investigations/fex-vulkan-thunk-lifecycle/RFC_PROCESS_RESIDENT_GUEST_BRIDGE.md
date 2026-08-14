@@ -17,12 +17,14 @@ libvulkan-guest.so generation
 
 libfex-vulkan-bridge.so resident companion
   generated CallHostFunction<signature> adapters used by returned native PFNs
-  generated CallbackUnpack<signature>::Unpack helpers whose addresses escape
+  generated CallbackUnpack<signature>::Unpack helpers whose addresses actually escape native -> guest
   explicitly declared custom executable helper addresses that escape
 
 independent guest callback target
   owned by the guest mapping/load generation that supplied it
 ```
+
+The resident output is directional. A signature that escapes guest -> native through a proc-address result needs a resident host-call invoker; that alone does not require a resident native -> guest callback unpacker for the same signature.
 
 This design removes the wrapper-unload race for bridge executable code without requiring JIT/cache lifetime reclamation changes.
 
@@ -109,7 +111,7 @@ Therefore wrapper physical reclamation can remain independent of JIT execution-d
 
 ## Output ownership rules
 
-Thunkgen should classify generated code according to whether its executable address can escape the wrapper invocation/load generation.
+Thunkgen should classify generated code according to whether its executable address can escape the wrapper invocation/load generation and **in which direction** it escapes.
 
 ### Wrapper-owned output
 
@@ -119,14 +121,21 @@ Keep in the ordinary guest wrapper:
 - synchronous marshalling code whose address never escapes;
 - helper state whose lifetime is bounded by the wrapper call/load and carries no externally retained executable address.
 
-### Resident generated output
+### Resident host-call invokers
 
-Emit into the resident companion:
+Emit `CallHostFunction<signature>` / `GetCallerForHostFunction` adapters for signatures that escape through returned native function pointers or equivalent guest-visible native addresses.
 
-- `CallHostFunction<signature>` adapters selected for native PFNs returned to guest code;
-- `CallbackUnpack<signature>::Unpack` used in callbacks that native/FEX state may retain;
-- nested callback-member unpacker signatures discovered from typed interface metadata;
-- custom executable helper functions explicitly declared as escaping.
+These are guest -> native executable adapters.
+
+### Resident callback unpackers
+
+Emit `CallbackUnpack<signature>::Unpack` only for signatures that actually cross native -> guest and can outlive the wrapper generation, including:
+
+- callback parameters retained by native/FEX state;
+- nested callback-member signatures discovered from typed interface metadata;
+- explicitly declared custom native -> guest executable helper publication.
+
+A signature can belong to one set or both. Signature equality alone does not imply bidirectional use.
 
 ### Independently owned callback target
 
@@ -140,6 +149,10 @@ The production implementation should emit bridge definitions directly from thunk
 
 The current strongest Vulkan proof uses a post-processing script to split generated C++ output. That proves output ownership is workable while sacrificing typed context too early for production use.
 
+The 32-bit GL discriminator adds a concrete reason to move this into typed generation: the prototype extractor cloned every signature into **both** resident directions. On i386 that forced a `CallbackUnpack` instantiation for a 23-argument host-call signature, which violates FEX's existing `PackedArguments` callback limit even though stock GL has no reason to instantiate that callback direction.
+
+See [`GL_32BIT_BRIDGE_DIRECTIONALITY_20260814.md`](./GL_32BIT_BRIDGE_DIRECTIONALITY_20260814.md).
+
 Thunkgen already knows enough to identify several useful classes:
 
 - returned function-pointer signatures;
@@ -147,6 +160,13 @@ Thunkgen already knows enough to identify several useful classes:
 - layout and parameter annotations.
 
 The DRM nested-callback prototype adds evidence that thunkgen can also classify callbacks inside a structure with explicit member metadata.
+
+A production representation should preserve separate sets, conceptually:
+
+```text
+ResidentHostCallSignatures
+ResidentGuestCallbackSignatures
+```
 
 ## Nested callback members
 
@@ -164,7 +184,7 @@ The guest side copies the caller structure and converts only annotated callback 
 
 See [`DRM_NESTED_CALLBACK_GENERATOR_PROTOTYPE.md`](./DRM_NESTED_CALLBACK_GENERATOR_PROTOTYPE.md).
 
-These member signatures should feed the same resident bridge signature set as direct callback parameters when the callback can outlive the wrapper.
+These member signatures should feed the resident callback-unpacker set when the callback can outlive the wrapper.
 
 ## Retained containing objects
 
@@ -197,6 +217,7 @@ The declaration must answer:
 ```text
 which executable address escapes?
 which signature does it implement?
+which direction does it cross?
 which resident owner should contain it?
 ```
 
@@ -293,16 +314,16 @@ The next namespace experiment should choose between these with two simultaneous 
 
 ## 32-bit ABI
 
-The current strongest generated split-bridge runtime proofs are 64-bit.
+The current strongest runtime proofs remain 64-bit. The first supported 32-bit build discriminator used GL, because Vulkan is intentionally inside FEX's 64-bit-only GuestLib block.
 
-A 32-bit end-to-end proof should be a generic-design gate because:
+The naive full-bidirectional GL bridge reached actual i386 compilation and failed because bridge generation instantiated a 23-argument `CallbackUnpack` for a signature used in the host-call direction. The generated source contained 717 signatures; the failure demonstrates an over-broad extraction policy, not a general 32-bit rejection.
 
-- guest pointer width differs;
-- thunk ABI details and callback marshalling differ;
-- loader mappings are tighter;
-- process-resident memory cost is proportionally more important.
+See [`GL_32BIT_BRIDGE_DIRECTIONALITY_20260814.md`](./GL_32BIT_BRIDGE_DIRECTIONALITY_20260814.md).
 
-The required test should exercise at least one dynamic PFN and one host->guest callback path through a generated resident companion.
+The next 32-bit gate must use directional generated output and exercise at least:
+
+- one proc-address/native-PFN call through a resident host-call invoker;
+- one native -> guest callback through a resident callback unpacker.
 
 ## Memory accounting
 
@@ -320,7 +341,7 @@ split resident bridge
 
 For Vulkan whole-wrapper NODELETE, the measured retained mapping delta is 311,296 bytes / 304 KiB.
 
-The bridge prototype should receive the same mapping-level measurement, followed by a minimal generated subset measurement once thunkgen owns the split directly.
+Directional bridge generation should reduce the resident companion below the prototype's full-bidirectional output. The bridge should receive the same mapping-level measurement once typed directional output exists.
 
 ## Runtime API impact
 
@@ -340,16 +361,17 @@ This RFC deliberately keeps that heavier mechanism outside the resident helper f
 
 ## Proposed implementation sequence
 
-1. Add first-class thunkgen resident-output classification for returned PFN adapters and ordinary callback unpackers.
+1. Add first-class thunkgen directional resident-output classification for returned PFN adapters and callbacks.
 2. Generate one resident companion per thunk family and bitness.
-3. Redirect wrapper lookup/packing to resident helper addresses.
-4. Add typed metadata for custom escaping executable helpers.
-5. Feed nested callback-member signatures into resident output.
-6. Add explicit retained-object metadata for native-retained converted structures.
-7. Prove 32-bit behavior.
-8. Resolve loader-namespace policy with simultaneous NEWLM tests.
-9. Measure incremental residency against selective NODELETE.
-10. Consider cross-library deduplication only after semantic identity is explicit.
+3. Redirect wrapper proc-address lookup to resident host-call invokers.
+4. Redirect escaping callback packing to resident callback unpackers.
+5. Add typed metadata for custom escaping executable helpers, including direction.
+6. Feed nested callback-member signatures into the callback-unpacker set.
+7. Add explicit retained-object metadata for native-retained converted structures.
+8. Prove 32-bit directional build and runtime behavior.
+9. Resolve loader-namespace policy with simultaneous NEWLM tests.
+10. Measure incremental residency against selective NODELETE.
+11. Consider cross-library deduplication only after semantic identity is explicit.
 
 ## Acceptance tests
 
@@ -363,7 +385,7 @@ real vulkaninfo compatibility workload
 GL dynamic PFN moved-wrapper test
 DRM retained callback unpacker moved-wrapper test
 DRM generated nested callback-member synchronous test
-32-bit dynamic PFN + callback test
+32-bit proc-address + callback test using directional resident output
 multi-namespace independent-state test
 ```
 
@@ -381,6 +403,6 @@ Every test should retain exact product revision, source delta, wrapper/bridge EL
 
 This is a research proposal backed by owned-fork prototypes and hosted CI. It is not an upstream candidate.
 
-The exact historical Apple M5 teardown endpoint remains incompletely captured. The bridge ownership mechanism has independent runtime evidence across Vulkan, GL, and DRM-related callback work.
+The exact historical Apple M5 teardown endpoint remains incompletely captured. The bridge ownership mechanism has independent runtime evidence across Vulkan, GL, and DRM-related callback work. The current i386 evidence rejects full bidirectional signature cloning and motivates typed directional output; 32-bit runtime proof remains open.
 
 No third-party/upstream FEX interaction is authorized or performed by this record.
