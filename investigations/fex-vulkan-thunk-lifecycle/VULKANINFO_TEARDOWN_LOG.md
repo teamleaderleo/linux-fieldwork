@@ -168,6 +168,105 @@ Repair commit:
 
 Again, the FEX source, generated thunk inputs, rootfs recipe, and runtime matrix were not changed by this harness repair.
 
+## Run 3 — complete real `vulkaninfo` stock/candidate matrix
+
+Actions run:
+
+```text
+31778563827
+job:    94699137822
+carrier: 4ce03d842f345045871af1663b8a48316de7be79
+fex_source: c011366706eaf65a00380003989b3a10811212b6
+lifetime helper: 96d3d1aff38f986f6e8e36e5afd10c04cfe67cf2
+job conclusion: success
+```
+
+Artifact:
+
+```text
+id:      9210948707
+name:    real-vulkaninfo-teardown-31778563827
+sha256:  1a43ea6beb4c4cab177c5d43bad4ae88a7b8b7e2234dd01077e5744f9e336f25
+```
+
+The real guest binary receipt identifies:
+
+```text
+/usr/bin/vulkaninfo: ELF 64-bit LSB pie executable, x86-64
+interpreter /lib64/ld-linux-x86-64.so.2
+BuildID 3417733...
+stripped
+```
+
+The generated Vulkan guest/host thunk hashes are unchanged between the stock and candidate phases; the retained `thunk-sha256.diff` is empty. Thus only the FEX/FEXServer lifetime behavior changed for the A/B phase.
+
+### Exit matrix
+
+Every application case completed with exit 0:
+
+```text
+stock-summary-normal=0
+stock-summary-pin=0
+stock-summary-bogus=0
+stock-full-normal=0
+stock-full-pin=0
+stock-full-bogus=0
+candidate-summary-normal=0
+candidate-summary-pin=0
+candidate-summary-bogus=0
+candidate-full-normal=0
+candidate-full-pin=0
+candidate-full-bogus=0
+```
+
+Both stock and candidate summary runs enumerate one llvmpipe device. Retained output identifies:
+
+```text
+GPU0
+apiVersion = 1.4.318
+deviceName = llvmpipe (LLVM 20.1.2, 128 bits)
+driverName = llvmpipe
+driverInfo = Mesa 25.2.8-0ubuntu0.24.04.2 (LLVM 20.1.2)
+```
+
+### Candidate retirement activity validates the controls
+
+The candidate was not idle in this matrix. Each case activates 582 dynamic H claims, with seven compatible standby claims observed during registration.
+
+For normal and unrelated-bogus-preload cases, teardown produces 582 retirements and 582 revoked-H installations. For the Vulkan pin cases, those retirement/revocation events are absent because the guest Vulkan thunk remains live through process return.
+
+Conceptually:
+
+```text
+normal / bogus:
+  582 active H claims
+  -> final guest Vulkan ownership disappears
+  -> 582 retire/revoke transitions
+
+pin:
+  582 active H claims
+  -> guest Vulkan thunk remains referenced
+  -> 0 retire/revoke transitions before process return
+```
+
+That confirms the pin control is exercising the lifetime dimension intended by the original field experiment, even though this hosted application run exits normally in all cases.
+
+### Interpretation
+
+This is a **negative reproduction of the original field exit-139 symptom**, not evidence against the lower-level lifetime bug.
+
+The hosted reconstruction differs from the original environment in loader/package versions, full process image, runner kernel/runtime details, and likely exact teardown ordering. Under this reconstructed environment:
+
+- real Ubuntu amd64 `vulkaninfo` enumerates llvmpipe and exits 0 on routed stock FEX;
+- pinning the guest Vulkan thunk does not change the exit code because stock already exits 0;
+- unrelated preload also exits 0;
+- the lifetime candidate exits 0 in all identical cases;
+- candidate diagnostics show that normal/bogus teardown really does retire the dynamic thunk claims while pinning suppresses that retirement.
+
+So the application-level 139 remains environment/order-sensitive. The strongest causal evidence continues to be the forced-different Vulkan PFN reload A/B and exact LinkAddress retirement tests, where stale H -> old guest-invoker state is consumed after the old owner disappears.
+
+The real `vulkaninfo` matrix is still valuable as a compatibility regression: the current integrated candidate survives summary/full enumeration and process teardown with real Vulkan-Tools under llvmpipe across all six controls.
+
 ## Evidence rules
 
 A failed package-resolution or rootfs-construction step is a harness result only. A `vulkaninfo` exit status becomes product evidence only after:
@@ -177,6 +276,8 @@ A failed package-resolution or rootfs-construction step is a harness result only
 - adjacent `FEXServer` is present;
 - llvmpipe ICD is resolved;
 - stock/candidate thunk hashes are retained for isolation.
+
+Run 3 satisfies those requirements.
 
 ## External-contact state
 
