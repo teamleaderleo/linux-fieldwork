@@ -10,9 +10,19 @@ Unless a later instruction narrows or revokes this authority, agents may create,
 
 Internal research branches are allowed to be messy. Agents may use temporary commits, diagnostic instrumentation, experimental workflows, generated test material, carrier branches, throwaway fixtures, and other execution machinery when useful. Do not spend time preserving upstream-ready history during ordinary internal churn.
 
+### Owned CI and workflow execution
+
+The owner explicitly authorizes creating, editing, dispatching, triggering by push, rerunning, and iterating GitHub Actions workflows and other CI jobs in repositories and forks owned by `teamleaderleo` when they are used for research, reproduction, instrumentation, or discriminating experiments.
+
+Agents may create disposable CI branches, use ARM64 or other available owned runners, inspect logs and artifacts, retry failed harness jobs, and remove or abandon temporary workflow machinery after the evidence is retained. A workflow-level green result is not evidence by itself: retain the embedded probe outputs, exact product revision, source delta if any, and negative controls needed to interpret the run.
+
+When an experiment is intended to test an exact third-party source revision, keep workflow/policy-only fork commits distinct from the product source under test and state that distinction in the receipt.
+
+This workflow authority applies only to owned repositories/forks. It does not authorize workflow dispatches or any other writes/interactions in third-party or upstream repositories.
+
 This authority does **not** publish anything upstream. The human owns the boundary where research is converted into an upstream submission. An owned-fork experiment must not be represented as an upstream-authored or upstream-ready contribution merely because it exists.
 
-Backlink and external-interaction hygiene still applies. Do not create third-party GitHub backlinks or timeline events accidentally. When controlled interaction text must mention a third-party GitHub issue, pull request, or commit, use the repository's redirect-link convention. Do not comment, review, react, open issues or pull requests, or otherwise contact a third-party upstream unless the human has authorized that upstream interaction.
+Backlink and external-interaction hygiene still applies. Do not create third-party GitHub backlinks or timeline events accidentally. When controlled interaction text must mention a third-party GitHub issue, pull request, or commit, use the repository's redirect-link convention. Do not comment, review, react, open issues or pull requests, dispatch workflows, or otherwise contact a third-party upstream unless the human has authorized that upstream interaction.
 
 A later human instruction can designate a specific branch or commit series as an **upstream candidate**. Only then do the candidate-history, sign-off, and source-branch rules in [`SOURCE_BRANCH_HYGIENE.md`](SOURCE_BRANCH_HYGIENE.md) become mandatory for that candidate.
 
