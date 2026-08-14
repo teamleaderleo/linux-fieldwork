@@ -98,13 +98,17 @@ This best matches FEX's ordinary callback and Wayland listener-table behavior.
 
 The scalable form is a reusable nested-callback/member annotation, because 133 Vulkan commands accept this one struct type. Per-command custom guest entrypoints would duplicate the same transformation across a large API surface.
 
+A cheaper Vulkan-specific prototype is also available without changing the generic generator. `ThunkLibs/libvulkan/Guest.cpp::OnInit()` already sends guest callback-unpacker addresses to host setup functions for X11. The same pattern can send the five allocator callback unpackers once at library initialization. The allocator custom repacker can then combine each stored unpacker with the per-application guest callback target using `MakeHostTrampolineForGuestFunctionAt(...)`. That is a useful fidelity discriminator before deciding whether the mechanism deserves a generic member annotation.
+
+The FEX trampoline cache is keyed by guest target plus guest unpacker and reuses existing trampolines. Vulkan's current specification also requires application allocation functions to be called from the same thread that invoked the provoking Vulkan command. That aligns with FEX's existing host-to-guest callback path, which rejects unrelated asynchronous host-thread callbacks.
+
 Open design work for full mediation:
 
-- guest-side allocation of the correct trampoline/unpacker for each nested callback signature;
-- host-side finalization during struct repacking;
-- lifetime/reuse rules for allocator structs that may be used across object lifetime;
-- callback `pUserData` semantics;
-- 32-bit pointer/layout behavior in the generated host representation.
+- prove that a guest allocator's returned memory pointer is usable by native Vulkan through the existing shared address-space model;
+- test all five callback signatures, including internal-allocation notifications;
+- preserve `pUserData` exactly;
+- verify 32-bit layout/guest-pointer behavior at source/build level while the current Linux Vulkan guest DSO remains 64-bit-only;
+- separately convert the existing custom Vulkan wrappers that currently hardcode allocator NULL, because type repacking cannot help a wrapper that discards the parameter before native entry.
 
 ### B. Explicit unsupported callback stubs — safe and diagnostic, low fidelity
 
@@ -126,30 +130,68 @@ A generated/type-aware check could reject or abort before entering native Vulkan
 
 This is conceptually close to callback stubbing but fails at API entry rather than waiting for the host to invoke a callback. It may be easier to reason about than a fatal callback stub, but requires a deliberate project-level error policy because Vulkan APIs do not generally provide an FEX-specific unsupported-feature return code.
 
-## Type-level experiment suggested by the source
+## Type-level generator discriminators
 
-The cheapest next technical discriminator is not another object-specific Vulkan wrapper. It is a type-level repacking experiment:
+The first type-level prototype exposed a useful annotation distinction.
 
-1. stop treating `VkAllocationCallbacks` as opaque;
-2. emit/repack its layout;
-3. mark the five function-pointer members for custom repacking;
-4. initially fill them with host-side diagnostic stubs;
-5. run a representative generic API such as `vkCreateBuffer` plus the instance create/destroy pair.
+A synthetic `.ThunkGen` fixture with a struct containing only one function-pointer member marked `custom_repack` passes for both x86-32 and x86-64. A second synthetic allocator-like struct containing one `void*` user-data field plus five callback fields also passes when all six pointer-bearing members are marked `custom_repack`.
 
-Useful outcomes:
+Receipt for the corrected single-callback case:
 
-- **build succeeds and diagnostic stub is called:** one type-level policy can cover the generic allocator surface, proving per-command wrappers are unnecessary;
-- **generator cannot repack the struct cleanly:** identifies the exact generator capability needed before allocator policy can be centralized;
-- **native Vulkan rejects the repacked allocator before callback:** tells us entry-time rejection/nulling may be the cleaner policy surface;
-- **raw guest callback still executes:** indicates another passthrough path remains and the type-level assumption is wrong.
+```text
+workflow: Thunkgen custom repack function-pointer experiment
+run: 31780646128
+job: 94705465635
+result: all 16 generator tests passed
+```
 
-This experiment should remain internal research. A fatal-stub prototype is not a proposed upstream fix.
+The expanded allocator-like control is run `31781148262`; it also completed successfully.
+
+Therefore ThunkGen already supports the **kind** of custom member repacking required by `VkAllocationCallbacks`.
+
+The initial real Vulkan prototype instead used:
+
+```cpp
+template<>
+struct fex_gen_type<VkAllocationCallbacks> : fexgen::emit_layout_wrappers {};
+```
+
+and continued to fail with:
+
+```text
+Unsupported parameter type 'const VkAllocationCallbacks *'
+```
+
+Source tracing explains why. `GenerateThunkLibsAction::OnAnalysisComplete()` deliberately assigns `TypeCompatibility::None` to every type carrying `emit_layout_wrappers`, bypassing normal compatibility analysis. That annotation means “emit wrappers even though compatibility checks would otherwise fail”; it is not an opt-in to normal custom repacking.
+
+So the corrected experiment uses a plain registered type:
+
+```cpp
+template<>
+struct fex_gen_type<VkAllocationCallbacks> {};
+```
+
+with all six pointer-bearing members marked `custom_repack`. This lets the normal compatibility pass decide whether the type is `Repackable`, matching the successful synthetic controls. The corrected hosted build/runtime discriminator is run `31781496151` on the owned fork.
+
+This distinction is important: no generic generator relaxation is justified by the evidence so far.
+
+## Type-level runtime discriminator
+
+The representative runtime target remains `vkCreateBuffer`, because it previously demonstrated a raw allocator callback escape through an otherwise generic Vulkan thunk.
+
+The first safety-only prototype fills non-NULL allocator callback members with host diagnostic stubs. Its useful outcomes are:
+
+- **host stub is invoked instead of SIGILL:** proves one type-level policy intercepts generic allocator calls without per-command wrappers;
+- **build fails after normal compatibility analysis:** identifies a real remaining type-layout limitation;
+- **raw guest callback still executes:** proves another passthrough path remains.
+
+If interception succeeds, the next discriminator should replace the diagnostic stubs with real cached host-to-guest trampolines using the Vulkan setup-hook pattern described above. Success for `vkCreateBuffer` would require allocator callbacks to execute in guest code, return normally, and leave the native Vulkan create/destroy pair successful.
 
 ## Current recommendation
 
 For fidelity, full callback mediation best matches existing FEX thunk design. For an interim safety policy, explicit rejection/stubbing is more observable than raw forwarding and more semantically honest than silent NULL suppression.
 
-Before selecting a production policy, prove whether `VkAllocationCallbacks` can be centralized as one repacked callback-bearing type. If it can, the 133-command surface becomes a type-policy problem rather than a per-function maintenance problem.
+The generator controls now show that `VkAllocationCallbacks` can plausibly remain a single type-policy problem rather than a 133-function wrapper problem. The current discriminator is whether the real Vulkan type passes normal repacking and intercepts the previously crashing `vkCreateBuffer` allocator path.
 
 ## Reopen conditions
 
@@ -158,4 +200,5 @@ Reopen this recommendation if:
 - allocator callback lifetimes cannot be represented safely by the existing host-to-guest trampoline lifetime model;
 - Vulkan or loader behavior requires preserving allocator pointer identity in a way a repacked host copy cannot provide;
 - another FEX thunk library provides a stronger nested-callback precedent than the Wayland listener table;
-- a project convention explicitly prefers silent feature suppression over diagnostic rejection for unsupported callbacks.
+- a project convention explicitly prefers silent feature suppression over diagnostic rejection for unsupported callbacks;
+- the corrected normal-compatibility `VkAllocationCallbacks` experiment still cannot produce a repackable host representation despite the successful synthetic allocator-like control.
