@@ -71,14 +71,21 @@ The first workflow status was red only because its SONAME verification used an e
 
 A corrected independent gate on owned branch `ci/agent-n-arm64-20260814`, commit `b8a5afea844ab3fb6f1d989f627660536255d7f9`, run `31773109794`, job `94682895383`, completed successfully with whitespace-independent verification. It confirms the real 32-bit Wayland wrapper is Intel 80386, carries the expected SONAME, and contains `FLAGS_1: NOW NODELETE`.
 
+## Alternate guest linker gate
+
+Owned branch `ci/agent-o-arm64-20260814`, commit `03091aa757df5c42af71c3b2c29e9b9f40ec2d0b`, run `31773697772`, job `94684644938`, artifact `9209088465`, completed successfully with FEX's `ENABLE_CLANG_THUNKS=ON` mode.
+
+The real generated Vulkan guest wrapper linked through lld (`-fuse-ld=lld`), preserved `SONAME libvulkan.so.1`, and carried `FLAGS_1: NODELETE`. This verifies the central policy under both the default guest linker configuration and FEX's lld guest-thunk mode.
+
 ## Result
 
 The central `add_guest_lib()` location has green compile/link evidence across:
 
 - every current 64-bit shared guest thunk target;
 - the special VDSO link mode;
-- FEX's real 32-bit guest toolchain on a callback-heavy Wayland wrapper.
+- FEX's real 32-bit guest toolchain on a callback-heavy Wayland wrapper;
+- FEX's alternate lld guest-thunk linker mode.
 
-No library-specific NODELETE exception has appeared.
+No library-specific or linker-specific NODELETE exception has appeared.
 
 All CI/source edits described here are diagnostic work on owned fork/investigation surfaces. No upstream FEX interaction occurred.
