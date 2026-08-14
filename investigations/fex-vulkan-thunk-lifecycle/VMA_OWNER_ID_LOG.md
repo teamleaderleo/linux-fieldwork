@@ -33,18 +33,6 @@ Helper:
 .github/fieldwork/add_vma_owner_id.py
 ```
 
-Current carrier:
-
-```text
-57b4626930a7731186b3a7a9c68ad4ec9c8ec472
-```
-
-Actions run:
-
-```text
-31782191987
-```
-
 The prototype adds:
 
 ```text
@@ -75,6 +63,68 @@ map-fixed
 map-fixed-reregister
 mprotect-owner
 ```
+
+## Run 1 — source-transform failure before owner-ID build
+
+Actions run:
+
+```text
+31782191987
+job:    94710193222
+carrier: 57b4626930a7731186b3a7a9c68ad4ec9c8ec472
+```
+
+Result: **patch/harness failure; no owner-ID runtime result**.
+
+Completed successfully first:
+
+- exact baseline FEX checkout;
+- base FEX/FEXServer build;
+- amd64 guest rootfs assembly;
+- updated `vma-linkaddress-probe` build including `mprotect-owner`.
+
+The failure occurred while applying `add_vma_owner_id.py`, before the modified FEX compiled:
+
+```text
+mprotect original-protection split owners:
+expected 3 anchors in SyscallsVMATracking.cpp, found 2
+```
+
+Artifact:
+
+```text
+id:      9212197948
+sha256:  560ca669fa2d94153ae3611876c33f5400087e02afe49f19fffa44522c3adca6
+```
+
+### Cause
+
+`ChangeProtectionFlags()` has three original-protection VMA insertions, but they are emitted in two different indentation/initializer shapes:
+
+- merge strategy 4 tail and merge strategy 3 tail share the wider shape;
+- merge strategy 2 uses a shorter indentation shape.
+
+The first helper attempted to match all three with one exact string, so its safety assertion correctly stopped after finding only the two identical wide-form sites.
+
+No product code ran with partially applied owner IDs.
+
+### Repair
+
+The helper now patches the split sites explicitly by shape:
+
+```text
+2 x wide CurrentProt initializer
+1 x strategy-2 CurrentProt initializer
+1 x NewProt middle-split initializer
+```
+
+Repair commit:
+
+```text
+e301bdf4811089fdc6cbc1efcc1c2f2d5527b120
+```
+
+No identity rules or runtime cases changed. Because the helper is in the branch workflow path, this repair launches a fresh owner-ID run automatically.
 
 ## Required identity results
 
@@ -125,7 +175,14 @@ This keeps ordinary pointer semantics across protection changes while still allo
 
 This stage does **not** change `LinkedHostClaims` yet. The existing range-based retirement/rollback remains active so owner-ID propagation can be validated independently.
 
-Once the VMA identity rules are green, the next step is to change thunk claims from plain T values to `{T, OwnerID}` and add reverse owner dependency bookkeeping.
+A staged follow-on helper exists at:
+
+```text
+.github/fieldwork/add_owner_claim_identity.py
+commit: ce2742f129dfa1a0abbeb7677d7abbfe62b5ad60
+```
+
+It is intentionally excluded from the active workflow until VMA owner-ID propagation is green.
 
 The separate in-flight dispatcher race remains outside this identity test.
 
