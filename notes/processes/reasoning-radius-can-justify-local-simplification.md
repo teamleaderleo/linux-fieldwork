@@ -173,4 +173,11 @@ Start narrow enough to prove the bug. Then permit one deliberate local scope cha
 
 When the broader variant stays inside the same ownership loop and **deletes failure-bearing intermediate state**, judge it by reasoning radius and executable lifecycle evidence. A few more changed lines can produce a smaller correctness problem for both maintainers and future reviewers.
 
+## Related work
+
+- [`lifecycle-tests-cover-failure-and-success.md`](lifecycle-tests-cover-failure-and-success.md) — the same PR review showed that tests should preserve behavioral lifecycle contracts while implementation-only deferred-state tests can disappear when the staging disappears.
+- [`history-can-change-the-repair-boundary.md`](history-can-change-the-repair-boundary.md) — a related lesson from runc: the first correct local repair can be superseded by a cleaner invariant owner after deeper review.
+- [`../../investigations/cloud-hypervisor-qcow-r609-review/README.md`](../../investigations/cloud-hypervisor-qcow-r609-review/README.md) — current exact-head review record for the QCOW L2 ownership handoff.
+- [`../../FIELD_GUIDE.md`](../../FIELD_GUIDE.md) — central review guidance; this note can be promoted there later if the lesson repeats or generalizes cleanly across more targets.
+
 Version boundary: observation recorded from Cloud Hypervisor PR 8721 review through 2026-08-15.
