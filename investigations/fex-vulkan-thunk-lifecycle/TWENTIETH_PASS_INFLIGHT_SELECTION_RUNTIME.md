@@ -137,26 +137,63 @@ This pass supplies the missing negative control: the same all-thread retirement 
 
 A next integrated candidate should therefore preserve the successful mechanisms from the nineteenth pass while adding either execution draining or a stable revocable final-transfer state. Its lock-order fix and its execution-lifetime fix should be evaluated together rather than assuming one solves the other.
 
-## Current-upstream note
+## Current-upstream confirmation
 
-During this pass upstream FEX `main` advanced to `f3ab82a73fb48271ee12a882c98bc5d823a2b4d1`, whose first parent is `71afe476...`. The merge changes shared JIT/code-buffer allocation. The relevant `ExitFunctionLink` source still has the same selection-versus-invalidation lifetime shape at source level, but this exact forced race has not yet been rerun on `f3ab82...`.
+During this pass upstream FEX `main` advanced to `f3ab82a73fb48271ee12a882c98bc5d823a2b4d1`, whose first parent is `71afe476...`. The merge changes shared JIT/code-buffer allocation, so the forced race was rerun rather than inferred from source similarity.
+
+Owned-FEX carrier branch: `ci/thunk-inflight-selection-race-f3ab-20260814`.
+Carrier commit: `68ddf200b03a89e8b55c04ebb36a31c23d07bb96`.
+Workflow run: `31770635557`.
+Job: `94675657722`.
+Artifact: `9208053017`, `thunk-inflight-selection-race-current-main-31770635557`.
+Exact product checkout: `f3ab82a73fb48271ee12a882c98bc5d823a2b4d1`.
+
+The current-main pin control again selected old `T1`, resumed it while its owner remained mapped, and returned the expected old-generation value:
+
+```text
+inflight target                  T1=0x00007ffff7da21b0 H=0x00007ffff7d80860 pin=1
+DIAG_INFLIGHT_SELECTED guest=0x7ffff7da21b0 host=0x80006bc046b4
+inflight pin keeps owner mapped before resume
+DIAG_INFLIGHT_RESUME guest=0x7ffff7da21b0 host=0x80006bc046b4
+inflight worker returned         rv=1023 want-old=1023 owner-was-mapped
+pin=0
+```
+
+The forced-unload case again retired the exact `H` registration and shared/per-thread cache entries while the worker was paused, proved the old `T1` mapping was gone, and only then resumed the already-selected transfer:
+
+```text
+DIAG_INFLIGHT_SELECTED guest=0x7ffff7da21b0 host=0x80006c1c46b4
+DIAG_MT_MATCH H=0x7ffff7d80860 T=0x7ffff7da21b0 range=0x7ffff7da1000+0x5000
+DIAG_MT_SHARED H=0x7ffff7d80860 erased=1
+DIAG_MT_THREAD H=0x7ffff7d80860 thread=<thread-1>
+DIAG_MT_THREAD H=0x7ffff7d80860 thread=<thread-2>
+DIAG_MT_REMOVE_ALL H=0x7ffff7d80860 handler=1
+DIAG_MT_RETIRE_ALL H=0x7ffff7d80860 thread=<calling-thread>
+inflight old invoker after dlclose 0x00007ffff7da21b0 -> unmapped
+inflight owner unmapped before resume
+DIAG_INFLIGHT_RESUME guest=0x7ffff7da21b0 host=0x80006c1c46b4
+unmap=139
+```
+
+Therefore the new shared-code-buffer allocation merge does **not** close this execution-lifetime gap. The same invariant is runtime-proven on both the reviewed parent snapshot and the upstream-current snapshot observed during this pass:
+
+> future lookup retirement cannot revoke a transfer whose host-code selection already escaped the lookup/invalidation critical section.
 
 ## Evidence boundary
 
 Demonstrated here:
 
-- exact `71afe...` base source;
+- exact `71afe...` and exact `f3ab82...` product source in separate runs;
 - worker paused after old T1 resolved to host code;
 - barrier outside the relevant lookup/invalidation guard;
-- exact H retired from shared and both live thread caches before resume;
+- exact H retired from shared and all observed live thread caches before resume;
 - T1 confirmed unmapped before resume;
-- pin control returns correctly;
-- unmap case resumes then SIGSEGVs.
+- pin controls return correctly;
+- unmap cases resume then SIGSEGV.
 
 Not demonstrated here:
 
 - which production-grade lease/revocation mechanism is best;
-- current `f3ab82...` runtime behavior under this exact diagnostic;
 - the terminal H/R11 identity in the original Apple M5 `vulkaninfo` teardown.
 
 No upstream interaction was performed. All mutation and CI execution stayed in owned repositories/forks.
