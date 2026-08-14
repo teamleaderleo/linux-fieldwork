@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import glob
+import json
 import os
+import shutil
 import subprocess
 
 ROOT = Path.cwd()
 FEX = ROOT / "fex-selfpin"
 INSTALL = ROOT / "fex-selfpin-install"
 ROOTFS = ROOT / "rootfs-selfpin"
+VULKANINFO_ROOTFS = ROOT / "rootfs-vulkaninfo"
 EVIDENCE = Path("/tmp/fex-vulkan-combined-evidence")
 EVIDENCE.mkdir(parents=True, exist_ok=True)
 
@@ -44,6 +47,7 @@ guest_vk = next(INSTALL.rglob("libvulkan-guest.so"))
 run(["sudo", "cp", guest_vk, ROOTFS / "usr/lib/x86_64-linux-gnu/libvulkan.so.1"])
 
 fex_bin = next(p for p in INSTALL.rglob("FEX") if os.access(p, os.X_OK))
+thunk_config = next(INSTALL.rglob("ThunksDB.json"))
 host_vk = INSTALL / "lib/fex-emu/HostThunks/libvulkan-host.so"
 icd = Path(glob.glob("/usr/share/vulkan/icd.d/lvp_icd*.json")[0])
 env = os.environ.copy()
@@ -66,3 +70,85 @@ required = [
 if result.returncode != 0 or any(marker not in text for marker in required):
     raise SystemExit(f"combined Vulkan gate failed with status {result.returncode}")
 print("Combined Vulkan routing + guest-thunk lifetime gate passed")
+
+# Application-level gate: run the real distro vulkaninfo binary that historically
+# enumerated successfully and then died during teardown. Keep this in a separate
+# amd64 rootfs so the small focused lifetime fixture remains unchanged.
+if VULKANINFO_ROOTFS.exists():
+    run(["sudo", "rm", "-rf", VULKANINFO_ROOTFS])
+VULKANINFO_ROOTFS.mkdir(parents=True)
+
+cid_result = subprocess.run([
+    "sudo", "docker", "create", "--platform", "linux/amd64", "ubuntu:24.04",
+    "bash", "-lc",
+    "export DEBIAN_FRONTEND=noninteractive; apt-get update; apt-get install -y --no-install-recommends vulkan-tools libx11-6; apt-get clean",
+], check=True, text=True, capture_output=True)
+cid = cid_result.stdout.strip()
+if not cid:
+    raise SystemExit("docker create returned no container id for vulkaninfo rootfs")
+try:
+    run(["sudo", "docker", "start", "-a", cid])
+    export = subprocess.Popen(["sudo", "docker", "export", cid], stdout=subprocess.PIPE)
+    try:
+        run(["sudo", "tar", "-C", VULKANINFO_ROOTFS, "-xf", "-"], stdin=export.stdout)
+    finally:
+        if export.stdout is not None:
+            export.stdout.close()
+    export_status = export.wait()
+    if export_status != 0:
+        raise SystemExit(f"docker export failed with status {export_status}")
+finally:
+    subprocess.run(["sudo", "docker", "rm", "-f", cid], check=False)
+
+vulkaninfo = VULKANINFO_ROOTFS / "usr/bin/vulkaninfo"
+if not vulkaninfo.exists():
+    raise SystemExit("vulkan-tools rootfs does not contain /usr/bin/vulkaninfo")
+
+# The distro package installs its native x86 Vulkan loader at this path. Replace
+# only that loader with the rebuilt FEX guest wrapper; the rest of the packaged
+# userspace remains untouched.
+run(["sudo", "cp", guest_vk, VULKANINFO_ROOTFS / "usr/lib/x86_64-linux-gnu/libvulkan.so.1"])
+
+config_path = Path.home() / ".fex-emu/Config.json"
+config = {
+    "Config": {
+        "RootFS": str(VULKANINFO_ROOTFS),
+        "ThunkConfig": str(thunk_config),
+    },
+    "ThunksDB": {
+        "Vulkan": 1,
+    },
+}
+config_path.write_text(json.dumps(config, indent=2) + "\n")
+
+app_env = os.environ.copy()
+app_env["VK_DRIVER_FILES"] = str(icd)
+app_env["FEX_THUNKHOSTLIBS"] = str(host_vk.parent)
+# Remove implicit-layer variability. vulkaninfo's own VK_EXT_debug_report path
+# still executes and therefore continues to exercise the routing repair.
+app_env["VK_LOADER_LAYERS_DISABLE"] = "~all~"
+
+statuses = []
+for attempt in (1, 2):
+    app_log = EVIDENCE / f"vulkaninfo-llvmpipe-attempt-{attempt}.log"
+    with app_log.open("w") as out:
+        app_result = subprocess.run(
+            ["timeout", "90s", str(fex_bin), "/usr/bin/vulkaninfo", "--summary"],
+            env=app_env,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+        )
+    statuses.append(app_result.returncode)
+    (EVIDENCE / f"vulkaninfo-llvmpipe-attempt-{attempt}.status").write_text(f"{app_result.returncode}\n")
+    app_text = app_log.read_text(errors="replace")
+    print(f"===== vulkaninfo llvmpipe attempt {attempt}: status={app_result.returncode} =====")
+    print(app_text)
+
+(EVIDENCE / "vulkaninfo-llvmpipe-status-matrix.txt").write_text(
+    "\n".join(f"attempt-{idx}={status}" for idx, status in enumerate(statuses, 1)) + "\n"
+)
+
+if statuses != [0, 0]:
+    raise SystemExit(f"real vulkaninfo llvmpipe gate failed: statuses={statuses}")
+
+print("Real vulkaninfo llvmpipe teardown gate passed twice without preload pinning")
