@@ -14,7 +14,7 @@ The lifetime intent remains unchanged: keep the normal GL guest wrapper unloadab
 
 - dynamic PFN callers from direct thunkgen accessors;
 - fixed X11 callback unpackers;
-- the allocator executable target itself.
+- allocator executable target plus allocator unpacker.
 
 ## First direct-helper build: negative result
 
@@ -47,7 +47,7 @@ Artifact receipt from the failed run:
 - artifact ID: `9216761225`
 - artifact SHA-256: `f027b6c4462f429879d4bd707f1cbcb523a304d1f73d20cf9dc5f5933766e0ae`
 
-## Diagnostic fix
+## Fix 1 — GL/GLX type visibility
 
 FEX diagnostic commit:
 
@@ -72,33 +72,163 @@ The transform now emits the same GL declaration prologue used by `ThunkLibs/libG
 #include "glcorearb.h"
 ```
 
-It retains the existing X11/custom resident exports for `XSync`, `XGetVisualInfo`, `XDisplayString`, and `FEXGLBridgeMalloc`.
+A compare against the failed carrier head showed this commit was one commit ahead and changed only `LinuxFieldwork/apply_gl_helper_direct_bridge.py` (11 additions, 1 deletion).
 
-## Validation status after the fix
+## Artifact audit found two more deterministic transform bugs
 
-The repository connector commit did not create a fresh Actions run. The diagnostic workflow still has only run `31794231350`, whose checkout is the earlier head `227b233455ec6a4ef237a9abbcdb81bc4e7ea885`.
+The failed artifact ZIP was downloaded and inspected directly. Its `product.diff` preserved the transformed wrapper text that the compiler had not yet reached because the bridge TU failed first.
 
-Rerunning that failed run would execute the earlier checkout and reproduce the pre-fix transform, because `actions/checkout@v4` checks out the run ref/SHA and the workflow invokes the transform from that checkout.
+### Fix 2 — allocator unpacker stayed wrapper-local
 
-The local sandbox also cannot resolve `github.com`, so a local clone/build could not substitute for the hosted runner.
+The transform removed the wrapper-local `malloc_wrapper` target and changed the first argument of `GL_SetGuestMalloc` to `FEXGLBridgeMalloc`, but left this second argument behind:
 
-Current state:
+```cpp
+(uintptr_t)CallbackUnpack<decltype(malloc_wrapper)>::Unpack
+```
 
-- source diagnosis: complete;
-- diagnostic transform fix: committed at `cb93582fe73bcd42d05850772ccffa803f0c2ab3`;
-- post-fix GL guest build: pending a run from the new head;
-- post-fix direct role gate: pending;
-- post-fix ELF boundary gate: pending;
-- moved-reload PFN/GLX callback runtime: pending;
-- clean GL source tranche 2: blocked on those gates.
+That is both a compile error after deleting `malloc_wrapper` and a lifetime error: the allocator callback family requires the guest target and unpacker to remain resident together.
 
-## Next gate
+FEX diagnostic commit:
 
-Run `.github/workflows/gl-direct-helper-build.yml` from diagnostic head `cb93582fe73bcd42d05850772ccffa803f0c2ab3` (or a descendant carrying the same transform fix). Require:
+`501e40e1d290fb86ac2367621eae959ad2100751`
+
+Commit message:
+
+`fix: keep GL allocator unpacker resident`
+
+The companion now exports:
+
+- `FEXGLBridgeMalloc`
+- `fex_gl_bridge_malloc_unpacker`
+- `fex_gl_bridge_xsync_unpacker`
+- `fex_gl_bridge_xgetvisualinfo_unpacker`
+- `fex_gl_bridge_xdisplaystring_unpacker`
+
+`OnInit` passes the resident allocator target and resident allocator unpacker together.
+
+### Fix 3 — declaration injection split `static void OnInit`
+
+The original transform searched for the substring:
+
+```cpp
+void OnInit() {
+```
+
+inside the real source spelling:
+
+```cpp
+static void OnInit() {
+```
+
+The artifact therefore contained an invalid first declaration beginning with:
+
+```cpp
+static extern "C" void* FEXGLBridgeMalloc(...)
+```
+
+and `OnInit` itself lost its `static` prefix.
+
+FEX diagnostic commit:
+
+`01a52df6d0c0c4c9635450f3cb89c9dc05435122`
+
+Commit message:
+
+`fix: preserve static GL OnInit declaration`
+
+The transform now anchors on the full `static void OnInit() {` spelling and inserts declarations before it.
+
+## Receipt hardening
+
+The generated companion source is a new untracked file during the diagnostic transform, so plain `git diff` omitted it from the first artifact's `product.diff`.
+
+Build workflow commit:
+
+`77a650b725140d597510189af05d569abb91f2b2`
+
+Commit message:
+
+`ci: audit transformed GL bridge source before build`
+
+The build workflow now:
+
+- marks `ThunkLibs/libGL_bridge/Guest.cpp` intent-to-add before `git diff --check` / `product.diff`;
+- asserts `static void OnInit()` survives;
+- rejects `static extern "C"`;
+- rejects any remaining `malloc_wrapper` reference in the wrapper;
+- requires the resident allocator unpacker call;
+- requires the GLX declaration include set;
+- checks the allocator unpacker export in the ELF boundary gate.
+
+## Actions registration correction
+
+Initial connector polls immediately after diagnostic commits returned no new workflow runs. A draft PR carrier (`#3`) was created as a temporary trigger experiment.
+
+Later branch-level Actions polling showed the push runs had registered after a delay. The earlier "no run visible" observation was therefore a polling-timing result, not evidence that connector-authored pushes cannot trigger Actions.
+
+The diagnostic PR carrier was closed without merge and retained only as a receipt.
+
+## Current build gate
+
+Build workflow run:
+
+`31796842469`
+
+Head:
+
+`77a650b725140d597510189af05d569abb91f2b2`
+
+Job:
+
+`94755677208` (`gl-build`)
+
+At the latest observation it was in progress on the exact-product provenance/dependency step. This run includes all three GL transform fixes above.
+
+Required success conditions remain:
 
 1. `GL-guest` and `GL_bridge-guest` build;
-2. exactly 736 generated `caller=1 unpacker=0` GL roles and zero unpacker roles;
+2. exactly 736 generated `caller=1 unpacker=0` GL roles and zero generated unpacker roles;
 3. unloadable wrapper with `NEEDED libfex-GL-bridge.so` and `$ORIGIN` lookup;
 4. NODELETE only on `libfex-GL-bridge.so`;
-5. resident exports for allocator target and fixed X11 unpackers;
-6. then rerun the proven moved-reload GL runtime before creating tranche 2.
+5. resident allocator target + allocator unpacker + fixed X11 unpacker exports.
+
+## Direct-helper moved-reload runtime gate
+
+Runtime workflow commit:
+
+`d972f6ee4766f807713a9ba117a438b02d0eb7d2`
+
+Workflow:
+
+`.github/workflows/gl-direct-helper-runtime.yml`
+
+Run:
+
+`31796930801`
+
+Job:
+
+`94755951349` (`gl-runtime`)
+
+The runtime gate applies the same exact-product direct-helper transforms and adds runtime-only observability. It deliberately avoids restoring the older companion name-to-caller map. Instead, two magic diagnostic queries in the wrapper expose the already-generated `HostPtrInvokers` caller addresses for `glGetError` and `glXGetFBConfigs` only for the test.
+
+The probe checks:
+
+- generated PFN caller `T` addresses lie in `libfex-GL-bridge.so`;
+- allocator target and allocator unpacker lie in the companion;
+- X11 unpackers lie in the companion;
+- PFN and `glXGetFBConfigs` callback path work before close;
+- wrapper mappings physically disappear after `dlclose`;
+- resident caller/allocator/X11 executable addresses remain mapped;
+- the callback path still executes after wrapper close, with diagnostic `GL_BRIDGE_MALLOC`, `XSync`, and `XDisplayString` receipts;
+- retired wrapper ranges are reserved with `MAP_FIXED_NOREPLACE`;
+- generation 2 wrapper base moves;
+- the same native PFNs are reused;
+- direct hash/type-stable caller `T` addresses are reused from the resident companion;
+- generation-1 retained PFNs still execute after generation 2 closes.
+
+At the latest observation this runtime run was in progress.
+
+## Promotion rule
+
+Create GL source tranche 2 only after the build/role/ELF run and the moved-reload runtime are green. Keep all diagnostic hooks/workflows/scripts off the clean integration branch.
