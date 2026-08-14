@@ -136,18 +136,38 @@ The one explicit constructor-oriented special case found in `libfex_malloc_loade
 Source:
 https://redirect.github.com/FEX-Emu/FEX/blob/f3ab82a73fb48271ee12a882c98bc5d823a2b4d1/ThunkLibs/libfex_malloc_loader/Guest.cpp
 
+## glibc NODELETE lifecycle semantics
+
+A direct glibc loader-source cross-check removes an ambiguity in the phrase "the wrapper stays mapped."
+
+In glibc's NODELETE handling, a `DF_1_NODELETE` object's pending NODELETE status is promoted to active in the final stages of `dlopen`, before ELF constructors are called. In `_dl_close`, an active NODELETE map is rejected from removal immediately: the close path unlocks and returns instead of entering the normal object-removal/destructor walk.
+
+Primary glibc source/history reference:
+https://sourceware.org/pipermail/glibc-cvs/2019q4/068278.html
+(commit `f8ed116aa574435c6e28260f21963233682d3b57`)
+
+For this candidate that means an intermediate logical `dlclose()` is not "guest finalizers ran but executable pages happened to remain." The constructor-created guest thunk generation remains active as one loader generation. This matches the real Vulkan NODELETE receipt where the same guest wrapper address remains mapped after close and the retained PFN remains callable.
+
+The distinction matters for stateful wrappers such as Vulkan, GL, CUDA, and Wayland: their one-time constructor/`OnInit()` state is retained along with the code addresses it published, instead of being destructed underneath persistent FEX host-side bridge state.
+
+Process-exit finalization remains a separate boundary and should still be covered by ordinary shutdown tests; this audit only establishes the semantics of intermediate `dlclose()` under active NODELETE.
+
 ## Conclusion
 
 The per-target source audit did not find a product guest-thunk state-reset requirement that contradicts blanket shared-wrapper NODELETE.
 
 For the three major dynamic-proc-address wrappers—Vulkan, GL, and CUDA—process residency is positively aligned with their current implementation because executable guest adapter state is intentionally published into longer-lived FEX state. Wayland likewise owns wrapper-resident interface metadata initialized from persistent host state.
 
-This does **not** prove that no external application depends on a thunk mapping physically disappearing after `dlclose()`, and it does not quantify the total resident-memory cost. Those remain the two most meaningful policy risks to test.
+The glibc loader cross-check strengthens that interpretation: active NODELETE prevents the intermediate unload/finalizer path rather than merely preserving executable mappings after wrapper state has been torn down.
+
+This does **not** prove that no external application depends on a thunk mapping physically disappearing after `dlclose()`, and it does not quantify dependency/RSS overhead. Those remain the two most meaningful policy risks to test.
+
+The mapped wrapper footprint has now been measured separately in `NODELETE_BUILD_MATRIX.md`: all eight current 64-bit wrapper DSOs sum to about 1.69 MiB of ELF `PT_LOAD` memory before dependency/RSS effects.
 
 The next adversarial checks for blanket NODELETE should therefore focus on:
 
-1. mapped/file footprint across the complete shared guest-thunk set;
-2. a real logical close/reopen sequence that verifies application-visible handles still behave normally when constructors do not rerun;
+1. the real repeated close/reopen stress currently exercising Vulkan dynamic PFN identity and calls across many handle cycles;
+2. runtime RSS/PSS and transitive dependency retention if memory cost becomes a practical concern;
 3. any concrete application that probes mapping disappearance or expects wrapper static state to reset.
 
 All mutation and CI execution remains confined to owned repositories/forks. Upstream FEX was read-only.
