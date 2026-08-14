@@ -2,6 +2,14 @@
 
 Contributor identity is not inferred metadata.
 
+## Fork-local research versus upstream candidates
+
+Fork-local research commits, disposable CI branches, workflow experiments, instrumentation, and diagnostic code in repositories owned by `teamleaderleo` are internal research artifacts. They may be created and executed autonomously under the owned-repository authority in `AGENTS.md` and are not upstream submissions merely because they exist in a fork.
+
+The owner explicitly permits agents to create and launch GitHub Actions workflows, rerun jobs, iterate on research branches, and retain logs/artifacts in owned repositories. These internal research actions do not require pretending that the work has an upstream contributor identity or adding an upstream-style sign-off.
+
+If the human later designates a branch or commit series as an upstream candidate, contributor identity becomes a submission requirement and the rules below apply. Research history should not be relabeled as upstream-authored work; prepare the candidate separately as needed.
+
 For any commit intended for upstream submission:
 
 - never copy `user.name`, `user.email`, author, committer, or `Signed-off-by` identity from the base commit, a nearby upstream commit, a repository owner, or a GitHub username;
