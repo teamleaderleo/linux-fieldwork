@@ -39,6 +39,49 @@ Use the more mature owned-fork lifetime candidate rather than the early v2 sketc
 
 The known production gap remains peer-thread quiescence and ordering retirement before destructive mapping removal.
 
+## Application teardown probe
+
+Owned FEX branch:
+
+```text
+ci/vulkan-app-teardown-20260814
+```
+
+Probe source:
+
+```text
+diagnostics/vulkan-app-teardown/vulkan_app_teardown_probe.c
+```
+
+The guest program deliberately follows a `vulkaninfo`-style lifetime order while staying small enough to reason about:
+
+```text
+dlopen(libvulkan.so.1)
+  -> vkGetInstanceProcAddr
+  -> dynamic vkCreateInstance
+  -> dynamic vkEnumeratePhysicalDevices
+  -> dynamic vkGetPhysicalDeviceProperties
+  -> dynamic vkDestroyInstance
+  -> destroy instance
+  -> dlclose(libvulkan.so.1)
+  -> normal process return
+```
+
+It prints guest Vulkan mapping counts and all dynamic PFN values around teardown.
+
+### Pin-control correction
+
+The first draft acquired a second `dlopen` handle but released it just before returning. That would test a second final unload rather than the field pin control.
+
+The probe was corrected so `pin` intentionally leaks the extra handle through normal return. This keeps the guest Vulkan DSO mapped through the application return/C-runtime teardown boundary, matching the intended positive lifetime control more closely.
+
+Relevant owned-fork commits:
+
+```text
+2d73f7050b97c129a436898f3eb3830715ec0183  initial application probe
+53b6e02dcab3740b201d38e8b36f2ecf0745937c  keep pin alive through process return
+```
+
 ## Experiment policy
 
 All writes and Actions work stay inside repositories owned by `teamleaderleo`. No third-party/upstream comments, PRs, issues, reviews, reactions, or backlink-producing references will be created.
