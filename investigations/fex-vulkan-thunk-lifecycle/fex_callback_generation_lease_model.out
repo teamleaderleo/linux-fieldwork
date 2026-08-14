@@ -1,0 +1,6 @@
+raw_select_then_unmap=UAF
+lease_inflight_worker=EXEC mapped_while_draining=1 mapped_after_drain=0
+escaped_old_after_retire=REVOKED
+same_address_reload old_gen=1 new_gen=2 unpacker_same=1 target_same=1 fresh=EXEC stale=REVOKED
+selected_old_token_acquire_after_retire=REVOKED
+all_checks=PASS
