@@ -184,15 +184,30 @@ The test requires the generated `FOREACH_internal_CUSTOM_HOST_SYMBOL` registry t
 The first harness attempts failed before exercising that assertion:
 
 1. missing NASM in the hosted test environment;
-2. `thunkgen_tests` absent because the workflow had configured `BUILD_THUNKS=False`.
+2. `thunkgen_tests` absent because the workflow had configured `BUILD_THUNKS=False`;
+3. the first synthetic source included `common/GeneratorInterface.h`, which the unit harness does not expose as an include path.
 
-Both are harness issues, not generator assertion failures. NASM was added and the workflow was corrected to `BUILD_THUNKS=True` at owned-fork carrier commit:
+All three were test-harness issues, not failures of the generated-membership assertion. The final fixture is self-contained: it defines the minimal annotation marker types it needs in the synthetic prelude, configures `BUILD_THUNKS=True`, and installs NASM.
+
+Final receipt:
 
 ```text
-27a7dac87413b0d59dbabc0312c7bc2c2406ce7f
+workflow: Thunkgen custom registry regression
+run: 31777520071
+job: 94695981209
+carrier head: c07ffb2c3ab7bdd06227d67d9ce463b3059c8c20
+runner: ubuntu-24.04-arm
 ```
 
-The resulting generator test run should be treated as pending until its actual Catch2/ctest result completes.
+The new focused test executed as part of the existing `.ThunkGen` set:
+
+```text
+Test #4226: Custom host symbol registry follows namespace metadata.ThunkGen ... Passed 0.12 sec
+100% tests passed, 0 tests failed out of 16
+Total Test time (real) = 9.94 sec
+```
+
+This closes the generator-level invariant: with namespace defaults matching Vulkan's internal indirect-call configuration, an ordinary function stays out of the generated custom registry while the `custom_host_impl` function is included.
 
 ## Relationship to the existing prevention candidate
 
@@ -217,4 +232,4 @@ Generated ownership is a credible production direction if all of these remain tr
 - the focused generator regression passes;
 - no API is found that intentionally wants custom direct calls but native dynamic calls.
 
-Reopen the design if such an intentional exception exists, if another thunk library would receive an unwanted generated registry from the same namespace rule, or if the focused generator test reveals that the metadata owner differs from the integration behavior observed here.
+Reopen the design if such an intentional exception exists or if another thunk library would receive an unwanted generated registry from the same namespace rule.
