@@ -35,12 +35,6 @@ Workflow carrier:
 b03ca7f31da78531d0505a1f55992fe61d5d7574
 ```
 
-Actions run:
-
-```text
-31781044914
-```
-
 The new `map-fixed-fail` mode does:
 
 ```text
@@ -50,7 +44,7 @@ H() == 111
 attempt mmap(T, page, PROT_READ, MAP_PRIVATE|MAP_FIXED, fd=-1, offset=0)
 ```
 
-The request deliberately omits `MAP_ANONYMOUS` while using `fd=-1`, so Linux should reject the file-backed mmap. A failed mmap must leave the existing mapping at T intact.
+The request deliberately omits `MAP_ANONYMOUS` while using `fd=-1`, so Linux rejects the file-backed mmap. A failed mmap leaves the existing mapping at T intact.
 
 Immediately after the syscall failure, before calling H, the probe executes T directly and requires:
 
@@ -60,35 +54,91 @@ direct T() == 111
 
 That is the key control. If direct T remains valid but H is revoked, the failure is specifically a lost thunk-claim transaction rather than destruction of guest code.
 
-## Expected discriminator
+## Run 1 — rollback requirement reproduced
 
-Current integrated lifetime candidate, without the pre-MAP_FIXED helper:
-
-```text
-kernel rejects replacement
-old mapping remains
-H remains active
-H() == 111
-exit 0
-```
-
-Current candidate + pre-MAP_FIXED retirement without rollback:
+Actions run:
 
 ```text
-prepare retires H
-kernel rejects replacement
-old mapping remains and direct T() == 111
-H remains revoked because no rollback exists
-H call faults / cannot return 111
+31781044914
+job:    94706681470
+carrier: b03ca7f31da78531d0505a1f55992fe61d5d7574
+product base: 71afe476751deac24adabd1adb575fd2337b6e0a
+lifetime helper: 96d3d1aff38f986f6e8e36e5afd10c04cfe67cf2
+job conclusion: success
 ```
 
-A green discriminator establishes that production prepare/commit/rollback is required independently of mapping-generation identity.
+Artifact:
+
+```text
+id:      9211850909
+name:    map-fixed-failure-rollback-31781044914
+sha256:  45deb9daa8068b91fa6d89b81c31871ed579715e59689406c606e821627ad5f5
+```
+
+Matrix:
+
+```text
+current-fail=0
+pre-retire-no-rollback-fail=139
+```
+
+### Current lifetime candidate — failed mmap leaves H intact
+
+The current candidate has no pre-MAP_FIXED retirement hook, so the rejected syscall does not change bridge state:
+
+```text
+DIAG_REVOKED_H_ACTIVATE H=0x700000020000 T=0x7ffff7ec4000
+DIAG_MULTI_ACTIVE H=0x700000020000 T=0x7ffff7ec4000
+VMA first H=0x700000020000 T=0x7ffff7ec4000 value=111
+VMA failed-map-fixed result=MAP_FAILED errno=9 (Bad file descriptor) T=0x7ffff7ec4000 direct-value=111
+VMA after-failed-map-fixed H-value=111
+```
+
+Exit: `0`.
+
+This establishes the guest/kernel side of the control: the rejected operation leaves T mapped and executable with its original code.
+
+### Pre-retire without rollback — old guest code survives, H is lost
+
+The causal successful-replacement helper prepares the exact same one-page target range before the kernel sees the invalid mmap:
+
+```text
+DIAG_MAP_FIXED_PREPARE range=0x7ffff7ec4000+0x1000
+DIAG_MULTI_DROP H=0x700000020000 T=0x7ffff7ec4000 range=0x7ffff7ec4000+0x1000
+DIAG_MULTI_RETIRE H=0x700000020000 OLD=0x7ffff7ec4000 NEW=0
+DIAG_LOCKED_DEFINITION H=0x700000020000 handler=1
+DIAG_REVOKED_H_INSTALL H=0x700000020000
+DIAG_LOCKED_RETIRE H=0x700000020000
+```
+
+The host mmap then fails with `EBADF`, and the direct guest target proves the old mapping is still valid:
+
+```text
+VMA failed-map-fixed result=MAP_FAILED errno=9 (Bad file descriptor) T=0x7ffff7ec4000 direct-value=111
+```
+
+But H remains tombstoned:
+
+```text
+DIAG_REVOKED_H_COMPILE H=0x700000020000
+```
+
+The process exits `139` when it calls H.
+
+This isolates the failure cleanly:
+
+```text
+kernel/VMA state after failed syscall: generation 1 still live, T() == 111
+bridge state after failed syscall:      generation-1 claim removed, H revoked
+```
+
+Therefore a pre-destructive retirement design requires rollback when the destructive syscall fails. This requirement is independent of mapping-owner identity: even perfect owner IDs would still lose a valid live claim if prepare is destructive and failure is not rolled back.
 
 ## Rollback requirement
 
 Rollback must restore the complete affected claim state, not only the previously active target. For each affected H it needs the original ordered claim set plus active selection, because later owner retirement/promotion semantics depend on standby ordering.
 
-A controlled diagnostic rollback can snapshot this state in the single-thread test. Production needs synchronization so new claims cannot race between prepare and rollback.
+It also needs to restore callback trampoline state if prepare tombstoned a bridge whose guest unpacker/target fell in the candidate range.
 
 ## Staged rollback helper
 
@@ -98,8 +148,6 @@ A serial diagnostic implementation is staged on the owned FEX branch:
 .github/fieldwork/add_map_fixed_rollback_transaction.py
 commit: 5a9f56bbe63aee963229e61fdb20ecfcd14a25b3
 ```
-
-It is intentionally not wired into run `31781044914`; that run remains a clean no-rollback discriminator.
 
 The helper adds an opaque transaction-token API to `ThunkHandler`:
 
@@ -132,6 +180,42 @@ host mmap failure -> RollbackGuestRangeRetirement(Thread, token)
 ```
 
 Rollback restores the full claim vectors/active selections and callback trampoline contents, then reactivates each old H through the existing exact H state transition.
+
+## Run 2 — rollback transaction validation launched
+
+Owned branch:
+
+```text
+ci/map-fixed-rollback-transaction-20260814
+```
+
+Workflow carrier:
+
+```text
+f890074f8a1d48931c9ff083101daf4ede5bd637
+```
+
+Actions run:
+
+```text
+31781459145
+```
+
+The final transaction candidate runs three controls:
+
+```text
+map-fixed-fail
+map-fixed
+map-fixed-reregister
+```
+
+Required result:
+
+```text
+failed replacement      -> rollback restores H -> 111, exit 0
+successful replacement  -> commit keeps H revoked, must never execute generation 2
+successful + new claim  -> commit then explicit LinkAddress reactivates H -> 222, exit 0
+```
 
 ### Diagnostic concurrency boundary
 
