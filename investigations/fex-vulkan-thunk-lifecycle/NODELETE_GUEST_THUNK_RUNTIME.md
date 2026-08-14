@@ -8,12 +8,14 @@ This prevents FEX-owned native pointers and generated host trampolines from outl
 
 GNU `-z nodelete` encodes this policy in the DSO as `DF_1_NODELETE` / `FLAGS_1: NODELETE`.
 
-## Synthetic full-pair mapping result
+## Synthetic full-pair direct runtime proof
 
 Owned-FEX branch `ci/agent-k-arm64-20260814` builds the retained full thunk pair twice:
 
 - normal guest DSO with no NODELETE flag;
 - identical guest DSO linked with `-Wl,-z,nodelete` and verified by `readelf`.
+
+### Mapping discriminator
 
 Hosted ARM64 run `31771126183`, job `94677128018`, artifact `9208226923` uses pristine FEX core code.
 
@@ -33,7 +35,49 @@ old target after dlclose           0x00007ffff7da2170 -> ... r-xp .../nodelete/g
 old unpacker after dlclose         0x00007ffff7da2190 -> ... r-xp .../nodelete/guest/liblifetime-guest.so
 ```
 
-The fixture normally treats surviving guest executable mappings as a failure because its unload mode is designed to prove physical reclamation. A follow-up carrier is therefore being used to accept expected NODELETE survival and continue into the retained H→T and host→guest callback call probes.
+### Retained-pointer execution discriminator
+
+Hosted ARM64 run `31772072759`, job `94679892829`, artifact `9208551221`, FEX branch commit `0b31afb60639398c8b4e64ab2dec9b4fcf484787`, makes the NODELETE fixture accept expected mapping survival and continue into every retained-call probe. FEX core itself remains pristine.
+
+The normal arm confirms the stale-pointer baseline immediately after physical unload:
+
+```text
+old invoker after dlclose          0x00007ffff7da21b0 -> unmapped
+old target after dlclose           0x00007ffff7da2170 -> unmapped
+old unpacker after dlclose         0x00007ffff7da2190 -> unmapped
+child stale Link/CallHost         signal=11 (Segmentation fault)
+child stale first callback        signal=11 (Segmentation fault)
+```
+
+The NODELETE arm keeps all three embedded guest executable addresses mapped and both retained cross-ISA directions execute successfully immediately after the same ordinary `dlclose()`:
+
+```text
+old invoker after dlclose          0x00007ffff7da21b0 -> ... r-xp .../nodelete/guest/liblifetime-guest.so
+old target after dlclose           0x00007ffff7da2170 -> ... r-xp .../nodelete/guest/liblifetime-guest.so
+old unpacker after dlclose         0x00007ffff7da2190 -> ... r-xp .../nodelete/guest/liblifetime-guest.so
+NODELETE proof: all embedded guest executable addresses remain mapped; continuing retained-call probes
+child stale Link/CallHost         rv=1029
+child stale Link/CallHost         exit=0
+child stale first callback        rv=10073
+child stale first callback        exit=0
+```
+
+The retained pointers also remain usable through the following reopen/reload phase:
+
+```text
+child retained Link after reload  rv=1001032
+child retained Link after reload  exit=0
+child retained callback reload    rv=10010083
+child retained callback reload    exit=0
+child first callback after new    rv=10010093
+child first callback after new    exit=0
+child current callback after new  rv=10010093
+child current callback after new  exit=0
+```
+
+This is direct causal evidence for the containment policy. Ordinary `dlclose()` plus `DF_1_NODELETE` prevents the physical guest-wrapper reclamation that creates both observed stale-reference failures, and both H→T plus host→guest callback paths remain executable with no FEX core lifetime machinery.
+
+The normal arm in this non-forced-reload fixture later regains retained-call success because the loader reuses compatible addresses on reopen. The earlier forced-different-VA runs remain the discriminator for ABA/reload movement; the immediate post-`dlclose()` normal stale calls above are the clean comparison against NODELETE.
 
 ## Real generated guest-wrapper builds
 
@@ -81,6 +125,14 @@ This demonstrates that the NODELETE policy can live centrally in `add_guest_lib(
 ## Existing real-workload control
 
 The earlier real `vulkaninfo` investigation already showed that retaining one guest loader reference for `libvulkan-guest.so` changes the teardown result from the crashing unload path to exit 0. NODELETE is a loader-level way to encode the same lifetime policy directly in the generated guest wrapper rather than relying on an external preload/reference holder.
+
+## Constructor and unload-semantics audit
+
+Guest-side load constructors are concentrated in wrappers such as Vulkan, GL, and Wayland. Their initialization performs thunk glue setup: Vulkan/GL populate helper callbacks such as X11 bridges, while Wayland initializes guest mirror/interface pointers from the persistent host side. No guest-thunk unload-management design was found in the thunk tree; the only `dlclose` search hit there is an unrelated disabled SDL path.
+
+A process-lifetime guest-wrapper policy therefore aligns with the existing process-lifetime host-thunk model and keeps hidden cross-ISA glue paired with the code that implements it.
+
+External application callback targets still follow their own application/native lifetime rules. NODELETE guarantees the generated guest wrapper code and unpackers remain resident; it does not create lifetime for arbitrary external guest DSOs.
 
 ## Tradeoffs
 
