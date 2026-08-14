@@ -126,50 +126,104 @@ e301bdf4811089fdc6cbc1efcc1c2f2d5527b120
 
 No identity rules or runtime cases changed. Because the helper is in the branch workflow path, this repair launches a fresh owner-ID run automatically.
 
-## Required identity results
+## Run 2 — owner-ID runtime matrix green
 
-### Failed MAP_FIXED
-
-The old VMA remains live, so the tracked old generation must remain the same. The diagnostic prints:
+Actions run:
 
 ```text
-DIAG_OWNER_MAP_FIXED addr=T old=<id> new=0 success=0
+31782618792
+job:     94711477563
+carrier: e301bdf4811089fdc6cbc1efcc1c2f2d5527b120
+FEX:     71afe476751deac24adabd1adb575fd2337b6e0a
+helper:  96d3d1aff38f986f6e8e36e5afd10c04cfe67cf2
 ```
 
-Rollback should restore H -> old T, as already proven by the transaction layer.
+Result: **success**.
 
-### Successful MAP_FIXED replacement
-
-A new mapping generation is installed at the same T, so:
+Runtime matrix:
 
 ```text
-old != 0
-new != 0
-old != new
-success=1
+owner-map-fixed-fail=0
+owner-map-fixed=139
+owner-map-fixed-reregister=0
+owner-mprotect-owner=0
 ```
 
-The numeric address remains identical while the owner ID changes.
-
-### mprotect
-
-Permission changes are not mapping-generation replacement. The new `mprotect-owner` guest control performs:
+Artifact:
 
 ```text
-RX T returning 111
--> RW
--> write code returning 333
--> RX
--> existing H calls T and returns 333
+id:      9212391042
+sha256:  f68faae0d387f5b6021f3d7bda29a09bd2efb41680ef4d99f3d51c65839fedb9
 ```
 
-Every owner diagnostic for T must show:
+### Failed MAP_FIXED preserves the live generation
+
+For the target mapping `T=0x7ffff7ec4000`, the failed destructive replacement reports:
 
 ```text
-before == after != 0
+DIAG_OWNER_MAP_FIXED addr=0x7ffff7ec4000 old=0xe new=0 success=0
+DIAG_ROLLBACK_RESTORE H=0x700000020000 T=0x7ffff7ec4000 claims=1
+VMA after-failed-map-fixed H-value=111
 ```
 
-This keeps ordinary pointer semantics across protection changes while still allowing code invalidation to observe modified guest text.
+The failed syscall creates no replacement owner. The rollback layer restores the old H -> T claim and the old executable generation remains callable.
+
+### Successful same-address replacement gets a new owner ID
+
+The same numeric target address is destructively replaced:
+
+```text
+DIAG_OWNER_MAP_FIXED addr=0x7ffff7ec4000 old=0xe new=0xf success=1
+DIAG_ROLLBACK_COMMIT token=0x1 snapshot=1
+VMA replaced-same-address H=0x700000020000 T=0x7ffff7ec4000 generation=2 sentinel=222
+```
+
+This is the intended ABA discriminator:
+
+```text
+same T address
+old OwnerID = 0xe
+new OwnerID = 0xf
+```
+
+Address equality therefore no longer needs to stand in for generation identity.
+
+The no-reregister arm exits `139` through the existing revoked-H control, while explicit generation-2 registration reactivates H and returns the new sentinel:
+
+```text
+VMA explicit-reregister H=0x700000020000 T=0x7ffff7ec4000 generation=2
+VMA after-map-fixed value=222 reregister=1
+```
+
+### mprotect preserves owner identity
+
+The protection/write/protection cycle reports:
+
+```text
+DIAG_OWNER_MPROTECT addr=0x7ffff7ec4000 before=0xe after=0xe prot=0x3
+DIAG_OWNER_MPROTECT addr=0x7ffff7ec4000 before=0xe after=0xe prot=0x5
+VMA mprotect-owner-preserved H=0x700000020000 T=0x7ffff7ec4000 value=333
+```
+
+The executable bytes changed and the existing H dispatch observed the new return value, while the mapping-generation owner stayed `0xe` throughout the permission cycle.
+
+## Interpretation
+
+The identity layer now has an executable proof for the key distinction:
+
+```text
+successful destructive same-address replacement -> new OwnerID
+failed replacement                              -> no new owner, rollback restores old claim
+mprotect permission/text cycle                  -> same OwnerID
+```
+
+This is enough to promote the next claim representation experiment from plain target addresses toward:
+
+```text
+{GuestTarget, OwnerID}
+```
+
+It remains separate from the already-proven in-flight dispatcher race. Owner IDs can reject stale/future claims across ABA replacement; they do not revoke a target another thread already selected before retirement.
 
 ## Scope boundary
 
@@ -182,7 +236,7 @@ A staged follow-on helper exists at:
 commit: ce2742f129dfa1a0abbeb7677d7abbfe62b5ad60
 ```
 
-It is intentionally excluded from the active workflow until VMA owner-ID propagation is green.
+The VMA propagation gate is now green, so that helper can be promoted to the next research discriminator.
 
 The separate in-flight dispatcher race remains outside this identity test.
 
