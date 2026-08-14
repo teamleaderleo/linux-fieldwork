@@ -6,14 +6,15 @@ Date: 2026-08-14
 
 The unload investigation has advanced beyond a stale-CustomIR hypothesis and now distinguishes **generation rebinding** from **physical executable reclamation**.
 
-The current evidence supports four separate statements:
+The current evidence supports five separate statements:
 
 1. **A real generated-Vulkan dynamic-PFN lifetime defect is proven.** A stock/candidate A/B with byte-identical generated Vulkan thunks changes forced moved reload from stock exit `139` to candidate exit `0` by changing only FEX runtime lifetime handling. See [`REAL_VULKAN_PFN_LIFETIME_AB_2026-08-14.md`](./REAL_VULKAN_PFN_LIFETIME_AB_2026-08-14.md).
 2. **Exact retirement/revocation fixes stale future dispatch and generation rebinding, but not physical reclamation by itself.** A worker that already selected old-generation host code can resume after handler/cache retirement and physical unmap, then fault. See [`TWENTIETH_PASS_INFLIGHT_SELECTION_RUNTIME.md`](./TWENTIETH_PASS_INFLIGHT_SELECTION_RUNTIME.md).
-3. **Whole-wrapper residency (`NODELETE`) is the smallest fully demonstrated containment.** Real generated-Vulkan tests cover retained dynamic PFNs and Vulkan/X11 callbacks after ordinary `dlclose()` while the wrapper remains mapped. See [`NODELETE_REAL_VULKAN_CANDIDATE_RUNTIME.md`](./NODELETE_REAL_VULKAN_CANDIDATE_RUNTIME.md) and [`NODELETE_REAL_VULKAN_X11_CALLBACK_RUNTIME.md`](./NODELETE_REAL_VULKAN_X11_CALLBACK_RUNTIME.md).
-4. **A split process-resident bridge is now the strongest demonstrated long-term architecture.** Under stock FEX, the unloadable wrapper can physically disappear while only escaped bridge glue remains resident; retained H and callback paths continue to work across repeated wrapper generations, and the exact selected-before-wrapper-unmap race that previously exited `139` now returns correctly. See [`FEX_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md`](./FEX_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md) and [`FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md`](./FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md).
+3. **Whole-wrapper residency (`NODELETE`) is the smallest fully demonstrated containment, and its runtime evidence is now generic beyond Vulkan.** Real generated-Vulkan tests cover retained dynamic PFNs and Vulkan/X11 callbacks after ordinary `dlclose()`. A real generated-GL test independently carries `glXGetProcAddress("glGetError")` through 256 close/reopen cycles with stable guest and native PFN addresses and successful post-close calls. See [`NODELETE_REAL_VULKAN_CANDIDATE_RUNTIME.md`](./NODELETE_REAL_VULKAN_CANDIDATE_RUNTIME.md), [`NODELETE_REAL_VULKAN_X11_CALLBACK_RUNTIME.md`](./NODELETE_REAL_VULKAN_X11_CALLBACK_RUNTIME.md), and [`NODELETE_REAL_GL_PFN_RUNTIME.md`](./NODELETE_REAL_GL_PFN_RUNTIME.md).
+4. **NODELETE keeps one initialized Vulkan guest generation rather than rerunning guest construction against persistent host state.** A 256-cycle churn run records `VULKAN_ONINIT_COUNT=1` while the same native H and guest invoker T are repeatedly reacquired. See [`NODELETE_VULKAN_CONSTRUCTOR_CHURN_RUNTIME.md`](./NODELETE_VULKAN_CONSTRUCTOR_CHURN_RUNTIME.md).
+5. **A split process-resident bridge is now the strongest demonstrated long-term architecture.** Under stock FEX, the unloadable wrapper can physically disappear while only escaped bridge glue remains resident; retained H and callback paths continue to work across repeated wrapper generations, and the exact selected-before-wrapper-unmap race that previously exited `139` now returns correctly. See [`FEX_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md`](./FEX_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md) and [`FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md`](./FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md).
 
-Therefore the lock-clean/revoked-H implementation remains a **research proof of required lifetime mechanics and successful generation rebinding**, while the split bridge is the preferred architecture for avoiding the proven reclamation race without pinning each complete wrapper.
+Therefore the lock-clean/revoked-H implementation remains a **research proof of required lifetime mechanics and successful generation rebinding**, while whole-wrapper NODELETE is the best-supported near-term containment and the split bridge is the preferred architecture for preserving physical wrapper unload without the proven reclamation race.
 
 ## What is proven on the H→T path
 
@@ -42,6 +43,17 @@ Generation 2 reuses the same native PFN while the guest Vulkan wrapper and guest
 The generated Vulkan guest and host thunk hashes are identical across the stock/candidate phases. The discriminator is in FEX runtime state, not generated thunk code.
 
 The same candidate behavior also passes on exact FEX-2608 `e869aa644a16e4332cdc15c1ea0b4d13d482385d`; see [`FEX2608_REAL_VULKAN_PFN_RUNTIME_2026-08-14.md`](./FEX2608_REAL_VULKAN_PFN_RUNTIME_2026-08-14.md).
+
+The real GL NODELETE stress adds a second product dynamic-PFN family. Through FEX's generated GL guest/host thunks:
+
+```text
+guest glXGetProcAddress = 0x7ffff7bb8250
+native glGetError PFN  = 0x7ffff73bd680
+```
+
+remain stable across 256 logical close/reopen cycles, and the original PFN remains callable after every `dlclose()`.
+
+This does not replace the Vulkan moved-reload stock/candidate A/B; it shows that the process-residency containment matches the generic H→T mechanism outside Vulkan.
 
 ## Required mechanics for an owner-aware retirement design
 
@@ -162,6 +174,47 @@ This directly distinguishes the split design from retirement-only reclamation:
 
 > moving escaped/selected executable bridge glue out of the unloadable wrapper removes the proven reclamation race without requiring cache invalidation to revoke an already-selected host-code pointer.
 
+## Whole-wrapper NODELETE evidence and remaining policy risk
+
+### Runtime coverage
+
+The whole-wrapper candidate now has product-sized runtime evidence in three important lanes:
+
+1. real Vulkan dynamic PFN, including 256 close/reopen cycles;
+2. real GL dynamic PFN, including 256 close/reopen cycles;
+3. real Vulkan/X11 host→guest callback execution after close.
+
+The Vulkan constructor churn also proves that the guest wrapper is not repeatedly reinitialized while host state persists:
+
+```text
+VULKAN_ONINIT_COUNT=1
+STRESS_CYCLES=256
+```
+
+### Build coverage
+
+The generic linker policy builds every current 64-bit shared guest thunk, representative real 32-bit Wayland, the unusual VDSO target, and the alternate lld guest-thunk mode.
+
+### Direct wrapper footprint
+
+The eight current 64-bit wrapper DSOs sum to:
+
+```text
+FILE_BYTES_TOTAL=10598320
+PT_LOAD_MEMSZ_TOTAL=1771423
+PT_LOAD_MIB_TOTAL=1.689
+```
+
+See [`NODELETE_BUILD_MATRIX.md`](./NODELETE_BUILD_MATRIX.md).
+
+This is only wrapper ELF loadable memory. It does not include dirty RSS/PSS or dependency closure. A stock-vs-NODELETE process-level retained-memory A/B is now the highest-value remaining cost test.
+
+### Semantic caveats
+
+NODELETE deliberately changes physical unload semantics. Static NODELETE also pins disposable `dlmopen()` namespace copies. The real FEX/Vulkan namespace test did not show an earlier practical failure than stock because both variants hit glibc static-TLS limits first; base-namespace-only runtime promotion is a proven fallback if namespace recycling becomes a real requirement. See [`NODELETE_NAMESPACE_AND_RUNTIME_PROMOTION.md`](./NODELETE_NAMESPACE_AND_RUNTIME_PROMOTION.md).
+
+No current guest-thunk source audit has found an explicit product wrapper contract requiring constructor/destructor/TLS reset on logical close/reopen. That remains a compatibility claim, not a theorem about future thunks or every application.
+
 ## Current design families
 
 ### A. Split process-resident guest bridge — preferred long-term architecture
@@ -185,9 +238,9 @@ Mark generated guest thunk DSOs `NODELETE`, or otherwise pin them for process li
 
 This is the smallest demonstrated product-sized containment and also avoids the race because wrapper executable state is never reclaimed.
 
-Real Vulkan evidence covers dynamic PFNs and retained X11 callbacks. Build coverage is green across current shared thunk modes, including representative 32-bit and special VDSO/lld cases.
+Real runtime evidence now covers Vulkan dynamic PFNs, GL dynamic PFNs, and retained Vulkan/X11 callbacks. Constructor churn shows one Vulkan guest generation survives 256 logical close/reopen cycles. Build coverage is green across current shared thunk modes, including representative 32-bit and special VDSO/lld cases.
 
-The cost is broader residency: wrapper-specific constructors/static/TLS/data state and executable footprint remain process-long.
+The remaining objection is broader residency: wrapper-specific static/data state and dependency/RSS footprint remain process-long.
 
 ### C. Full owner-generation + execution lease/hazard
 
@@ -209,13 +262,13 @@ Two rankings are useful because containment and long-term architecture optimize 
 
 ### Near-term containment
 
-1. **Whole-wrapper `NODELETE` / pinning** — smallest proven lever on real generated Vulkan.
-2. **Split resident bridge** — stronger semantics, but generator/build integration is not yet complete.
+1. **Whole-wrapper `NODELETE` / pinning** — smallest proven lever; real runtime evidence now spans Vulkan and GL dynamic PFNs plus the Vulkan callback direction.
+2. **Split resident bridge** — stronger physical-unload semantics, but generator/build integration is not yet complete.
 3. **Owner-generation + execution lease/hazard** — complete in principle, largest runtime change.
 
 ### Long-term architecture
 
-1. **Split process-resident bridge** — now closes the proven in-flight race while preserving wrapper physical unload/reset semantics.
+1. **Split process-resident bridge** — closes the proven in-flight race while preserving wrapper physical unload/reset semantics.
 2. **Owner-generation + execution lease/hazard** — strongest if every bridge byte must be reclaimable, but more synchronization-heavy.
 3. **Whole-wrapper `NODELETE`** — robust containment with broader permanent state residency.
 
