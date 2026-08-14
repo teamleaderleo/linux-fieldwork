@@ -1,20 +1,27 @@
 # GL split resident bridge genericity — 2026-08-14
 
-## Summary
+## Result
 
-The split-resident guest-bridge architecture generalizes beyond Vulkan for dynamic function-pointer thunks, but the GL experiments exposed an important ownership rule:
+The split-resident guest-bridge architecture now generalizes beyond Vulkan in **both cross-ISA lifetime directions**.
 
-> after generated dynamic adapters move into a resident companion, the unloadable wrapper must stop owning/referencing its original adapter registry.
+For generated GL under stock FEX core, a corrected resident companion allows `libGL.so.1` to physically unload while preserving:
 
-A minimal GL companion that moved adapters resident but left the wrapper's original `HostPtrInvokers` map intact caused `libGL.so.1` to remain mapped after `dlclose()`. Removing that wrapper-local adapter table restored physical unload while preserving the retained native PFN across wrapper generations.
+- dynamic native PFNs returned by `glXGetProcAddress`;
+- generated guest host-call adapters;
+- GL's process-retained GuestMalloc callback **target and unpacker**;
+- fixed X11 callback unpackers;
+- moved wrapper reload with stable native PFNs;
+- final retained calls after the reloaded wrapper closes again.
 
-This is a stronger genericity result than whole-wrapper pinning because stock GL is independently proven to physically unload in the same hosted environment.
+The GL experiments also establish an important generic ownership rule:
 
-## Stock controls
+> after generated dynamic adapters move into a resident companion, the unloadable wrapper must relinquish its own adapter registry/references rather than keeping a parallel wrapper-local adapter table alive.
 
-### Stock generated GL unloads
+## Stock physical-unload controls
 
-Owned fork workflow:
+### Simple dynamic-PFN path
+
+Workflow:
 
 ```text
 .github/workflows/gl-stock-unload-control-arm64.yml
@@ -34,11 +41,11 @@ AFTER_CLOSE wrapper_mapped=0
 exit=0
 ```
 
-So the ordinary generated GL wrapper is physically reclaimable.
+So ordinary generated `libGL.so.1` is physically reclaimable.
 
-### Stock GL still unloads after the GLX array-return path
+### Matched GLX array-return path
 
-A matched control pins guest `libX11.so.6`, calls `glXGetFBConfigs`, then closes `libGL.so.1`.
+A second stock control pins guest `libX11.so.6`, calls real generated `glXGetFBConfigs`, then closes `libGL.so.1`.
 
 ```text
 workflow: .github/workflows/gl-stock-glx-unload-control-arm64.yml
@@ -58,17 +65,15 @@ UNMAPPED glXGetProcAddress
 AFTER_CLOSE wrapper_mapped=0
 ```
 
-Therefore a later split-wrapper retention result cannot be explained away as normal GLX loader behavior.
+Therefore the later split-wrapper retention failures were not ordinary GLX loader behavior.
 
-## Negative controls: over-broad / incomplete companion cuts
+## Negative design controls
 
-### Crude v2 — full generated guest output copied resident
+### Crude v2: full generated guest output copied resident
 
-The first GL split companion included the complete generated GL guest `.inl` in a NODELETE bridge DSO.
+The first GL companion copied the complete generated GL guest `.inl` into a NODELETE DSO.
 
-The retained `glGetError` PFN remained callable after logical close, but the wrapper did not physically unload. Forced reservation of its old ranges failed because the mappings still existed.
-
-Representative result:
+The retained `glGetError` PFN stayed callable after logical close, but the wrapper did not physically unload:
 
 ```text
 RETAINED_AFTER_CLOSE error=0
@@ -76,20 +81,18 @@ RESERVE_FAIL ... errno=17 File exists
 exit=72
 ```
 
-This is retained as a negative design control: keeping too much generated wrapper machinery resident defeats the intended physical-unload semantics.
+This is a negative control: moving too much generated wrapper machinery resident defeats the intended wrapper-reclamation semantics.
 
-### Minimal v3 — signature adapters resident, but wrapper adapter map retained
+### Minimal v3: resident adapters, but wrapper-local adapter registry retained
 
 The next candidate narrowed the companion to:
 
 - generated signature-specific adapters;
-- a resident `FEXGLBridgeLookup` table;
+- resident symbol→adapter lookup;
 - resident fixed callback unpackers;
-- a resident GL malloc callback target + unpacker.
+- resident GL malloc callback target + unpacker.
 
-The bridge had no static dependency on `libGL.so.1` and its DT_NEEDED set was only C++ runtime/libc.
-
-A PFN-only runtime still failed the physical-unload assertion:
+The bridge had no static dependency on `libGL.so.1`. Nevertheless a PFN-only test still retained the wrapper after `dlclose()`:
 
 ```text
 GL_SPLIT_LINK name=glGetError H=0x7ffff73bd680 T=0x7ffff7e90c50
@@ -100,19 +103,19 @@ post-dlclose glXGetProcAddress still -> libGL.so.1
 exit=10
 ```
 
-Run identity:
+Run:
 
 ```text
-run: 31783185895
+31783185895
 artifact: 9212566570
 artifact digest: sha256:b6e371b0a0d5856716fe8d04dde2478cd3c799f08fb302086a3c21df6e4e668a
 ```
 
-The GLX full-runtime v3 likewise retained the wrapper after `glXGetFBConfigs`; matched stock GLX disproves GLX itself as the cause.
+The key remaining difference from the successful Vulkan split was that GL still kept its original wrapper-local `HostPtrInvokers` map, which referenced wrapper-local `GetCallerForHostFunction(...)` adapters even though the resident companion had become authoritative.
 
-## ELF audit: GNU unique hypothesis falsified
+## GNU-unique hypothesis falsified
 
-A stock/v3/v4/bridge symbol audit found:
+A stock/v3/v4/bridge ELF symbol audit found:
 
 ```text
 libGL-stock.so      UNIQUE=0
@@ -123,38 +126,43 @@ libfex-GL-bridge.so UNIQUE=0
 
 No exported `fexcallback_` or `fexthunks_invoke_callback` symbols were present in the final ELFs either.
 
-Therefore the wrapper-retention regression is not explained by `STB_GNU_UNIQUE` process-lifetime semantics.
-
-Audit workflow:
-
 ```text
-.github/workflows/gl-split-v3-symbol-audit.yml
+workflow: .github/workflows/gl-split-v3-symbol-audit.yml
 run: 31783564642
 artifact: 9212655694
 artifact digest: sha256:8bd5ee0eca6b3c7d5699bf3adff729f1ccb343ebdd6bc84c995c82beb8ff63f1
 ```
 
-## v4: companion becomes sole dynamic-adapter owner — PASS
+So the v3 retention regression is not explained by `STB_GNU_UNIQUE` lifetime semantics.
 
-The v4 discriminator keeps the minimal resident companion and makes two ownership corrections in the unloadable wrapper:
+## v4 ownership correction
 
-1. remove the wrapper-local `HostPtrInvokers` map that referenced wrapper-local `GetCallerForHostFunction(...)` adapters;
-2. remove the now-unused wrapper-local `malloc_wrapper` callback target, since GL's process-retained GuestMalloc target + unpacker live in the companion.
+The successful v4 cut keeps the minimal companion and makes the wrapper relinquish duplicate ownership:
 
-The wrapper's `glXGetProcAddress` now behaves conceptually as:
+1. remove wrapper-local `HostPtrInvokers` and its references to wrapper-local generated adapters;
+2. remove the now-unused wrapper-local `malloc_wrapper` target;
+3. make the resident companion the sole generated adapter lookup used by `glXGetProcAddress`;
+4. keep GL's process-retained malloc callback target + unpacker resident;
+5. keep fixed X11 unpackers resident while the actual X11 target remains with its own DSO.
+
+Conceptually:
 
 ```text
-native H from host glXGetProcAddress
-    -> resident bridge symbol lookup
+native GL PFN H
+    -> resident companion lookup
     -> resident generated adapter T
     -> LinkAddressToFunction(H, T)
+
+host GL retained GuestMalloc trampoline
+    -> resident malloc unpacker
+    -> resident malloc target
 ```
 
-Unknown host functions without a generated resident adapter are rejected rather than falling back to a wrapper-local adapter table.
+Unknown host functions without a generated resident adapter are rejected rather than falling back to wrapper-local adapter state.
 
-### Real PFN-only runtime result
+## v4 dynamic-PFN runtime — PASS
 
-Owned fork workflow:
+Workflow:
 
 ```text
 .github/workflows/gl-split-resident-v4-pfn-arm64.yml
@@ -164,7 +172,7 @@ artifact: 9212669469
 artifact digest: sha256:c8f27cf2a9b593fa1f5785a86c2e65c653de43a465fc188b738998ca8452fdb0
 ```
 
-Exact trace:
+Trace:
 
 ```text
 GL_SPLIT_LINK name=glGetError H=0x7ffff73bd680 T=0x7ffff7bcfc50
@@ -178,53 +186,128 @@ all five old libGL ranges reserved successfully
 GL_SPLIT_LINK name=glGetError H=0x7ffff73bd680 T=0x7ffff7bcfc50
 GEN2 get_old=0x7ffff7e64210 get_new=0x7ffff7073210 moved=1
 H_old=0x7ffff73bd680 H_new=0x7ffff73bd680 same_H=1 error=0
-REAL_GL_SPLIT_V3_PFN_OK
 exit=0
 ```
 
-The success marker retains the older v3 string because the v4 workflow deliberately reuses the same probe binary; the workflow's own final assertion emits `REAL_GL_SPLIT_V4_PFN_OK`.
+This proves dynamic-PFN genericity beyond Vulkan.
 
-### Meaning
+## v4 full GLX + GuestMalloc callback runtime — PASS
 
-This proves the resident-companion architecture for a second real generated thunk library's dynamic PFN path:
+Workflow:
 
-- stock wrapper physically unloads;
-- native `H = glGetError` remains stable;
-- resident adapter `T` remains stable;
-- old wrapper mappings disappear;
-- the retained native PFN remains callable after physical wrapper unload;
-- old wrapper ranges can be occupied to force a moved generation;
-- the wrapper reloads at a different guest address;
-- newly reacquired `glGetError` has the same native H;
-- the real call succeeds after reload and again through the retained H.
+```text
+.github/workflows/gl-split-resident-v4-runtime-arm64.yml
+run: 31783837210
+job: 94715195260
+artifact: 9212810392
+artifact digest: sha256:f909f5f2f91d0d46a92a6f89264f90d8775154903ac8b53b36dc283042c50dc1
+```
 
-The key generic design invariant is stronger than merely moving adapters resident:
+The test pins guest X11 independently so the experiment isolates GL-wrapper lifetime. It then obtains real generated PFNs for:
 
-> the unloadable wrapper must relinquish its own dynamic-adapter ownership/registry when the resident companion becomes authoritative.
+```text
+glGetError
+glXGetFBConfigs
+```
 
-## Callback direction status
+Before close:
 
-GL has a stricter callback ownership case than Vulkan:
+```text
+GL_SPLIT_LINK name=glGetError H=0x7ffff73bd680 T=0x7ffff7bcfc50
+GL_SPLIT_LINK name=glXGetFBConfigs H=0x7ffff76c5970 T=0x7ffff7bce1e0
+GEN1 ...
+GUEST_XSYNC display=0x12345000 discard=0
+GUEST_XDISPLAYSTRING display=0x12345000
+GL_BRIDGE_MALLOC size=1920
+BEFORE_CLOSE_CONFIGS ... count=240
+```
 
-- Vulkan's fixed X11 unpackers were wrapper-owned, while the actual X11 guest targets belonged to another DSO.
-- GL additionally stores a `GuestMalloc` callback whose **target and unpacker** were both originally wrapper-owned.
+The old wrapper mappings are captured, then final `dlclose(libGL.so.1)` physically removes the wrapper:
 
-The minimal GL companion now places that malloc target + unpacker resident as well as the X11 unpackers.
+```text
+UNMAPPED old glXGetProcAddress
+resident glGetError adapter still -> libfex-GL-bridge.so
+AFTER_CLOSE_BEGIN
+```
 
-A full v4 runtime gate is running separately to test a retained `glXGetFBConfigs` PFN after physical wrapper unload. That path forces host GL's `RelocateArrayToGuestHeap` to execute the process-retained GuestMalloc trampoline. Guest X11 is pinned independently in that test so X11 DSO ownership does not confound GL-wrapper lifetime.
+After physical wrapper unload, the **retained old `glXGetFBConfigs` PFN** still performs fresh guest callbacks and the process-retained malloc trampoline executes the resident callback target:
 
-Do not claim full GL callback-direction success from the PFN-only result above until that full gate is retained.
+```text
+GUEST_XSYNC display=0x12346000 discard=0
+GUEST_XDISPLAYSTRING display=0x12346000
+GL_BRIDGE_MALLOC size=1920
+AFTER_CLOSE_CONFIGS ... count=240
+```
+
+All five old wrapper mapping ranges are then successfully occupied with `PROT_NONE`, forcing a moved generation.
+
+Generation 2:
+
+```text
+GEN2 get_old=0x7ffff7e5f210 get_new=0x7fffe94a3210 moved=1
+Herr_old=0x7ffff73bd680 Herr_new=0x7ffff73bd680 same_H=1
+Hcfg_old=0x7ffff76c5970 Hcfg_new=0x7ffff76c5970 same_cfg_H=1
+```
+
+The reloaded PFNs again execute fresh X11 callbacks and resident GuestMalloc:
+
+```text
+GUEST_XSYNC display=0x12347000 discard=0
+GUEST_XDISPLAYSTRING display=0x12347000
+GL_BRIDGE_MALLOC size=1920
+RELOAD_CONFIGS ... count=240
+```
+
+After generation 2 closes, the originally retained `glXGetFBConfigs` PFN still works once more:
+
+```text
+GUEST_XSYNC display=0x12348000 discard=0
+GUEST_XDISPLAYSTRING display=0x12348000
+GL_BRIDGE_MALLOC size=1920
+FINAL_RETAINED_CONFIGS ... count=240
+exit=0
+```
+
+This is direct real generated-GL evidence for both lifetime directions:
+
+- native dynamic PFN → resident guest adapter;
+- process-retained host callback trampoline → resident guest malloc unpacker/target.
+
+## Generic design invariant learned from GL
+
+Vulkan already removed its wrapper-local dynamic adapter map when the companion became authoritative. GL made the consequence observable because the intermediate v3 left that old map in place.
+
+The cross-library rule is therefore:
+
+> moving escaped executable bridge code resident is not enough if the unloadable wrapper continues to own a parallel registry/reference graph for the old adapter bodies.
+
+A production generator/build design should make ownership singular: resident bridge adapters are the authoritative generated adapters for dynamic host function pointers, and the unloadable wrapper should not maintain a second address table pointing at wrapper-local copies.
 
 ## Relationship to Vulkan
 
-The GL v4 result independently supports the same architecture already proven much more deeply on Vulkan:
+The architecture is now product-sized across two different generated thunk libraries:
 
 ```text
 unloadable library-specific wrapper
-    -> resident companion owns escaped generic executable glue
+    -> process-resident companion owns executable glue that can escape wrapper lifetime
 ```
 
-GL adds a useful caution that Vulkan's first split happened to satisfy already: when the companion becomes authoritative, stale wrapper-local registries that continue referencing old adapter bodies should be removed rather than left as unused parallel ownership state.
+Vulkan evidence covers:
+
+- real dynamic PFNs;
+- real Vulkan/X11 retained host→guest callbacks;
+- exact FEX-2608;
+- selected-before-wrapper-unmap race;
+- actual distro `vulkaninfo --summary` compatibility.
+
+GL independently covers:
+
+- real `glXGetProcAddress` dynamic PFNs;
+- stock physical wrapper unload;
+- forced moved wrapper reload;
+- real GLX array-return path;
+- process-retained GuestMalloc callback target + unpacker after wrapper unload;
+- retained X11 callback execution with X11 lifetime held independently.
 
 ## Boundary
 
