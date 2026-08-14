@@ -34,7 +34,7 @@ run 31770241831
 
 This is a caller-memory ownership defect independent of the thunk executable-lifetime investigation.
 
-## Candidate under review
+## Candidate result — still fails immutable caller memory
 
 Owned-FEX candidate:
 
@@ -50,14 +50,48 @@ It still performs in-place writes through `const_cast`:
 - predecessor `pNext` writes when skipping debug-report records;
 - `pfnUserCallback` replacement inside debug-utils records.
 
-A candidate-specific read-only-chain carrier is running on:
+Candidate-specific carrier:
 
 ```text
 ci/vulkan-pnext-candidate-readonly-20260814
-run 31783496219
+carrier: 961b1087a53e9f9d4c8279b53f79698209b3e82e
+run:     31783496219
+job:     94714147345
 ```
 
-Until that gate completes, treat the candidate as a mediation experiment rather than a source-ready correction.
+All provenance, build, rootfs, and probe-preparation steps passed. The only red gate was execution.
+
+Final matrix:
+
+```text
+native=0
+candidate=139
+```
+
+Native control:
+
+```text
+MARK readonly=...
+MARK create-enter
+MARK create-return result=-7 instance=(nil) ... same=1
+```
+
+Candidate FEX:
+
+```text
+MARK readonly=0x7ffff7ec4000 ...
+MARK create-enter
+<segmentation fault before create-return>
+```
+
+Artifact:
+
+```text
+id:      9212682095
+sha256:  24217f909131ae6259ce089cd12f2ab3ab21d8971d55a88075e5b76a81e549a4
+```
+
+This demotes `0a19582b...` as a source-ready repair. Its callback-routing changes may still be useful input to a later typed conversion patch, while the in-place caller-memory ownership model must change.
 
 ## Design rule
 
