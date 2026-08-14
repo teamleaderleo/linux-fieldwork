@@ -67,11 +67,13 @@ FLAGS: BIND_NOW
 FLAGS_1: NOW NODELETE
 ```
 
-The workflow status was red only because its SONAME verification used an exact whitespace-sensitive `readelf` grep. The configure, thunk generation, compile, and link all succeeded, and the retained artifact contains the verified 32-bit NODELETE DSO. A follow-up green rerun uses a whitespace-independent SONAME assertion.
+The first workflow status was red only because its SONAME verification used an exact whitespace-sensitive `readelf` grep. The configure, thunk generation, compile, and link all succeeded.
+
+A corrected independent gate on owned branch `ci/agent-n-arm64-20260814`, commit `b8a5afea844ab3fb6f1d989f627660536255d7f9`, run `31773109794`, job `94682895383`, completed successfully with whitespace-independent verification. It confirms the real 32-bit Wayland wrapper is Intel 80386, carries the expected SONAME, and contains `FLAGS_1: NOW NODELETE`.
 
 ## Result
 
-The central `add_guest_lib()` location has compile/link evidence across:
+The central `add_guest_lib()` location has green compile/link evidence across:
 
 - every current 64-bit shared guest thunk target;
 - the special VDSO link mode;
