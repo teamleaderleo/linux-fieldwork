@@ -14,15 +14,13 @@ The same routing defect was independently reproduced on hosted ARM64 using revie
 
 ### Finding B — guest-thunk lifetime across unload/reload
 
-The second finding is no longer only a stale-CustomIR hypothesis.
-
 A stock/candidate A/B reproduces the lifetime defect with FEX's **real generated Vulkan guest/host thunks** and a real dynamic Vulkan PFN obtained through:
 
 ```text
 vkGetInstanceProcAddr(NULL, "vkEnumerateInstanceVersion")
 ```
 
-The generated Vulkan thunk binaries are byte-identical across the A/B; only the FEX runtime changes.
+The generated Vulkan thunk binaries are byte-identical across the A/B; only FEX runtime lifetime handling changes.
 
 Observed moved-generation matrix:
 
@@ -35,70 +33,63 @@ candidate_close=139
 candidate_reload=0
 ```
 
-The guest Vulkan wrapper is forced to reload at a different guest base. The native Vulkan PFN remains stable while the guest `CallHostFunction` invoker moves. Stock FEX accepts generation-2 registration but the newly reacquired generation-2 PFN still crashes. The research retirement/revocation candidate reactivates the same native PFN against generation-2 guest code and the Vulkan call succeeds.
+The guest Vulkan wrapper is forced to reload at a different guest base. The native Vulkan PFN remains stable while the guest `CallHostFunction` invoker moves. Stock FEX accepts generation-2 registration but the newly reacquired generation-2 PFN still crashes. Explicit retirement/revocation/rebind makes the generation-2 call succeed.
 
 Canonical receipt: [`REAL_VULKAN_PFN_LIFETIME_AB_2026-08-14.md`](./REAL_VULKAN_PFN_LIFETIME_AB_2026-08-14.md).
 
-The same real generated-Vulkan candidate behavior passes on exact FEX-2608 `e869aa644a16e4332cdc15c1ea0b4d13d482385d`, the source revision used by the original M5 investigation. See [`FEX2608_REAL_VULKAN_PFN_RUNTIME_2026-08-14.md`](./FEX2608_REAL_VULKAN_PFN_RUNTIME_2026-08-14.md).
+The same rebind behavior passes on exact FEX-2608 `e869aa644a16e4332cdc15c1ea0b4d13d482385d`: [`FEX2608_REAL_VULKAN_PFN_RUNTIME_2026-08-14.md`](./FEX2608_REAL_VULKAN_PFN_RUNTIME_2026-08-14.md).
 
-## Rebind success is not a complete physical-unload fix
+## Retirement/rebind does not solve physical reclamation by itself
 
-Exact retirement/revocation fixes stale **future dispatch** and generation rebinding, but physical unmap has a second concurrency problem.
-
-A forced runtime race proves a worker can:
+Exact retirement/revocation fixes stale **future dispatch** and generation rebinding, but a forced runtime race proves another thread can already own selected wrapper-generation code:
 
 ```text
-select old wrapper-owned T1 -> old host code
-leave the lookup/invalidation guard
-pause
+worker selects wrapper-owned T1 -> HostCode1
+worker leaves lookup/invalidation guard
+worker pauses
+main retires definition/shared/all-thread H caches
+main physically unmaps T1 owner
+worker resumes already-selected HostCode1
+exit 139
 ```
 
-while teardown then:
-
-```text
-retires the CustomIR definition
-removes shared H state
-invalidates H in every live emulation thread cache
-unmaps the owner containing T1
-```
-
-When the worker resumes its already-selected host-code pointer, it faults into the retired generation. The pin control returns correctly.
-
-Therefore all-thread cache retirement is **necessary but not sufficient** for safe physical guest-thunk reclamation. See [`TWENTIETH_PASS_INFLIGHT_SELECTION_RUNTIME.md`](./TWENTIETH_PASS_INFLIGHT_SELECTION_RUNTIME.md).
+Therefore all-thread cache retirement is necessary but not sufficient for safe physical wrapper reclamation. See [`TWENTIETH_PASS_INFLIGHT_SELECTION_RUNTIME.md`](./TWENTIETH_PASS_INFLIGHT_SELECTION_RUNTIME.md).
 
 FEX's existing thread pause API is not an execution drain; it preserves interrupted execution and later restores it. See [`TWENTY_SECOND_PASS_PAUSE_IS_NOT_EXECUTION_DRAIN.md`](./TWENTY_SECOND_PASS_PAUSE_IS_NOT_EXECUTION_DRAIN.md).
 
-## Split resident bridge closes that exact race
+## Preferred long-term architecture — generated split resident bridge
 
-The strongest new result moves only the executable bridge glue whose addresses escape wrapper lifetime into a small process-resident guest DSO, while wrapper-specific code/state remains unloadable.
-
-Under **stock FEX core**:
+The strongest design moves only executable bridge glue whose addresses escape wrapper lifetime into a small process-resident guest companion DSO, while wrapper-specific code/state remains physically unloadable.
 
 ```text
 unloadable wrapper DSO
-    registration + wrapper-specific state
-    DT_NEEDED -> resident bridge DSO
+    constructors / mutable state / public wrappers
+    registration referencing resident addresses
+    DT_NEEDED -> resident bridge
 
 resident bridge DSO (NODELETE)
-    CallHost-style H adapter
-    fixed callback unpacker
-
-main guest / other guest library
-    actual callback target
+    signature-specific CallHostFunction adapters
+    fixed CallbackUnpack functions
 ```
+
+This is now proven at every important boundary.
+
+### Stock-FEX synthetic split
 
 Across five forced wrapper generations:
 
-- the wrapper physically disappears after `dlclose()`;
-- the resident bridge remains executable;
-- retained H calls work before any wrapper reload;
-- retained host→guest callbacks work before any wrapper reload;
-- the wrapper reloads at a new address with fresh wrapper state;
-- the resident adapter address stays identical.
+- wrapper mappings disappear after `dlclose()`;
+- bridge remains executable;
+- retained H calls work before wrapper reload;
+- retained host→guest callbacks work before wrapper reload;
+- wrapper reloads at a different address with fresh state;
+- bridge adapter address remains identical.
 
 See [`FEX_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md`](./FEX_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md).
 
-More importantly, the exact selected-before-unmap barrier was rerun against the split design:
+### Exact selected-before-unmap race
+
+The same post-selection barrier that exits `139` with wrapper-owned T1 returns correctly when the selected adapter is resident:
 
 ```text
 DIAG_INFLIGHT_SELECTED guest=<resident bridge> host=<selected host code>
@@ -110,62 +101,96 @@ bridge reload SAME
 exit=0
 ```
 
-The wrapper-owned-T1 version of this race exits `139`; the resident-bridge version returns correctly. See [`FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md`](./FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md).
+See [`FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md`](./FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md).
 
-This makes executable ownership, rather than cache invalidation alone, the key distinction for safe wrapper reclamation.
+### Real generated Vulkan dynamic PFN
+
+A Vulkan-specific generated companion `libfex-vulkan-bridge.so` is marked `NODELETE`; `libvulkan.so.1` itself remains ordinary unloadable code.
+
+Under stock reviewed FEX core:
+
+```text
+hold=0
+close=0
+reload=0
+```
+
+After final wrapper close, the exact five tracked guest-wrapper mappings disappear, yet the old native PFN still returns a real Vulkan result through the resident signature adapter. Forced wrapper reload moves GIPA/wrapper generation while native H and the resident adapter remain stable, and the real Vulkan call succeeds again.
+
+See [`REAL_VULKAN_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md`](./REAL_VULKAN_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md).
+
+The same generated split passes on exact FEX-2608 under stock core: [`FEX2608_REAL_VULKAN_SPLIT_RESIDENT_RUNTIME_2026-08-14.md`](./FEX2608_REAL_VULKAN_SPLIT_RESIDENT_RUNTIME_2026-08-14.md).
+
+### Real generated Vulkan/X11 callback direction
+
+The generated companion also owns Vulkan's fixed X11 callback unpackers.
+
+The corrected exact-path runtime proves:
+
+```text
+MAPS_BEFORE exact_wrapper=5 bridge=5
+... real Vulkan Xlib PFN invokes guest X11 callbacks ...
+MAPS_AFTER exact_wrapper=0 bridge=5
+AFTER_DLCLOSE_BEGIN_CALLBACK_TEST
+GUEST_XSYNC display=0x12346000
+GUEST_XDISPLAYSTRING display=0x12346000
+AFTER_CLOSE_XLIB result=0
+REAL_SPLIT_VULKAN_X11_CALLBACK_OK
+```
+
+The actual guest Vulkan wrapper is physically gone before the retained Vulkan Xlib PFN drives fresh guest callbacks.
+
+See [`REAL_VULKAN_SPLIT_X11_CALLBACK_RUNTIME_2026-08-14.md`](./REAL_VULKAN_SPLIT_X11_CALLBACK_RUNTIME_2026-08-14.md).
 
 ## Current repair decision
 
-The detailed ranking is in [`CURRENT_REPAIR_DECISION_2026-08-14.md`](./CURRENT_REPAIR_DECISION_2026-08-14.md).
-
-Two rankings are useful.
+Detailed current ranking: [`CURRENT_REPAIR_DECISION_2026-08-14.md`](./CURRENT_REPAIR_DECISION_2026-08-14.md).
 
 ### Near-term containment
 
-1. **Keep complete generated guest thunk wrappers resident (`NODELETE` / pinning).** Smallest proven lever on real generated Vulkan. Dynamic PFNs and retained Vulkan/X11 callbacks continue to work after ordinary `dlclose()`. Build coverage is green across the current shared thunk modes. See [`NODELETE_REAL_VULKAN_CANDIDATE_RUNTIME.md`](./NODELETE_REAL_VULKAN_CANDIDATE_RUNTIME.md), [`NODELETE_REAL_VULKAN_X11_CALLBACK_RUNTIME.md`](./NODELETE_REAL_VULKAN_X11_CALLBACK_RUNTIME.md), and [`NODELETE_BUILD_MATRIX.md`](./NODELETE_BUILD_MATRIX.md).
-2. **Split process-resident bridge.** Stronger unload/reset semantics, but generator/CMake integration is still being built.
-3. **Owner-generation + execution lease/hazard.** Complete in principle, largest runtime synchronization change.
+1. **Whole-wrapper NODELETE / pinning.** Smallest proven product lever. Real Vulkan, real Vulkan/X11 callbacks, GL dynamic PFNs, constructor churn, and build modes are covered. The cost is full wrapper code/data/static/TLS residency.
+2. **Generated split resident bridge.** Better wrapper unload/reset semantics and now proven on real generated Vulkan in both bridge directions; research generator/CMake implementation still needs clean central generalization.
+3. **Owner-generation + execution lease/hazard.** Full reclamation if even resident bridge glue must be reclaimable; largest synchronization change.
 
 ### Preferred long-term architecture
 
-1. **Split process-resident bridge runtime.** Now proven inside stock FEX and against the selected-before-wrapper-unmap race while preserving wrapper physical unload/reset.
-2. **Full owner-generation + execution lease/hazard.** Needed only if even resident bridge glue must eventually be reclaimable or policy requires generation-specific execution ownership.
-3. **Whole-wrapper `NODELETE`.** Robust containment with broader permanent wrapper state residency.
+1. **Generated split process-resident bridge.** Preserves wrapper physical unload/reset, closes the selected-before-unmap race, passes real generated Vulkan PFNs and callbacks, and passes exact FEX-2608.
+2. **Owner-generation + execution lease/hazard.** Only needed if process-long bridge glue is unacceptable or policy requires generation-owned execution.
+3. **Whole-wrapper NODELETE.** Robust containment with broader permanent state residency.
 
-Exact retirement + revoked H remains a proven generation-rebind mechanism and useful cleanup primitive, but is incomplete as a physical-unload repair when the selected executable adapter is wrapper-owned. A target cell alone is also insufficient because a thread can load old T immediately before retirement and branch after unmap. See [`TARGET_CELL_RETIREMENT_RUNTIME.md`](./TARGET_CELL_RETIREMENT_RUNTIME.md).
+## Useful retirement-policy mechanics already proven
 
-## Required lifetime properties established
+Even with resident bridge code, owner-aware policy can still use these proven pieces:
 
-Any generic unload-capable solution must account for the relevant subset of these:
+- synthetic H `ACTIVE` / `REVOKED` state;
+- all-thread future-dispatch invalidation when a baked target changes;
+- retained compatible multi-owner claims and promotion;
+- generated thunk/signature SHA as compatibility identity;
+- transactional `munmap` prevalidation/rollback if retirement is tied to unmap;
+- immutable host trampoline + atomic callback descriptor when the actual GuestTarget can itself unload.
 
-- **Executable ownership:** any guest executable address that may escape wrapper lifetime into FEX/host state must either remain resident or participate in an execution-lifetime protocol.
-- **Owner identity:** generation-owned guest addresses need mapping/load ownership rather than process-lifetime pointer semantics.
-- **Synthetic native key state:** if H is retired rather than made generation-neutral, it should remain distinguishable as `ACTIVE` or `REVOKED`; it must not fall through to ordinary x86 decoding of a native ARM address.
-- **All-thread future-dispatch invalidation:** baked H→T runtime mappings must be removed from shared state and every live emulation thread cache when T changes.
-- **Already-selected execution:** future lookup invalidation cannot revoke a host-code pointer already selected outside the invalidation critical section.
-- **Multi-owner claims:** multiple live guest owners can claim one native H. Compatible claims must be retained rather than discarded. FEX's generated thunk/signature hash is the preferred compatibility identity; see [`THUNK_SIGNATURE_IDENTITY.md`](./THUNK_SIGNATURE_IDENTITY.md).
-- **Host→guest callbacks:** fixed unpackers/targets that escape wrapper lifetime need resident ownership or revocable descriptor semantics.
-- **Transactional unmap:** if retirement is tied to `munmap`, it cannot be irreversibly committed before a `munmap` that may fail. See [`TWENTY_THIRD_PASS_FAILED_MUNMAP.md`](./TWENTY_THIRD_PASS_FAILED_MUNMAP.md).
+A target cell alone is insufficient for wrapper-owned executable reclamation because another thread can load old T immediately before retirement and branch after unmap. See [`TARGET_CELL_RETIREMENT_RUNTIME.md`](./TARGET_CELL_RETIREMENT_RUNTIME.md).
 
-## Preferred callback representation when callback state remains revocable
+## Generator generalization plan
 
-The older diagnostic callback tombstone mutated embedded trampoline fields. A safer prototype keeps the escaped host trampoline immutable and points it at a process-lived FEX descriptor:
+The successful Vulkan transformer is research post-processing, not the desired final generator interface.
+
+The next implementation step is a central optional companion bridge emitted by thunk generation/build logic:
 
 ```text
-host trampoline
-    -> callback descriptor
-         state = LIVE / REVOKED
-         GuestUnpacker
-         GuestTarget
+${lib}-guest                  unloadable wrapper
+${lib}-bridge-guest           resident companion
 ```
 
-Moved reload and same-address ABA controls pass, and this descriptor design coexists with the real generated-Vulkan PFN lifetime candidate. See [`REAL_VULKAN_CALLBACK_DESCRIPTOR_RUNTIME_2026-08-14.md`](./REAL_VULKAN_CALLBACK_DESCRIPTOR_RUNTIME_2026-08-14.md).
+Start per library/per bitness, then deduplicate by signature later if worthwhile.
 
-A split bridge can eliminate the wrapper-lifetime dependency for fixed unpackers entirely when the actual guest callback target belongs to another owner, as Vulkan's X11 targets do.
+Detailed plan: [`GENERATED_RESIDENT_BRIDGE_INTEGRATION_PLAN.md`](./GENERATED_RESIDENT_BRIDGE_INTEGRATION_PLAN.md).
+
+`libGL` is already confirmed as a direct second pattern match: wrapper-local dynamic `HostPtrInvokers = GetCallerForHostFunction(...)` plus fixed `CallbackUnpack` addresses for malloc/X11 callbacks. See [`RESIDENT_BRIDGE_LIBRARY_AUDIT.md`](./RESIDENT_BRIDGE_LIBRARY_AUDIT.md).
 
 ## Original Apple M5 evidence
 
-The original target environment was:
+Original target:
 
 ```text
 Host: Apple M5 MacBook Air, arm64, Darwin 25.6.0
@@ -191,43 +216,26 @@ pinned Venus run                         -> 0
 
 The pinned Venus control enumerates `Virtio-GPU Venus (Apple M5)` and llvmpipe.
 
-The remaining M5-specific uncertainty is narrow: that historical trace did not capture the immediate terminal native H/R11 or first post-unload synthetic-entry hit. Do not rewrite the original receipt as if that exact edge was captured. The hosted generated-Vulkan A/B independently proves the dynamic-PFN lifetime mechanism and stock moved-reload failure.
+The remaining M5-specific uncertainty is narrow: that historical trace did not capture the immediate terminal native H/R11 or first post-unload synthetic-entry hit. Do not rewrite the original receipt as if that exact edge was captured. Hosted generated-Vulkan work independently proves the dynamic-PFN lifetime defect and race-safe ownership repair.
 
 Detailed original receipts remain in [`EVIDENCE.md`](./EVIDENCE.md) and [`TEARDOWN_CHRONOLOGY.md`](./TEARDOWN_CHRONOLOGY.md).
 
-## Source-level bridge classes
-
-Two lifetime classes are central.
-
-### Dynamic native PFN → guest invoker
-
-`ThunkLibs/libvulkan/Guest.cpp` obtains native Vulkan PFNs and registers them through `LinkAddressToFunction`. Current generated wrappers target a `CallHostFunction<...>` body compiled into the guest Vulkan thunk DSO.
-
-The defect appears when stable native H outlives the wrapper generation that owns T.
-
-The split design changes this to target a process-resident signature adapter instead of wrapper-owned code.
-
-### Host → guest callback trampoline
-
-`MakeHostTrampolineForGuestFunction` exposes a host-callable trampoline whose callback path needs a guest unpacker and target.
-
-Current Vulkan setup uses fixed `CallbackUnpack<signature>::Unpack` code in the wrapper plus X11 targets outside it. The split design moves the fixed unpacker into resident bridge code while leaving the X11 target with its real owner.
-
 ## Canonical current receipts
 
-- Callback-routing reproduction on reviewed source: [`HOSTED_ARM64_FINDING_A_CURRENT_MAIN.md`](./HOSTED_ARM64_FINDING_A_CURRENT_MAIN.md)
-- Original M5 evidence matrix: [`EVIDENCE.md`](./EVIDENCE.md)
-- Teardown chronology: [`TEARDOWN_CHRONOLOGY.md`](./TEARDOWN_CHRONOLOGY.md)
-- Real generated-Vulkan stock/candidate PFN A/B: [`REAL_VULKAN_PFN_LIFETIME_AB_2026-08-14.md`](./REAL_VULKAN_PFN_LIFETIME_AB_2026-08-14.md)
-- Exact FEX-2608 real-Vulkan candidate: [`FEX2608_REAL_VULKAN_PFN_RUNTIME_2026-08-14.md`](./FEX2608_REAL_VULKAN_PFN_RUNTIME_2026-08-14.md)
-- Real Vulkan callback descriptor + PFN integration: [`REAL_VULKAN_CALLBACK_DESCRIPTOR_RUNTIME_2026-08-14.md`](./REAL_VULKAN_CALLBACK_DESCRIPTOR_RUNTIME_2026-08-14.md)
-- In-flight wrapper-owned selected-execution negative control: [`TWENTIETH_PASS_INFLIGHT_SELECTION_RUNTIME.md`](./TWENTIETH_PASS_INFLIGHT_SELECTION_RUNTIME.md)
-- FEX split resident bridge runtime: [`FEX_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md`](./FEX_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md)
-- Split resident selected-before-unmap race: [`FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md`](./FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md)
+- Callback-routing reproduction: [`HOSTED_ARM64_FINDING_A_CURRENT_MAIN.md`](./HOSTED_ARM64_FINDING_A_CURRENT_MAIN.md)
+- Original M5 evidence: [`EVIDENCE.md`](./EVIDENCE.md)
+- Real unsplit generated-Vulkan PFN A/B: [`REAL_VULKAN_PFN_LIFETIME_AB_2026-08-14.md`](./REAL_VULKAN_PFN_LIFETIME_AB_2026-08-14.md)
+- Exact FEX-2608 rebind candidate: [`FEX2608_REAL_VULKAN_PFN_RUNTIME_2026-08-14.md`](./FEX2608_REAL_VULKAN_PFN_RUNTIME_2026-08-14.md)
+- Wrapper-owned selected-execution negative control: [`TWENTIETH_PASS_INFLIGHT_SELECTION_RUNTIME.md`](./TWENTIETH_PASS_INFLIGHT_SELECTION_RUNTIME.md)
+- Split FEX runtime: [`FEX_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md`](./FEX_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md)
+- Split selected-before-unmap race: [`FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md`](./FEX_SPLIT_RESIDENT_BRIDGE_INFLIGHT_RUNTIME_2026-08-14.md)
+- Real generated Vulkan split PFN: [`REAL_VULKAN_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md`](./REAL_VULKAN_SPLIT_RESIDENT_BRIDGE_RUNTIME_2026-08-14.md)
+- Exact FEX-2608 real generated Vulkan split: [`FEX2608_REAL_VULKAN_SPLIT_RESIDENT_RUNTIME_2026-08-14.md`](./FEX2608_REAL_VULKAN_SPLIT_RESIDENT_RUNTIME_2026-08-14.md)
+- Real generated Vulkan split X11 callbacks: [`REAL_VULKAN_SPLIT_X11_CALLBACK_RUNTIME_2026-08-14.md`](./REAL_VULKAN_SPLIT_X11_CALLBACK_RUNTIME_2026-08-14.md)
+- Real Vulkan callback descriptor integration: [`REAL_VULKAN_CALLBACK_DESCRIPTOR_RUNTIME_2026-08-14.md`](./REAL_VULKAN_CALLBACK_DESCRIPTOR_RUNTIME_2026-08-14.md)
+- Whole-wrapper NODELETE Vulkan PFN: [`NODELETE_REAL_VULKAN_CANDIDATE_RUNTIME.md`](./NODELETE_REAL_VULKAN_CANDIDATE_RUNTIME.md)
+- Whole-wrapper NODELETE Vulkan X11 callbacks: [`NODELETE_REAL_VULKAN_X11_CALLBACK_RUNTIME.md`](./NODELETE_REAL_VULKAN_X11_CALLBACK_RUNTIME.md)
 - Current repair decision: [`CURRENT_REPAIR_DECISION_2026-08-14.md`](./CURRENT_REPAIR_DECISION_2026-08-14.md)
-- NODELETE real Vulkan PFN: [`NODELETE_REAL_VULKAN_CANDIDATE_RUNTIME.md`](./NODELETE_REAL_VULKAN_CANDIDATE_RUNTIME.md)
-- NODELETE real Vulkan X11 callback: [`NODELETE_REAL_VULKAN_X11_CALLBACK_RUNTIME.md`](./NODELETE_REAL_VULKAN_X11_CALLBACK_RUNTIME.md)
-- Standalone split bridge model: [`SPLIT_BRIDGE_RUNTIME_EXPERIMENT.md`](./SPLIT_BRIDGE_RUNTIME_EXPERIMENT.md)
 
 ## Contribution and contact boundary
 
