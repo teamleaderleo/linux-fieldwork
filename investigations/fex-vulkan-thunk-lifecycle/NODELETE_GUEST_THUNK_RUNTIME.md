@@ -35,13 +35,9 @@ old unpacker after dlclose         0x00007ffff7da2190 -> ... r-xp .../nodelete/g
 
 The fixture normally treats surviving guest executable mappings as a failure because its unload mode is designed to prove physical reclamation. A follow-up carrier is therefore being used to accept expected NODELETE survival and continue into the retained H→T and host→guest callback call probes.
 
-## Real generated Vulkan guest wrapper build
+## Real generated guest-wrapper builds
 
-Owned-FEX branch `ci/agent-m-arm64-20260814`, commit `333be356c29994499478bd5494e2da0516ca22c9`.
-
-Hosted ARM64 run `31771633918`, job `94678611157`, artifact `9208362750`.
-
-The diagnostic changes only the generic guest-thunk CMake helper:
+Owned-FEX branch `ci/agent-m-arm64-20260814` applies only this policy in the generic `add_guest_lib()` helper:
 
 ```cmake
 if (TARGET_TYPE STREQUAL "SHARED")
@@ -49,7 +45,9 @@ if (TARGET_TYPE STREQUAL "SHARED")
 endif()
 ```
 
-FEX's real thunk generator then successfully builds the actual 64-bit x86 Vulkan guest wrapper. The result remains a normal generated FEX Vulkan wrapper:
+### Vulkan
+
+Run `31771633918`, job `94678611157`, artifact `9208362750`, commit `333be356c29994499478bd5494e2da0516ca22c9` successfully built the actual 64-bit x86 Vulkan guest wrapper. It retained its generated FEX identity and SONAME while gaining NODELETE:
 
 ```text
 ELF 64-bit LSB shared object, x86-64
@@ -58,7 +56,27 @@ FLAGS_1: NODELETE
 REAL_VULKAN_GUEST_NODELETE_OK
 ```
 
-This proves the generic lifetime policy is compatible with the real Vulkan guest thunk generator, generated linker inputs, and SONAME override. It is not limited to the synthetic DSO.
+### Representative matrix
+
+Run `31771955071`, job `94679544293`, artifact `9208477160`, commit `ca4390de6024f8225fca7710b574fed371f558db` widened the same generic policy across four real generated guest wrappers representing both lifetime classes observed in this investigation:
+
+```text
+REAL_vulkan_NODELETE_OK
+REAL_GL_NODELETE_OK
+REAL_wayland_client_NODELETE_OK
+REAL_cuda_NODELETE_OK
+```
+
+Each output was a real x86-64 FEX guest DSO with its expected SONAME and `FLAGS_1: NODELETE`:
+
+- Vulkan: `libvulkan.so.1`
+- OpenGL: `libGL.so.1`
+- Wayland client: `libwayland-client.so.0.20.0`
+- CUDA: `libcuda.so.1`
+
+The build matrix covers dynamic H→T/proc-address users (Vulkan, GL, CUDA) and persistent host→guest callback/unpacker users (Vulkan/GL X11 helpers and Wayland listener machinery). No per-library build exception was required.
+
+This demonstrates that the NODELETE policy can live centrally in `add_guest_lib()` instead of growing library-specific lifetime flags. A 32-bit guest-thunk build remains the main compile-policy gate still worth checking.
 
 ## Existing real-workload control
 
@@ -75,7 +93,7 @@ A NODELETE policy intentionally changes guest thunk wrapper lifetime semantics:
 
 Those costs should be evaluated against the existing host side, whose thunk DSOs are already retained for process lifetime and whose hidden cross-ISA references can otherwise survive guest-wrapper unload.
 
-The policy can be applied centrally in `add_guest_lib()`, covering generated shared guest thunks in one place. A full-policy test should still cover representative Vulkan, OpenGL, Wayland, CUDA, and 32-bit wrappers.
+The policy can be applied centrally in `add_guest_lib()`, covering generated shared guest thunks in one place.
 
 ## Relation to the unload-preserving design
 
