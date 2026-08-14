@@ -1,0 +1,22 @@
+CUDA isolated retained-callback ownership trace
+run=31788089785
+
+local:
+  exit=139
+  trampoline=0x7ffff7e5b000
+  GuestUnpacker=0x7ffff7ea8040
+  GuestTarget=0x56042b4e3980
+  GuestUnpacker_in_retired_wrapper=1
+
+resident:
+  exit=0
+  trampoline=0x7ffff7e24000
+  GuestUnpacker=0x7ffff7e75610
+  GuestTarget=0x557764ac0980
+  GuestUnpacker_in_retired_wrapper=0
+  callback_count=1
+
+Interpretation:
+  The process-resident CUDA sidecar changes the concrete GuestUnpacker embedded in FEX's HostToGuestTrampoline. The local unpacker is retired with generation 1 and faults after moved reload; the resident unpacker is outside those retired mappings and the retained native registration succeeds.
+
+The earlier sequential same-job resident=139 result is superseded; cause of that harness contamination remains unspecified.
