@@ -77,6 +77,37 @@ Owned branch `ci/agent-o-arm64-20260814`, commit `03091aa757df5c42af71c3b2c29e9b
 
 The real generated Vulkan guest wrapper linked through lld (`-fuse-ld=lld`), preserved `SONAME libvulkan.so.1`, and carried `FLAGS_1: NODELETE`. This verifies the central policy under both the default guest linker configuration and FEX's lld guest-thunk mode.
 
+## Measured 64-bit wrapper residency footprint
+
+A follow-up hosted ARM64 measurement run `31775283101`, artifact `9209667954`, FEX carrier commit `fde99a4d92cf41a902b40c7b0fb6cb07a86bf9e4` rebuilt the same eight real x86-64 shared guest wrappers with the generic NODELETE policy and recorded both on-disk ELF size and the sum of ELF `PT_LOAD` `p_memsz` values.
+
+The measured wrapper-only totals are:
+
+```text
+WRAPPER_COUNT=8
+FILE_BYTES_TOTAL=10598320
+PT_LOAD_MEMSZ_TOTAL=1771423
+FILE_MIB_TOTAL=10.107
+PT_LOAD_MIB_TOTAL=1.689
+```
+
+Per wrapper:
+
+| guest wrapper | ELF file bytes | summed PT_LOAD memsz bytes | direct NEEDED entries |
+| --- | ---: | ---: | --- |
+| asound | 1,076,888 | 257,381 | `libc.so.6` |
+| vulkan | 2,255,776 | 294,421 | `libstdc++.so.6`, `libgcc_s.so.1`, `libc.so.6` |
+| drm | 138,856 | 28,893 | `libc.so.6` |
+| wayland-client | 266,568 | 30,529 | `libstdc++.so.6`, `libgcc_s.so.1`, `libc.so.6` |
+| VDSO | 12,072 | 2,008 | none |
+| GL | 5,504,296 | 965,941 | `libX11.so.6`, `libstdc++.so.6`, `libgcc_s.so.1`, `libc.so.6` |
+| EGL | 31,984 | 6,401 | `libGL.so.1`, `libc.so.6` |
+| cuda | 1,311,880 | 185,849 | `libstdc++.so.6`, `libgcc_s.so.1`, `libc.so.6` |
+
+This is useful specifically because the approximately 10.1 MiB aggregate file size overstates the directly mapped wrapper footprint: debug/unmapped ELF content is part of those files, whereas the summed loadable segment memory for all eight wrappers is only about 1.69 MiB. GL dominates the measured wrapper memory at about 0.92 MiB; the Vulkan wrapper is about 0.28 MiB.
+
+This is **not** a complete process-memory cost measurement. It does not quantify dirty RSS/PSS, allocator state, loader metadata, generated/JIT state, or dependency closure. In particular GL directly depends on guest `libX11.so.6`, EGL depends on guest `libGL.so.1`, and Vulkan opens X11 manually in `OnInit()`. The result therefore weakens a wrapper-text/data residency objection to generic NODELETE, but it does not establish a 1.69 MiB total runtime cost ceiling.
+
 ## Result
 
 The central `add_guest_lib()` location has green compile/link evidence across:
@@ -87,5 +118,7 @@ The central `add_guest_lib()` location has green compile/link evidence across:
 - FEX's alternate lld guest-thunk linker mode.
 
 No library-specific or linker-specific NODELETE exception has appeared.
+
+The measured aggregate loadable-memory footprint of the eight current 64-bit wrapper DSOs is about 1.69 MiB before dependency/RSS effects, so the currently measured direct wrapper-residency cost is modest relative to the lifecycle safety benefit under investigation.
 
 All CI/source edits described here are diagnostic work on owned fork/investigation surfaces. No upstream FEX interaction occurred.
