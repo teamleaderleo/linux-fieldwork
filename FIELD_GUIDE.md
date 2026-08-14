@@ -34,6 +34,9 @@ A convincing report is not the goal. The goal is a bounded technical claim that 
 - Make the probe fail on the old or deliberately broken behavior.
 - Assert the complete contract, not one convenient symptom.
 - Include a passing control so the classifier or detector cannot label every transcript as failure.
+- When a patch changes ownership, publication, release, or reuse across a lifecycle boundary, pair the failure regression with a successful-lifecycle control where practical. The regression should keep the historical failure dead; the success control should keep the intended state transition alive through later refactors.
+- Assert both sides of an ownership handoff. A live replacement should remain owned across interruption, while a dead predecessor should eventually become releasable or reusable after successful cleanup. If release is staged, check the meaningful intermediate state as well as the final endpoint.
+- Keep assertion and expectation text tied to the invariant being checked rather than an incidental implementation assumption. For example, distinguish “allocator returns a different live-safe cluster” from “allocator must reuse an existing free cluster” when extension is also valid.
 - Exercise failure, interruption, cleanup, and a clean rerun where relevant.
 - Preserve the first meaningful failure and enough context to reproduce it.
 - Prefer real local protocols, processes, filesystems, archives, and package tools over passive text inspection when execution is safe.
@@ -221,7 +224,7 @@ Ask these questions in order:
 1. What exact claim is being made?
 2. Which source line or operation owns it?
 3. Does the test fail for the old behavior?
-4. Does it assert the full written contract?
+4. Does it assert the full written contract, including both failure and successful lifecycle behavior when ownership, cleanup, or reuse changes?
 5. Did the intended exact-head job actually run?
 6. What happens on failure, interruption, retry, and rerun?
 7. What state survives: files, modes, processes, descriptors, sockets, mounts, locks, environment, cache entries, or metadata?
@@ -274,4 +277,4 @@ Avoid broad exploration that cannot name a distinguishing result, cleanup bounda
 
 Add a new entry when the same mistake or successful technique appears more than once, or when one finding generalizes cleanly across targets. Keep exact transcripts and one-off details in their investigation records; keep this guide focused on reusable judgment.
 
-Version boundary: lessons retained from Linux Fieldwork work through 2026-08-01. Revalidate tool-, distribution-, and upstream-specific details when they change.
+Version boundary: lessons retained from Linux Fieldwork work through 2026-08-14. Revalidate tool-, distribution-, and upstream-specific details when they change.
