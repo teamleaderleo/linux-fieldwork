@@ -1,0 +1,33 @@
+Split resident bridge: both FEX bridge directions after wrapper unload
+
+Local architecture: x86_64
+Primary result:
+SPLIT_TWO_BRIDGES_PASS T=<ASLR> U=<ASLR> post_unload_host=42 post_unload_callback=42 generations=1001 host_calls=2002 callback_calls=2002 wrapper_unmapped=1
+
+Sanitizer result:
+The same 1001-generation model was rebuilt with -fsanitize=address,undefined, -fno-omit-frame-pointer. ASAN_OPTIONS=detect_leaks=0 and UBSAN_OPTIONS=halt_on_error=1 completed with the same PASS line and no AddressSanitizer or UBSan diagnostic.
+
+Model ownership:
+- external target DSO remains loaded and supplies H (native host target) and G (guest callback target analogue);
+- NODELETE bridge DSO supplies T (guest-to-host adapter) and U (host-to-guest unpacker);
+- ordinary wrapper DSO owns resettable generation state only;
+- each generation calls T(H) and U(G) while wrapper is mapped, then dlcloses wrapper to zero mappings and calls both again;
+- wrapper reopens with reset static state while T and U remain numerically stable;
+- 1001 generations produce 2002 calls through each bridge and no wrapper residency.
+
+SHA-256, unsanitized sources/results:
+external.c f18ce721100e5d16e709595c3a3e2b845af90b787f8e40d878c0635e197a874a
+bridge.c   bf4c9158a8e4ef4a11c965e0c9c4a8a3e01c97d5af40a56aa3937f9966d03f72
+wrapper.c  6dd319fe34d117f4ec1b7ce53e10121996a0301e54300841cac5f39d44ac7110
+split2.c   d4708c2345c3c85b1136354e2cfc39d8f24330104dda4380df98b7b19a88d573
+result     e1739ecc8d3c57c55d87f703aaee3956cca931f7c46a60b32f1581639910db13
+sanitized result 246a9508b7c9bb9c2822a9730f2edeec31299360f3fea5b76519531c53dfebbf
+
+FEX correspondence:
+T models CallHostFunction<signature> code captured by native-PFN CustomIR H -> T.
+U models CallbackUnpack<signature>::Unpack stored as GuestUnpacker in a host-owned TrampolineInstanceInfo.
+H models a native PFN whose host/native library lifetime is longer than the guest wrapper.
+G models an application or other guest-DSO callback target whose lifetime is independent of the thunk wrapper.
+
+Conclusion boundary:
+Moving T and U into a process-resident bridge image is sufficient in this loader model to remove the guest-wrapper unload dependency from both FEX-created bridge directions while preserving true wrapper unload/reset semantics. This does not prove FEX generator integration, resolve raw-H alias/provenance ambiguity, or make an independently unloaded G safe.
