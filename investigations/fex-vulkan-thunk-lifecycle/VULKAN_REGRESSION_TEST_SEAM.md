@@ -53,6 +53,8 @@ No current matrix entry has `matrix.arch[1] == 'x64'`, so both `thunk_functional
 
 A repository-wide search found `thunk_functional_tests_thunks` referenced only by its CMake target and this `ccpp.yml` workflow; there is no second workflow silently providing equivalent coverage.
 
+The separate `.github/workflows/hostrunner.yml` does have a `[self-hosted, x64]` matrix, but it builds in x86-host-debug mode and runs only the ASM test target. It does not run `thunk_functional_tests_thunks` or otherwise replace the missing Vulkan/GL thunk-functional execution.
+
 Therefore adding a Vulkan regression only to `ThunkFunctionalTests` would not currently protect the main Build + Test workflow until the CI gate is repaired or the test is also wired into an active test path.
 
 ## Recommendation
