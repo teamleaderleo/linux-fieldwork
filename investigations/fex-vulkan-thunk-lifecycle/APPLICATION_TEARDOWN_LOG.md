@@ -69,6 +69,11 @@ dlopen(libvulkan.so.1)
 
 It prints guest Vulkan mapping counts and all dynamic PFN values around teardown.
 
+### Controls
+
+- `pin`: takes a second Vulkan `dlopen` reference and intentionally keeps it live through normal process return.
+- `bogus`: loads an unrelated no-op guest DSO and keeps it live through return. This tests whether merely retaining some unrelated DSO changes teardown behavior.
+
 ### Pin-control correction
 
 The first draft acquired a second `dlopen` handle but released it just before returning. That would test a second final unload rather than the field pin control.
@@ -80,7 +85,26 @@ Relevant owned-fork commits:
 ```text
 2d73f7050b97c129a436898f3eb3830715ec0183  initial application probe
 53b6e02dcab3740b201d38e8b36f2ecf0745937c  keep pin alive through process return
+e6f7e115f96bc55eb093b48da36df1d394f35fc9  add unrelated-DSO control
+5f08232b4c7ab85c096b2a4d2c55ac64b73c5433  hosted stock/candidate A-B workflow
 ```
+
+Hosted run started as Actions run `31776908562` on `ubuntu-24.04-arm`.
+
+## Concurrency proof boundary
+
+The existing green multithread retirement test on `ci/thunk-lifetime-race-20260814` is useful but narrower than a true in-flight race.
+
+Its worker thread:
+
+1. calls `H` once to populate that thread's lookup cache;
+2. stops at an atomic phase barrier;
+3. the main thread unloads the old guest DSO, forces a changed-base reload, and registers generation 2;
+4. only then is the worker released to call `H` again.
+
+Therefore that test proves **cross-thread cached-entry eviction and fresh lookup after retirement**. It does not prove safety for a peer thread that has already selected or entered translated `H` while retirement/unmap occurs.
+
+This distinction is now an explicit remaining item. A future in-flight stress case should be classified carefully because unloading a DSO while another application thread is executing its code may itself be outside normal loader guarantees; the most relevant FEX case is an internally retained bridge/callback that can still be executing when its guest-code dependency retires.
 
 ## Experiment policy
 
