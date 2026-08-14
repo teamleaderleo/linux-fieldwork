@@ -41,6 +41,19 @@ The exact Fieldwork revision used by the final hosted run was:
 
 `8aab7fb4412948b040e1886bb9aa252205ded9c7`
 
+## Packaged internal FEX source branch
+
+The exact validated Fieldwork script was applied to the exact tested base and committed as one `Host.cpp` change in the owned fork:
+
+- branch: `fix/vulkan-instance-pnext-callback-restoration`
+- base: `c011366706eaf65a00380003989b3a10811212b6`
+- candidate commit: `27bf25d9fd2f918c577e302cda56bb733cdd04dd`
+- commit subject: `ThunkLibs/vulkan: preserve instance pNext callback inputs`
+- source diff: 22 insertions, 11 deletions, one file (`ThunkLibs/libvulkan/Host.cpp`)
+- packaging workflow run: `31797245058`
+
+The packaging workflow asserted both the base FEX SHA and Fieldwork SHA before applying the script, ran `git diff --check`, asserted exactly one modified file, then committed and pushed the resulting source branch.
+
 ## Final hosted receipt
 
 Workflow run:
