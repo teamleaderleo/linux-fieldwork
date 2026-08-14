@@ -106,6 +106,26 @@ Therefore that test proves **cross-thread cached-entry eviction and fresh lookup
 
 This distinction is now an explicit remaining item. A future in-flight stress case should be classified carefully because unloading a DSO while another application thread is executing its code may itself be outside normal loader guarantees; the most relevant FEX case is an internally retained bridge/callback that can still be executing when its guest-code dependency retires.
 
+## Destructive mapping-path audit
+
+The current integrated owner retirement is hooked into guest `munmap`. FEX has several other guest memory operations that can remove, replace, move, or de-execute the guest target range without naturally touching the synthetic/native key `H`:
+
+- `GuestMmap`: after mapping, FEX calls ordinary `InvalidateCodeRangeIfNecessary` on the new mapping range. A `MAP_FIXED` mapping can replace an existing executable range.
+- `GuestMremap`: FEX tracks the move/resize and calls `InvalidateCodeRangeIfNecessaryOnRemap` on the old/shrunk range.
+- `GuestMprotect`: FEX updates VMA protection and calls ordinary range invalidation.
+- `GuestShmdt`: FEX tracks the detached range and calls ordinary range invalidation.
+
+Those ordinary invalidation helpers are SMC-policy gated, and—more importantly for this investigation—the synthetic CustomIR entrypoint is keyed by `H`, while the affected page contains `T`. The earlier source/runtime work established that CustomIR-generated blocks do not have the normal guest-page reverse ownership needed for range invalidation to discover `H`.
+
+So a production lifetime design should not treat `munmap` as the only retirement event. The more general invariant is:
+
+```text
+any operation that destroys or invalidates executable ownership of guest target T
+    => retire/re-evaluate every FEX bridge that depends on T
+```
+
+A follow-up real-FEX discriminator should cover at least `MAP_FIXED` replacement and execute-permission removal. `mremap`/`shmdt` should be folded into the same dependency-retirement hook rather than each inventing separate thunk-specific logic.
+
 ## Experiment policy
 
 All writes and Actions work stay inside repositories owned by `teamleaderleo`. No third-party/upstream comments, PRs, issues, reviews, reactions, or backlink-producing references will be created.
