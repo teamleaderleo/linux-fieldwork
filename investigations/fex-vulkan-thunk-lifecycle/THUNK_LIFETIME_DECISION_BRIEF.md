@@ -86,7 +86,9 @@ unmap=139
 
 ### "The address identifies the owner"
 
-`MAP_FIXED` can replace executable generation 1 with generation 2 at the same numeric address. The owner-ID runtime gate now demonstrates the target mapping changing from `0xe` to `0xf` across successful same-address replacement, while an RX->RW->RX `mprotect` cycle preserves owner `0xe` and exposes the modified code through the existing H path.
+`MAP_FIXED` can replace executable generation 1 with generation 2 at the same numeric address. The owner-ID runtime gate demonstrates the target mapping changing from `0xe` to `0xf` across successful same-address replacement, while an RX->RW->RX `mprotect` cycle preserves owner `0xe` and exposes the modified code through the existing H path.
+
+The next claim-layer gate is also green: the same H and same numeric T register as two distinct fresh claims when their owner IDs differ.
 
 ### "Promote only the base namespace"
 
@@ -114,7 +116,7 @@ See [`MAP_FIXED_ROLLBACK_LOG.md`](./MAP_FIXED_ROLLBACK_LOG.md).
 
 ### VMA owner-ID propagation is green
 
-The VMA prototype adds non-reusable owner IDs and the hosted runtime matrix now demonstrates:
+The VMA prototype adds non-reusable owner IDs and the hosted runtime matrix demonstrates:
 
 ```text
 failed MAP_FIXED                  -> no replacement owner; old H -> T claim restored
@@ -123,15 +125,40 @@ successful + fresh claim          -> generation 2 returns 222
 mprotect RX/RW/RX                 -> OwnerID 0xe preserved; modified code returns 333
 ```
 
-This gives the next claim experiment a concrete identity key:
+See [`VMA_OWNER_ID_LOG.md`](./VMA_OWNER_ID_LOG.md).
+
+### Retained thunk claims now carry owner identity
+
+The next runtime layer promotes retained H -> T claims to generation-aware identity:
 
 ```text
 {T, OwnerID}
 ```
 
-The in-flight select-before-unmap race stays separate; owner identity fixes ABA/future claims and cannot revoke executable state already selected by another thread.
+The decisive same-address ABA run records:
 
-See [`VMA_OWNER_ID_LOG.md`](./VMA_OWNER_ID_LOG.md).
+```text
+H = 0x700000020000
+T = 0x7ffff7ec4000
+
+generation 1: owner=0xe new=1
+generation 2: owner=0xf new=1
+```
+
+Both generations use the same H and same numeric T. The second registration still becomes a distinct fresh claim because its mapping-generation owner differs.
+
+The full matrix remains:
+
+```text
+claim-map-fixed-fail=0
+claim-map-fixed=139
+claim-map-fixed-reregister=0
+claim-mprotect-owner=0
+```
+
+This closes the future-claim ABA hole in the research model while leaving the already-proven select-before-unmap execution race separate.
+
+See [`OWNER_CLAIM_ID_LOG.md`](./OWNER_CLAIM_ID_LOG.md).
 
 ### Nested DRM callbacks can be generated
 
@@ -214,13 +241,13 @@ The clean presentation order is:
 6. show the in-flight race as the reason full reclamation is a separate, heavier mechanism;
 7. ask maintainers which lifetime contract they actually want.
 
-Lead with the small ownership decision. The owner-ID/transaction/quiescence work defines the true-unload boundary, while the resident bridge removes most generated helper code from that difficult path.
+Lead with the small ownership decision. The owner-ID/transaction/claim-identity work now defines future-dispatch generation identity cleanly; execution quiescence remains the separate true-reclamation boundary.
 
 ## Recommended engineering work now
 
 ### High value / low ambiguity
 
-- promote thunk claims from plain T values to `{T, OwnerID}` and run the same ABA/rollback matrix;
+- bind retained callback-target registrations to OwnerID and run a separately unloadable callback-target DSO discriminator;
 - run a generated 32-bit resident-bridge PFN + callback proof;
 - measure incremental mapping/RSS/PSS cost of split bridge versus whole-wrapper NODELETE;
 - connect generated nested callback-member signatures to resident callback unpackers;
@@ -258,6 +285,7 @@ Start here:
 - [`CURRENT_MAIN_LIFETIME_AUDIT_20260814.md`](./CURRENT_MAIN_LIFETIME_AUDIT_20260814.md)
 - [`MAP_FIXED_ROLLBACK_LOG.md`](./MAP_FIXED_ROLLBACK_LOG.md)
 - [`VMA_OWNER_ID_LOG.md`](./VMA_OWNER_ID_LOG.md)
+- [`OWNER_CLAIM_ID_LOG.md`](./OWNER_CLAIM_ID_LOG.md)
 - [`DRM_NESTED_CALLBACK_GENERATOR_PROTOTYPE.md`](./DRM_NESTED_CALLBACK_GENERATOR_PROTOTYPE.md)
 - [`HOSTED_VULKANINFO_SPLIT_BRIDGE_AB_2026-08-14.md`](./HOSTED_VULKANINFO_SPLIT_BRIDGE_AB_2026-08-14.md)
 
@@ -265,6 +293,6 @@ Start here:
 
 This brief is for internal decision-making. Current hosted Ubuntu does not reproduce the historical Apple M5 teardown edge.
 
-The generic lifetime mechanism, principal repair families, transaction rollback, and VMA owner-ID separation have independent owned-fork runtime evidence. The remaining generic gates are 32-bit bridge execution, loader-namespace semantics, resident-memory accounting, and actual callback-target reclamation.
+The generic lifetime mechanism, principal repair families, transaction rollback, VMA owner-ID separation, and generation-aware retained claim identity have independent owned-fork runtime evidence. The remaining generic gates are 32-bit bridge execution, loader-namespace semantics, resident-memory accounting, and actual callback-target reclamation.
 
 No upstream FEX contact is authorized or performed by this record.
