@@ -1,54 +1,151 @@
 # FEX integration notes
 
-Owned source mirror: `teamleaderleo/FEX` at FEX-2608 commit `e869aa644a16e4332cdc15c1ea0b4d13d482385d`. FEX upstream remains untouched.
+Owned source/research surfaces only. FEX upstream remains untouched.
 
-## Source lifecycle map
+## Current source lifecycle map
 
-`ThunkFunctions::LinkAddressToGuestFunction` receives only a native function address and a guest target, then calls `AddThunkTrampolineIRHandler(native, guest_target)`. No guest DSO identity, mapping identity, generation, or unload token crosses that API.
+`ThunkFunctions::LinkAddressToGuestFunction` receives a native function address H and guest target T, then calls `AddThunkTrampolineIRHandler(H, T)`. The current API does not carry guest DSO identity, mapping generation, or signature ownership.
 
-[`Thunks.cpp`](https://github.com/teamleaderleo/FEX/blob/e869aa644a16e4332cdc15c1ea0b4d13d482385d/Source/Tools/LinuxEmulation/Thunks.cpp)
+`ContextImpl::AddThunkTrampolineIRHandler` installs a synthetic CustomIR entry keyed by the native H address. In the existing design the generated handler captures T and emits an exit to that guest address.
 
-`ContextImpl::AddThunkTrampolineIRHandler` installs a CustomIR handler keyed by the native entrypoint. The handler captures `GuestThunkEntrypoint` and emits an exit to that guest address. Duplicate native PFNs are explicitly possible in Vulkan aliases. `RemoveCustomIREntrypoint` already erases a CustomIR key and requests guest-code invalidation, but the thunk API has no load-instance bulk-removal boundary.
+The Vulkan guest wrapper builds its dynamic name→invoker table from `GetCallerForHostFunction(name)`. Those `CallHostFunction<signature>` instantiations currently live inside `libvulkan-guest.so`, so an H registration held in process-owned FEX state can name executable code owned by an unloadable guest wrapper generation.
 
-[`Core.cpp`](https://github.com/teamleaderleo/FEX/blob/e869aa644a16e4332cdc15c1ea0b4d13d482385d/FEXCore/Source/Interface/Core/Core.cpp)
+The host→guest callback side independently retains guest `GuestUnpacker` and `GuestTarget` addresses. The preferred callback prototype now keeps escaped host trampoline bytes immutable and moves revocable lifetime state into an FEX-owned descriptor.
 
-The host->guest callback side independently stores raw `GuestUnpacker` and `GuestTarget` values in `TrampolineInstanceInfo`, and caches trampolines by those guest addresses. Therefore a PFN-only deregistration leaves another stale-address class alive.
+## Runtime facts now established
 
-## Integration implication
+### Generated Vulkan moved-reload defect
 
-A winning implementation needs an explicit guest-thunk load identity shared by both bridge directions. Conceptually:
+A real generated-Vulkan stock/candidate A/B uses `vkGetInstanceProcAddr(NULL, "vkEnumerateInstanceVersion")`, forces the guest Vulkan wrapper to reload at a different guest base, and keeps the generated guest/host thunk binaries byte-identical across phases.
+
+Observed:
 
 ```text
-begin load -> obtain load token/generation
-register PFN bridge under token
-register callback bridge under token
-begin unload -> mark token draining
-revoke/rebind PFN and callback entries
-invalidate translated paths
-wait for active executions using token
-allow guest DSO unmap
-reclaim empty metadata
+stock_hold=0
+stock_close=139
+stock_reload=139
+candidate_hold=0
+candidate_close=139
+candidate_reload=0
 ```
 
-Compatible aliases sharing one native PFN need owner stacking or canonicalization so unloading the newest owner can reveal an older live owner. Incompatible bridge ABIs sharing one PFN need rejection or a richer dispatch key.
+The same native PFN H is returned across generations while the guest invoker T moves. Stock accepts the generation-2 registration but the newly reacquired PFN still crashes. Exact retirement/revocation followed by reactivation to T2 makes the call succeed.
 
-## Code-cache / thread-safety question
+See `../REAL_VULKAN_PFN_LIFETIME_AB_2026-08-14.md`.
 
-The source comments that thunk entrypoints do not get cached, which reduces persistent-cache concerns. The unresolved requirement is execution quiescence: after CustomIR removal and guest-code invalidation, can a thread already committed to the old guest target survive until the DSO is unmapped underneath it?
+### All-thread future-dispatch retirement is required
 
-The source read did not establish a synchronous guarantee strong enough to answer yes. If FEX invalidation already waits for those executions, it can supply the drain phase. Otherwise an explicit execution lease or equivalent quiescence mechanism is required.
+A worker can hold a hot H lookup after another thread retires the owner. Removing only shared state and the current thread cache is insufficient. The exact synthetic H must be invalidated from every live emulation thread's lookup cache when using baked-target compiled blocks.
 
-The conceptual invalidation order remains:
+### Execution quiescence is **not** supplied by cache invalidation
 
-`generation_draining > bridge_invalidate > code_invalidate > execution_drain > unmap`
+This is no longer an open source question.
 
-The drain must avoid holding locks required by callbacks or translated threads as they leave the retiring generation.
+A runtime barrier forced this sequence:
 
-## Exact remaining uncertainty
+```text
+worker selects T1 -> HostCode1
+worker leaves lookup/invalidation guard
+worker pauses
+teardown removes H definition + shared mapping + H from every thread cache
+teardown physically unmaps T1 owner
+worker resumes already-selected HostCode1
+SIGSEGV
+```
 
-1. The real crash proves execution reaches the old Vulkan guest image after unmap, but does not identify the final surviving holder: PFN CustomIR, host callback trampoline, another bridge, or translated execution retaining a guest PC.
-2. The exact guest-loader pre-unmap hook that can issue/retire a load token has not been demonstrated in a full FEX run.
-3. Existing code invalidation may already provide sufficient quiescence; the source read did not prove it.
-4. The seven variants were executed as a local lifecycle model. Full-FEX integration remains the validation gate.
+The pin control resumes and returns successfully.
 
-External precedent from the parent investigation: [FEX Vulkan callback PR #1803](https://redirect.github.com/FEX-Emu/FEX/pull/1803).
+Therefore:
+
+> future lookup retirement cannot revoke a transfer whose host-code selection already escaped the lookup/invalidation critical section.
+
+Any physical-unload design must add execution ownership/quiescence, use a process-lived final bridge target, or keep the wrapper generation resident.
+
+See `../TWENTIETH_PASS_INFLIGHT_SELECTION_RUNTIME.md`.
+
+### Existing thread Pause is not an execution drain
+
+FEX's pause machinery saves interrupted execution and later restores it. It is also external-control machinery rather than a guest-`munmap` primitive. Pausing a thread that already owns a selected old-generation transfer preserves the stale context rather than draining it.
+
+See `../TWENTY_SECOND_PASS_PAUSE_IS_NOT_EXECUTION_DRAIN.md`.
+
+### Failed `munmap` requires transaction semantics
+
+Eager pre-unmap retirement can kill H even when an invalid `munmap` returns `EINVAL` and the old code remains mapped. Product retirement therefore needs prevalidation, rollback, or a two-phase transaction.
+
+### Callback descriptor is preferred over mutable trampoline state
+
+The successful descriptor prototype uses:
+
+```text
+escaped immutable host trampoline
+    -> process-lived descriptor
+         atomic LIVE / REVOKED
+         GuestUnpacker
+         GuestTarget
+```
+
+Moved reload and same-address ABA pass, and the descriptor design also coexists successfully with the real generated-Vulkan PFN lifetime candidate.
+
+## Integration families
+
+### 1. Keep generated guest wrappers resident
+
+A central guest-thunk `-z nodelete` policy has real Vulkan runtime coverage for both:
+
+- dynamic H→T PFNs retained across ordinary guest `dlclose()`;
+- retained Vulkan/X11 host→guest callbacks after ordinary guest `dlclose()`.
+
+Build coverage is green across the current 64-bit shared thunk set, representative real 32-bit thunking, VDSO's special link mode, and alternate lld thunk linking.
+
+This is the strongest demonstrated containment and avoids execution reclamation races by not reclaiming wrapper executable state.
+
+### 2. Split process-resident bridge runtime
+
+Move only generic signature-specific adapter/unpacker code that FEX stores or exposes process-long into a resident guest bridge runtime. Keep library-specific wrapper state unloadable.
+
+A standalone loader model already passes on x86-64 and AArch64. A stock-FEX synthetic thunk integration experiment is now the next gate.
+
+If successful, generator integration can reuse the existing generated signature/thunk identity rather than inventing a new ABI discriminator.
+
+### 3. Full owner-generation + execution lease/hazard
+
+For true physical reclamation of all bridge code, bridge entry/selection must publish execution ownership of the target generation and unload must prevent new acquisitions then wait for old acquisitions to leave.
+
+This is semantically complete but difficult in the current tail-transfer path. A prior simple active-counter/call-return prototype did not yield a usable runtime result.
+
+### 4. Generation-neutral target cell
+
+A stable compiled H block can load its current T from a process-lived cell and rebind generations without H cache replacement. This simplifies generation handoff but does not solve reclamation: another thread can load old T immediately before retirement and branch after unmap.
+
+## Owner and compatibility metadata
+
+A robust multi-owner implementation cannot discard non-winning H claims. Runtime evidence shows retaining compatible claims and promoting a surviving owner works.
+
+The preferred compatibility identity is FEX's existing generated signature/thunk hash. Current `LinkAddressToFunction(H,T)` does not carry this metadata, so a generic owner registry would need an API extension or another reliable way to resolve signature identity.
+
+For owner identity, raw guest target ranges are sufficient for diagnostics. A product implementation should reuse or extend FEX's existing VMA/load resource identity so one ELF load generation can own all relevant bridge claims across its VMAs.
+
+## Current ordering invariant for physical unload
+
+For a full-reclamation design the conceptual order is:
+
+```text
+identify owner generation
+validate / stage the unmap transaction
+mark generation draining / prevent new bridge acquisitions
+retire future H and callback lookup paths
+wait for already-acquired execution of that generation to leave
+physically unmap guest executable state
+commit owner/VMA retirement
+```
+
+The execution drain must not hold locks required by translated threads or callbacks as they leave the retiring generation.
+
+## Remaining workload-specific uncertainty
+
+The original Apple M5 `vulkaninfo` teardown proves execution reached the old unmapped Vulkan guest image and that pinning only `libvulkan-guest.so` changes exit 139 to exit 0. That historical trace did not capture the immediate terminal H/R11 or first post-unload synthetic-entry hit.
+
+The hosted generated-Vulkan stock/candidate A/B independently proves the dynamic-PFN lifetime defect and successful generation rebind; do not rewrite the original M5 receipt as if its exact final transfer was captured.
+
+All code discussed here is diagnostic/research code on owned surfaces. FEX contribution policy requires any upstream implementation to be independently derived and written by a human.
