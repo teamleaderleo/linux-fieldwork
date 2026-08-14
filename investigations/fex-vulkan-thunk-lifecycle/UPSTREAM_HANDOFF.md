@@ -1,125 +1,102 @@
 # FEX Vulkan callback-routing handoff
 
-## Scope
+## Status
 
-This note is the compact upstream-facing handoff for the hosted ARM64 investigation documented in `HOSTED_ARM64_VULKAN_LOAD_TRACE.md`.
+Finding A now has a deterministic hosted ARM64 reproduction, a clean two-commit candidate in the owned FEX fork, and an exact-head green runtime matrix.
 
-The source under test was:
+Canonical detailed receipt:
+
+```text
+investigations/fex-vulkan-thunk-lifecycle/CLEAN_CALLBACK_ROUTING_CANDIDATE.md
+```
+
+Longer hosted debugging history:
+
+```text
+investigations/fex-vulkan-thunk-lifecycle/HOSTED_ARM64_VULKAN_LOAD_TRACE.md
+```
+
+No upstream FEX state was changed.
+
+## Smallest bug statement
+
+FEX already has custom host implementations for Vulkan callback-sensitive functions, but the manual dynamic custom-function routing table omitted three of them:
+
+- `vkCreateDebugReportCallbackEXT`
+- `vkDestroyDebugReportCallbackEXT`
+- `vkCreateDebugUtilsMessengerEXT`
+
+Direct symbol lookup reaches the custom wrapper. `vkGetInstanceProcAddr()` could instead expose/map the native host callback-creating entrypoint. With an x86 guest under FEX on hosted ARM64 Lavapipe, callback creation succeeds and exercising the GIPA debug-report callback path terminates the host FEX process with SIGILL / exit 132.
+
+Historical intent is clear: `https://redirect.github.com/FEX-Emu/FEX/pull/1803` deliberately introduced the debug-report dummy callback workaround because generic guest-to-host callback delivery was unavailable. Finding A is a routing hole around that existing policy.
+
+## Product base
 
 ```text
 71afe476751deac24adabd1adb575fd2337b6e0a
 ```
 
-At the end of the investigation, that SHA was also the current `FEX-Emu/FEX` `main` commit. The reproduction and candidate therefore apply to current upstream main at the time of this note.
+That was current upstream FEX `main` when the reproduction was established.
 
-## Symptom
+The owned fork's `main` subsequently advanced seven fork-local authority/documentation commits, touching only `AGENTS.md`, `CONTRIBUTING.md`, and `CONTRIBUTORS.md`. The clean candidate branch remains based on the exact product source above so its execution receipts stay exact.
 
-With an amd64 guest under FEX on an ARM64 host, `VK_EXT_debug_report` behaves differently depending on how `vkCreateDebugReportCallbackEXT` is obtained.
-
-On current main with the repaired guest runtime:
-
-```text
-direct dlsym: exit 20, callback_count=0
-vkGetInstanceProcAddr: exit 132 / host SIGILL while firing the debug message
-```
-
-The direct route is the expected legacy FEX policy: callback creation succeeds, FEX substitutes a host dummy callback, and the guest callback is suppressed.
-
-The GIPA route bypasses that callback-safe custom implementation. It returns/maps the native host `vkCreateDebugReportCallbackEXT`, allowing an unsafe guest callback pointer to reach native Vulkan. Callback creation succeeds; exercising the callback path terminates the FEX host process.
-
-## Historical intent
-
-Upstream PR #1803, `ThunkLibs/vulkan: Work around lack of generic callback support in VK_EXT_debug_report`, deliberately introduced the custom `vkCreateDebugReportCallbackEXT` implementation that replaces the guest callback with a host dummy callback. The PR explicitly describes ignoring callbacks as the workaround and was tested on ARM/Lavapipe.
-
-The current bug is therefore a proc-address routing hole around an existing workaround.
-
-## Root cause in current code
-
-`fexfn_impl_libvulkan_vkGetInstanceProcAddr()` calls `LookupCustomVulkanFunction()` first and returns a custom implementation when that lookup succeeds.
-
-At the tested/current main SHA, `LookupCustomVulkanFunction()` contains many custom Vulkan routes but omits the debug callback creation family, including `vkCreateDebugReportCallbackEXT` and `vkCreateDebugUtilsMessengerEXT`.
-
-That omission lets GIPA expose the native callback-creating entrypoint through the generic host-function-pointer mapping path.
-
-## Candidate
-
-Fieldwork commit:
-
-```text
-1b268a6742768086aa8355e997c10b4423319ba6
-```
-
-contains:
-
-```text
-apply_native_first_callback_candidate.py
-```
-
-The candidate makes two related changes:
-
-1. Route callback-sensitive entrypoints through `LookupCustomVulkanFunction()`:
-   - `vkCreateDebugReportCallbackEXT`
-   - `vkDestroyDebugReportCallbackEXT`
-   - `vkCreateDebugUtilsMessengerEXT`
-2. For GIPA/GDPA custom substitutions, ask native Vulkan for the proc first and preserve a native `nullptr` result before returning a FEX custom implementation.
-
-The first change closes the demonstrated crash. The second preserves Vulkan proc-address availability semantics for extension commands.
-
-## Validation
-
-### Baseline reproduction
+## Baseline reproduction
 
 ```text
 Actions run: 31736385632
 job: 94568925322
-CI commit: 8ded2659370d3568ef89427e5a1ced3876ede2d9
 artifact: 9195430863
 artifact SHA-256: 96446e1a21f0acdcf9f4b25973116de48e7c78de0fa092500ad10ef63097f1ed
 ```
 
-Result:
+Observed:
 
 ```text
-direct=20
-gipa=132
+direct debug-report lookup: callback creation succeeds; guest callback suppressed by FEX dummy policy
+GIPA debug-report lookup: callback creation succeeds; firing terminates host FEX with SIGILL / 132
 ```
 
-Native ARM64 Lavapipe callback control succeeded.
+Native ARM64 Lavapipe callback control passed first.
 
-### Focused candidate confirmation
+## Clean owned-fork candidate
 
 ```text
-Actions run: 31739829897
-job: 94580235422
-CI commit: 51da719d001d09f7fd4dd54e6a23f2a7b3e86103
-artifact: 9196735724
-artifact SHA-256: dfadddc83314ad0e089922879de29008c32970ffae2695872657396d24b0f1e1
+repository: teamleaderleo/FEX
+branch: fix/vulkan-callback-proc-routing
+base: 71afe476751deac24adabd1adb575fd2337b6e0a
+head: 4f8130c298433a7a9165392d33fc0a3e6be3202b
+internal draft PR: teamleaderleo/FEX pull request 1
 ```
 
-Result:
+Two source-only commits:
 
 ```text
-report-direct=0
-report-gipa=0
+28a3a5bfbd31662bfc4bd316ada39037aebf4165
+ThunkLibs/vulkan: route callback custom implementations
+
+4f8130c298433a7a9165392d33fc0a3e6be3202b
+ThunkLibs/vulkan: preserve native proc availability
 ```
 
-Both paths match FEX's existing callback-suppression policy (`callback_count=0`) and complete cleanly.
+Commit 1 adds only the three missing callback-family custom routes.
 
-### Callback-family confirmation
+Commit 2 keeps native Vulkan authoritative for proc availability before custom substitution. It also preserves guest GIPA/GDPA self-entrypoint behavior after the host lookup succeeds.
+
+The split is intentional: commit 1 fixes callback safety, while commit 2 fixes a separately demonstrated proc-address semantics defect.
+
+## Why commit 2 is independently required
+
+Route-only run:
 
 ```text
-Actions run: 31740540778
-job: 94582568559
-CI commit: a5604fe3daf8ba1df7dcb75d1ee09cf405174900
-source: 71afe476751deac24adabd1adb575fd2337b6e0a
-candidate source: 1b268a6742768086aa8355e997c10b4423319ba6
-artifact: 9197014064
-artifact SHA-256: 3fcd6152df052be28a8ba2f02e663cca140d5e6971b6fb1ee455acf82e3531c3
+Actions run: 31775244618
+job: 94689229815
+source: 28a3a5bfbd31662bfc4bd316ada39037aebf4165
+artifact: 9209694610
+artifact SHA-256: b7bbd396b14c00c4ac61f3bbabc14b0d64aa3cd94fd0aa0f216abe0ac8cf9720
 ```
 
-Native ARM64 controls for both debug-report and debug-utils succeeded first.
-
-Candidate matrix:
+The four callback cases were safe:
 
 ```text
 report-direct=0
@@ -128,43 +105,79 @@ utils-direct=0
 utils-gipa=0
 ```
 
-Representative debug-report GIPA result:
+But custom-first lookup still produced non-null pointers for invalid NULL-instance queries:
 
 ```text
-CREATE_INSTANCE kind=report lookup=gipa result=0
-CREATE_CALLBACK result=0
-AFTER_FIRE callback_count=0 expected=0
-PROBE_FINISH callback_count=0 status=0
+GIPA(NULL, "vkCreateDebugReportCallbackEXT") -> non-null
+GIPA(NULL, "vkCreateShaderModule") -> non-null
 ```
 
-Representative debug-utils GIPA result:
+So native-first availability gating is not incidental cleanup.
+
+## Final exact-head validation
 
 ```text
-CREATE_INSTANCE kind=utils lookup=gipa result=0
-CREATE_MESSENGER result=0
-AFTER_FIRE callback_count=0 expected=0
-PROBE_FINISH callback_count=0 status=0
+Actions run: 31775612827
+job: 94690326823
+exact source: 4f8130c298433a7a9165392d33fc0a3e6be3202b
+CI workflow commit: 2519c13a1188548bb0ebabc0d48ec9d90bd2c580
+artifact: 9209835985
+artifact SHA-256: aca28b0387565742a372101bfd5bad399e03335898a2bceb641042acb05d208d
+artifact retention: 30 days
+runner: ubuntu-24.04-arm
 ```
 
-The candidate therefore covers both callback-creation families exercised by the probe while preserving the existing FEX suppression behavior.
+Native ARM64 Lavapipe report/utils controls passed first.
 
-## Harness note: the earlier Vulkan-load SIGILL
+Final x86/FEX matrix:
 
-The first hosted runs died during guest `dlopen("libvulkan.so.1")` before reaching the callback test. That was a minimal-rootfs error: the Vulkan guest constructor expects guest `libX11.so.6` symbols `XSync`, `XGetVisualInfo`, and `XDisplayString`. The bare rootfs supplied none, producing null guest targets and an intentional FEX assertion trap on the host.
+```text
+report-direct=0
+report-gipa=0
+utils-direct=0
+utils-gipa=0
+null-report=0
+null-shader=0
+self-gipa=0
+```
 
-Adding diagnostic non-null x86 X11 symbols changed the Vulkan guest load from exit `132` to exit `0`. That SIGILL belongs to the test harness and is separate from the callback-routing crash above.
+Negative proc-address checks:
 
-## Test placement
+```text
+GIPA(NULL, "vkCreateDebugReportCallbackEXT") -> null
+GIPA(NULL, "vkCreateShaderModule") -> null
+```
 
-`unittests/ThunkFunctionalTests` is the closest existing runtime suite. It currently drives installed programs such as `vulkaninfo` and contains no custom guest test source of its own. A precise regression for this bug therefore needs either:
+Self-query control created a real instance and confirmed:
 
-- a small guest callback-routing probe added to that functional-test machinery; or
-- another maintainers-preferred runtime test seam that can execute the same direct/GIPA callback creation cases under Vulkan thunks.
+```text
+GIPA(instance, "vkGetInstanceProcAddr") == direct guest GIPA
+GIPA(instance, "vkGetDeviceProcAddr") == direct guest GDPA
+returned GIPA can query vkDestroyInstance
+GIPA(NULL, "vkGetInstanceProcAddr") == direct guest GIPA
+GIPA(NULL, "vkGetDeviceProcAddr") == null
+```
 
-The end-to-end hosted receipts above already give a deterministic ARM64 reproduction and candidate A/B.
+This is the current strongest candidate/evidence pair.
 
-## Remaining patch decision
+## Hosted harness note
 
-Before upstream submission, decide how broad to make the native-availability guard. The demonstrated crash fix is the missing callback-family custom routing. The native-first lookup also protects extension availability semantics and passed the focused report/utils tests, while a dedicated negative test for an unavailable extension proc would make that portion of the patch independently demonstrated.
+The initial hosted Vulkan-load SIGILL was separate from Finding A. A bare amd64 Ubuntu rootfs lacked guest `libX11.so.6`; the Vulkan guest thunk constructor expects `XSync`, `XGetVisualInfo`, and `XDisplayString`, then FEX deliberately trapped while trying to build a host trampoline for a null guest target.
 
-Real guest debug callback delivery is a separate behavior change. This handoff keeps the current FEX policy: debug callbacks are suppressed safely instead of crossing the guest/host callback boundary.
+Adding inert x86-64 helper symbols changed guest Vulkan `dlopen()` from exit 132 to exit 0. The final callback result uses that repaired headless fixture.
+
+## Regression-test direction
+
+`unittests/ThunkFunctionalTests` is the closest current runtime suite, but it presently drives installed programs such as `vulkaninfo` rather than custom guest test binaries. A precise regression should exercise direct/GIPA callback creation and native-null proc semantics under Vulkan thunks.
+
+Separately, the source audit found a maintenance problem: `custom_host_impl` metadata and the manual custom routing inventory are two independent sources of truth. A generator-derived or inventory-invariant test should be follow-on prevention work rather than part of this two-commit runtime candidate.
+
+## Remaining human-only test
+
+Hosted ARM64 now covers the software/emulation lane. The smallest hardware-specific confirmation is Apple M5 + Venus using exact candidate head:
+
+```text
+4f8130c298433a7a9165392d33fc0a3e6be3202b
+```
+
+Run the same small x86 debug-report and debug-utils GIPA probe under the Venus ICD and record candidate SHA, Mesa/Venus identity, command, exit code, and driver/device strings. `vulkaninfo --summary` is a useful secondary integration check.
