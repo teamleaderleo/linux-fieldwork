@@ -12,7 +12,7 @@ jobs:
       - name: Prove guest-thunk self-pin differential
         run: bash investigations/fex-vulkan-thunk-lifecycle/run_guest_thunk_selfpin_ci.sh
       - name: Run unisolated Vulkan routing and lifetime gate
-        run: python3 investigations/fex-vulkan-thunk-lifecycle/prepare_customir_v4.py
+        run: python3 investigations/fex-vulkan-thunk-lifecycle/prepare_customir_v5.py
       - if: always()
         uses: actions/upload-artifact@v4
         with:
