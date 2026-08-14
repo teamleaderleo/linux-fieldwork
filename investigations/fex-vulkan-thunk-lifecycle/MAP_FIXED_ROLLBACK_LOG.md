@@ -140,9 +140,9 @@ Rollback must restore the complete affected claim state, not only the previously
 
 It also needs to restore callback trampoline state if prepare tombstoned a bridge whose guest unpacker/target fell in the candidate range.
 
-## Staged rollback helper
+## Serial rollback helper
 
-A serial diagnostic implementation is staged on the owned FEX branch:
+A serial diagnostic implementation is retained in the owned FEX fork:
 
 ```text
 .github/fieldwork/add_map_fixed_rollback_transaction.py
@@ -157,7 +157,7 @@ CommitGuestRangeRetirement(token)
 RollbackGuestRangeRetirement(Thread, token)
 ```
 
-The snapshot is kept inside `ThunkHandler_impl` and contains:
+The snapshot stays inside `ThunkHandler_impl` and contains:
 
 ```text
 for each affected H:
@@ -170,18 +170,16 @@ for each affected host->guest callback trampoline:
   complete embedded TrampolineInstanceInfo
 ```
 
-`PrepareGuestRangeRetirement()` snapshots this state, then calls the already-proven `RetireGuestRange()` path. Therefore successful retirement semantics stay exactly the same.
-
-For `GuestMmap`, the helper converts the early mmap-failure returns into a deferred result so the VMA-tracking lock is released first. Then:
+For `GuestMmap`, early mmap errors are deferred until after the VMA-tracking lock is released. Then:
 
 ```text
 host mmap success -> CommitGuestRangeRetirement(token)
 host mmap failure -> RollbackGuestRangeRetirement(Thread, token)
 ```
 
-Rollback restores the full claim vectors/active selections and callback trampoline contents, then reactivates each old H through the existing exact H state transition.
+Rollback restores full claim vectors/active selections and callback trampoline contents, then reactivates each old H through the existing exact H state transition.
 
-## Run 2 — rollback transaction validation launched
+## Run 2 — rollback transaction validated
 
 Owned branch:
 
@@ -189,39 +187,122 @@ Owned branch:
 ci/map-fixed-rollback-transaction-20260814
 ```
 
-Workflow carrier:
-
-```text
-f890074f8a1d48931c9ff083101daf4ede5bd637
-```
-
 Actions run:
 
 ```text
 31781459145
+job:    94707941815
+carrier: f890074f8a1d48931c9ff083101daf4ede5bd637
+product base: 71afe476751deac24adabd1adb575fd2337b6e0a
+lifetime helper: 96d3d1aff38f986f6e8e36e5afd10c04cfe67cf2
+job conclusion: success
 ```
 
-The final transaction candidate runs three controls:
+Artifact:
 
 ```text
-map-fixed-fail
-map-fixed
-map-fixed-reregister
+id:      9211977567
+name:    map-fixed-rollback-transaction-31781459145
+sha256:  ee1399429abeb4efc0ce835a9da7439bcf9819fc1810532a55aa6af9004ddb07
 ```
 
-Required result:
+Matrix:
 
 ```text
-failed replacement      -> rollback restores H -> 111, exit 0
-successful replacement  -> commit keeps H revoked, must never execute generation 2
-successful + new claim  -> commit then explicit LinkAddress reactivates H -> 222, exit 0
+rollback-map-fixed-fail=0
+rollback-map-fixed=139
+rollback-map-fixed-reregister=0
 ```
 
-### Diagnostic concurrency boundary
+### Failed replacement rolls the claim back
 
-This staged implementation is deliberately serial. If a new guest LinkAddress/callback claim appears between prepare and rollback, restoring the snapshot could overwrite that concurrent mutation. It emits a conflict diagnostic for H state but does not solve that race.
+The transaction snapshots the live H claim before retirement:
 
-Production needs a transaction epoch or lock that excludes/merges claim mutations across prepare/commit/rollback, plus the separate in-flight dispatcher quiescence solution.
+```text
+DIAG_ROLLBACK_PREPARE token=0x1 range=0x7ffff7ec4000+0x1000 hosts=1 callbacks=0
+DIAG_MULTI_DROP H=0x700000020000 T=0x7ffff7ec4000 ...
+DIAG_REVOKED_H_INSTALL H=0x700000020000
+```
+
+The kernel rejects the replacement. Before returning the syscall error, rollback removes the tombstone/retired definition and restores the old active claim:
+
+```text
+DIAG_REVOKED_H_ACTIVATE H=0x700000020000 T=0x7ffff7ec4000
+DIAG_ROLLBACK_RESTORE H=0x700000020000 T=0x7ffff7ec4000 claims=1
+DIAG_ROLLBACK_DONE token=0x1 hosts=1 callbacks=0
+```
+
+The guest then proves both paths are live:
+
+```text
+VMA failed-map-fixed result=MAP_FAILED errno=9 (Bad file descriptor) T=0x7ffff7ec4000 direct-value=111
+VMA after-failed-map-fixed H-value=111
+```
+
+Exit: `0`.
+
+### Successful replacement commits retirement
+
+For a valid same-address replacement, prepare performs the same retirement and the transaction is committed:
+
+```text
+DIAG_ROLLBACK_PREPARE token=0x1 ... hosts=1 callbacks=0
+DIAG_MULTI_DROP H=0x700000020000 T=0x7ffff7ec4000 ...
+DIAG_REVOKED_H_INSTALL H=0x700000020000
+DIAG_ROLLBACK_COMMIT token=0x1 snapshot=1
+```
+
+Generation 2 is installed at the same T, but H remains revoked and the run exits `139`. This preserves the successful pre-retire causal result.
+
+### Fresh claim after commit reactivates generation 2
+
+The explicit fresh LinkAddress control commits generation-1 retirement, then registers the new generation:
+
+```text
+DIAG_ROLLBACK_COMMIT token=0x1 snapshot=1
+VMA replaced-same-address H=0x700000020000 T=0x7ffff7ec4000 generation=2 sentinel=222
+VMA explicit-reregister H=0x700000020000 T=0x7ffff7ec4000 generation=2
+DIAG_REVOKED_H_ACTIVATE H=0x700000020000 T=0x7ffff7ec4000
+DIAG_MULTI_ACTIVE H=0x700000020000 T=0x7ffff7ec4000
+VMA after-map-fixed value=222 reregister=1
+```
+
+Exit: `0`.
+
+### Resulting transaction invariant
+
+The controlled implementation now demonstrates the desired state transitions:
+
+```text
+prepare old mapping destruction
+  -> snapshot complete bridge state
+  -> retire exact affected H/callback dependencies
+
+syscall succeeds
+  -> commit snapshot deletion
+  -> old H remains revoked until a fresh claim arrives
+
+syscall fails
+  -> restore complete old bridge state
+  -> old H resumes the still-live old target
+```
+
+This proves transaction integrity separately from owner identity.
+
+## Production concurrency boundary
+
+The serial helper still has a registration race: it snapshots under `ThunksMutex`, releases that lock, then calls the existing retirement path. A new claim can theoretically arrive between snapshot and retirement or before rollback.
+
+Production prepare therefore needs to publish the affected owner/generation as **retiring** atomically with claim mutation. Commit/rollback must validate the same transaction epoch/generation before mutating claims. This is distinct from the peer dispatcher already executing translated H, which still needs quiescence or a generation check at dispatch/bridge entry.
+
+The remaining production layers are now separable:
+
+```text
+1. mapping-generation identity       -> owner_id + exact target
+2. transaction integrity             -> prepare/commit/rollback + claim-mutation exclusion/epoch
+3. future lookup correctness         -> exact H invalidation + revoked/active state (already demonstrated)
+4. already-in-flight execution       -> quiescence or generation validation (still open)
+```
 
 ## External-contact state
 
