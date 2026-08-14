@@ -16,10 +16,10 @@ FEX:
 
 This is two internal source commits on top of upstream/current baseline `71afe476751deac24adabd1adb575fd2337b6e0a`:
 
-1. `28a3a5bf34c40e02810d57b39f439d6d400a5671` — `ThunkLibs/vulkan: route callback custom implementations`
+1. `28a3a5bfbd31662bfc4bd316ada39037aebf4165` — `ThunkLibs/vulkan: route callback custom implementations`
 2. `c011366706eaf65a00380003989b3a10811212b6` — `ThunkLibs/vulkan: preserve native proc availability`
 
-The combined source delta is only `ThunkLibs/libvulkan/Host.cpp`.
+The combined source delta touches two files: `ThunkLibs/libvulkan/Host.cpp` and `ThunkLibs/libvulkan/Guest.cpp`. The first commit adds the callback-family routes to `LookupCustomVulkanFunction()`. The second adds the host-side native-first availability checks and adjusts the guest GIPA/GDPA entrypoints so the special proc-address functions remain guest-callable while other returned host pointers still pass through `MakeGuestCallable()`.
 
 Fieldwork probe/comparator revision:
 
