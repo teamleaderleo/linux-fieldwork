@@ -91,6 +91,20 @@ This supports the per-library/per-escaped-family model without pinning the whole
 
 ## Remaining Wayland scope
 
-The special `wl_array` callback relocation path used for 32-bit guests is still separate. Do not treat these 64-bit results as validation of 32-bit `a` / `iia` / `uoa` callback relocation semantics.
+The 32-bit `wl_array` path still needs a dedicated compatibility test, but its ownership split is now clearer than the earlier note implied.
 
-A future 32-bit gate should keep the same ownership boundary but move the special resident unpacker that performs guest-stack `wl_array` relocation rather than substituting the ordinary typed `CallbackUnpack` path.
+For signatures `"a"`, `"iia"`, and `"uoa"`, host finalization selects `CallGuestPtrWithWaylandArray` as the **host-side packer**. That function copies/relocates the host `wl_array` onto the guest stack and then calls the `GuestUnpacker` already embedded in the FEX trampoline.
+
+Therefore the resident lifetime rule does **not** require a special resident `wl_array` unpacker. The guest executable `GuestUnpacker` should remain in the per-library resident companion exactly as for other listener signatures; the existing host-side array-relocating packer remains in the host thunk.
+
+A future 32-bit gate should validate that combination directly:
+
+```
+process-lived host CallGuestPtrWithWaylandArray packer
+        +
+resident guest CallbackUnpack for the listener signature
+        +
+retained host trampoline across wrapper unload/reload
+```
+
+Do not treat the current 64-bit result as validation of those 32-bit argument-repacking semantics, but do keep the same resident guest-unpacker ownership model.
