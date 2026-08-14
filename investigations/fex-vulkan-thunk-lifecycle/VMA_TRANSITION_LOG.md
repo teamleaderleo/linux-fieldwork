@@ -4,9 +4,9 @@ Date: 2026-08-14
 
 ## Purpose
 
-The current integrated thunk-lifetime candidate retires dynamic thunk ownership around guest `munmap`. Source review shows that `MAP_FIXED` replacement, `mremap`, execute-permission removal, and `shmdt` use ordinary guest-range invalidation rather than the synthetic-key owner-retirement transaction.
+The current integrated thunk-lifetime candidate retires dynamic thunk ownership around guest `munmap`. Source review shows that `MAP_FIXED` replacement, `mremap`, `mprotect`, and `shmdt` all use ordinary guest-range invalidation rather than a mapping-owner transaction.
 
-This log tracks real-FEX tests of those non-`munmap` executable ownership transitions.
+This log tracks real-FEX behavior across those non-`munmap` transitions and separates **mapping-generation replacement** from ordinary protection changes.
 
 ## Leading invariant
 
@@ -24,9 +24,27 @@ make T executable
 call H again without re-registering H
 ```
 
-If H executes generation 2, the old bridge survived the destruction of its original executable owner and silently attached to unrelated replacement code solely because the virtual address was reused.
+If H executes generation 2, the old bridge survived the destruction of its original mapping owner and silently attached to unrelated replacement code solely because the virtual address was reused.
 
 That is a stronger ABA demonstration than a simple fault: the stale route can look healthy.
+
+### `mprotect` is a compatibility control, not automatically an owner change
+
+A mapping can legitimately transition:
+
+```text
+RX -> RW/PROT_NONE -> RX
+```
+
+without becoming a new mapping generation. Runtimes/JITs can also patch code while preserving ordinary function-pointer identity at the same address.
+
+Therefore the desired production semantics are:
+
+- while T is non-executable, a call through H must obey ordinary guest execute-permission behavior and fail;
+- if the **same mapping generation** later becomes executable again at T, H may legitimately reach the current code there;
+- permission flips alone should not permanently tombstone H or allocate a new owner token.
+
+The `mprotect` probe is kept as a control for that distinction. The mapping-replacement bug is specifically about new ownership at the same numeric address, not every change to page permissions/content.
 
 ## Probe and workflow
 
@@ -58,8 +76,8 @@ and initially maps anonymous x86-64 code at T returning sentinel `111`, register
 
 Two modes are prepared:
 
-- `map-fixed`: replace T at the same virtual address with new code returning `222`, without re-registering H, then call H.
-- `mprotect`: remove all access with `PROT_NONE`, call H in a child to observe the invalid state, then reuse the same T for code returning `333` and call H again without re-registering.
+- `map-fixed`: replace T at the same virtual address with a **new mapping generation** containing code returning `222`, without re-registering H, then call H.
+- `mprotect`: retain the same mapping, remove access with `PROT_NONE`, call H in a child to observe the invalid state, then restore/rewrite the same T to return `333` and call H again without re-registering. This is a protection/identity control.
 
 ## Run 1 — harness failure before guest execution
 
@@ -104,27 +122,26 @@ f1c48899c74ef50479fd87347b2210f62b4b6005
 
 The VMA operations and runtime variables were unchanged by the repair.
 
+Run 2 automatically started as Actions run `31778138756`.
+
 ## Source-ordering finding
 
 The FEX syscall implementation makes the production ordering requirement concrete.
 
 For `GuestMmap`, host `mmap()` runs first. Only afterward does `TrackMmap()` / `TrackVMARange()` discover and delete any overlapped old VMA owner, followed by ordinary range invalidation.
 
-Therefore a `MAP_FIXED` lifetime repair that depends on the old mapping owner must inspect/retire the overwritten executable dependencies **before** the host `mmap()` destroys that mapping. After the kernel replacement, the old executable owner is already gone.
+Therefore a `MAP_FIXED` lifetime repair that depends on the old mapping owner must identify the overwritten dependencies **before** host `mmap()` destroys that mapping. The VMA tracker transition can be committed after a successful syscall.
 
-For `GuestMprotect`, host `mprotect()` also occurs before FEX changes tracked protection flags and performs ordinary range invalidation. If executable ownership is part of bridge validity, dependencies must be retired or transitioned before removing executable permission, then the VMA state can be committed after syscall success.
+For `GuestMprotect`, host `mprotect()` also occurs before tracked protection flags and ordinary range invalidation are updated. This does not require a new owner generation. The important invariant is that execution respects current protection state while the mapping-generation identity survives the flip.
 
-This argues for a prepare/commit shape around destructive mapping syscalls rather than adding more post-hoc scans after each operation.
+This suggests a prepare/commit hook for mapping-generation-destroying operations, while ordinary protection changes stay within the existing VMA identity.
 
-## Planned controls
+## Planned interpretation
 
-- stock FEX;
-- current integrated lifetime candidate;
-- same-address replacement sentinel values;
-- execute-permission removal/restoration;
-- later generalized owner-token candidate based on VMA/`MappedResource` generation identity.
-
-The desired production behavior after the original owner is destroyed is revoked/tombstoned H until a legitimate new claim explicitly reactivates it. Same-address replacement alone must not reactivate a thunk bridge.
+- stock/current candidate returning `222` after `MAP_FIXED` without a new LinkAddress claim demonstrates mapping-generation ABA;
+- a future owner-token candidate should revoke H on that replacement until an explicit legitimate claim reactivates it;
+- the `mprotect` control should fault while `PROT_NONE` and may return `333` after the same mapping is executable again;
+- destructive `mremap` and `shmdt` should eventually be tested as owner-loss cases.
 
 ## Related design
 
