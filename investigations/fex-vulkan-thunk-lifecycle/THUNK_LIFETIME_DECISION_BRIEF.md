@@ -44,6 +44,8 @@ This is now demonstrated across more than one API family:
 
 A real Ubuntu amd64 `vulkaninfo --summary` also completes through the generated Vulkan split bridge under hosted ARM64 FEX.
 
+The generator must keep resident host-call invokers and resident callback unpackers as separate directional sets. A supported i386 GL build now gives a concrete counterexample to cloning every signature into both directions.
+
 ## The ownership rule
 
 Use this sentence when explaining the design:
@@ -97,6 +99,19 @@ A NEWLM Vulkan generation can publish generation-owned callback unpackers into p
 ### "Combine all libraries into one shared bridge immediately"
 
 FEX has already fixed a real GL/Vulkan helper symbol collision. Shared signature identity may also omit generator annotations that affect marshalling semantics. Per-library companions are the safer first generic design.
+
+### "Put every generated signature into both resident directions"
+
+The first supported 32-bit bridge gate used GL. The source produced 717 generated signatures, then the resident companion failed while instantiating a 23-argument `CallbackUnpack`; FEX's callback packing accepts at most 19 arguments or exactly 24.
+
+That callback instantiation is unnecessary for a signature used only in the guest -> native host-call direction. Production generation should maintain separate sets:
+
+```text
+ResidentHostCallSignatures
+ResidentGuestCallbackSignatures
+```
+
+See [`GL_32BIT_BRIDGE_DIRECTIONALITY_20260814.md`](./GL_32BIT_BRIDGE_DIRECTIONALITY_20260814.md).
 
 ## New results since the earlier handoff
 
@@ -189,6 +204,16 @@ This is end-to-end compatibility evidence for the bridge design. The unsplit con
 
 See [`HOSTED_VULKANINFO_SPLIT_BRIDGE_AB_2026-08-14.md`](./HOSTED_VULKANINFO_SPLIT_BRIDGE_AB_2026-08-14.md).
 
+### 32-bit generation needs directional output
+
+Vulkan is intentionally 64-bit-only in FEX's current GuestLib policy, so the first supported i386 discriminator uses GL.
+
+The actual 32-bit bridge compile reaches the generated companion and fails only because the prototype extractor creates both a host-call invoker and callback unpacker for every one of 717 signatures. One host-call signature has 23 arguments, making the unnecessary callback-unpacker instantiation invalid under FEX's existing callback packing rule.
+
+This is a useful generator boundary. The next 32-bit gate should emit resident invokers for proc-address signatures and resident unpackers only for actual native -> guest callback signatures, then execute one of each.
+
+See [`GL_32BIT_BRIDGE_DIRECTIONALITY_20260814.md`](./GL_32BIT_BRIDGE_DIRECTIONALITY_20260814.md).
+
 ## What I would ask maintainers to decide
 
 ### Decision 1 — wrapper lifetime policy
@@ -223,11 +248,11 @@ Should thunkgen gain explicit typed concepts for:
 
 ```text
 callback member inside a structure
-escaping executable helper
+escaping executable helper + direction
 native-retained converted object
 ```
 
-The DRM result says nested callback conversion belongs in the generator. `drmServerInfo` says callable conversion and retained-object lifetime must remain separate declarations.
+The DRM result says nested callback conversion belongs in the generator. The 32-bit GL result says direction belongs in the generator too. `drmServerInfo` says callable conversion and retained-object lifetime must remain separate declarations.
 
 ## Proposal ordering
 
@@ -239,7 +264,8 @@ The clean presentation order is:
 4. show GL as the independent second proc-address family;
 5. show DRM as the independent nested-callback family;
 6. show the in-flight race as the reason full reclamation is a separate, heavier mechanism;
-7. ask maintainers which lifetime contract they actually want.
+7. show the i386 directionality discriminator as the reason production generation should classify escapes while it still has typed semantics;
+8. ask maintainers which lifetime contract they actually want.
 
 Lead with the small ownership decision. The owner-ID/transaction/claim-identity work now defines future-dispatch generation identity cleanly; execution quiescence remains the separate true-reclamation boundary.
 
@@ -248,9 +274,9 @@ Lead with the small ownership decision. The owner-ID/transaction/claim-identity 
 ### High value / low ambiguity
 
 - bind retained callback-target registrations to OwnerID and run a separately unloadable callback-target DSO discriminator;
-- run a generated 32-bit resident-bridge PFN + callback proof;
-- measure incremental mapping/RSS/PSS cost of split bridge versus whole-wrapper NODELETE;
-- connect generated nested callback-member signatures to resident callback unpackers;
+- replace full-bidirectional bridge extraction with directional generator output, then run the 32-bit GL proc-address + callback gate;
+- measure incremental mapping/RSS/PSS cost of directional split bridge versus whole-wrapper NODELETE;
+- connect generated nested callback-member signatures to the resident callback-unpacker set;
 - build the first explicit two-NEWLM namespace bridge-state discriminator.
 
 ### Valuable after those
@@ -271,7 +297,7 @@ The current recommendation should change if any of these appear:
 
 - a real intermediate wrapper reset/unload contract that NODELETE breaks;
 - a resident bridge changes API-visible behavior beyond lifetime;
-- a 32-bit ABI counterexample invalidates the generated split;
+- a directional 32-bit ABI counterexample invalidates the generated split;
 - loader namespace tests show a per-library resident companion cannot preserve expected namespace isolation;
 - memory accounting makes bridge residency materially worse than the whole-wrapper policy;
 - generator annotations produce semantically distinct helpers that the current bridge identity accidentally merges.
@@ -286,6 +312,7 @@ Start here:
 - [`MAP_FIXED_ROLLBACK_LOG.md`](./MAP_FIXED_ROLLBACK_LOG.md)
 - [`VMA_OWNER_ID_LOG.md`](./VMA_OWNER_ID_LOG.md)
 - [`OWNER_CLAIM_ID_LOG.md`](./OWNER_CLAIM_ID_LOG.md)
+- [`GL_32BIT_BRIDGE_DIRECTIONALITY_20260814.md`](./GL_32BIT_BRIDGE_DIRECTIONALITY_20260814.md)
 - [`DRM_NESTED_CALLBACK_GENERATOR_PROTOTYPE.md`](./DRM_NESTED_CALLBACK_GENERATOR_PROTOTYPE.md)
 - [`HOSTED_VULKANINFO_SPLIT_BRIDGE_AB_2026-08-14.md`](./HOSTED_VULKANINFO_SPLIT_BRIDGE_AB_2026-08-14.md)
 
@@ -293,6 +320,6 @@ Start here:
 
 This brief is for internal decision-making. Current hosted Ubuntu does not reproduce the historical Apple M5 teardown edge.
 
-The generic lifetime mechanism, principal repair families, transaction rollback, VMA owner-ID separation, and generation-aware retained claim identity have independent owned-fork runtime evidence. The remaining generic gates are 32-bit bridge execution, loader-namespace semantics, resident-memory accounting, and actual callback-target reclamation.
+The generic lifetime mechanism, principal repair families, transaction rollback, VMA owner-ID separation, and generation-aware retained claim identity have independent owned-fork runtime evidence. The i386 evidence rejects full bidirectional signature cloning and leaves the directional 32-bit runtime gate open. Loader-namespace semantics, resident-memory accounting, and actual callback-target reclamation also remain open.
 
 No upstream FEX contact is authorized or performed by this record.
