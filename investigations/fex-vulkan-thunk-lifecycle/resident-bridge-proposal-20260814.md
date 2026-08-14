@@ -68,37 +68,46 @@ Real `glXGetProcAddress("glGetError")` survives physical wrapper unload and move
 
 ### DRM
 
-The generator `callback_member` prototype successfully copies a callback-bearing input structure, substitutes a generated host trampoline in the copy, and executes all three DRM callback signatures through the resident bridge. This proves nested callback generation, but not yet a moved-wrapper retained-callback A/B.
+The generator `callback_member` prototype successfully copies a callback-bearing input structure, substitutes a generated host trampoline in the copy, and executes all three DRM callback signatures through the resident bridge. This proves nested callback generation; CUDA now supplies the moved-wrapper retained-callback proof for the same generated callback-member class.
 
 ### Direct thunkgen bridge output
 
 The `-guest-bridge` research output is preferable to reverse-parsing generated guest C++. Real Vulkan passed hold/close/reload with the direct bridge output, and the generated bridge contained bridge thunks/symbol metadata while excluding ordinary API packers.
 
-### CUDA retained callback A/B — important negative result
+### CUDA retained callback A/B — decisive ownership result
 
-Run `31787029666` finally reached the intended moved-wrapper runtime discriminator.
+The earlier sequential same-job run `31787029666` reported `local=139, resident=139`. That result is superseded by isolated-run traces; the exact source of the earlier harness contamination remains unspecified.
 
-Observed matrix:
+Final isolated A/B: run `31788360618`.
+
+Both local and resident arms first execute the exact generated nested callback successfully while generation 1 is mapped:
 
 ```
-native_deferred=0
-local_unpacker=139
-resident_unpacker=139
+MARK launch1-enter pre-close-control
+CUDA_RETAINED_CALLBACK count=1 user=0x12345678
+MARK launch1-return rc=0 callbacks=1
 ```
 
-Both variants:
+Then generation 1 is physically unloaded, all five old wrapper mappings are reserved, generation 2 is forced to a different guest address, and generation 2 invokes only the generation-1 retained native registration.
 
-- registered the callback successfully in generation 1;
-- physically unloaded the generation-1 CUDA wrapper;
-- reserved its old mappings;
-- loaded generation 2 at a different guest address;
-- invoked only the previously retained callback registration from native code;
-- retained the same host trampoline address (`0x7ffff7e5b000`);
-- faulted before the guest callback body executed.
+Local arm:
 
-Therefore the current CUDA resident transform **does not yet move/rebind the actual guest executable target retained inside that host trampoline**. Matching the normal/generated signature set (364/364) and building a NODELETE sidecar are not sufficient proof that a nested callback is resident.
+```
+GuestUnpacker=0x7ffff7ea8040
+GuestUnpacker_in_retired_wrapper=1
+post-move retained callback -> exit 139
+```
 
-This is a falsifier of the implementation, not of the overall resident-bridge architecture. The next CUDA task is to trace the trampoline's final `GuestUnpacker` address and prove whether it points into the wrapper or bridge.
+Resident arm:
+
+```
+GuestUnpacker=0x7ffff7e75610
+GuestUnpacker_in_retired_wrapper=0
+CUDA_RETAINED_CALLBACK count=2 user=0x12345678
+post-move retained callback -> exit 0
+```
+
+This directly proves that the resident CUDA transform changes the concrete guest executable unpacker embedded in FEX's host trampoline. The local unpacker is retired with generation 1; the resident unpacker remains executable and the old native registration survives a moved wrapper reload without re-registration.
 
 ### Wayland first listener A/B — invalid lifetime discriminator
 
@@ -111,9 +120,9 @@ resident=139
 
 The only guest-side receipt before the crash was the loaded `wl_proxy_add_listener` address. Neither arm printed the expected first guest callback (`value=41`) or the `WAYLAND_PRE_CLOSE` marker.
 
-Therefore this run does not test unload lifetime. The arbitrary native `std::thread` callback path is not an acceptable control until it can call the guest successfully while the wrapper is still mapped. FEX's callback path explicitly depends on registered per-thread thunk state, so an arbitrary native thread is a likely confounder.
+Therefore this run does not test unload lifetime. The arbitrary native `std::thread` callback path is not an acceptable control until it can call the guest successfully while the wrapper is still mapped. FEX's callback path explicitly depends on registered per-thread thunk state, so an arbitrary native thread is a confounder.
 
-The revised Wayland discriminator should avoid that confounder:
+The revised Wayland discriminator avoids that confounder:
 
 1. generation 1 registers a `"u"` listener and the host thunk retains the finalized FEX trampoline;
 2. while generation 1 is still loaded, a normal thunked diagnostic trigger is called synchronously from the guest and invokes the retained trampoline; this must deliver `value=41`;
@@ -121,7 +130,7 @@ The revised Wayland discriminator should avoid that confounder:
 4. generation 2 calls only the diagnostic trigger — it must **not** register the listener again;
 5. the host thunk invokes the generation-1 retained trampoline synchronously on the existing FEX thread, delivering `value=42` only if the embedded guest unpacker remains executable.
 
-This mirrors the CUDA retained-registration-only test and removes arbitrary host-thread attachment from the lifetime question.
+This mirrors the now-validated CUDA retained-registration-only test and removes arbitrary host-thread attachment from the lifetime question.
 
 ## Callback trampoline anatomy
 
@@ -136,7 +145,7 @@ GuestTarget
 
 The trampoline cache key is `(GuestUnpacker, GuestTarget)`. Guest-side allocation supplies `GuestUnpacker` and `GuestTarget`; host-side finalization supplies only `HostPacker` and does not rewrite the guest unpacker.
 
-Consequently a resident callback design is only successful if the `GuestUnpacker` embedded **at allocation time** resolves to resident guest code. Moving the sidecar, matching signature counts, or changing the host finalizer is insufficient by itself.
+Consequently a resident callback design is only successful if the `GuestUnpacker` embedded **at allocation time** resolves to resident guest code. CUDA now directly validates this invariant.
 
 ## What this proposal does not claim
 
@@ -146,8 +155,8 @@ This also does not solve native-PFN alias ownership or incompatible ABI collapse
 
 ## Near-term sequence
 
-1. Trace CUDA retained trampoline metadata and classify its actual `GuestUnpacker` against the retired generation-1 wrapper mappings in local and resident variants.
-2. Fix the resident CUDA path at that exact target, then rerun the moved-wrapper retained-registration-only A/B.
-3. Replace the Wayland arbitrary-thread harness with the synchronous generation-1/register → trigger → unload/move → generation-2/trigger-only sequence.
-4. Consolidate direct thunkgen bridge output with role provenance (`indirect`, callback parameter, `callback_member`, custom callback family).
-5. Only after these pass, generalize the per-library CMake/build pattern and measure bridge residency/RSS cost versus whole-wrapper NODELETE.
+1. Finish the Wayland synchronous generation-1/register → trigger → unload/move → generation-2/trigger-only A/B.
+2. Compile and validate direct thunkgen bridge role provenance (`needs_caller`, `needs_unpacker`) on GL and Vulkan; specifically prove GL caller-only signatures do not instantiate callback unpackers.
+3. Fold generated `callback_member` registrations into that same role-aware bridge output and rerun the CUDA retained callback ownership A/B without the text extractor.
+4. Generalize the per-library CMake/build pattern only after those gates are green.
+5. Measure bridge residency/RSS cost versus whole-wrapper NODELETE.
