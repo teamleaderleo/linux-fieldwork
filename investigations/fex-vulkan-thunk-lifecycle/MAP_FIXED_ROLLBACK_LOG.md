@@ -90,6 +90,55 @@ Rollback must restore the complete affected claim state, not only the previously
 
 A controlled diagnostic rollback can snapshot this state in the single-thread test. Production needs synchronization so new claims cannot race between prepare and rollback.
 
+## Staged rollback helper
+
+A serial diagnostic implementation is staged on the owned FEX branch:
+
+```text
+.github/fieldwork/add_map_fixed_rollback_transaction.py
+commit: 5a9f56bbe63aee963229e61fdb20ecfcd14a25b3
+```
+
+It is intentionally not wired into run `31781044914`; that run remains a clean no-rollback discriminator.
+
+The helper adds an opaque transaction-token API to `ThunkHandler`:
+
+```text
+PrepareGuestRangeRetirement(Thread, Base, Length) -> token
+CommitGuestRangeRetirement(token)
+RollbackGuestRangeRetirement(Thread, token)
+```
+
+The snapshot is kept inside `ThunkHandler_impl` and contains:
+
+```text
+for each affected H:
+  complete ordered claim vector
+  active target
+
+for each affected host->guest callback trampoline:
+  cache key {GuestUnpacker, GuestTarget}
+  trampoline pointer
+  complete embedded TrampolineInstanceInfo
+```
+
+`PrepareGuestRangeRetirement()` snapshots this state, then calls the already-proven `RetireGuestRange()` path. Therefore successful retirement semantics stay exactly the same.
+
+For `GuestMmap`, the helper converts the early mmap-failure returns into a deferred result so the VMA-tracking lock is released first. Then:
+
+```text
+host mmap success -> CommitGuestRangeRetirement(token)
+host mmap failure -> RollbackGuestRangeRetirement(Thread, token)
+```
+
+Rollback restores the full claim vectors/active selections and callback trampoline contents, then reactivates each old H through the existing exact H state transition.
+
+### Diagnostic concurrency boundary
+
+This staged implementation is deliberately serial. If a new guest LinkAddress/callback claim appears between prepare and rollback, restoring the snapshot could overwrite that concurrent mutation. It emits a conflict diagnostic for H state but does not solve that race.
+
+Production needs a transaction epoch or lock that excludes/merges claim mutations across prepare/commit/rollback, plus the separate in-flight dispatcher quiescence solution.
+
 ## External-contact state
 
 No third-party/upstream interaction. All code, workflows, artifacts, and notes remain in repositories owned by `teamleaderleo`.
