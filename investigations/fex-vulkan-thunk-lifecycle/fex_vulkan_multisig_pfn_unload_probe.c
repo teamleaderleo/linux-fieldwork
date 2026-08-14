@@ -34,6 +34,8 @@ struct VulkanPFNs {
   PFN_vkEnumerateInstanceExtensionProperties extensions;
 };
 
+static char GuestVulkanPath[4096];
+
 static int CountMappingsContaining(const char *needle) {
   FILE *maps = fopen("/proc/self/maps", "r");
   if (!maps) {
@@ -50,6 +52,13 @@ static int CountMappingsContaining(const char *needle) {
   }
   fclose(maps);
   return count;
+}
+
+static int GuestVulkanMappingCount(void) {
+  if (!GuestVulkanPath[0]) {
+    return -1;
+  }
+  return CountMappingsContaining(GuestVulkanPath);
 }
 
 static int ParseRange(const char *line, uintptr_t *start, uintptr_t *end) {
@@ -199,18 +208,20 @@ static void CallAll(const char *where, const struct VulkanPFNs *fns) {
   uint32_t extension_count = 0;
 
   fprintf(stderr,
-          "PROBE call where=%s version=%p layers=%p extensions=%p vulkan-maps=%d bridge-maps=%d\n",
+          "PROBE call where=%s version=%p layers=%p extensions=%p vulkan-maps=%d all-vulkan-maps=%d bridge-maps=%d\n",
           where, (void *)fns->version, (void *)fns->layers, (void *)fns->extensions,
-          CountMappingsContaining("libvulkan.so.1"), CountMappingsContaining("libfex-vulkan-bridge"));
+          GuestVulkanMappingCount(), CountMappingsContaining("libvulkan.so.1"),
+          CountMappingsContaining("libfex-vulkan-bridge"));
 
   VkResult vr = fns->version(&version);
   VkResult lr = fns->layers(&layer_count, NULL);
   VkResult er = fns->extensions(NULL, &extension_count, NULL);
 
   fprintf(stderr,
-          "PROBE return where=%s version-result=%d version=0x%x layers-result=%d layers=%u extensions-result=%d extensions=%u vulkan-maps=%d bridge-maps=%d\n",
+          "PROBE return where=%s version-result=%d version=0x%x layers-result=%d layers=%u extensions-result=%d extensions=%u vulkan-maps=%d all-vulkan-maps=%d bridge-maps=%d\n",
           where, vr, version, lr, layer_count, er, extension_count,
-          CountMappingsContaining("libvulkan.so.1"), CountMappingsContaining("libfex-vulkan-bridge"));
+          GuestVulkanMappingCount(), CountMappingsContaining("libvulkan.so.1"),
+          CountMappingsContaining("libfex-vulkan-bridge"));
 
   if (vr != VK_SUCCESS || lr != VK_SUCCESS || er != VK_SUCCESS || version == 0) {
     exit(5);
@@ -231,20 +242,23 @@ int main(int argc, char **argv) {
   if (!FindMappingsForAddress(first_gipa, &old_mappings)) {
     return 7;
   }
+  snprintf(GuestVulkanPath, sizeof(GuestVulkanPath), "%s", old_mappings.path);
 
   fprintf(stderr,
-          "PROBE acquired generation=1 handle=%p gipa=%p version=%p layers=%p extensions=%p vulkan-maps=%d bridge-maps=%d\n",
+          "PROBE acquired generation=1 handle=%p gipa=%p version=%p layers=%p extensions=%p vulkan-maps=%d all-vulkan-maps=%d bridge-maps=%d\n",
           first, first_gipa, (void *)old_fns.version, (void *)old_fns.layers, (void *)old_fns.extensions,
-          CountMappingsContaining("libvulkan.so.1"), CountMappingsContaining("libfex-vulkan-bridge"));
+          GuestVulkanMappingCount(), CountMappingsContaining("libvulkan.so.1"),
+          CountMappingsContaining("libfex-vulkan-bridge"));
   CallAll("before-close", &old_fns);
 
   if (dlclose(first) != 0) {
     fprintf(stderr, "PROBE dlclose failed: %s\n", dlerror());
     return 6;
   }
-  fprintf(stderr, "PROBE after-close vulkan-maps=%d bridge-maps=%d\n",
-          CountMappingsContaining("libvulkan.so.1"), CountMappingsContaining("libfex-vulkan-bridge"));
-  if (CountMappingsContaining("libvulkan.so.1") != 0 || CountMappingsContaining("libfex-vulkan-bridge") <= 0) {
+  fprintf(stderr, "PROBE after-close vulkan-maps=%d all-vulkan-maps=%d bridge-maps=%d\n",
+          GuestVulkanMappingCount(), CountMappingsContaining("libvulkan.so.1"),
+          CountMappingsContaining("libfex-vulkan-bridge"));
+  if (GuestVulkanMappingCount() != 0 || CountMappingsContaining("libfex-vulkan-bridge") <= 0) {
     fprintf(stderr, "PROBE lifetime split invariant failed after close\n");
     return 11;
   }
@@ -270,14 +284,15 @@ int main(int argc, char **argv) {
   }
 
   fprintf(stderr,
-          "PROBE acquired generation=2 handle=%p old-gipa=%p new-gipa=%p old-version=%p new-version=%p old-layers=%p new-layers=%p old-extensions=%p new-extensions=%p same-version=%d same-layers=%d same-extensions=%d vulkan-maps=%d bridge-maps=%d\n",
+          "PROBE acquired generation=2 handle=%p old-gipa=%p new-gipa=%p old-version=%p new-version=%p old-layers=%p new-layers=%p old-extensions=%p new-extensions=%p same-version=%d same-layers=%d same-extensions=%d vulkan-maps=%d all-vulkan-maps=%d bridge-maps=%d\n",
           second, first_gipa, second_gipa,
           (void *)old_fns.version, (void *)new_fns.version,
           (void *)old_fns.layers, (void *)new_fns.layers,
           (void *)old_fns.extensions, (void *)new_fns.extensions,
           old_fns.version == new_fns.version, old_fns.layers == new_fns.layers,
           old_fns.extensions == new_fns.extensions,
-          CountMappingsContaining("libvulkan.so.1"), CountMappingsContaining("libfex-vulkan-bridge"));
+          GuestVulkanMappingCount(), CountMappingsContaining("libvulkan.so.1"),
+          CountMappingsContaining("libfex-vulkan-bridge"));
 
   if (!strcmp(old_mappings.path, new_mappings.path) && first_gipa == second_gipa) {
     fprintf(stderr, "PROBE changed-base reload failed: guest entrypoint reused old address despite reservations\n");
@@ -291,9 +306,10 @@ int main(int argc, char **argv) {
     fprintf(stderr, "PROBE second dlclose failed: %s\n", dlerror());
     return 12;
   }
-  fprintf(stderr, "PROBE after-second-close vulkan-maps=%d bridge-maps=%d\n",
-          CountMappingsContaining("libvulkan.so.1"), CountMappingsContaining("libfex-vulkan-bridge"));
-  if (CountMappingsContaining("libvulkan.so.1") != 0 || CountMappingsContaining("libfex-vulkan-bridge") <= 0) {
+  fprintf(stderr, "PROBE after-second-close vulkan-maps=%d all-vulkan-maps=%d bridge-maps=%d\n",
+          GuestVulkanMappingCount(), CountMappingsContaining("libvulkan.so.1"),
+          CountMappingsContaining("libfex-vulkan-bridge"));
+  if (GuestVulkanMappingCount() != 0 || CountMappingsContaining("libfex-vulkan-bridge") <= 0) {
     return 13;
   }
 
