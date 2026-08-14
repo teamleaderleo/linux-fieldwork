@@ -10,6 +10,14 @@ Unless a later instruction narrows or revokes this authority, agents may create,
 
 Internal research branches are allowed to be messy. Agents may use temporary commits, diagnostic instrumentation, experimental workflows, generated test material, carrier branches, throwaway fixtures, and other execution machinery when useful. Do not spend time preserving upstream-ready history during ordinary internal churn.
 
+### Execution and GitHub Actions authority
+
+For internal research, ordinary repository writes are expected work rather than a special boundary. Agents may use normal Git operations or the GitHub contents API to write files and commits in owned repositories and owned forks. They may also create, edit, run, repair, and remove GitHub Actions workflows for experiments, including build matrices, diagnostic jobs, temporary instrumentation, caches, artifacts, workflow-dispatch inputs, and branch-triggered runs.
+
+Prefer the simplest mechanism that gets evidence. A disposable Actions workflow is a valid experimental harness when it gives access to a useful architecture, clean environment, dependency set, or reproducible runtime. It is fine for an internal workflow or branch to fail repeatedly while narrowing an issue; preserve useful receipts and distinguish harness failures from product failures.
+
+Agents do not need separate human confirmation for each ordinary internal file edit, commit, branch, test run, workflow change, or Actions experiment covered by this authority. When one experimental route is blocked by tooling, use another normal repository or Actions route rather than treating the owned repository as read-only.
+
 This authority does **not** publish anything upstream. The human owns the boundary where research is converted into an upstream submission. An owned-fork experiment must not be represented as an upstream-authored or upstream-ready contribution merely because it exists.
 
 Backlink and external-interaction hygiene still applies. Do not create third-party GitHub backlinks or timeline events accidentally. When controlled interaction text must mention a third-party GitHub issue, pull request, or commit, use the repository's redirect-link convention. Do not comment, review, react, open issues or pull requests, or otherwise contact a third-party upstream unless the human has authorized that upstream interaction.
