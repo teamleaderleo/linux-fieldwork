@@ -209,6 +209,51 @@ Total Test time (real) = 9.94 sec
 
 This closes the generator-level invariant: with namespace defaults matching Vulkan's internal indirect-call configuration, an ordinary function stays out of the generated custom registry while the `custom_host_impl` function is included.
 
+## Successor-function validation from allocator work
+
+A later allocator experiment created a new custom-host command that was **not** one of the original three debug callback omissions. This provides a useful independent test of the same ownership problem.
+
+Against exact product source `71afe476751deac24adabd1adb575fd2337b6e0a`, the experiment changed `vkDestroyInstance` from generic to `custom_host_impl` and added a direct wrapper that suppresses the unsupported guest `VkAllocationCallbacks` pointer by passing NULL to native Vulkan.
+
+Direct execution reached the new custom wrapper, returned safely, and then deliberately failed the fidelity probe because the allocator callbacks were ignored:
+
+```text
+fex_direct=10
+MARK destroy-return alloc=0 realloc=0 free=0 free_delta=0
+```
+
+The same `vkDestroyInstance` obtained dynamically through GIPA did **not** reach the new wrapper because the handwritten Vulkan lookup table had not been updated. It re-opened the cross-ISA callback escape and died with SIGILL/132:
+
+```text
+native=0
+native_dynamic=0
+fex_direct=10
+fex_dynamic=132
+```
+
+Receipt:
+
+```text
+workflow: Vulkan instance allocator suppression experiment
+run: 31778088761
+job: 94697682394
+carrier: bbce1e8c1ea9869ef3ddab3e6236dffe060523c1
+artifact: 9210726208
+artifact SHA-256: 786da5be1a8675109ff3d86b2e1d527006748c1b61a840cc85ca2b2146546366
+```
+
+This is stronger than the original historical inventory mismatch because it is a fresh successor command created during the investigation:
+
+> A newly correct direct custom implementation immediately becomes dynamically incorrect if its registration is a separate handwritten maintenance step.
+
+Under generated ownership, marking `vkDestroyInstance` `custom_host_impl` in the internal indirect-call namespace would automatically place it in the generated custom registry. The experiment therefore validates the proposed prevention mechanism against a new function, not only the original three names that motivated the work.
+
+## 32-bit evidence boundary
+
+The generator and host-thunk integration cover both 64-bit and 32-bit metadata/output. A standalone Linux i386 Vulkan guest runtime was attempted on the exact clean callback/procaddr candidate, but current FEX GuestLibs CMake intentionally places Vulkan guest-thunk generation inside the `BITNESS == 64` block. The normal build produces `HostThunks_32/libvulkan-host.so` but no `GuestThunks_32/libvulkan-guest.so`.
+
+Therefore the 32-bit Vulkan lane should currently be described as source/generator/host-thunk covered, not standalone Linux guest-runtime covered. Do not infer a 32-bit runtime failure from the harness attempt.
+
 ## Relationship to the existing prevention candidate
 
 `CLEAN_CALLBACK_ROUTING_CANDIDATE.md` documents a separate, already-passing prevention branch that mechanically compares the handwritten lookup inventory against `custom_host_impl` metadata for x86-64 and x86-32.
@@ -219,13 +264,13 @@ Generated ownership has a stronger invariant:
 
 > An internal indirectly callable command marked `custom_host_impl` becomes dynamically custom-routable from the same metadata, without a second Vulkan name list.
 
-Tradeoff: it changes generator output/API rather than adding only a focused Vulkan inventory test. The runtime/build evidence above shows feasibility; maintainability/review scope decides which prevention mechanism is preferable.
+Tradeoff: it changes generator output/API rather than adding only a focused Vulkan inventory test. The runtime/build evidence and the independent `vkDestroyInstance` successor-function reproduction now show that this ownership model prevents a real class of future regressions; maintainability/review scope decides which prevention mechanism is preferable.
 
 ## Acceptance and reopen conditions
 
 Generated ownership is a credible production direction if all of these remain true:
 
-- full 64-bit and 32-bit Vulkan thunk builds pass;
+- full 64-bit and 32-bit Vulkan host-thunk builds pass;
 - generated membership follows namespace and `custom_host_impl` metadata exactly;
 - top-level GIPA/GDPA stay outside the internal custom registry;
 - native-first availability remains authoritative before custom substitution;
