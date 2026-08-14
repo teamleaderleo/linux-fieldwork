@@ -1,6 +1,6 @@
-# Wayland generalized resident listener bridge build — 2026-08-14
+# Wayland generalized resident listener bridge — 2026-08-14
 
-## Result
+## Build/generalization result
 
 Workflow run `31789560955` completed successfully on ARM64.
 
@@ -54,18 +54,43 @@ FLAGS_1 NODELETE
 
 This is the intended ownership granularity: the resident code is a small companion rather than the whole Wayland wrapper.
 
-## Relationship to the runtime proof
+## Runtime regression using the full dispatcher
 
-The earlier synchronous retained-listener run `31788266927` already proved the causal lifetime behavior for protocol signature `"u"`:
+Workflow run `31790050047` completed successfully after the already-proven synchronous retained-listener carrier was switched from the narrow one-signature resident prototype to this full 41-signature dispatcher.
 
-- exact callback works before unload in both arms;
-- local wrapper-owned unpacker exits 139 after physical unload + moved reload;
-- resident unpacker delivers callback 42 after the same moved reload without re-registering the listener.
+The discriminator remains unchanged:
 
-Run `31789560955` is a **build/generalization** gate. It proves the existing 64-bit finite signature set can be moved into the per-library resident dispatcher without compile/link breakage. It does not by itself re-run every protocol signature dynamically.
+### local wrapper-owned unpacker
+
+- generation-1 callback value 41 succeeds while the wrapper is mapped;
+- generation 1 physically unloads;
+- old mappings are reserved;
+- generation 2 loads at a different guest address;
+- generation 2 does **not** re-register the listener;
+- trigger-only invocation of the generation-1 retained host trampoline exits 139 before callback value 42 returns.
+
+### generalized resident dispatcher
+
+- the same generation-1 callback value 41 succeeds before unload;
+- generation 1 physically unloads and generation 2 moves;
+- generation 2 performs only the trigger call;
+- the generation-1 retained host trampoline reaches the resident unpacker;
+- guest callback value 42 returns successfully;
+- process exits 0.
+
+So the narrow causal proof survives the mechanical generalization across all 41 recognized 64-bit signature allocation sites.
+
+## What this proves
+
+Wayland now has both:
+
+1. a causal moved-reload retained-registration-only lifetime A/B; and
+2. a compiling/linking per-library resident dispatcher covering the complete currently recognized 64-bit listener signature table, with the known-good `"u"` path revalidated through that generalized dispatcher.
+
+This supports the per-library/per-escaped-family model without pinning the whole Wayland wrapper.
 
 ## Remaining Wayland scope
 
-The special `wl_array` callback relocation path used for 32-bit guests is still separate. Do not treat this 64-bit build as validation of 32-bit `a` / `iia` / `uoa` callback relocation semantics.
+The special `wl_array` callback relocation path used for 32-bit guests is still separate. Do not treat these 64-bit results as validation of 32-bit `a` / `iia` / `uoa` callback relocation semantics.
 
-Next useful Wayland runtime check is to rerun the already-proven synchronous `"u"` retained-registration-only carrier using this full 41-signature resident dispatcher instead of the narrow one-signature prototype. That validates the generalization did not disturb the known-good lifetime path.
+A future 32-bit gate should keep the same ownership boundary but move the special resident unpacker that performs guest-stack `wl_array` relocation rather than substituting the ordinary typed `CallbackUnpack` path.
