@@ -89,7 +89,106 @@ e6f7e115f96bc55eb093b48da36df1d394f35fc9  add unrelated-DSO control
 5f08232b4c7ab85c096b2a4d2c55ac64b73c5433  hosted stock/candidate A-B workflow
 ```
 
-Hosted run started as Actions run `31776908562` on `ubuntu-24.04-arm`.
+### Hosted A/B result
+
+Actions run:
+
+```text
+31776908562
+runner: ubuntu-24.04-arm
+FEX source: 71afe476751deac24adabd1adb575fd2337b6e0a
+```
+
+Artifact:
+
+```text
+id:      9210337407
+name:    vulkan-app-teardown-ab-31776908562
+sha256:  a22b4bfba741d3842ce2b56af2e348c38c0dec1a5c164c1c61ebb5af117edf3f
+```
+
+The stock/candidate matrix is:
+
+```text
+stock_normal=0
+stock_pin=0
+stock_bogus=0
+candidate_normal=0
+candidate_pin=0
+candidate_bogus=0
+```
+
+This minimal application-level lifecycle therefore does **not** reproduce the original field `vulkaninfo` exit 139 on stock FEX.
+
+Stock normal successfully:
+
+```text
+create instance
+enumerate 1 physical device
+llvmpipe (LLVM 20.1.2, 128 bits)
+destroy instance
+dlclose primary Vulkan handle
+normal return
+```
+
+The stock normal mapping count changed from 20 immediately before/after instance destruction to 15 after `dlclose`, confirming that the primary close did remove part of the Vulkan guest mapping set. The process still returned normally.
+
+The stock pin control kept the count at 20 after the primary close and returned 0. The unrelated-DSO control behaved like stock normal: Vulkan mappings dropped to 15 while the unrelated DSO remained loaded, then the program returned 0.
+
+### Candidate instrumentation result
+
+The candidate also returns 0 for all three cases, but its logs prove that the lifetime machinery actively sees this ordinary application close.
+
+The normal case registered four real dynamic Vulkan PFNs, including:
+
+```text
+create      H=0x7ffff77c7bd0
+enumerate   H=0x7ffff76c4d60
+properties  H=0x7ffff76c1254
+destroy     H=0x7ffff76c7d80
+```
+
+At `dlclose`, it retired all four generation claims and installed revoked-H state. Representative sequence:
+
+```text
+DIAG_MULTI_DROP H=... T=...
+DIAG_MULTI_RETIRE H=... OLD=... NEW=0
+DIAG_REVOKED_H_INSTALL H=...
+DIAG_LOCKED_RETIRE H=...
+```
+
+It also tombstoned three host-to-guest callback trampolines whose guest dependencies were in the retiring Vulkan-related range:
+
+```text
+DIAG_INTEGRATED_CALLBACK_TOMBSTONE trampoline=... unpacker=... target=...
+```
+
+This is useful even without a behavioral A/B split: the integrated candidate's dependency discovery fires on a normal Vulkan instance lifecycle and finds both dynamic PFNs and callback bridges.
+
+### Interpretation
+
+The application experiment narrows the original field crash substantially.
+
+The sequence
+
+```text
+create instance -> enumerate -> query properties -> destroy instance -> dlclose -> return
+```
+
+is insufficient by itself to trigger the exit-139 behavior under the hosted llvmpipe environment.
+
+Therefore the original `vulkaninfo` teardown failure needs at least one additional ingredient, such as:
+
+- a Vulkan-Tools-specific object/destructor or loader interaction not present in the minimal probe;
+- additional dynamically resolved Vulkan commands retained by the full application;
+- debug/surface/WSI/callback state;
+- some process-finalization interaction reached after the larger application teardown;
+- an FEX bridge/callback path retained by another DSO involved in `vulkaninfo`;
+- environment/driver differences between the hosted llvmpipe reproduction and the original field environment.
+
+This result does **not** weaken the demonstrated dynamic-PFN lifetime bug: the forced-different real Vulkan PFN reload still gives stock 139 versus candidate 0. It only says that an ordinary no-late-call unload can complete without exercising the stale state.
+
+The next application-level step should use the actual x86-64 `vulkaninfo` binary or progressively reproduce Vulkan-Tools' additional teardown behavior instead of adding arbitrary Vulkan calls to this minimal probe.
 
 ## Concurrency proof boundary
 
