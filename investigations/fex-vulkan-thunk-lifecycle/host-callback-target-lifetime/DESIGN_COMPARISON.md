@@ -137,6 +137,33 @@ This closes an important gap in the earlier combined gate: native Vulkan host co
 
 The guest X11 stub itself stayed loaded. Therefore this proves the **wrapper/unpacker** lifetime side of the callback edge, not arbitrary target-module ownership.
 
+### Measured resident footprint
+
+A dedicated ARM64 footprint lane built all eight shared 64-bit guest thunk wrappers and summed page-rounded `PT_LOAD` memory sizes. This is an upper-bound-style mapping estimate for the case where every listed wrapper has actually been loaded at least once and is then retained by `NODELETE`.
+
+| Guest thunk | On-disk file | Page-rounded `PT_LOAD` memory |
+|---|---:|---:|
+| asound | 1051.6 KiB | ~260 KiB |
+| vulkan | 2202.9 KiB | ~300 KiB |
+| drm | 135.6 KiB | ~36 KiB |
+| wayland-client | 260.3 KiB | ~40 KiB |
+| VDSO | 11.8 KiB | ~4 KiB |
+| GL | 5375.3 KiB | ~956 KiB |
+| EGL | 31.2 KiB | ~16 KiB |
+| cuda | 1281.1 KiB | ~188 KiB |
+| **All listed shared 64-bit thunks** | **10.11 MiB** | **~1.76 MiB** |
+
+Important interpretation:
+
+- `NODELETE` does not pre-load every installed thunk. A wrapper must first be loaded by the process before retention costs apply.
+- The 10.11 MiB figure is file size, not resident memory.
+- The measured page-rounded load-segment total for all eight 64-bit wrappers is about 1.76 MiB.
+- Vulkan's own retained load-segment footprint is about 300 KiB in this build.
+- GL dominates the set at about 956 KiB.
+- This does not include every possible private dirty/COW page, allocator side effect, dependency mapping, or runtime heap allocation. It is intentionally the ELF mapping component, not a claim about total process RSS delta.
+
+This makes an all-shared-wrapper `NODELETE` policy substantially cheaper in executable/data mappings than the on-disk binaries initially suggest, while still leaving room for a selective policy if human maintainers value unload semantics more highly than simplicity.
+
 ### Advantages
 
 - directly tells the ELF loader the intended lifetime policy;
@@ -144,14 +171,16 @@ The guest X11 stub itself stayed loaded. Therefore this proves the **wrapper/unp
 - no added invocation-path checks;
 - preserved function identities across close/reopen in the tested environment;
 - destructor/finalizer still runs once at process exit under glibc;
-- naturally protects generated guest thunk continuations and `CallbackUnpack` code for the entire process.
+- naturally protects generated guest thunk continuations and `CallbackUnpack` code for the entire process;
+- measured mapping cost is modest for the current shared 64-bit thunk set once actually loaded.
 
 ### Costs and questions
 
 - every shared guest thunk marked this way remains resident after first load;
 - memory footprint depends on how many wrappers a workload touches, not on every wrapper installed on disk;
 - this intentionally changes observable `dlclose` unload semantics for FEX guest thunk DSOs;
-- Linux/glibc is the demonstrated contract. FEX is a Linux project, so this is directly relevant, but the exact loader assumptions should remain explicit in any human-authored design discussion.
+- Linux/glibc is the demonstrated contract. FEX is a Linux project, so this is directly relevant, but the exact loader assumptions should remain explicit in any human-authored design discussion;
+- the footprint measurement covers ELF load segments, not full process RSS side effects.
 
 ### Current assessment
 
@@ -266,7 +295,8 @@ Why this fits:
 - combined real Vulkan routing/lifetime gate succeeds;
 - real `NODELETE` Vulkan PFN survives close;
 - real X11 callback through saved Vulkan state survives close;
-- glibc `NODELETE` semantics preserve one process-exit finalization.
+- glibc `NODELETE` semantics preserve one process-exit finalization;
+- measured retained `PT_LOAD` footprint for all eight currently built shared 64-bit wrappers is about 1.76 MiB if every one of them has first been loaded.
 
 The original real `vulkaninfo --summary` teardown gate remains the final application-level discriminator for this narrow repair.
 
@@ -290,7 +320,7 @@ The integrated FEX-2608 retirement/tombstone matrix makes the latter a demonstra
 1. Finish the real x86-64 distro `vulkaninfo --summary` llvmpipe gate with routing + wrapper retention and no preload workaround.
 2. If it exits 0 twice, treat the narrow wrapper-lifetime repair as application-level demonstrated.
 3. Compare constructor self-pin versus ELF `NODELETE`; current evidence favors `NODELETE` as the cleaner mechanism.
-4. Measure touched-wrapper resident-memory footprint before choosing all-shared-wrapper versus selective wrapper policy.
+4. Use the measured footprint to decide whether all shared wrappers or only wrappers that expose retained executable addresses should carry `NODELETE`; current all-eight 64-bit mapping estimate is about 1.76 MiB after all have been touched.
 5. Keep arbitrary `GuestTarget` unload as a separate generic callback-lifetime project. Reuse the already-green revocation/ABA/multi-owner lane rather than reproducing the same matrix from scratch.
 6. Do not package AI-authored FEX source changes as an upstream contribution. A human can use these receipts to independently author/review any contribution under FEX's repository rules.
 
