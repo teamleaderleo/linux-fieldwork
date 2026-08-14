@@ -100,22 +100,43 @@ Therefore the current CUDA resident transform **does not yet move/rebind the act
 
 This is a falsifier of the implementation, not of the overall resident-bridge architecture. The next CUDA task is to trace the trampoline's final `GuestUnpacker` address and prove whether it points into the wrapper or bridge.
 
-## Wayland discriminator
+### Wayland first listener A/B — invalid lifetime discriminator
 
-Wayland is a custom callback-family test rather than an indirect-PFN test.
+Run `31786909159` built both the unloadable local wrapper and the resident-`"u"` sidecar candidate successfully, but both runtime arms exited 139 **before the pre-close callback control completed**:
 
-The current experiment uses a synthetic proxy with one `"u"` event and a native thread that invokes the same finalized FEX listener trampoline before and after wrapper `dlclose`.
+```
+local=139
+resident=139
+```
 
-Required control:
+The only guest-side receipt before the crash was the loaded `wl_proxy_add_listener` address. Neither arm printed the expected first guest callback (`value=41`) or the `WAYLAND_PRE_CLOSE` marker.
 
-- pre-close native-thread callback reaches guest.
+Therefore this run does not test unload lifetime. The arbitrary native `std::thread` callback path is not an acceptable control until it can call the guest successfully while the wrapper is still mapped. FEX's callback path explicitly depends on registered per-thread thunk state, so an arbitrary native thread is a likely confounder.
 
-Lifetime discriminator:
+The revised Wayland discriminator should avoid that confounder:
 
-- local unpacker should fail after physical wrapper unload;
-- resident `"u"` unpacker should still reach guest.
+1. generation 1 registers a `"u"` listener and the host thunk retains the finalized FEX trampoline;
+2. while generation 1 is still loaded, a normal thunked diagnostic trigger is called synchronously from the guest and invokes the retained trampoline; this must deliver `value=41`;
+3. close generation 1, reserve its old mappings, and force generation 2 to a different guest load address;
+4. generation 2 calls only the diagnostic trigger — it must **not** register the listener again;
+5. the host thunk invokes the generation-1 retained trampoline synchronously on the existing FEX thread, delivering `value=42` only if the embedded guest unpacker remains executable.
 
-If the one-signature A/B succeeds, expanding the resident dispatcher across Wayland's existing finite protocol signature switch is mechanical. If it does not, inspect the retained trampoline's concrete `GuestUnpacker` target exactly as with CUDA before broadening the sidecar.
+This mirrors the CUDA retained-registration-only test and removes arbitrary host-thread attachment from the lifetime question.
+
+## Callback trampoline anatomy
+
+FEX host-to-guest callback trampolines embed four fields:
+
+```
+HostPacker
+CallCallback
+GuestUnpacker
+GuestTarget
+```
+
+The trampoline cache key is `(GuestUnpacker, GuestTarget)`. Guest-side allocation supplies `GuestUnpacker` and `GuestTarget`; host-side finalization supplies only `HostPacker` and does not rewrite the guest unpacker.
+
+Consequently a resident callback design is only successful if the `GuestUnpacker` embedded **at allocation time** resolves to resident guest code. Moving the sidecar, matching signature counts, or changing the host finalizer is insufficient by itself.
 
 ## What this proposal does not claim
 
@@ -125,8 +146,8 @@ This also does not solve native-PFN alias ownership or incompatible ABI collapse
 
 ## Near-term sequence
 
-1. Trace CUDA retained trampoline metadata and identify its actual `GuestUnpacker` mapping in local and resident variants.
+1. Trace CUDA retained trampoline metadata and classify its actual `GuestUnpacker` against the retired generation-1 wrapper mappings in local and resident variants.
 2. Fix the resident CUDA path at that exact target, then rerun the moved-wrapper retained-registration-only A/B.
-3. Finish the Wayland one-signature A/B and trace its concrete unpacker on either unexpected outcome.
+3. Replace the Wayland arbitrary-thread harness with the synchronous generation-1/register → trigger → unload/move → generation-2/trigger-only sequence.
 4. Consolidate direct thunkgen bridge output with role provenance (`indirect`, callback parameter, `callback_member`, custom callback family).
 5. Only after these pass, generalize the per-library CMake/build pattern and measure bridge residency/RSS cost versus whole-wrapper NODELETE.
