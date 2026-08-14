@@ -104,6 +104,10 @@ int main(void) {
   PFN_vkEnumerateInstanceVersion enumerate_version = (PFN_vkEnumerateInstanceVersion)dlsym(lib, "vkEnumerateInstanceVersion");
   Require(gipa && create_instance && destroy_instance && enumerate_version, "resolve Vulkan entrypoints");
 
+  PFN_vkEnumerateInstanceVersion dynamic_enumerate_version =
+    (PFN_vkEnumerateInstanceVersion)gipa(NULL, "vkEnumerateInstanceVersion");
+  Require(dynamic_enumerate_version != NULL, "resolve dynamic version PFN");
+
   uint32_t version = 0;
   VkResult vr = enumerate_version(&version);
   fprintf(stderr, "COMBINED pre-create-version result=%d version=0x%x gipa=%p\n", vr, version, (void *)gipa);
@@ -160,14 +164,15 @@ int main(void) {
   fprintf(stderr, "COMBINED instance-destroyed\n");
 
   Require(dlclose(lib) == 0, "application dlclose libvulkan");
-  int retained = AddressMapped((const void *)gipa);
-  fprintf(stderr, "COMBINED after-app-close retained=%d gipa=%p\n", retained, (void *)gipa);
-  Require(retained, "guest Vulkan wrapper retained after application close");
+  int wrapper_mapped = AddressMapped((const void *)gipa);
+  fprintf(stderr, "COMBINED after-app-close wrapper-mapped=%d gipa=%p dynamic-version=%p\n",
+          wrapper_mapped, (void *)gipa, (void *)dynamic_enumerate_version);
+  Require(wrapper_mapped == 0, "guest Vulkan wrapper unload after application close");
 
   version = 0;
-  vr = enumerate_version(&version);
-  fprintf(stderr, "COMBINED post-close-version result=%d version=0x%x\n", vr, version);
-  Require(vr == VK_SUCCESS, "saved Vulkan entrypoint after close");
+  vr = dynamic_enumerate_version(&version);
+  fprintf(stderr, "COMBINED post-close-dynamic-version result=%d version=0x%x\n", vr, version);
+  Require(vr == VK_SUCCESS, "saved dynamic Vulkan PFN after wrapper unload");
 
   fprintf(stderr, "COMBINED PASS\n");
   return 0;
