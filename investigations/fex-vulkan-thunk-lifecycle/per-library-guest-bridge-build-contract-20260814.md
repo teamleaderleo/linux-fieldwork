@@ -94,8 +94,9 @@ Examples:
 
 - GL allocator callback target;
 - Vulkan/GL fixed X11 callback families;
-- Wayland runtime protocol-signature dispatcher;
-- future 32-bit Wayland `wl_array` relocation unpackers.
+- Wayland runtime protocol-signature dispatcher.
+
+The 32-bit Wayland `wl_array` special case does **not** require a separate resident guest unpacker family: its special code is the process-lived host-side `CallGuestPtrWithWaylandArray` packer. A 32-bit validation should pair that existing host packer with the same resident guest-unpacker ownership used by the Wayland companion.
 
 This keeps one lifetime owner per thunk library while allowing generated and semantic/custom bridge families to coexist.
 
