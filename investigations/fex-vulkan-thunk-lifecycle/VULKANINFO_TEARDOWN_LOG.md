@@ -48,9 +48,18 @@ The routed Vulkan source branch used for the stock phase is:
 
 ```text
 fix/vulkan-callback-proc-routing
-head observed by first run: c011366706eaf65a00380003989b3a10811212b6
+head observed by runs: c011366706eaf65a00380003989b3a10811212b6
 base product snapshot: 71afe476751deac24adabd1adb575fd2337b6e0a
 ```
+
+The routed branch is exactly two commits ahead of `71afe...`; the source delta is confined to:
+
+```text
+ThunkLibs/libvulkan/Guest.cpp
+ThunkLibs/libvulkan/Host.cpp
+```
+
+so the stock phase carries the known Vulkan callback/proc-routing diagnostic without lifetime changes.
 
 ## Run 1 — harness failure before product build
 
@@ -84,8 +93,6 @@ id:      9210525502
 sha256:  974f412763e5327aa567060912538f718e712c8985c6a575dd2640ab69b057a0
 ```
 
-It contains only early provenance receipts.
-
 ### Repair
 
 The routed FEX checkout was changed to `fetch-depth: 3`, retaining the two routing commits plus their `71afe...` base so the local provenance diff is valid.
@@ -97,6 +104,69 @@ aaa031340e9c2e6bd9df3cfe8cd482549cd7b9fd
 ```
 
 The runtime variables were not changed by this repair.
+
+## Run 2 — package receipt matcher failure after successful FEX/thunk build
+
+Actions run:
+
+```text
+31777991657
+carrier: aaa031340e9c2e6bd9df3cfe8cd482549cd7b9fd
+```
+
+Result: **non-evidentiary harness failure** after substantially more setup succeeded.
+
+Completed successfully before the failure:
+
+- routed FEX provenance checkout/diff;
+- llvmpipe ICD resolution;
+- stock FEX and adjacent FEXServer build;
+- generated Vulkan host thunk build;
+- generated x86-64 Vulkan guest thunk build;
+- isolated amd64 APT repository update;
+- amd64 dependency resolution/download for real `vulkan-tools`.
+
+The isolated amd64 APT state downloaded 19 packages. Its retained package table includes:
+
+```text
+vulkan-tools    1.3.275.0+dfsg1-1    amd64
+```
+
+The failure was a receipt assertion, not APT/package resolution. The workflow wrote tab-separated package rows and then used:
+
+```text
+grep -E '^vulkan-tools\t' "$R/amd64-packages.txt"
+```
+
+GNU `grep -E` does not interpret `\t` as a literal tab in this expression, so the command returned 1 even though the `vulkan-tools` row was present. The step stopped before rootfs extraction and before any `vulkaninfo` execution.
+
+Therefore run 2 has **no product exit code**.
+
+Artifact:
+
+```text
+id:      9210704577
+sha256:  a3c7016a207c922044c64dad175ea73e18b454f2edfe863cd43fc903d8f0c8dc
+```
+
+The artifact retains the successful stock build/configuration receipts, routed source delta, thunk hashes, amd64 APT logs, and package table.
+
+### Repair
+
+The package assertion now uses an explicit tab field separator:
+
+```text
+awk -F '\t' '$1 == "vulkan-tools" { print }' "$R/amd64-packages.txt" | tee "$R/vulkan-tools-package.txt"
+test -s "$R/vulkan-tools-package.txt"
+```
+
+Repair commit:
+
+```text
+4ce03d842f345045871af1663b8a48316de7be79
+```
+
+Again, the FEX source, generated thunk inputs, rootfs recipe, and runtime matrix were not changed by this harness repair.
 
 ## Evidence rules
 
