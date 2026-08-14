@@ -1,7 +1,7 @@
 # Thunkgen const-pointee repack result
 
 Date: 2026-08-14
-Status: runtime fix proven; generic unit validation in progress
+Status: runtime fix and targeted generic regression proven
 Scope: owned FEX/fieldwork surfaces only
 
 ## Root cause
@@ -76,22 +76,62 @@ The Vulkan allocator case made the mutation unusually visible because callback m
 
 ## Generic generator regression
 
-A clean candidate test was added under the existing thunk generator `StructRepacking` suite. A CI-only branch is validating the test without adding workflow plumbing to the source candidate:
+The clean candidate adds a `StructRepacking` regression for both guest ABIs. The CI-only carrier eventually reduced all setup noise and ran that targeted test directly from the configured `build/Bin/thunkgentest` path.
+
+Targeted receipt:
 
 ```text
-candidate: linux-fieldwork/thunkgen-preserve-const-repack @ 715ff36b...
-carrier:   ci/thunkgen-const-pointee-unit-20260814
+branch:   ci/thunkgen-const-pointee-unit-20260814
+head:     ffc29f2b930ae6198ad619e2c8ab0074c700e7f5
+run:      31793742608
+job:      94746142932
+artifact: thunkgen-const-pointee-unit-31793742608
+id:       9216592294
+sha256:   00e334bb6fb750581e741402f41598f8694531c161ced2aec374c9b703e3a65b
 ```
 
-Early carrier failures were build-environment/setup failures rather than product failures:
+The targeted `StructRepacking` section succeeds:
 
-1. shallow checkout made an ancestry assertion unable to resolve the candidate parent;
-2. x86-64 FEX configuration required the repository's explicit `ENABLE_X86_HOST_DEBUG=ON` CI mode;
-3. the unit lane also needs thunk targets enabled.
+```text
+All tests passed (28 assertions in 1 test case)
+```
 
-The source candidate remains unchanged while those CI-only corrections are made.
+The assertions cover X86_32 and X86_64 generation and require the generated host repack wrapper for the test argument to retain the `const` pointee qualification.
 
-Record the final unit run/job/artifact here once it completes.
+### Full-suite comparator
+
+The same hosted x86 configuration reports four failures when the broader `thunkgen_tests` target is run:
+
+```text
+MultipleParameters.ThunkGen
+DataLayoutPointers.ThunkGen
+DataLayout.ThunkGen
+Mapping guest integers to fixed-size.ThunkGen
+73% tests passed, 4 tests failed out of 15
+```
+
+Those failures are not introduced by the const candidate. The exact unmodified parent `71afe476751deac24adabd1adb575fd2337b6e0a` reproduces that same four-test failure set in the same runner/configuration.
+
+Baseline comparator:
+
+```text
+run:      31794090739
+job:      94747215283
+result:   success as comparator
+artifact: thunkgen-baseline-suite-31794090739
+id:       9216731040
+sha256:   c73af30273d56d2ebf7ace607642d5b6ad1ae5c35069c4a0ece76e01fce2a7eb
+```
+
+The comparator succeeds only if the baseline contains all four named failures and the same `73% / 4 failed` summary. Therefore the candidate-specific validation result is:
+
+```text
+runtime Vulkan allocator discriminator: PASS
+targeted generic StructRepacking regression: PASS
+broader hosted-x86 thunkgen failure delta vs exact parent: NONE OBSERVED
+```
+
+The source candidate remained unchanged while the CI carrier was repaired.
 
 ## Product recommendation
 
@@ -100,6 +140,8 @@ Treat the const-preservation change as a standalone thunkgen correctness fix, in
 The lifetime investigation discovered it because retained Vulkan allocation callbacks exposed a cross-call symptom, but the correction should be reviewed and tested as generic repack semantics:
 
 > A generated wrapper for `const T*` may construct a converted host-side object, but it must not use wrapper teardown to copy that object back into the caller's const guest input.
+
+The clean branch is now suitable for source review on that basis. A future upstream submission should use FEX's normal project CI rather than treating the hosted x86 full-suite comparator as a replacement for upstream CI.
 
 ## Relationship to callback lifetime
 
