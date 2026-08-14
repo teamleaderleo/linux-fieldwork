@@ -40,8 +40,9 @@ Not every escaped executable address originates in a normal annotated function-p
 Current examples:
 
 - GL allocator callback target;
-- Wayland runtime protocol-signature dispatcher;
-- Wayland's separate 32-bit `wl_array` relocation unpackers, still unvalidated in the resident split.
+- Wayland runtime protocol-signature dispatcher.
+
+For 32-bit Wayland, signatures containing `wl_array` (`"a"`, `"iia"`, `"uoa"`) use a special **host-side packer** (`CallGuestPtrWithWaylandArray`) selected during trampoline finalization. That packer relocates the host array onto guest stack memory and then calls the trampoline's existing `GuestUnpacker`. It is not a separate guest unpacker ownership class. The resident guest-unpacker rule remains the same; a future 32-bit test must validate the resident unpacker together with this process-lived host packer.
 
 This is not a failure of the generic generator. The generator owns typed bridge primitives; the library owns the semantic fact that a particular executable target escapes.
 
@@ -77,5 +78,5 @@ The companion split does not define:
 - native-PFN owner generations / alias stacks;
 - incompatible ABI aliases resolving to one native H;
 - retirement of the companion itself (the current model treats it as process-resident);
-- 32-bit Wayland special callback relocation;
+- 32-bit Wayland host-packer + resident-unpacker compatibility;
 - the separate Vulkan pNext const-memory issue.
