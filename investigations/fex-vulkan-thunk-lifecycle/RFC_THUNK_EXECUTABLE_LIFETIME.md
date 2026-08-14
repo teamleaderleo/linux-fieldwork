@@ -96,7 +96,9 @@ The current research branch has separately demonstrated:
 - pre-retirement before destructive replacement;
 - rollback when the destructive syscall fails;
 - explicit re-registration after a successful replacement;
-- an owner-ID prototype for VMA mapping generations.
+- non-reusable owner IDs for VMA mapping generations.
+
+The owner-ID runtime discriminator records the key target mapping changing from owner `0xe` to owner `0xf` across successful same-address `MAP_FIXED`, while an RX->RW->RX `mprotect` cycle preserves owner `0xe` and still exposes the modified code through the existing H path. Failed replacement creates no new owner and transaction rollback restores the old H -> T claim.
 
 See [`MAP_FIXED_PRE_RETIRE_LOG.md`](./MAP_FIXED_PRE_RETIRE_LOG.md), [`MAP_FIXED_ROLLBACK_LOG.md`](./MAP_FIXED_ROLLBACK_LOG.md), and [`VMA_OWNER_ID_LOG.md`](./VMA_OWNER_ID_LOG.md).
 
@@ -235,7 +237,16 @@ successful replacement  -> old H remains revoked, exit 139 control
 successful + new claim  -> H reactivated to generation 2, exit 0
 ```
 
-The VMA owner-ID work is the active identity discriminator. Its job is to establish that successful same-address replacement changes owner ID while `mprotect` splits preserve it.
+The VMA identity discriminator is also green:
+
+```text
+failed replacement      -> no replacement owner; old claim restored
+successful MAP_FIXED    -> same T, OwnerID 0xe -> 0xf
+successful + new claim  -> generation 2 returns 222
+mprotect RX/RW/RX       -> OwnerID 0xe preserved; modified code returns 333
+```
+
+This validates mapping-generation identity independently of the transaction layer and the separate already-selected execution race.
 
 ## Designs rejected or demoted by evidence
 
@@ -309,7 +320,7 @@ A maintainer reviewing this proposal should be able to answer these independentl
 
 This RFC is a research synthesis, not an upstream submission.
 
-The exact historical Apple M5 terminal transfer remains incompletely captured. The generic lifetime mechanism, moved-generation behavior, callback-unpacker lifetime, same-address ABA, transaction rollback, and in-flight race all have independent controlled evidence.
+The exact historical Apple M5 terminal transfer remains incompletely captured. The generic lifetime mechanism, moved-generation behavior, callback-unpacker lifetime, same-address ABA, transaction rollback, owner-ID separation, and in-flight race all have independent controlled evidence.
 
 The hosted Ubuntu `vulkaninfo` unsplit and split variants both exit `0`; that run is compatibility coverage for the split design rather than a reproduction of the historical teardown failure.
 
