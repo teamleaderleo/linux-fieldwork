@@ -86,7 +86,7 @@ unmap=139
 
 ### "The address identifies the owner"
 
-`MAP_FIXED` can replace executable generation 1 with generation 2 at the same numeric address. The research now has successful pre-retirement and rollback transactions around that boundary, and a VMA owner-ID prototype is validating non-reusable generation identity.
+`MAP_FIXED` can replace executable generation 1 with generation 2 at the same numeric address. The owner-ID runtime gate now demonstrates the target mapping changing from `0xe` to `0xf` across successful same-address replacement, while an RX->RW->RX `mprotect` cycle preserves owner `0xe` and exposes the modified code through the existing H path.
 
 ### "Promote only the base namespace"
 
@@ -112,18 +112,24 @@ This separates mapping-generation identity from transaction integrity and from t
 
 See [`MAP_FIXED_ROLLBACK_LOG.md`](./MAP_FIXED_ROLLBACK_LOG.md).
 
-### VMA owner-ID propagation is the active identity experiment
+### VMA owner-ID propagation is green
 
-The new prototype adds non-reusable owner IDs to FEX VMA tracking and tests these rules:
+The VMA prototype adds non-reusable owner IDs and the hosted runtime matrix now demonstrates:
 
 ```text
-successful same-address MAP_FIXED -> owner ID changes
-failed MAP_FIXED                  -> old owner ID remains
-mprotect split/permission cycle   -> owner ID remains
-mremap preserving generation      -> owner ID carries forward
+failed MAP_FIXED                  -> no replacement owner; old H -> T claim restored
+successful same-address MAP_FIXED -> same T, OwnerID 0xe -> 0xf
+successful + fresh claim          -> generation 2 returns 222
+mprotect RX/RW/RX                 -> OwnerID 0xe preserved; modified code returns 333
 ```
 
-Once green, thunk claims can become `{T, OwnerID}` instead of plain T values.
+This gives the next claim experiment a concrete identity key:
+
+```text
+{T, OwnerID}
+```
+
+The in-flight select-before-unmap race stays separate; owner identity fixes ABA/future claims and cannot revoke executable state already selected by another thread.
 
 See [`VMA_OWNER_ID_LOG.md`](./VMA_OWNER_ID_LOG.md).
 
@@ -152,7 +158,7 @@ split=0
 
 Both enumerate llvmpipe. The split trace shows real dynamic Vulkan PFNs being linked to resident guest bridge adapters throughout the tool run.
 
-This is end-to-end compatibility evidence for the bridge design. It is not a reproduction of the historical teardown crash because the unsplit control also exits 0 in this hosted environment.
+This is end-to-end compatibility evidence for the bridge design. The unsplit control also exits 0 in this hosted environment, so this run serves as compatibility coverage for the split design rather than the historical teardown discriminator.
 
 See [`HOSTED_VULKANINFO_SPLIT_BRIDGE_AB_2026-08-14.md`](./HOSTED_VULKANINFO_SPLIT_BRIDGE_AB_2026-08-14.md).
 
@@ -170,7 +176,7 @@ If physical unload/reset is important, continue to Decision 2.
 
 May generated PFN adapters and callback unpackers live in a private resident per-library companion while ordinary wrappers remain unloadable?
 
-The Vulkan and GL moved-reload evidence says this works for the major proc-address shape. Vulkan/X11 and DRM evidence supports the callback-unpacker side.
+The Vulkan and GL moved-reload evidence says this works for the major proc-address case. Vulkan/X11 and DRM evidence supports the callback-unpacker side.
 
 ### Decision 3 — loader namespace contract
 
@@ -208,13 +214,13 @@ The clean presentation order is:
 6. show the in-flight race as the reason full reclamation is a separate, heavier mechanism;
 7. ask maintainers which lifetime contract they actually want.
 
-Avoid leading with the full owner-ID/transaction/quiescence machinery. That work is valuable because it defines the true-unload boundary, while the resident bridge removes most generated helper code from that difficult path.
+Lead with the small ownership decision. The owner-ID/transaction/quiescence work defines the true-unload boundary, while the resident bridge removes most generated helper code from that difficult path.
 
 ## Recommended engineering work now
 
 ### High value / low ambiguity
 
-- finish the active VMA owner-ID discriminator and retain the result;
+- promote thunk claims from plain T values to `{T, OwnerID}` and run the same ABA/rollback matrix;
 - run a generated 32-bit resident-bridge PFN + callback proof;
 - measure incremental mapping/RSS/PSS cost of split bridge versus whole-wrapper NODELETE;
 - connect generated nested callback-member signatures to resident callback unpackers;
@@ -224,8 +230,8 @@ Avoid leading with the full owner-ID/transaction/quiescence machinery. That work
 
 - define retained-object generator metadata using `drmServerInfo` as the first concrete case;
 - move custom Vulkan/GL raw helper publication behind typed escape metadata;
-- design `{T, OwnerID}` claim bookkeeping and atomic retiring epochs for truly reclaimable targets;
-- choose quiescence / lease / hazard / entry-generation validation only after the callback-target test establishes the required runtime contract.
+- add atomic retiring epochs around `{T, OwnerID}` claims for truly reclaimable targets;
+- choose quiescence / lease / hazard / entry-generation validation after the callback-target test establishes the required runtime contract.
 
 ### Later optimization
 
@@ -257,8 +263,8 @@ Start here:
 
 ## Evidence boundary
 
-This brief is for internal decision-making. It does not claim that current hosted Ubuntu reproduces the historical Apple M5 teardown edge.
+This brief is for internal decision-making. Current hosted Ubuntu does not reproduce the historical Apple M5 teardown edge.
 
-The generic lifetime mechanism and the principal repair families have independent owned-fork runtime evidence. The VMA owner-ID experiment is active and should remain labeled pending until its hosted run completes.
+The generic lifetime mechanism, principal repair families, transaction rollback, and VMA owner-ID separation have independent owned-fork runtime evidence. The remaining generic gates are 32-bit bridge execution, loader-namespace semantics, resident-memory accounting, and actual callback-target reclamation.
 
 No upstream FEX contact is authorized or performed by this record.
