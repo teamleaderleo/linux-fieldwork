@@ -23,6 +23,18 @@ targets:
       - security-networking
       - ecosystem-contributions
 
+  cloud-hypervisor:
+    title: Cloud Hypervisor
+    state: active
+    canonical_repository: https://redirect.github.com/cloud-hypervisor/cloud-hypervisor
+    map_path: targets/cloud-hypervisor/map.md
+    programmes:
+      - filesystems-images
+      - services-resources
+      - boot-kernel
+      - security-networking
+      - ecosystem-contributions
+
   dpkg:
     title: dpkg
     state: inbox
