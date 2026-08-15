@@ -29,6 +29,18 @@ A convincing report is not the goal. The goal is a bounded technical claim that 
 - Read the implementation and adjacent tests. Issue prose and pull-request prose are orientation, not source evidence.
 - Map the owner of each operation: caller, wrapper, child process, package script, kernel, service, serializer, cache, or test harness.
 
+### Challenge one local intermediate state before freezing the candidate
+
+After the smallest proven repair exists, inspect one adjacent intermediate state inside the same operation owner.
+
+- Ask which surviving state exists only because the old implementation carried a deferred obligation, split validation/commit window, temporary mode, duplicated cleanup path, or other bookkeeping step.
+- If a slightly broader local variant deletes that state and makes the correctness proof shorter, compare it against the narrow candidate with the same failure and success controls.
+- Judge scope by **reasoning radius** — the owners, contracts, and lifecycle states a reviewer must understand — rather than changed-line or deletion count.
+- Keep broadening while the extra change remains inside the same owner and invariant. Stop when rollback, cleanup, compatibility, policy, architecture/backend behavior, or another independently testable invariant belongs to a different owner; split that into a successor.
+- A nearby finding in the same file still deserves its own carrier when it has a different losing mechanism or discriminator.
+
+See [`notes/processes/reasoning-radius-can-justify-local-simplification.md`](notes/processes/reasoning-radius-can-justify-local-simplification.md) for executed Cloud Hypervisor examples covering both the green light and the stop boundary.
+
 ### Build a distinguishing probe
 
 - Make the probe fail on the old or deliberately broken behavior.
@@ -240,6 +252,7 @@ Ask these questions in order:
 17. Which adjacent contexts could still change the mechanism, compatibility claim, evidence boundary, or next decision, and what discriminator was used for each?
 18. Do the remaining concerns invalidate the claim inside those premises, or do they require a materially different experiment?
 19. What exact counterexample, identity change, claim expansion, or authority change would reopen the decision?
+20. Which intermediate state survives only because the old implementation carried it, and can deleting that state shorten the proof without changing the owner or invariant?
 
 ## Decide when the bounded review is saturated
 
@@ -277,4 +290,4 @@ Avoid broad exploration that cannot name a distinguishing result, cleanup bounda
 
 Add a new entry when the same mistake or successful technique appears more than once, or when one finding generalizes cleanly across targets. Keep exact transcripts and one-off details in their investigation records; keep this guide focused on reusable judgment.
 
-Version boundary: lessons retained from Linux Fieldwork work through 2026-08-14. Revalidate tool-, distribution-, and upstream-specific details when they change.
+Version boundary: lessons retained from Linux Fieldwork work through 2026-08-15. Revalidate tool-, distribution-, and upstream-specific details when they change.
