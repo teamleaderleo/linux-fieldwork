@@ -52,26 +52,68 @@ Creation reserves NEW while OLD remains reserved. `commit()` frees OLD only afte
 That failure direction is intentionally conservative:
 
 ```text
-success      -> NEW reserved, OLD free
-late failure -> OLD reserved, NEW reserved
-early NEW rejection -> OLD reserved, NEW absent
+success             -> NEW reserved, OLD free
+late failure         -> OLD reserved, NEW reserved
+early NEW rejection  -> OLD reserved, NEW absent
 ```
 
 This is an address-reuse safety contract, not yet a complete retry/recovery policy.
 
-## Planned / active executable controls
+## Authoritative hosted execution
 
-The exact-main owned-fork run exercises:
+Authoritative validation:
 
-1. success keeps OLD and NEW reserved during relocation and frees OLD only on commit;
-2. dropping after a simulated late error leaves both ranges quarantined;
-3. a partially overlapping target such as `OLD + len/2` is rejected without releasing OLD;
-4. the reservation itself does not hold the allocator mutex;
-5. all existing `device_manager::unit_tests` remain green;
-6. the complete KVM-flavoured `vmm` test suite compiles;
-7. project quality and formatting gates run on the materialized candidate.
+- workflow: `PCI BAR new-first hosted validation v3`
+- run: `31898220133`
+- job: `95044720650`
+- branch head used to materialize the candidate: `29fb341274047813ad1bd0bf00720aa76e088886`
+- artifact: `9250420377`
+- artifact digest: `sha256:0689e4ecb3332b3a002785ae5b7efe238858121da5715ac9451c17fbfb92d710`
 
-Run identity and final result should be appended after execution stabilizes.
+The run rechecked that `vmm/src/device_manager.rs` and `pci/src/configuration.rs` were pristine against exact upstream `69d4c0...` before materialization.
+
+### Focused lifecycle controls
+
+All four NEW-first controls passed under Rust `1.89.0`:
+
+```text
+mmio_bar_reservation_success_releases_old_last                    PASS
+mmio_bar_reservation_error_quarantines_old_and_new                PASS
+mmio_bar_reservation_rejects_partial_overlap_without_releasing_old PASS
+mmio_bar_reservation_does_not_hold_allocator_mutex                PASS
+```
+
+All `device_manager::unit_tests` passed: **7 passed, 0 failed**.
+
+The complete KVM-flavoured `vmm` test suite compiled successfully with the project MSRV using `cargo test --no-run`.
+
+### Project-shaped quality gates
+
+Cloud Hypervisor quality CI uses stable/beta Clippy rather than the MSRV compiler's Clippy. The authoritative run therefore used the repository's stable KVM shape:
+
+```text
+cargo +stable clippy --locked --all --all-targets \
+  --no-default-features --tests --examples --features kvm -- -D warnings
+```
+
+Result: **PASS**.
+
+Nightly rustfmt and `git diff --check` also passed.
+
+Earlier red hosted runs are retained as harness/toolchain evidence:
+
+- a generic runner cannot execute all KVM-backed `vmm` tests because `/dev/kvm` is unavailable;
+- Rust 1.89 Clippy reports an existing unfulfilled `collapsible_match` expectation that stable CI does not;
+- test-only fixture style warnings were corrected without changing candidate product semantics.
+
+## History check
+
+Two recent history points make NEW-first easier to justify:
+
+- `15d1f1d7fdd7b0698ace412c2398fbc3d515bcba` (February 2026) consolidated multiple allocator lock acquisitions around the already-existing `free OLD -> allocate NEW` sequence. It documents allocator-operation serialization, not an MMIO requirement to release OLD first.
+- `e65cca3bf55ea51c34a1cb9c7a23ed9f59e15d88` (May 2026) added OLD re-allocation when NEW allocation fails because free-first could otherwise leave allocator state inconsistent with the bus.
+
+NEW-first removes the MMIO premise that created the May rollback path: OLD never leaves allocator ownership before NEW is known reservable.
 
 ## Why this is smaller than the lease-guard variant
 
@@ -85,25 +127,48 @@ reservation state, not mutex duration, prevents reuse
 
 That makes the invariant visible in the allocator map and keeps ordinary allocation concurrency available for unrelated addresses.
 
+See `MMIO_LEASE_GUARD_EXPERIMENT.md` for the superseded comparison.
+
+## PIO boundary
+
+This proof is intentionally MMIO-only.
+
+PIO uses a different allocator contract: `SystemAllocator::allocate_io_addresses(..., None)` defaults to byte alignment, so equal-size PIO ranges can be distinct and partially overlap. The MMIO geometry proof therefore cannot be copied into the PIO branch.
+
+See `PIO_SCOPE_BOUNDARY.md`.
+
 ## Remaining correctness question
 
-A late error leaves both addresses reserved. This safely prevents a reuse collision, but the current allocator has no reservation identity and the caller currently restores the BAR config register to OLD. A subsequent retry may therefore need an explicit way to recognize or clean the quarantined NEW reservation.
+A late error leaves both addresses reserved. This safely prevents a reuse collision, but the current allocator has no reservation identity and the caller restores the BAR config register to OLD. A subsequent retry may therefore need an explicit way to recognize or clean the quarantined NEW reservation.
 
 Do not hide this as a leak. It is the next discriminator:
 
-> can the existing relocation path deterministically unwind NEW-side state and free NEW on each failure class, or does `AddressManager` need a small explicit pending-relocation record/token?
+> can each external relocation step restore the old state locally, allowing NEW to be released after rollback, or does `AddressManager` need a small explicit pending-relocation record/token?
 
-The first real failure class to execute should be virtio config-BAR ioevent relocation:
+The first external class under execution is virtio config-BAR ioevent relocation. Its local transaction is:
 
 ```text
-OLD ioevent unregister failure
-NEW ioevent register failure after OLD unregister succeeds
+unregister OLD ioevents
+-> register NEW ioevents
 ```
 
-At each error boundary, assert which external address state survives and which allocator reservations must remain.
+A separate exact-current experiment injects failure at every primary operation and attempts local rollback by removing any NEW registrations already installed and restoring every OLD registration already removed.
 
-## Scope boundary
+If that rollback itself fails, NEW-first's allocator quarantine remains the safety fallback.
 
-This candidate is currently MMIO-only. PIO relocation uses different allocator/alignment semantics and must be audited independently.
+## Next composition
 
-The generic `vm-device::Bus` failure/concurrency/arithmetic repairs (#677/#678/#679) also remain separately evidenced. If this MMIO ordering stabilizes, compose it with the clean Bus stack before any upstream packet.
+Once the ioevent helper and this NEW-first ordering have independent green receipts, compose them with the clean generic Bus stack:
+
+- `review/ch-bus-r677-r678-r679-clean`
+- `2edcf22f0bd35beff06ab2b4e132cf240e54d2f9`
+
+The combined claim should remain layered:
+
+```text
+Bus:       route-map mutation is failure/concurrency safe
+Allocator: OLD is never published reusable before successful MMIO relocation
+Ioevents:  config-BAR registration move restores OLD after a primary failure
+```
+
+Only after that composition should the work return to KVM-backed hotplug reproduction or any upstream packet.
