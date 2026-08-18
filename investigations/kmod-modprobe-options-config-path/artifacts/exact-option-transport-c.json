@@ -1,0 +1,11 @@
+{
+  "empty_exact_record_is_valid_and_authoritative_under_model_policy": true,
+  "exact_record_bytes": 39,
+  "generated_roundtrip_cases": 10007,
+  "legacy_quoted_space_path_control": true,
+  "legacy_raw_backslash_preserved_without_exact": true,
+  "malformed_records_rejected": 9,
+  "mixed_version_boundary_requires_policy": true,
+  "new_parent_to_old_child_mirror_preserves_exact_argv": false,
+  "recursion_levels_stable": 20
+}

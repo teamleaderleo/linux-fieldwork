@@ -1,0 +1,185 @@
+name: kmod current master empty-options candidate
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/kmod-current-master-empty-candidate.yml"
+      - "investigations/kmod-modprobe-options-config-path/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kmod-current-empty-candidate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  current-candidate:
+    name: current candidate (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    env:
+      KDIR: any
+      ASAN_OPTIONS: abort_on_error=1:detect_leaks=1:strict_string_checks=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+
+    steps:
+      - name: Check out Linux Fieldwork
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check out exact current kmod master
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: kmod-project/kmod
+          ref: dae6c02ffed2e8d16da8dba16d974fc955eebb1f
+          path: kmod-current
+          persist-credentials: false
+
+      - name: Check out exact allocator-fix carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: teamleaderleo/kmod
+          ref: 9dbb2701a2fcf96280a99b8d2ebcb4b0451be6b3
+          path: empty-carrier
+          persist-credentials: false
+
+      - name: Verify identities and apply two-file candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C kmod-current rev-parse HEAD)" = \
+            dae6c02ffed2e8d16da8dba16d974fc955eebb1f
+          test "$(git -C kmod-current rev-parse HEAD:tools/modprobe.c)" = \
+            c4b5021137a01529d75d9979e262308ce371bbae
+          test "$(git -C empty-carrier rev-parse HEAD)" = \
+            9dbb2701a2fcf96280a99b8d2ebcb4b0451be6b3
+          test "$(git -C empty-carrier hash-object .github/modprobe-empty-options-environment.patch)" = \
+            08612258b78b1b0529bf2bc999ac88d1df21cb94
+          sha256sum empty-carrier/.github/modprobe-empty-options-environment.patch > \
+            current-carrier-patch.sha256
+          git -C kmod-current apply --check --index \
+            "$PWD/empty-carrier/.github/modprobe-empty-options-environment.patch"
+          git -C kmod-current apply --index \
+            "$PWD/empty-carrier/.github/modprobe-empty-options-environment.patch"
+          git -C kmod-current diff --cached --check
+          test "$(git -C kmod-current diff --cached --name-only | sort | tr '\n' ' ')" = \
+            "testsuite/test-modprobe.c tools/modprobe.c "
+          git -C kmod-current diff --cached --binary > current-empty-candidate.patch
+          sha256sum current-empty-candidate.patch > current-empty-candidate.patch.sha256
+          git -C kmod-current rev-parse HEAD > current-source-head.txt
+          git -C kmod-current rev-parse HEAD:tools/modprobe.c > current-source-modprobe-blob.txt
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            gcc \
+            libclang-rt-18-dev \
+            liblzma-dev \
+            libssl-dev \
+            libzstd-dev \
+            linux-headers-generic \
+            meson \
+            ninja-build \
+            pkg-config \
+            python3 \
+            zlib1g-dev
+
+      - name: Check formatting and build candidate
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          clang-format --dry-run --Werror \
+            kmod-current/tools/modprobe.c \
+            kmod-current/testsuite/test-modprobe.c
+          compiler=${{ matrix.compiler }}
+          extra=()
+          if [[ "$compiler" == clang ]]; then
+            extra+=("-Db_lundef=false")
+          fi
+          meson setup "kmod-current/build-$compiler" kmod-current \
+            --buildtype=debug \
+            -Db_sanitize=address,undefined \
+            -Dbuild-tests=true \
+            -Ddocs=false \
+            -Dmanpages=false \
+            -Dmbedtls=disabled \
+            "${extra[@]}"
+          meson compile -C "kmod-current/build-$compiler"
+
+      - name: Run direct, focused, complete, and scope controls
+        shell: bash
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          compiler=${{ matrix.compiler }}
+          build="$PWD/kmod-current/build-$compiler"
+          out="$PWD/current-empty-candidate-$compiler"
+          mkdir -p "$out"
+          if [[ "$compiler" == clang ]]; then
+            export LD_LIBRARY_PATH="$(clang -print-resource-dir)/lib/linux${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          fi
+
+          MODPROBE_OPTIONS='' "$build/modprobe" --version \
+            > "$out/empty.stdout" 2> "$out/empty.stderr"
+          test ! -s "$out/empty.stderr"
+
+          meson compile -C "kmod-current/build-$compiler" testsuite/create-rootfs
+          meson test -C "kmod-current/build-$compiler" test-modprobe --verbose \
+            2>&1 | tee "$out/focused.log"
+
+          meson compile -C "kmod-current/build-$compiler" testsuite/create-rootfs
+          meson test -C "kmod-current/build-$compiler" --print-errorlogs \
+            2>&1 | tee "$out/full.log"
+
+          export PATH="$build:$PATH"
+          test "$(command -v modprobe)" = "$build/modprobe"
+          python3 investigations/kmod-modprobe-options-config-path/test_modprobe_options_config_path.py \
+            > "$out/recursive-scope-control.json"
+
+          sha256sum "$build/modprobe" \
+            "$out/recursive-scope-control.json" > "$out/sha256.txt"
+          "$build/modprobe" --version > "$out/modprobe-version.txt"
+          uname -srmo > "$out/uname.txt"
+
+      - name: Verify cleanup and retain source receipts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          compiler=${{ matrix.compiler }}
+          out="$PWD/current-empty-candidate-$compiler"
+          mkdir -p "$out"
+          cp current-carrier-patch.sha256 \
+             current-empty-candidate.patch \
+             current-empty-candidate.patch.sha256 \
+             current-source-head.txt \
+             current-source-modprobe-blob.txt \
+             "$out/" 2>/dev/null || true
+          test -z "$(find /tmp -maxdepth 1 -type d -name 'lf-kmod-modprobe-options-*' -print -quit)"
+          git -C kmod-current status --short --untracked-files=no | \
+            tee "$out/source-status.txt"
+          test "$(git -C kmod-current diff --cached --name-only | sort | tr '\n' ' ')" = \
+            "testsuite/test-modprobe.c tools/modprobe.c "
+
+      - name: Upload current candidate receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kmod-current-empty-candidate-${{ matrix.compiler }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: current-empty-candidate-${{ matrix.compiler }}/
+          if-no-files-found: error
+          retention-days: 30

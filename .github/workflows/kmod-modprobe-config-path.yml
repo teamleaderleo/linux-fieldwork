@@ -1,0 +1,313 @@
+name: kmod recursive config identity
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/kmod-modprobe-config-path.yml"
+      - "investigations/kmod-modprobe-options-config-path/**"
+      - "tests/test_kmod_modprobe_config_path_workflow.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kmod-modprobe-config-path-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-master:
+    name: exact master (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+
+    steps:
+      - name: Check out Linux Fieldwork
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out exact kmod master snapshot
+        uses: actions/checkout@v4
+        with:
+          repository: kmod-project/kmod
+          ref: 5086df53090b2fe9fa1c31351c05a78a12a4ba71
+          path: kmod
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            gcc \
+            libclang-rt-18-dev \
+            liblzma-dev \
+            libssl-dev \
+            libzstd-dev \
+            meson \
+            ninja-build \
+            pkg-config \
+            python3 \
+            zlib1g-dev
+
+      - name: Verify exact source identity
+        run: |
+          set -euxo pipefail
+          test "$(git -C kmod rev-parse HEAD)" = "5086df53090b2fe9fa1c31351c05a78a12a4ba71"
+          git -C kmod status --short --untracked-files=no | tee source-status.txt
+          test ! -s source-status.txt
+          git -C kmod rev-parse HEAD > source-head.txt
+          git -C kmod rev-parse HEAD:tools/modprobe.c > source-modprobe-blob.txt
+
+      - name: Configure and build with sanitizers
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          set -euxo pipefail
+          compiler="${{ matrix.compiler }}"
+          build="build-$compiler"
+          extra_meson=()
+          if [[ "$compiler" == clang ]]; then
+            extra_meson+=("-Db_lundef=false")
+          fi
+          meson setup "kmod/$build" kmod \
+            --buildtype=debug \
+            -Db_sanitize=address,undefined \
+            -Dbuild-tests=false \
+            -Ddocs=false \
+            -Dmanpages=false \
+            -Dmbedtls=disabled \
+            "${extra_meson[@]}"
+          meson compile -C "kmod/$build"
+          test -x "kmod/$build/modprobe"
+          if [[ "$compiler" == clang ]]; then
+            export LD_LIBRARY_PATH="$(clang -print-resource-dir)/lib/linux${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          fi
+          "kmod/$build/modprobe" --version
+
+      - name: Run exact discriminator twice
+        env:
+          ASAN_OPTIONS: abort_on_error=1:detect_leaks=1:strict_string_checks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euxo pipefail
+          compiler="${{ matrix.compiler }}"
+          build="$PWD/kmod/build-$compiler"
+          out="$PWD/kmod-receipt-$compiler"
+          mkdir -p "$out"
+          export PATH="$build:$PATH"
+          if [[ "$compiler" == clang ]]; then
+            export LD_LIBRARY_PATH="$(clang -print-resource-dir)/lib/linux${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          fi
+          test "$(command -v modprobe)" = "$build/modprobe"
+
+          python3 investigations/kmod-modprobe-options-config-path/test_modprobe_options_config_path.py \
+            > "$out/first.json"
+          python3 investigations/kmod-modprobe-options-config-path/test_modprobe_options_config_path.py \
+            > "$out/rerun.json"
+          cmp "$out/first.json" "$out/rerun.json"
+
+          python3 - "$out/first.json" "$build/modprobe" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          result_path = pathlib.Path(sys.argv[1])
+          expected_modprobe = str(pathlib.Path(sys.argv[2]).resolve())
+          data = json.loads(result_path.read_text(encoding="utf-8"))
+
+          observed_modprobe = str(pathlib.Path(data["environment"]["modprobe"]).resolve())
+          if observed_modprobe != expected_modprobe:
+              raise SystemExit(
+                  f"wrong executable: expected {expected_modprobe}, observed {observed_modprobe}"
+              )
+
+          no_space, spaced = data["cases"]
+          assert no_space["direct"]["marker_count"] == 1
+          assert no_space["nested"]["marker_count"] == 1
+          assert spaced["direct"]["marker_count"] == 1
+          assert spaced["nested"]["marker_count"] == 0
+          assert spaced["outer"]["status"] == 0
+          assert spaced["nested"]["nested_status"] == 0
+          assert data["quoted_env_control"]["marker_count"] == 1
+          PY
+
+          sha256sum \
+            "$build/modprobe" \
+            "$out/first.json" \
+            "$out/rerun.json" \
+            > "$out/sha256.txt"
+          cp source-head.txt source-modprobe-blob.txt source-status.txt "$out/"
+          "$build/modprobe" --version > "$out/modprobe-version.txt"
+          uname -srmo > "$out/uname.txt"
+
+      - name: Verify cleanup and source tree
+        if: always()
+        run: |
+          set -euxo pipefail
+          test -z "$(find /tmp -maxdepth 1 -type d -name 'lf-kmod-modprobe-options-*' -print -quit)"
+          git -C kmod status --short --untracked-files=no | tee final-source-status.txt
+          test ! -s final-source-status.txt
+
+      - name: Upload exact receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kmod-modprobe-config-${{ matrix.compiler }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            kmod-receipt-${{ matrix.compiler }}/
+            final-source-status.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  native-characterization:
+    name: native characterization (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+
+    steps:
+      - name: Check out exact characterization source
+        uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/kmod
+          ref: 84ba8ae9db4f455965efa22afdd5cb177781106b
+          path: kmod
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install native test dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang \
+            gcc \
+            libclang-rt-18-dev \
+            liblzma-dev \
+            libssl-dev \
+            libzstd-dev \
+            linux-headers-generic \
+            meson \
+            ninja-build \
+            pkg-config \
+            python3 \
+            zlib1g-dev
+
+      - name: Verify characterization identity and fence
+        run: |
+          set -euxo pipefail
+          test "$(git -C kmod rev-parse HEAD)" = "84ba8ae9db4f455965efa22afdd5cb177781106b"
+          test "$(git -C kmod merge-base HEAD 5086df53090b2fe9fa1c31351c05a78a12a4ba71)" = \
+            "5086df53090b2fe9fa1c31351c05a78a12a4ba71"
+          git -C kmod diff --name-only \
+            5086df53090b2fe9fa1c31351c05a78a12a4ba71..HEAD > native-files.txt
+          cat > expected-native-files.txt <<'EOF'
+          testsuite/meson.build
+          testsuite/rootfs-pristine/test-modprobe/install-cmd-loop/correct-config-path.txt
+          testsuite/rootfs-pristine/test-modprobe/install-cmd-loop/etc/modprobe config/recursive.conf
+          testsuite/rootfs-pristine/test-modprobe/install-cmd-loop/etc/modprobe-config/recursive.conf
+          testsuite/test-modprobe-options.c
+          EOF
+          diff -u expected-native-files.txt native-files.txt
+          test -z "$(git -C kmod diff --name-only \
+            5086df53090b2fe9fa1c31351c05a78a12a4ba71..HEAD -- tools)"
+          git -C kmod status --short --untracked-files=no | tee native-source-status.txt
+          test ! -s native-source-status.txt
+
+      - name: Configure native tests with sanitizers
+        env:
+          CC: ${{ matrix.compiler }}
+          KDIR: any
+        run: |
+          set -euxo pipefail
+          compiler="${{ matrix.compiler }}"
+          extra_meson=()
+          if [[ "$compiler" == clang ]]; then
+            extra_meson+=("-Db_lundef=false")
+          fi
+          meson setup kmod/build kmod \
+            --buildtype=debug \
+            -Db_sanitize=address,undefined \
+            -Dbuild-tests=true \
+            -Ddocs=false \
+            -Dmanpages=false \
+            -Dmbedtls=disabled \
+            "${extra_meson[@]}"
+
+      - name: Require passing control and losing spaced path
+        env:
+          CC: ${{ matrix.compiler }}
+          KDIR: any
+        run: |
+          set -uo pipefail
+          out="$PWD/native-characterization-${{ matrix.compiler }}"
+          mkdir -p "$out"
+
+          set +e
+          meson test -C kmod/build test-modprobe-options --verbose \
+            > "$out/test.log" 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$out/status.txt"
+          cat "$out/test.log"
+          test "$status" -ne 0
+
+          python3 - "$out/test.log" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+          text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+          lines = text.splitlines()
+
+          required = {
+              "control": "PASSED: modprobe_options_config_path_control",
+              "discriminator": "FAILED: modprobe_options_config_path_space",
+          }
+          for label, fragment in required.items():
+              if not any(fragment in line for line in lines):
+                  raise SystemExit(f"missing {label} evidence: {fragment}")
+
+          failed = [line for line in lines if "FAILED:" in line]
+          if not failed or any("modprobe_options_config_path_space" not in line for line in failed):
+              raise SystemExit(f"unexpected native failures: {failed}")
+          PY
+
+          git -C kmod rev-parse HEAD > "$out/source-head.txt"
+          git -C kmod rev-parse HEAD:tools/modprobe.c > "$out/source-modprobe-blob.txt"
+          sha256sum \
+            kmod/build/modprobe \
+            "$out/test.log" \
+            > "$out/sha256.txt"
+
+      - name: Verify native cleanup and source tree
+        if: always()
+        run: |
+          set -euxo pipefail
+          git -C kmod status --short --untracked-files=no | tee native-final-source-status.txt
+          test ! -s native-final-source-status.txt
+
+      - name: Upload native characterization receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kmod-native-characterization-${{ matrix.compiler }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            native-characterization-${{ matrix.compiler }}/
+            native-files.txt
+            expected-native-files.txt
+            native-source-status.txt
+            native-final-source-status.txt
+          if-no-files-found: error
+          retention-days: 30
