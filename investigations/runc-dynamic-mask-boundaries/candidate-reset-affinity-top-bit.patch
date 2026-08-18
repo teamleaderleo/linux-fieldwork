@@ -1,0 +1,56 @@
+diff --git a/libcontainer/process_linux.go b/libcontainer/process_linux.go
+--- a/libcontainer/process_linux.go
++++ b/libcontainer/process_linux.go
+@@ -174,6 +174,12 @@ type setnsProcess struct {
+ 	initProcessPid  int
+ }
+ 
++func newResetCPUAffinityMask() unix.CPUSetDynamic {
++	buf := unix.NewCPUSet(configs.MaxCPU + 1)
++	buf.Fill()
++	return buf
++}
++
+ // tryResetCPUAffinity tries to reset the CPU affinity of the process
+ // identified by pid to include all possible CPUs (notwithstanding cgroup
+ // cpuset restrictions, isolated CPUs and CPU online status).
+@@ -202,8 +208,7 @@ func tryResetCPUAffinity(pid int) {
+ 	// /sys/devices/system/cpu/possible and kernel_max.
+ 	// Instead, we use a huge buffer similarly to go 1.25 runtime in
+ 	// getCPUCount().
+-	buf := unix.NewCPUSet(configs.MaxCPU)
+-	buf.Fill()
++	buf := newResetCPUAffinityMask()
+ 	if err := linux.SchedSetaffinity(pid, buf); err != nil {
+ 		logrus.WithError(err).Warnf("resetting the CPU affinity of pid %d failed -- the container process may inherit runc's CPU affinity", pid)
+ 		return
+diff --git a/libcontainer/process_linux_test.go b/libcontainer/process_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/libcontainer/process_linux_test.go
+@@ -0,0 +1,25 @@
++package libcontainer
++
++import (
++	"testing"
++
++	"golang.org/x/sys/unix"
++
++	"github.com/opencontainers/runc/libcontainer/configs"
++)
++
++func TestResetCPUAffinityMaskIncludesMaxCPU(t *testing.T) {
++	oldMask := unix.NewCPUSet(configs.MaxCPU)
++	oldMask.Fill()
++	if oldMask.IsSet(configs.MaxCPU) {
++		t.Fatalf("exclusive control unexpectedly contains CPU %d", configs.MaxCPU)
++	}
++
++	mask := newResetCPUAffinityMask()
++	if !mask.IsSet(configs.MaxCPU) {
++		t.Fatalf("reset mask does not contain accepted CPU %d", configs.MaxCPU)
++	}
++	if len(mask) <= len(oldMask) {
++		t.Fatalf("reset mask did not grow past exclusive control: new=%d old=%d", len(mask), len(oldMask))
++	}
++}

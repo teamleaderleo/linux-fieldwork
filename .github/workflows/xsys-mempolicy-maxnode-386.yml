@@ -1,0 +1,82 @@
+name: x/sys dynamic mempolicy maxnode linux-386
+
+on:
+  push:
+    branches:
+      - research/runc-dynamic-mask-boundaries-2026-08-05
+    paths:
+      - investigations/runc-dynamic-mask-boundaries/**
+      - .github/workflows/xsys-mempolicy-maxnode-386.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - investigations/runc-dynamic-mask-boundaries/**
+      - .github/workflows/xsys-mempolicy-maxnode-386.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-386:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      XSYS_SHA: 9e7e939dcafac07e8ab4cffa6e5fc74908413f00
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out exact Fieldwork state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Check out exact x/sys source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: golang/sys
+          ref: 9e7e939dcafac07e8ab4cffa6e5fc74908413f00
+          path: _xsys-source
+          persist-credentials: false
+          clean: true
+
+      - name: Set up declared Go toolchain
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: _xsys-source/go.mod
+          cache: false
+          check-latest: false
+
+      - name: Apply candidate and run public regression as linux-386
+        shell: bash
+        run: |
+          set -euo pipefail
+          xsys_dir="$GITHUB_WORKSPACE/_xsys-source"
+          source_dir="$GITHUB_WORKSPACE/investigations/runc-dynamic-mask-boundaries"
+          git -C "$xsys_dir" apply "$source_dir/candidate-xsys-mempolicy-maxnode.patch"
+          git -C "$xsys_dir" apply "$source_dir/candidate-xsys-mempolicy-maxnode-test.patch"
+          git -C "$xsys_dir" diff --check
+
+          (
+            cd "$xsys_dir"
+            GOOS=linux GOARCH=386 CGO_ENABLED=0 \
+              go test ./unix -run '^TestSetMemPolicyDynamicFinalBit$' -count=1 -v \
+              | tee "$RUNNER_TEMP/xsys-mempolicy-386.log"
+          )
+          grep -Fq -- '--- PASS: TestSetMemPolicyDynamicFinalBit' \
+            "$RUNNER_TEMP/xsys-mempolicy-386.log"
+
+          printf 'classification\tlinux_386_public_regression_passed\n' \
+            >"$RUNNER_TEMP/xsys-mempolicy-386.tsv"
+          printf 'xsys_commit\t%s\n' "$XSYS_SHA" >>"$RUNNER_TEMP/xsys-mempolicy-386.tsv"
+          printf 'fieldwork_commit\t%s\n' "$GITHUB_SHA" >>"$RUNNER_TEMP/xsys-mempolicy-386.tsv"
+
+      - name: Verify and clean
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf -- "$GITHUB_WORKSPACE/_xsys-source"
+          rm -f -- "$RUNNER_TEMP/xsys-mempolicy-386.log" "$RUNNER_TEMP/xsys-mempolicy-386.tsv"
+          test -z "$(git status --porcelain)"
