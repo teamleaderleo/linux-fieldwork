@@ -1,0 +1,46 @@
+name: Verify systemd-oomd policy model
+
+on:
+  pull_request:
+    paths:
+      - "investigations/systemd-oomd-reporter-collision/model_*.py"
+      - "investigations/systemd-oomd-reporter-collision/test_model_*.py"
+      - ".github/workflows/systemd-oomd-policy-model.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  executable-specification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      PYTHONPYCACHEPREFIX: /tmp/fieldwork-systemd-oomd-pycache
+    defaults:
+      run:
+        working-directory: investigations/systemd-oomd-reporter-collision
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile executable specifications
+        run: |
+          set -euo pipefail
+          rm -rf "$PYTHONPYCACHEPREFIX"
+          python3 -m py_compile model_*.py test_model_*.py
+
+      - name: Run reduction, atomicity, snapshot, and generation matrix
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -v -p 'test_model_*.py'
+
+      - name: Reject uncommitted generated state
+        working-directory: .
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"

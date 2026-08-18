@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "systemd_head": "ef608bce10e19f55ff355ec893945ec77bd09ab6",
+  "github_sha": "ef608bce10e19f55ff355ec893945ec77bd09ab6",
+  "run_id": "30693755971",
+  "run_attempt": "1",
+  "test": "TEST-55-OOMD",
+  "testcase": "user_manager_reload_preserves_system_oomd_registration",
+  "test_exit_status": 1,
+  "outcome": "reproduced",
+  "product_source_changed": false,
+  "external_contact": false
+}
