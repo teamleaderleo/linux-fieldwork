@@ -99,6 +99,39 @@ Before accepting a later result:
 
 A test that preserves its incoming dirty state is behaving correctly when it refuses to certify a clean repository.
 
+### Preserve partial outcomes before terminal errors
+
+Some mutation and recovery APIs intentionally return both completed result rows and a terminal error. A cancellation may arrive after the first branch was deleted or restored but before the next delayed operation begins. Treating the error as if nothing happened loses the evidence needed for undo, recovery, and accurate reporting.
+
+Use this order:
+
+1. preserve every completed result row;
+2. reconcile recovery or undo receipts from those rows;
+3. remove an entry only after confirmed completion;
+4. retain failed, skipped, unknown, and unattempted entries by default;
+5. keep the terminal error visible after receipt publication;
+6. emit structured or human-readable results before returning nonzero when practical.
+
+Safe skips may remain a successful command outcome. A result explicitly marked as a failed mutation should not silently produce exit status zero merely because the outer repository loop itself returned no Go, Rust, shell, or Python exception.
+
+This rule applies beyond branch cleanup. Package publication, filesystem replacement, multi-object rollback, process-tree cleanup, cache recovery, and deployment teardown can all complete one durable side effect before a later step fails.
+
+### Treat workflow admission as a separate state
+
+A workflow file present in a branch is only prepared machinery. A `queued`, `pending`, `skipped`, `action_required`, or jobless run is only admission or platform state. None of those proves that checkout, generation, formatting, tests, cleanup, artifact upload, or self-removal occurred.
+
+Before citing hosted execution, verify:
+
+- which branch or pull-request base supplies the workflow definition;
+- whether the event and token are allowed to trigger another workflow;
+- whether a job was created;
+- which exact step ran;
+- which source head the job checked out;
+- whether the intended assertion ran;
+- whether temporary files were actually removed on a later exact head.
+
+A workflow that promises to delete itself is still active until a later source head proves it is absent. If a helper cannot trigger, remove the dormant workflow rather than leaving hidden control machinery or describing the candidate as executed.
+
 ### Keep broad review bounded and productive
 
 Broad review has been productive when it names two to four adjacent contexts and one discriminator for each. It becomes unproductive when it expands by association without a decision-changing question.
@@ -123,6 +156,11 @@ The last outcome is not “nothing found.” It is evidence that the review dist
 - **Clean local step, dirty inherited workspace:** an earlier workflow step can mutate tracked source while the later step correctly preserves it.
 - **Current design, obsolete carrier:** a technically useful branch can become historical provenance while a current-main restack becomes canonical.
 - **Same tool, different authority:** a host probe, user hook, sanitizer, and package child can all invoke `env` under different contracts.
+- **Completed mutation, discarded result:** a caller sees a terminal error and drops the successful rows returned beside it, leaving undo or recovery incomplete.
+- **Unattempted work removed from receipt:** reconciliation retains only explicit failures instead of defaulting unknown entries to still pending.
+- **Failure printed, process exits zero:** candidate-level mutation rows are visible but never influence the command result.
+- **Workflow committed, no workflow executed:** event authority, pull-request base, or token restrictions prevent job creation.
+- **Self-removal promised, carrier still present:** cleanup instructions are mistaken for proof that the temporary workflow is gone.
 
 ## Compact operating receipt
 
@@ -135,6 +173,13 @@ governed operation:
 adjacent operation(s):
 why authority is same or different:
 structured evidence retained:
+partial results returned:
+terminal error returned:
+receipt entries removed only on confirmed completion:
+unattempted entries retained:
+workflow admission state:
+executed job and assertion:
+temporary workflow absent at later exact head:
 losing/negative control:
 state inherited from prior workflow steps:
 product change made:
@@ -154,11 +199,18 @@ reopen trigger:
 7. Can the mechanism lose on the current head without relying on an old artifact?
 8. Is a new finding best composed, split into a successor, or retained as a boundary clarification?
 9. Can another worker resume from the repository without chat history?
+10. Did the operation return completed rows together with an error, and did the caller preserve both?
+11. Does receipt reconciliation retain work that was never attempted?
+12. Does a reported mutation failure produce a non-success process result after useful output is preserved?
+13. Did the hosted job and intended assertion actually run, or was the workflow merely queued, skipped, or present in source?
+14. Is temporary execution machinery absent from the exact head being recommended?
 
 ## Bottom line
 
 > Broad review should make the decision harder to fool, not merely make the patch larger.
 
 > A useful failure changes the owner, the evidence, the boundary, or the next experiment before it changes the product.
+
+> Preserve completed work and the error that followed it; neither should erase the other.
 
 Internal Linux Fieldwork guidance only. It does not authorize external contact or broaden destructive-operation authority.
