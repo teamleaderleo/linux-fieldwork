@@ -1,0 +1,80 @@
+name: fsck udev lock identity
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fsck-udev-lock-identity.yml"
+      - "scripts/probe-fsck-udev-lock-identity.sh"
+      - "tests/test_fsck_udev_lock_identity.py"
+      - "investigations/fsck-udev-lock-identity/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lock-identity:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'investigation/fsck-udev-lock-identity')) ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'investigation/fsck-udev-lock-identity'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@v4
+
+      - name: Validate carrier
+        shell: bash
+        run: |
+          bash -n scripts/probe-fsck-udev-lock-identity.sh
+          python3 -m unittest -v tests.test_fsck_udev_lock_identity
+
+      - name: Run lock identity probe in disposable sid container
+        shell: bash
+        run: |
+          set -uo pipefail
+          run_dir="investigations/fsck-udev-lock-identity/runs/$RUN_ID"
+          mkdir -p "$run_dir"
+          set +e
+          docker run --privileged --rm \
+            --volume "$PWD:/work" \
+            --workdir /work \
+            --env RUN_ID="$RUN_ID" \
+            debian:sid-slim \
+            bash -lc '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                bash coreutils e2fsprogs procps python3 util-linux
+              apt-get clean
+              bash scripts/probe-fsck-udev-lock-identity.sh
+            '
+          status=$?
+          set -e
+          printf '%s\n' "$status" >"$run_dir/container-exit-status"
+          exit 0
+
+      - name: Upload lock identity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fsck-udev-lock-${{ env.RUN_ID }}
+          path: investigations/fsck-udev-lock-identity/runs/${{ env.RUN_ID }}/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Classify result
+        if: always()
+        shell: bash
+        run: |
+          run_dir="investigations/fsck-udev-lock-identity/runs/$RUN_ID"
+          status=$(cat "$run_dir/container-exit-status")
+          [[ -f $run_dir/RESULT.md ]] && cat "$run_dir/RESULT.md"
+          case "$status" in
+            0) echo "Lock identity probe passed." ;;
+            77) echo "Lock identity probe returned neutral preflight status." ;;
+            *) echo "Lock identity probe failed with status $status."; exit "$status" ;;
+          esac
