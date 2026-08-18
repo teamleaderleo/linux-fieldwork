@@ -1,7 +1,7 @@
 # Ecosystem Candidate Scan — Selection Record
 
 Date: 2026-07-30  
-Latest overlap refresh: 2026-07-31  
+Latest overlap refresh: 2026-08-05  
 Programme: [`ecosystem-contributions`](../../../programmes/ecosystem-contributions/STATUS.md)  
 Fieldwork parent: `teamleaderleo/fieldwork` programme #207 and broad-spectrum round 001
 
@@ -10,6 +10,8 @@ Fieldwork parent: `teamleaderleo/fieldwork` programme #207 and broad-spectrum ro
 This scan translated a live cross-ecosystem issue survey into Linux Fieldwork execution lanes. It selected work with exact revisions, commands, likely owning files, and clear environment gates. It also retained active upstream fixes so local work can avoid duplication and identify downstream patches ready for removal later.
 
 Promotion state is perishable. A live refresh found an active libarchive fix after the original scan, so that candidate moved from execution to reference without losing its technical lesson.
+
+The gomarkdoc selection has now completed investigation and owner review. The user submitted [gomarkdoc: restore checks on Go 1.26](https://redirect.github.com/NixOS/nixpkgs/pull/549377); issue #136 now owns CI and maintainer-review monitoring.
 
 ## Sources surveyed
 
@@ -26,10 +28,12 @@ Promotion state is perishable. A live refresh found an active libarchive fix aft
 ### 1. Nixpkgs `gomarkdoc` test restoration
 
 Issue: [Nixpkgs test-regression issue](https://redirect.github.com/NixOS/nixpkgs/issues/516481)  
+Submitted pull request: [gomarkdoc: restore checks on Go 1.26](https://redirect.github.com/NixOS/nixpkgs/pull/549377)  
 Environment: current Linux CI with Nix  
-Route: LF-35 package candidate harvesting and investigation #136
+Route: LF-35 package candidate harvesting and investigation #136  
+Current disposition: **submitted**
 
-Current package state:
+Current package state at the investigation boundary:
 
 ```text
 pkgs/by-name/go/gomarkdoc/package.nix
@@ -37,9 +41,13 @@ version = 1.1.0
 doCheck = false
 ```
 
-The issue pins a successful nixpkgs revision and a failing revision. The package comment attributes the disabled suite to inherited `GOFLAGS=-mod=vendor` reaching gomarkdoc's own flag parser, while the issue also reports a missing relative fixture. The first probe isolates environment flags and test working-directory behavior.
+The original issue pinned a successful Nixpkgs revision and a failing revision. The package comment attributed the disabled suite to inherited `GOFLAGS=-mod=vendor` reaching gomarkdoc's own flag parser, while the issue also reported a missing relative fixture.
 
-Promotion signal: restore the suite with a bounded package or shared `buildGoModule` correction.
+The executed matrix rejected that causal story. Removing `-mod=vendor` and creating `.gomarkdoc-empty.yml` weren't sufficient. The failing Go 1.26 assertion was one generated-Markdown expected-output difference: a field reference became a documentation link.
+
+The submitted patch keeps the current Go builder and command-package selection, updates that one expected line with `substituteInPlace --replace-fail`, and removes `doCheck = false`. The earlier Go 1.25/fixture/flag-filter candidate is superseded.
+
+Prior Linux and Darwin execution applies to the identical final package-file blob. Exact-current-head execution of submitted commit `060a1f8b8af68af858be896715c5dfc540522235` remains pending.
 
 ### 2. Homebrew unsolved formula intake
 
@@ -73,7 +81,7 @@ Issue: [Nixpkgs AAVMF regression](https://redirect.github.com/NixOS/nixpkgs/issu
 Environment: aarch64 QEMU or equivalent VM  
 Route: `boot-kernel`, capability queue
 
-The issue provides pinned working and failing nixpkgs revisions and a QEMU command. Convert the console boundary into an automated pass/fail marker before bisecting edk2, package flags, firmware variants, and QEMU compatibility.
+The issue provides pinned working and failing Nixpkgs revisions and a QEMU command. Convert the console boundary into an automated pass/fail marker before bisecting edk2, package flags, firmware variants, and QEMU compatibility.
 
 ## Active-fix reference — libarchive PPMd short reads
 
@@ -124,8 +132,8 @@ Recheck issue comments, linked work, assignees, claims, and pull requests immedi
 
 ## Current decision
 
-Run the `gomarkdoc` test-restoration probe first in current CI. Queue the systemd-oomd trace for a VM. Keep AAVMF behind aarch64 QEMU capacity. Retain libarchive PPMd as an active-fix reference. Continue harvesting Homebrew and Nixpkgs regression reports into LF-35.
+Monitor the submitted gomarkdoc pull request through current-head CI and maintainer review; don't restart the rejected Go 1.25/fixture/`GOFLAGS` design. Queue the systemd-oomd trace for a VM. Keep AAVMF behind aarch64 QEMU capacity. Retain libarchive PPMd as an active-fix reference. Continue harvesting Homebrew and Nixpkgs regression reports into LF-35.
 
 ## External-contact state
 
-The refresh read public issue and pull-request state only. No issue, pull-request, comment, review, email, patch submission, or other upstream contact was made or authorized.
+The user opened the linked gomarkdoc pull request. Linux Fieldwork automation didn't post an upstream issue comment, pull-request comment, review, reaction, email, patch submission, or other message. Additional upstream interaction requires the user's direction for that exact action.
