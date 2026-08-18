@@ -55,6 +55,16 @@ Successor: #99
             with self.subTest(body=body):
                 self.assertEqual(audit.audit([self.pr(index, body)]), [])
 
+    def test_opening_like_marker_with_info_does_not_close_fence(self) -> None:
+        body = """```text
+literal example line
+```python
+Carrier state: stopped
+Successor: none
+```   
+"""
+        self.assertEqual(audit.audit([self.pr(74, body)]), [])
+
     def test_real_fields_survive_beside_fenced_examples(self) -> None:
         body = """```text
 Carrier state: active | component-evidence | superseded | stopped
