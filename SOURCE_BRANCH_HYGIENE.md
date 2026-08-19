@@ -16,6 +16,16 @@ Temporary execution machinery may exist on internal research branches, but it mu
 
 Before presenting a candidate branch for review, compare it against the intended upstream base and require that the diff contains only the intended product files.
 
+## Treat an open upstream PR head as a publication branch
+
+Once an owned-fork candidate branch is the head of an open upstream pull request, every push to that branch updates the upstream-visible PR head and may trigger CI, checks, notifications, or reviewer activity.
+
+Do not use a live PR head for known intermediate work, connector experiments, repair commits, or edits that are expected to need cleanup. Do that work locally or on a separate scratch branch created from the current PR head. Inspect, test, squash, amend, or rebuild the result there, then move or push one coherent reviewable revision onto the live PR branch.
+
+Normal review-driven follow-up pushes are expected. The goal is not to avoid updating an open PR; it is to avoid publishing revisions that are already known to be temporary.
+
+When the available tooling can only edit remote GitHub branches, create a scratch branch by default. Before advancing the live PR head, compare the finished candidate against the previous PR head and verify that the diff contains only the intended review response.
+
 ## Never put issue or pull-request references in commit messages
 
 Do not include external issue numbers, pull-request numbers, shorthand references, or URLs in candidate commit subjects or bodies.
@@ -85,3 +95,4 @@ Before handing a candidate to a human for upstream submission, verify all of the
 7. No sign-off name or email was inferred or synthesized from provider account metadata.
 8. Issue-closing syntax, if desired, appears only in the pull-request body.
 9. No upstream interaction has occurred beyond what the human explicitly authorized.
+10. If the branch is already the head of an open upstream PR, exploratory work happened elsewhere and the pushed revision is coherent and reviewable.
