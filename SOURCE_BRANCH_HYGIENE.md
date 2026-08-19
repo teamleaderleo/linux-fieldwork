@@ -76,6 +76,22 @@ Do not leave behind:
 
 If temporary commits were created during research, rebuild or squash the candidate before presenting it. The final branch should read as if the intended product change had been made directly from the correct upstream base.
 
+## Preserve repository commit-message policy
+
+Before publishing an amended, squashed, or rebuilt candidate commit, preserve the target repository's commit-message rules as carefully as its source rules. Check contribution guidance and any local `gitlint`, `commitlint`, or equivalent configuration when available.
+
+Editorless commands need special care. `git commit -m` does not reflow prose to a repository's preferred width; a paragraph supplied as one shell argument remains one physical line unless explicit newlines are embedded. If the repository enforces a 72-column body, either provide those line breaks directly or use a safe formatter before committing.
+
+When a concrete line limit is known, verify it mechanically instead of counting by eye. For a 72-column policy, for example:
+
+```text
+git log -1 --format=%B | awk 'length($0) > 72 { print NR ":" length($0) ":" $0 }'
+```
+
+An empty result means no commit-message line exceeds 72 characters. Prefer the repository's own lint command when one exists because it may enforce additional subject, trailer, or formatting rules.
+
+CI should normally validate submitted commit messages, not silently rewrite them. Rewrapping a commit message creates a different commit object and SHA; for signed commits it also requires a new signature. Treat a commit-message lint failure as a request to amend locally, re-sign if required, and publish the corrected revision deliberately.
+
 ## External interaction remains separate
 
 Creating, editing, testing, or heavily iterating on an owned-fork research branch is not permission to contact upstream.
@@ -96,3 +112,4 @@ Before handing a candidate to a human for upstream submission, verify all of the
 8. Issue-closing syntax, if desired, appears only in the pull-request body.
 9. No upstream interaction has occurred beyond what the human explicitly authorized.
 10. If the branch is already the head of an open upstream PR, exploratory work happened elsewhere and the pushed revision is coherent and reviewable.
+11. The final commit message satisfies the target repository's lint and wrapping policy, including any editorless `-m` content.
