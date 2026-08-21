@@ -1,0 +1,207 @@
+name: glibc cache numeric alias
+
+on:
+  pull_request:
+    paths:
+      - "investigations/glibc-ld-cache-numeric-alias/**"
+      - ".github/workflows/glibc-cache-numeric-alias.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GLIBC_TEST_IMAGE: ubuntu@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+
+jobs:
+  noble-x86-64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Execute isolated cache lookup fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID"
+          bash investigations/glibc-ld-cache-numeric-alias/probe.sh "$output"
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-alias-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  current-glibc-x86-64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Build exact current glibc and execute isolated fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-current"
+          bash investigations/glibc-ld-cache-numeric-alias/probe-current.sh "$output"
+          grep -Fqx $'classification\talias_identity_reproduced' "$output/summary-current.tsv"
+          grep -Fqx $'duplicate_exact_ab\t501' "$output/summary-current.tsv"
+          grep -Fqx $'duplicate_exact_ba\t502' "$output/summary-current.tsv"
+
+      - name: Upload current-glibc result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-alias-current-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}-current/
+          if-no-files-found: error
+          retention-days: 14
+
+  current-glibc-exact-key-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Build exact-key candidate and execute isolated fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-candidate"
+          bash investigations/glibc-ld-cache-numeric-alias/probe-current.sh \
+            "$output" \
+            investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
+          grep -Fqx $'classification\texact_identity_preserved' "$output/summary-current.tsv"
+          grep -Fqx $'duplicate_exact_ab\t501' "$output/summary-current.tsv"
+          grep -Fqx $'duplicate_exact_ba\t502' "$output/summary-current.tsv"
+
+      - name: Upload exact-key candidate result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-alias-candidate-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}-candidate/
+          if-no-files-found: error
+          retention-days: 14
+
+  current-glibc-candidate-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Run existing glibc cache tests in privileged disposable fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-regressions"
+          mkdir -p "$output"
+          docker pull "$GLIBC_TEST_IMAGE"
+          docker image inspect --format='{{json .RepoDigests}}' "$GLIBC_TEST_IMAGE" \
+            >"$output/container-image.json"
+          docker run --rm --privileged \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -e RUNNER_TEMP=/tmp \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -e OUTPUT_PATH="$output" \
+            -v "$PWD:/fieldwork" \
+            -w /fieldwork \
+            "$GLIBC_TEST_IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              trap '\''chown -R "$HOST_UID:$HOST_GID" "$OUTPUT_PATH" 2>/dev/null || true'\'' EXIT
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential bison ca-certificates gawk git python3 rsync
+              bash investigations/glibc-ld-cache-numeric-alias/probe-candidate-regressions.sh \
+                "$OUTPUT_PATH" \
+                investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
+              grep -Fqx $'"'"'classification\tcandidate_regressions_passed'"'"' \
+                "$OUTPUT_PATH/summary.tsv"
+            '
+
+      - name: Upload candidate regression result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-alias-regressions-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}-regressions/
+          if-no-files-found: error
+          retention-days: 14
+
+  current-glibc-native-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out proposed repository state
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Prove native regression in privileged disposable fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="investigations/glibc-ld-cache-numeric-alias/runs/$RUN_ID-native"
+          mkdir -p "$output"
+          docker pull "$GLIBC_TEST_IMAGE"
+          docker image inspect --format='{{json .RepoDigests}}' "$GLIBC_TEST_IMAGE" \
+            >"$output/container-image.json"
+          docker run --rm --privileged \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -e RUNNER_TEMP=/tmp \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -e OUTPUT_PATH="$output" \
+            -v "$PWD:/fieldwork" \
+            -w /fieldwork \
+            "$GLIBC_TEST_IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              trap '\''chown -R "$HOST_UID:$HOST_GID" "$OUTPUT_PATH" 2>/dev/null || true'\'' EXIT
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential bison ca-certificates gawk git python3 rsync
+              bash investigations/glibc-ld-cache-numeric-alias/probe-native-regression.sh \
+                "$OUTPUT_PATH" \
+                investigations/glibc-ld-cache-numeric-alias/glibc-native-regression.patch \
+                investigations/glibc-ld-cache-numeric-alias/exact-key-candidate.patch
+              grep -Fqx $'"'"'classification\tnative_regression_distinguishes_candidate'"'"' \
+                "$OUTPUT_PATH/summary.tsv"
+            '
+
+      - name: Upload native regression result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: glibc-cache-numeric-alias-native-${{ env.RUN_ID }}
+          path: investigations/glibc-ld-cache-numeric-alias/runs/${{ env.RUN_ID }}-native/
+          if-no-files-found: error
+          retention-days: 14
