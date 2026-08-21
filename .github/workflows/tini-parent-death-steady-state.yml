@@ -1,0 +1,81 @@
+name: Tini parent-death steady-state compatibility
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/tini-parent-death-steady-state.yml"
+      - "investigations/tini-parent-death-startup-race/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-current:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential cmake git python3
+
+      - name: Fetch exact Tini and apply candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/krallin/tini.git /tmp/tini-baseline
+          git -C /tmp/tini-baseline checkout 369448a167e8b3da4ca5bca0b3307500c3371828
+          test "$(git -C /tmp/tini-baseline rev-parse HEAD)" = 369448a167e8b3da4ca5bca0b3307500c3371828
+          cp -a /tmp/tini-baseline /tmp/tini-candidate
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/tini-candidate/src/tini.c')
+          text = p.read_text()
+          old_start = 'int main(int argc, char *argv[]) {\n\tpid_t child_pid;\n'
+          new_start = 'int main(int argc, char *argv[]) {\n\tpid_t child_pid;\n\tpid_t initial_parent_pid = getppid();\n'
+          old = '''\t/* Trigger signal on this process when the parent process exits. */\n\tif (parent_death_signal && prctl(PR_SET_PDEATHSIG, parent_death_signal)) {\n\t\tPRINT_FATAL("Failed to set up parent death signal");\n\t\treturn 1;\n\t }\n'''
+          new = '''\t/* Trigger signal on this process when the parent process exits. */\n\tif (parent_death_signal) {\n\t\tif (prctl(PR_SET_PDEATHSIG, parent_death_signal)) {\n\t\t\tPRINT_FATAL("Failed to set up parent death signal");\n\t\t\treturn 1;\n\t\t}\n\n\t\tif (getppid() != initial_parent_pid && kill(getpid(), parent_death_signal)) {\n\t\t\tPRINT_FATAL("Failed to queue missed parent death signal");\n\t\t\treturn 1;\n\t\t}\n\t}\n'''
+          if text.count(old_start) != 1 or text.count(old) != 1:
+              raise SystemExit('candidate source boundary changed')
+          p.write_text(text.replace(old_start, new_start, 1).replace(old, new, 1))
+          PY
+          git -C /tmp/tini-candidate diff --check
+          cmake -S /tmp/tini-baseline -B /tmp/build-baseline -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build /tmp/build-baseline --parallel 2
+          cmake -S /tmp/tini-candidate -B /tmp/build-candidate -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build /tmp/build-candidate --parallel 2
+
+      - name: Preserve existing parent-death behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > /tmp/tini-pdeath-steady-state.txt
+          for tree in baseline candidate; do
+            marker="/tmp/pdeath-$tree-ok"
+            rm -f "$marker"
+            set +e
+            python3 "/tmp/tini-$tree/test/pdeathsignal/stage_1.py" \
+              "/tmp/build-$tree/tini" "$marker"
+            rc=$?
+            set -e
+            test "$rc" -eq 137
+            for _ in $(seq 1 100); do
+              test -f "$marker" && break
+              sleep 0.05
+            done
+            test -f "$marker"
+            test "$(cat "$marker")" = ok
+            echo "$tree: stage1_rc=$rc marker=ok" | tee -a /tmp/tini-pdeath-steady-state.txt
+          done
+
+      - name: Retain evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tini-parent-death-steady-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/tini-pdeath-steady-state.txt
+          if-no-files-found: warn
+          retention-days: 14
