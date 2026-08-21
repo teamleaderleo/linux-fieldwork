@@ -1,0 +1,218 @@
+name: research-309-cross-source-variant-validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-309-cross-source-variant-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  linux-reversal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      VARIANT_HEAD: b09109fa147ccbbde87a9723852f21e1bf301289
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: b09109fa147ccbbde87a9723852f21e1bf301289
+          path: uv-variant
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: fieldwork/python-publication-in-progress-marker
+          path: probe-carrier
+          persist-credentials: false
+
+      - name: Verify exact product variant
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C uv-variant rev-parse HEAD)" = "$VARIANT_HEAD"
+          test "$(git -C uv-variant diff --name-only)" = ""
+          git -C uv-variant diff --check
+
+      - name: Run clean marker discovery invariant
+        working-directory: uv-variant
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          cargo test --locked -p uv-python \
+            managed::tests::find_all_skips_in_progress_installations \
+            -- --exact --nocapture 2>&1 | tee "$GITHUB_WORKSPACE/linux-marker-unit.txt"
+          grep -F "running 1 test" "$GITHUB_WORKSPACE/linux-marker-unit.txt"
+          grep -F "test managed::tests::find_all_skips_in_progress_installations ... ok" "$GITHUB_WORKSPACE/linux-marker-unit.txt"
+
+      - name: Apply existing failpoint probe only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 probe-carrier/fieldwork/python-publication-in-progress-marker/apply_probe.py uv-variant
+          git -C uv-variant diff --check
+
+      - name: Run reversing publication controls
+        working-directory: uv-variant
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          cargo test --locked -p uv --test python --features test-python-managed \
+            python_install::python_install_marker_hides_published_incomplete_installation -- --exact --nocapture \
+            2>&1 | tee "$GITHUB_WORKSPACE/linux-marker-paused.txt"
+          grep -F "running 1 test" "$GITHUB_WORKSPACE/linux-marker-paused.txt"
+          grep -F "test python_install::python_install_marker_hides_published_incomplete_installation ... ok" "$GITHUB_WORKSPACE/linux-marker-paused.txt"
+
+          cargo test --locked -p uv --test python --features test-python-managed \
+            python_install::python_install_marker_hides_failed_publication_residue -- --exact --nocapture \
+            2>&1 | tee "$GITHUB_WORKSPACE/linux-marker-failed.txt"
+          grep -F "running 1 test" "$GITHUB_WORKSPACE/linux-marker-failed.txt"
+          grep -F "test python_install::python_install_marker_hides_failed_publication_residue ... ok" "$GITHUB_WORKSPACE/linux-marker-failed.txt"
+
+          cargo test --locked -p uv --test python --features test-python-managed \
+            python_install::python_reinstall_marker_hides_replaced_incomplete_installation -- --exact --nocapture \
+            2>&1 | tee "$GITHUB_WORKSPACE/linux-marker-reinstall.txt"
+          grep -F "running 1 test" "$GITHUB_WORKSPACE/linux-marker-reinstall.txt"
+          grep -F "test python_install::python_reinstall_marker_hides_replaced_incomplete_installation ... ok" "$GITHUB_WORKSPACE/linux-marker-reinstall.txt"
+
+  windows-discovery:
+    runs-on: windows-2025
+    timeout-minutes: 75
+    env:
+      VARIANT_HEAD: b09109fa147ccbbde87a9723852f21e1bf301289
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: b09109fa147ccbbde87a9723852f21e1bf301289
+          path: uv-variant
+          persist-credentials: false
+
+      - name: Build exact variant
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $head = git -C uv-variant rev-parse HEAD
+          if ($head -ne $env:VARIANT_HEAD) { throw "unexpected variant head $head" }
+          Push-Location uv-variant
+          try {
+            cargo build --locked -p uv --bin uv
+            if ($LASTEXITCODE -ne 0) { throw 'variant build failed' }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Exercise registry, exact-version, and direct-path discovery
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $uv = (Resolve-Path 'uv-variant/target/debug/uv.exe').Path
+          $managed = Join-Path $env:RUNNER_TEMP 'managed-python-309-variant'
+          $bin = Join-Path $env:RUNNER_TEMP 'managed-bin-309-variant'
+          $cache = Join-Path $env:RUNNER_TEMP 'uv-cache-309-variant'
+          New-Item -ItemType Directory -Force -Path $managed,$bin,$cache | Out-Null
+          $env:UV_PYTHON_INSTALL_DIR = $managed
+          $env:UV_PYTHON_BIN_DIR = $bin
+          $env:UV_CACHE_DIR = $cache
+
+          & $uv python install 3.12.6
+          if ($LASTEXITCODE -ne 0) { throw 'managed Python install failed' }
+          $install = Get-ChildItem -Path $managed -Directory | Where-Object { $_.Name -like 'cpython-3.12.6-*' } | Select-Object -First 1
+          if (-not $install) { throw 'managed installation directory not found' }
+          $pythonExe = Join-Path $install.FullName 'python.exe'
+          if (-not (Test-Path $pythonExe)) { throw "managed python.exe missing at $pythonExe" }
+
+          $beforeList = & $uv python list --only-installed --managed-python 2>&1 | Out-String
+          $beforeList | Out-File -Encoding utf8 windows-before-list.txt
+          if ($beforeList -notmatch [regex]::Escape($install.FullName)) { throw 'managed root missing before marker' }
+
+          $beforeFind = & $uv python find 3.12.6 2>&1 | Out-String
+          $beforeFind | Out-File -Encoding utf8 windows-before-find.txt
+          if ($LASTEXITCODE -ne 0) { throw 'exact managed Python not findable before marker' }
+          if ($beforeFind -notmatch [regex]::Escape($install.FullName)) { throw 'exact find did not return managed root before marker' }
+
+          $marker = Join-Path $install.FullName '.uv-installing'
+          Set-Content -Path $marker -Value 'in-progress' -NoNewline
+
+          $markedList = & $uv python list --only-installed --managed-python 2>&1 | Out-String
+          $markedList | Out-File -Encoding utf8 windows-marked-list.txt
+          if ($markedList -match [regex]::Escape($install.FullName)) { throw 'marker-bearing root leaked through Windows list' }
+
+          $markedFind = & $uv python find 3.12.6 2>&1 | Out-String
+          $markedFindCode = $LASTEXITCODE
+          $markedFind | Out-File -Encoding utf8 windows-marked-find.txt
+          if ($markedFindCode -eq 0 -and $markedFind -match [regex]::Escape($install.FullName)) {
+            throw 'marker-bearing root leaked through exact-version find'
+          }
+
+          $directFind = & $uv python find $pythonExe 2>&1 | Out-String
+          $directFindCode = $LASTEXITCODE
+          $directFind | Out-File -Encoding utf8 windows-marked-direct-path-find.txt
+          if ($directFindCode -eq 0) { throw 'direct path unexpectedly accepted marker-bearing managed Python' }
+
+          Remove-Item -Force $marker
+
+          $afterList = & $uv python list --only-installed --managed-python 2>&1 | Out-String
+          $afterList | Out-File -Encoding utf8 windows-after-list.txt
+          if ($afterList -notmatch [regex]::Escape($install.FullName)) { throw 'managed root did not return after marker removal' }
+
+          $afterFind = & $uv python find 3.12.6 2>&1 | Out-String
+          $afterFind | Out-File -Encoding utf8 windows-after-find.txt
+          if ($LASTEXITCODE -ne 0) { throw 'exact find failed after marker removal' }
+          if ($afterFind -notmatch [regex]::Escape($install.FullName)) { throw 'exact find did not return managed root after marker removal' }
+
+          $afterDirect = & $uv python find $pythonExe 2>&1 | Out-String
+          $afterDirect | Out-File -Encoding utf8 windows-after-direct-path-find.txt
+          if ($LASTEXITCODE -ne 0) { throw 'direct path did not recover after marker removal' }
+          if ($afterDirect -notmatch [regex]::Escape($install.FullName)) { throw 'direct path did not return managed root after marker removal' }
+
+          @(
+            "variant=$env:VARIANT_HEAD",
+            "install=$($install.FullName)",
+            "marked_exact_find_exit=$markedFindCode",
+            "marked_direct_find_exit=$directFindCode",
+            'windows_registry_list_hidden=true',
+            'windows_exact_find_hidden=true',
+            'windows_direct_path_rejected=true',
+            'windows_rediscovery_after_marker=true'
+          ) | Set-Content -Encoding utf8 windows-variant-summary.txt
+          Write-Output 'WINDOWS_VARIANT_DISCOVERY=PASS'
+
+      - name: Upload Windows receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-source-variant-windows-309
+          path: |
+            windows-before-list.txt
+            windows-before-find.txt
+            windows-marked-list.txt
+            windows-marked-find.txt
+            windows-marked-direct-path-find.txt
+            windows-after-list.txt
+            windows-after-find.txt
+            windows-after-direct-path-find.txt
+            windows-variant-summary.txt
+          if-no-files-found: warn
+
+  upload-linux:
+    needs: linux-reversal
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cross-source-variant-linux-309
+          path: |
+            linux-marker-unit.txt
+            linux-marker-paused.txt
+            linux-marker-failed.txt
+            linux-marker-reinstall.txt
+          if-no-files-found: warn

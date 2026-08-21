@@ -1,0 +1,106 @@
+name: research-309-cross-source-variant-windows-final
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-309-cross-source-variant-windows-final.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-final:
+    runs-on: windows-2025
+    timeout-minutes: 75
+    env:
+      VARIANT_HEAD: b09109fa147ccbbde87a9723852f21e1bf301289
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: teamleaderleo/uv
+          ref: b09109fa147ccbbde87a9723852f21e1bf301289
+          path: uv-variant
+          persist-credentials: false
+
+      - name: Build exact variant
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git -C uv-variant rev-parse HEAD) -ne $env:VARIANT_HEAD) { throw 'unexpected variant head' }
+          Push-Location uv-variant
+          try {
+            cargo build --locked -p uv --bin uv
+            if ($LASTEXITCODE -ne 0) { throw 'variant build failed' }
+          } finally { Pop-Location }
+
+      - name: Validate automatic discovery hiding and explicit path override
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $uv = (Resolve-Path 'uv-variant/target/debug/uv.exe').Path
+          $managed = Join-Path $env:RUNNER_TEMP 'managed-python-309-final'
+          $bin = Join-Path $env:RUNNER_TEMP 'managed-bin-309-final'
+          $cache = Join-Path $env:RUNNER_TEMP 'uv-cache-309-final'
+          New-Item -ItemType Directory -Force -Path $managed,$bin,$cache | Out-Null
+          $env:UV_PYTHON_INSTALL_DIR = $managed
+          $env:UV_PYTHON_BIN_DIR = $bin
+          $env:UV_CACHE_DIR = $cache
+
+          & $uv python install 3.12.6
+          if ($LASTEXITCODE -ne 0) { throw 'managed Python install failed' }
+          $install = Get-ChildItem -Path $managed -Directory | Where-Object { $_.Name -like 'cpython-3.12.6-*' } | Select-Object -First 1
+          if (-not $install) { throw 'managed installation directory not found' }
+          $pythonExe = Join-Path $install.FullName 'python.exe'
+          $marker = Join-Path $install.FullName '.uv-installing'
+
+          $before = & $uv python find 3.12.6 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0 -or $before -notmatch [regex]::Escape($install.FullName)) { throw 'baseline exact find failed' }
+
+          Set-Content -Path $marker -Value 'in-progress' -NoNewline
+
+          $list = & $uv python list --only-installed --managed-python 2>&1 | Out-String
+          $list | Out-File -Encoding utf8 final-windows-marked-list.txt
+          if ($list -match [regex]::Escape($install.FullName)) { throw 'automatic managed list leaked marked root' }
+
+          $exact = & $uv python find 3.12.6 2>&1 | Out-String
+          $exactCode = $LASTEXITCODE
+          $exact | Out-File -Encoding utf8 final-windows-marked-exact-find.txt
+          if ($exactCode -eq 0 -and $exact -match [regex]::Escape($install.FullName)) { throw 'automatic exact-version discovery leaked marked root' }
+
+          # Explicit file requests are deliberately authoritative (`PythonSource::ProvidedPath`).
+          $direct = & $uv python find $pythonExe 2>&1 | Out-String
+          $directCode = $LASTEXITCODE
+          $direct | Out-File -Encoding utf8 final-windows-marked-direct-find.txt
+          if ($directCode -ne 0) { throw 'explicit path override was unexpectedly rejected' }
+          if ($direct -notmatch [regex]::Escape($install.FullName)) { throw 'explicit path did not return the provided managed interpreter' }
+
+          Remove-Item -Force $marker
+          $after = & $uv python find 3.12.6 2>&1 | Out-String
+          $after | Out-File -Encoding utf8 final-windows-after-find.txt
+          if ($LASTEXITCODE -ne 0 -or $after -notmatch [regex]::Escape($install.FullName)) { throw 'automatic discovery did not recover after marker removal' }
+
+          @(
+            "variant=$env:VARIANT_HEAD",
+            "install=$($install.FullName)",
+            "marked_exact_find_exit=$exactCode",
+            "marked_direct_find_exit=$directCode",
+            'automatic_list_hidden=true',
+            'automatic_exact_find_hidden=true',
+            'explicit_provided_path_allowed=true',
+            'automatic_rediscovery_after_marker=true'
+          ) | Set-Content -Encoding utf8 final-windows-summary.txt
+          Write-Output 'WINDOWS_FINAL_DISCOVERY_CONTRACT=PASS'
+
+      - name: Upload receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-source-variant-windows-final-309
+          path: |
+            final-windows-marked-list.txt
+            final-windows-marked-exact-find.txt
+            final-windows-marked-direct-find.txt
+            final-windows-after-find.txt
+            final-windows-summary.txt
+          if-no-files-found: warn
