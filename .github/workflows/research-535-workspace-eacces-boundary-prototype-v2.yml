@@ -1,0 +1,201 @@
+name: research-535-workspace-eacces-boundary-prototype-v2
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-535-workspace-eacces-boundary-prototype-v2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  prototype-v2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      SOURCE_HEAD: 62538397e59a7fd10db51cb3889df9b4d6449e6b
+      UV_PYTHON_DOWNLOADS: never
+      UV_OFFLINE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: astral-sh/uv
+          ref: 62538397e59a7fd10db51cb3889df9b4d6449e6b
+          path: uv-prototype
+          persist-credentials: false
+
+      - name: Apply shared inaccessible-ancestor boundary prototype
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C uv-prototype rev-parse HEAD)" = "$SOURCE_HEAD"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workspace=Path('uv-prototype/crates/uv-workspace/src/workspace.rs')
+          s=workspace.read_text()
+          old='''        // Read the `pyproject.toml`.\n        let contents = fs_err::tokio::read_to_string(&pyproject_path).await?;\n        let pyproject_toml = PyProjectToml::from_string(contents, &pyproject_path)'''
+          new='''        // Read the `pyproject.toml`. An inaccessible ancestor is an authority boundary: a\n        // sandboxed process cannot honor workspace configuration it is not allowed to read.\n        let contents = match fs_err::tokio::read_to_string(&pyproject_path).await {\n            Ok(contents) => contents,\n            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {\n                debug!(\n                    "Stopping workspace discovery at inaccessible ancestor: `{}`",\n                    pyproject_path.simplified_display()\n                );\n                return Ok(None);\n            }\n            Err(err) => return Err(err.into()),\n        };\n        let pyproject_toml = PyProjectToml::from_string(contents, &pyproject_path)'''
+          assert old in s
+          workspace.write_text(s.replace(old,new,1))
+
+          settings=Path('uv-prototype/crates/uv-settings/src/lib.rs')
+          s=settings.read_text()
+          old='''    pub fn find(path: &Path) -> Result<Option<Self>, Error> {\n        for ancestor in path.ancestors() {\n            match Self::from_directory(ancestor) {'''
+          new='''    pub fn find(path: &Path) -> Result<Option<Self>, Error> {\n        for (depth, ancestor) in path.ancestors().enumerate() {\n            match Self::from_directory(ancestor) {'''
+          assert old in s
+          s=s.replace(old,new,1)
+          old='''                Err(err) => {\n                    // Otherwise, warn and stop.\n                    return Err(err);\n                }'''
+          new='''                Err(Error::Io(err))\n                    if depth > 0 && err.kind() == std::io::ErrorKind::PermissionDenied =>\n                {\n                    tracing::debug!(\n                        "Stopping settings discovery at inaccessible ancestor: `{}`",\n                        ancestor.user_display()\n                    );\n                    return Ok(None);\n                }\n                Err(err) => {\n                    // Otherwise, warn and stop.\n                    return Err(err);\n                }'''
+          assert old in s
+          settings.write_text(s.replace(old,new,1))
+          PY
+          rustup component add --toolchain 1.97.1-x86_64-unknown-linux-gnu rustfmt
+          (cd uv-prototype && cargo fmt --all)
+          (cd uv-prototype && cargo fmt --all -- --check)
+          git -C uv-prototype diff --check
+          git -C uv-prototype diff -- crates/uv-workspace/src/workspace.rs crates/uv-settings/src/lib.rs > "$GITHUB_WORKSPACE/eacces-boundary-prototype-v2.diff"
+
+      - name: Build prototype
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/prototype-target"
+          cargo build --manifest-path uv-prototype/Cargo.toml --package uv --bin uv
+          cp "$CARGO_TARGET_DIR/debug/uv" "$RUNNER_TEMP/uv-prototype"
+          "$RUNNER_TEMP/uv-prototype" --version
+
+      - name: Execute shared-boundary controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          UV="$RUNNER_TEMP/uv-prototype"
+          ROOT="$RUNNER_TEMP/eacces-prototype-v2-535"
+          rm -rf "$ROOT"; mkdir -p "$ROOT"
+          RESULTS="$GITHUB_WORKSPACE/results-535-prototype-v2.tsv"
+          printf 'parent_kind\treadable\tcommand\texit\tpermission_denied\tparse_error\tchild_lock\tparent_lock\tvenv_created\n' > "$RESULTS"
+
+          write_child() {
+            mkdir -p "$1/child"
+            cat > "$1/child/pyproject.toml" <<'EOF'
+          [project]
+          name = "child-535"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          dependencies = []
+          EOF
+          }
+          write_parent() {
+            case "$2" in
+              project)
+                cat > "$1/pyproject.toml" <<'EOF'
+          [project]
+          name = "parent-535"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          dependencies = []
+          EOF
+                ;;
+              project_config)
+                cat > "$1/pyproject.toml" <<'EOF'
+          [project]
+          name = "parent-config-535"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          dependencies = []
+          [tool.uv]
+          managed = false
+          EOF
+                ;;
+              workspace)
+                cat > "$1/pyproject.toml" <<'EOF'
+          [tool.uv.workspace]
+          members = ["child"]
+          EOF
+                ;;
+              malformed)
+                printf '[project]\nname = "broken"\ndependencies = [\n' > "$1/pyproject.toml"
+                ;;
+              *) exit 99 ;;
+            esac
+          }
+
+          run_case() {
+            kind="$1"; readable="$2"; command="$3"
+            dir="$ROOT/$kind-$readable-$command"
+            rm -rf "$dir"; mkdir -p "$dir"
+            write_child "$dir"; write_parent "$dir" "$kind"
+            if [ "$readable" = false ]; then chmod 000 "$dir/pyproject.toml"; fi
+            log="$ROOT/$kind-$readable-$command.log"
+            set +e
+            case "$command" in
+              lock) (cd "$dir/child" && "$UV" lock --dry-run --offline) >"$log" 2>&1 ;;
+              metadata) (cd "$dir/child" && "$UV" workspace metadata) >"$log" 2>&1 ;;
+              venv) (cd "$dir/child" && "$UV" venv .venv) >"$log" 2>&1 ;;
+              *) exit 98 ;;
+            esac
+            code=$?
+            set -e
+            if [ "$readable" = false ]; then chmod 644 "$dir/pyproject.toml"; fi
+            cat "$log"
+            grep -Eqi 'Permission denied|os error 13|EACCES' "$log" && denied=true || denied=false
+            grep -Eqi 'TOML|parse|expected.*array|invalid.*pyproject' "$log" && parse=true || parse=false
+            [ -f "$dir/child/uv.lock" ] && child=true || child=false
+            [ -f "$dir/uv.lock" ] && parent=true || parent=false
+            [ -d "$dir/child/.venv" ] && venv=true || venv=false
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "$readable" "$command" "$code" "$denied" "$parse" "$child" "$parent" "$venv" >> "$RESULTS"
+          }
+
+          for command in lock metadata venv; do
+            run_case project true "$command"
+            run_case project false "$command"
+            run_case project_config true "$command"
+            run_case project_config false "$command"
+            run_case workspace true "$command"
+            run_case workspace false "$command"
+            run_case malformed true "$command"
+          done
+
+          # Starting-directory permission denial must remain fatal; only ancestors become boundaries.
+          dir="$ROOT/current-denied"
+          mkdir -p "$dir"
+          cat > "$dir/pyproject.toml" <<'EOF'
+          [project]
+          name = "current-denied-535"
+          version = "0.1.0"
+          requires-python = ">=3.12"
+          EOF
+          chmod 000 "$dir/pyproject.toml"
+          set +e
+          (cd "$dir" && "$UV" lock --dry-run --offline) >"$ROOT/current-denied.log" 2>&1
+          current_code=$?
+          set -e
+          chmod 644 "$dir/pyproject.toml"
+          cat "$ROOT/current-denied.log"
+
+          echo '=== MATRIX ==='
+          column -t -s $'\t' "$RESULTS" || cat "$RESULTS"
+
+          python3 - "$RESULTS" "$current_code" <<'PY'
+          import csv, sys
+          rows=list(csv.DictReader(open(sys.argv[1]), delimiter='\t'))
+          for command in ('lock','metadata','venv'):
+              for kind in ('project','project_config','workspace'):
+                  row=next(r for r in rows if r['parent_kind']==kind and r['readable']=='false' and r['command']==command)
+                  assert row['exit']=='0' and row['permission_denied']=='false', row
+              malformed=next(r for r in rows if r['parent_kind']=='malformed' and r['command']==command)
+              assert malformed['exit']!='0' and malformed['parse_error']=='true', malformed
+          assert sys.argv[2] != '0', ('starting directory should remain fatal', sys.argv[2])
+          print('EACCES_SHARED_BOUNDARY_PROTOTYPE=PASS')
+          PY
+
+      - name: Upload receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-eacces-boundary-prototype-v2-535
+          path: |
+            results-535-prototype-v2.tsv
+            eacces-boundary-prototype-v2.diff
+          if-no-files-found: warn
