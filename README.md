@@ -12,6 +12,7 @@ Linux Fieldwork is a lab notebook and working copy for learning how Linux system
 
 - [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md) — live operational board for proven and active work.
 - [`START_HERE.md`](START_HERE.md) — choose the right kind of work and record it consistently.
+- [`WRITING.md`](WRITING.md) — make the question, consequence, evidence, limit, and decision readable without turning every record into the same template.
 - [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md) — lightweight ownership, dispatch, review, branching, and quiet external-reference guidance.
 - [`FIELD_GUIDE.md`](FIELD_GUIDE.md) — practical do, do-not, 🍩 donut, review, and investigation-selection lessons.
 - [`RESEARCH_LANES.md`](RESEARCH_LANES.md) — current shortlist of formally mapped lanes.
@@ -62,6 +63,7 @@ Negative results belong here too. A careful result that supports existing behavi
 ## Repository map
 
 - [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md) — live operational board.
+- [`WRITING.md`](WRITING.md) — reader-facing technical-writing guidance.
 - [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md) — adaptable coordination and third-party GitHub backlink policy.
 - [`FIELD_GUIDE.md`](FIELD_GUIDE.md) — reusable review heuristics, common donuts, fruitful areas, and investigation-selection guidance.
 - [`programmes/registry.yml`](programmes/registry.yml) — canonical programme and lane inventory.
