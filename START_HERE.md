@@ -2,7 +2,7 @@
 
 Use this runbook whenever a person or agent is asked to add Linux learning, map a research direction, or investigate a Linux or Debian project through this repository.
 
-Read [`FIELD_GUIDE.md`](FIELD_GUIDE.md) and [`BUG_LENSES.md`](BUG_LENSES.md) alongside this runbook for practical review lessons, recurring defect classes, and investigation methods retained from prior work.
+Read [`WRITING.md`](WRITING.md), [`FIELD_GUIDE.md`](FIELD_GUIDE.md), and [`BUG_LENSES.md`](BUG_LENSES.md) alongside this runbook for current prose guidance, practical review lessons, recurring defect classes, and investigation methods retained from prior work.
 
 ## In simple words
 
@@ -82,14 +82,15 @@ Start notes and investigations from [`templates/`](templates/). Follow [`program
 
 ## 3. Explain it for a human reader
 
-Near the top, add these reader-facing fields:
+Near the top, make three reader needs easy to recover:
 
-- `## TL;DR` — the current answer and next action in a few sentences;
-- `## Explain like I'm five` — a concrete, low-jargon explanation;
-- `## Why care` — the practical failure, risk, or opportunity.
+- **current answer or concrete question**;
+- **understandable mechanism**;
+- **practical consequence**.
 
-Existing lightweight notes may keep the combined `## In simple words` heading.
-For a defect, candidate, or surprising behavior, answer:
+Use the representation that earns its space. `## In simple words`, `## TL;DR`, `## Why care`, a state trace, a before/after snippet, or a small table can all do the job. `## Explain like I'm five` is available when that voice genuinely helps. [`WRITING.md`](WRITING.md) is the current rule; the repository no longer requires a fixed three-heading ritual for every investigation.
+
+For a defect, candidate, or surprising behavior, make these answers visible:
 
 - What does the component do, and where does it sit?
 - What exact input and action produce the wrong result?
@@ -99,7 +100,7 @@ For a defect, candidate, or surprising behavior, answer:
 
 Prefer a literal example such as `origin promises 100 bytes → sends 40 → candidate removes the temporary file` over a phrase such as “response handling is hardened.” Define specialized terms at first use.
 
-Keep observed behavior, intent evidence, interpretation, design choice, and future work distinct.
+Keep observed behavior, intent evidence, interpretation, design choice, and future work distinct. Preserve useful author cadence instead of rewriting every record into the same house rhythm.
 
 ## 4. Record the source boundary
 
