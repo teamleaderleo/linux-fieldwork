@@ -1,16 +1,10 @@
 # Investigation title
 
-## TL;DR
+## In simple words
 
-State the current answer and next action in a few sentences.
+State the current answer or concrete question, the component's job, and the practical consequence. Include a literal input → action → result example when it helps.
 
-## Explain like I'm five
-
-Explain the component and its job with ordinary words. Include one literal input → action → result example.
-
-## Why care
-
-Name the affected file, bytes, process, privilege, package, user, or decision and describe the concrete consequence.
+Use `TL;DR`, `Why care`, a state trace, or another reader entry point instead when that communicates the work better. Follow [`WRITING.md`](../WRITING.md); reader-facing headings are tools rather than a required three-part ritual.
 
 ## Current state
 
@@ -30,7 +24,7 @@ State what source or history shows about intent. Separate evidence from interpre
 
 ## Question
 
-State one bounded technical question.
+State one bounded technical question. Omit this section when the opening already carries the exact question and repetition would add nothing.
 
 ## Source
 
@@ -82,11 +76,13 @@ Explain what the results establish and how they answer the question. Distinguish
 
 State the exact limits: skipped test suites, untested platforms, reduced fixtures, mocked components, privilege assumptions, environment-specific behavior, and claims the work leaves open.
 
+Keep a major caveat beside the claim it qualifies near the top as well; this section collects the complete boundary instead of revealing it late.
+
 ## Next step
 
 Choose a concrete next action or close with a retained negative result.
 
-For a human decision, say what the reviewer is choosing and name the exact supporting evidence.
+For a human decision, say what the reviewer is choosing and name the exact supporting evidence. End after the decision lands; a closing recap is optional.
 
 ## Authority
 
