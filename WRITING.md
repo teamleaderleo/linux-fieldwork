@@ -6,6 +6,8 @@ Make the technical claim easy to see before the machinery around it. A reader sh
 
 The repository has accumulated several useful reader-facing conventions over time: `## In simple words`, `## TL;DR`, `## Explain like I'm five`, and `## Why care`. Treat those as tools, not a ceremony. Use the headings that make this record easier to understand. A short investigation may need one compact opening passage. A complicated upstream packet may earn separate summary and consequence sections.
 
+Where older `START_HERE.md` or `FIELD_GUIDE.md` wording names `TL;DR`, `Explain like I'm five`, and `Why care` together, read those as three reader needs—current answer, understandable mechanism, concrete consequence—not three mandatory headings. This file is the current writing rule for new and revised records.
+
 ## Lead with the thing that is happening
 
 For an investigation, begin with the concrete question or current answer.
