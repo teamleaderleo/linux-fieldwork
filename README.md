@@ -2,7 +2,7 @@
 
 A GitHub-hosted workbench for investigating Linux and Debian projects from a phone-first workflow.
 
-> **Live status:** [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md) — proven results, active candidates, exact CI gates, and the next action for each current lane.
+> **Current work:** use live GitHub issues and pull requests together with programme/target state and the owning evidence records. [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md) is a retired historical board, not a live-status authority.
 
 ## In simple words
 
@@ -10,7 +10,6 @@ Linux Fieldwork is a lab notebook and working copy for learning how Linux system
 
 ## Enter here
 
-- [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md) — live operational board for proven and active work.
 - [`START_HERE.md`](START_HERE.md) — choose the right kind of work and record it consistently.
 - [`WRITING.md`](WRITING.md) — make the question, consequence, evidence, limit, and decision readable without turning every record into the same template.
 - [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md) — lightweight ownership, dispatch, review, branching, and quiet external-reference guidance.
@@ -23,6 +22,7 @@ Linux Fieldwork is a lab notebook and working copy for learning how Linux system
 - [`investigations/`](investigations/) — bounded questions with exact sources, commands, evidence, and limits.
 - [`templates/`](templates/) — starter documents for notes and investigations.
 - [`upstream/`](upstream/) — imported source trees used for reading, testing, and candidate patches.
+- [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md) — retired August 10 status-board surface retained only as a Git-history pointer.
 
 ## Working surfaces
 
@@ -62,7 +62,8 @@ Negative results belong here too. A careful result that supports existing behavi
 
 ## Repository map
 
-- [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md) — live operational board.
+- [`START_HERE.md`](START_HERE.md) — primary navigation and work-entry guide.
+- [`CURRENT_FIELDWORK.md`](CURRENT_FIELDWORK.md) — retired historical board; do not use as current status.
 - [`WRITING.md`](WRITING.md) — reader-facing technical-writing guidance.
 - [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md) — adaptable coordination and third-party GitHub backlink policy.
 - [`FIELD_GUIDE.md`](FIELD_GUIDE.md) — reusable review heuristics, common donuts, fruitful areas, and investigation-selection guidance.
