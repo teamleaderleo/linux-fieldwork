@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Read [`README.md`](README.md), [`START_HERE.md`](START_HERE.md), [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md), [`FIELD_GUIDE.md`](FIELD_GUIDE.md), and [`SOURCE_BRANCH_HYGIENE.md`](SOURCE_BRANCH_HYGIENE.md) before doing repository or owned-fork source work.
+Read [`README.md`](README.md), [`START_HERE.md`](START_HERE.md), [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md), [`FIELD_GUIDE.md`](FIELD_GUIDE.md), [`MAINTAINER_COMMUNICATION.md`](MAINTAINER_COMMUNICATION.md), and [`SOURCE_BRANCH_HYGIENE.md`](SOURCE_BRANCH_HYGIENE.md) before doing repository or owned-fork source work.
 
 ## Owned-fork research authority
 
