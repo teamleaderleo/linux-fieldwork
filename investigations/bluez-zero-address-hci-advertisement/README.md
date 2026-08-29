@@ -17,6 +17,7 @@ client owns the discovery session.
 ## Current state
 
 - State: `HOLD`
+- Owning issue: [#685](https://github.com/teamleaderleo/linux-fieldwork/issues/685)
 - Exact working head: Linux Fieldwork base `6f52e7166bbeb05814c94ab546ec1771d6fc5d0c`
 - Latest authoritative gate or artifact: current-boot journal summary plus an
   earlier bounded raw `btmon` trace on `big-red`

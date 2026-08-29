@@ -16,6 +16,7 @@ separately from the LocalSearch crash.
 ## Current state
 
 - State: `SCOPING`
+- Owning issue: [#687](https://github.com/teamleaderleo/linux-fieldwork/issues/687)
 - Exact working head: Linux Fieldwork base `6f52e7166bbeb05814c94ab546ec1771d6fc5d0c`
 - Latest authoritative gate or artifact: live `xdg-mime`, `file`, and installed
   shared MIME XML comparison

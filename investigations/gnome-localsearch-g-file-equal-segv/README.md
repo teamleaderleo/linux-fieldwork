@@ -16,6 +16,7 @@ not assumed to have caused this crash.
 ## Current state
 
 - State: `SCOPING`
+- Owning issue: [#686](https://github.com/teamleaderleo/linux-fieldwork/issues/686)
 - Exact working head: Linux Fieldwork base `6f52e7166bbeb05814c94ab546ec1771d6fc5d0c`
 - Latest authoritative gate or artifact: Ubuntu Apport crash report for
   `/usr/libexec/localsearch-3`
