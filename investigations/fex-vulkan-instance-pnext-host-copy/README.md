@@ -29,7 +29,7 @@ The exact ARM64 probe created an instance successfully, executed no guest callba
 - Latest authoritative gate: FEX Actions run `33266924365`, job `99138505363`
 - Artifact: `9718992084`, digest `sha256:689dfec9535e9ca32b3f0d9afe3ad7cf924c0b489ebe24fcc3a9bd5c427454b4`
 - First incomplete step: none for the bounded supported x86-64 debug-callback question
-- Cleanup state: local probe binaries removed; duplicate run cancelled; disposable workflow registration still has to be retired after this receipt is published
+- Cleanup state: local probe binaries removed; duplicate run cancelled; disposable workflow registration `345463450` disabled after publishing this receipt
 - Next safe action: treat nested direct-driver callbacks and copied-chain allocation cleanup as separate measured questions
 - External-contact state: no upstream contact authorized or created
 
