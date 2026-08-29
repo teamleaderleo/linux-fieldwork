@@ -7,26 +7,30 @@ reported advertisers whose address was `00:00:00:00:00:00`. BlueZ then emitted
 6,550 paired object/interface errors because address type participates in its
 device lookup while the D-Bus object path is derived from the address alone.
 
-This is not yet a demonstrated BlueZ defect. The raw HCI report already
-contained the zero address, so the earlier kernel regression discussed in
+This is not yet a demonstrated BlueZ defect. A controlled recurrence now
+identifies the long-lived ChatGPT desktop process as the BlueZ discovery
+client, but the raw HCI report already contained the zero address, so the
+earlier kernel regression discussed in
 [BlueZ issue 1157](https://github.com/bluez/bluez/issues/1157) does not explain
-this observation. The next useful result is to distinguish a non-compliant
-nearby advertiser from a controller/firmware parsing edge and to identify which
-client owns the discovery session.
+this observation. The next useful results are to map that main-process request
+to the exact in-app surface and distinguish a non-compliant nearby advertiser
+from a controller/firmware parsing edge.
 
 ## Current state
 
-- State: `HOLD`
+- State: `EXECUTING`
 - Owning issue: [#685](https://github.com/teamleaderleo/linux-fieldwork/issues/685)
-- Exact working head: Linux Fieldwork base `6f52e7166bbeb05814c94ab546ec1771d6fc5d0c`
-- Latest authoritative gate or artifact: current-boot journal summary plus an
-  earlier bounded raw `btmon` trace on `big-red`
-- First incomplete step: capture a short sanitized raw-HCI trace during a
-  measured recurrence and identify the discovery owner
-- Cleanup state: discovery stopped without intervention; no diagnostic process
-  or changed Bluetooth state remains
-- Next safe action: reopen only after recurrence, then collect equal-window
-  error counts and bounded D-Bus/HCI traces
+- Exact working head: Linux Fieldwork base `812062ca3648638fd426da24ee6705ce693a05db`
+- Latest authoritative gate or artifact: current-boot journal summary, an
+  earlier bounded raw `btmon` trace, and a controlled system-bus owner trace on
+  `big-red`
+- First incomplete step: map the confirmed ChatGPT main-process discovery
+  ownership to the exact stale authentication/passkey surface without
+  restarting the active desktop app
+- Cleanup state: the adapter is powered on; the owner reasserted LE discovery;
+  the bounded D-Bus monitor exited and no diagnostic process remains
+- Next safe action: close only the identified stale authentication/passkey
+  surface and compare equal-window discovery/error counts
 - External-contact state: no new upstream contact authorized or made
 
 ## Intent and precedent
@@ -66,8 +70,8 @@ or controller/firmware path without disrupting normal Bluetooth clients?
 - Distribution and release: Ubuntu 26.04.1 LTS
 - Kernel and architecture: Linux `7.0.0-30-generic`, x86-64
 - Host context: physical Redmi Book Pro 15 (2025), named `big-red`
-- Privileges: journal and system-bus reads; no package, service, firmware, or
-  Bluetooth-state mutation in this investigation
+- Privileges: journal and system-bus reads plus one bounded adapter-only power
+  cycle; no package, service, firmware, or persistent Bluetooth-policy change
 - Relevant tool version: BlueZ `5.85-4ubuntu0.1`
 
 ## Baseline behavior
@@ -86,8 +90,10 @@ message.
 
 The first event began about ten seconds after a Chromium-backed authentication
 flow loaded. WebAuthn includes `ble` and `hybrid` authenticator transports, so a
-browser/passkey surface is a plausible discovery trigger. That timing does not
-identify the producer of the malformed advertisement. A later 20-second
+browser/passkey surface was a plausible discovery trigger. A controlled
+recurrence now confirms that the ChatGPT desktop main process owns the BlueZ
+scan, but does not yet identify which renderer/surface asked that main process
+to start it or the producer of the malformed advertisement. A prior 20-second
 system-bus trace saw no new adapter method call while the already-active scan
 continued.
 
@@ -127,27 +133,39 @@ payloads before retaining or sharing any trace.
   1157 kernel regression; its fix is present here and protects a different
   transition.
 - Demonstrated: discovery and the error stream stopped without intervention.
-- Not demonstrated: which client began discovery, which radio/controller event
-  produced the malformed address, or whether current upstream source still
-  mishandles any recoverable identity.
+- Demonstrated on 2026-08-29: with no connected devices and Pairable disabled,
+  a normal `StopDiscovery` from a new client failed while discovery stayed
+  active. After an adapter-only power off/on, system-bus sender `:1.87` issued
+  `SetDiscoveryFilter(Transport="le")` and `StartDiscovery`; `busctl` mapped
+  that sender to the long-lived ChatGPT desktop main process, PID 4237. The
+  Edge client connected hours after the original recurrence and was not the
+  owner. The adapter was restored powered-on and no app or service was killed.
+- Not demonstrated: which ChatGPT renderer/surface requested discovery, which
+  radio/controller event produced the malformed address, or whether current
+  upstream source still mishandles any recoverable identity.
 
 ## Evidence boundary
 
 The retained observation is from one controller, kernel, BlueZ package, boot,
-and radio environment. The short D-Bus trace began after discovery was already
-active. No controlled recurrence, second controller, firmware comparison, or
-current-source BlueZ build has run. Browser timing is correlation only.
+and radio environment. The D-Bus trace proves the active discovery client, not
+the origin of the malformed radio report or the exact in-app surface that
+requested the scan. No second controller, firmware comparison, or
+current-source BlueZ build has run.
 
 ## Next step
 
-Keep this investigation on hold while the system is quiet. Reopen on recurrence,
-identify the scan owner, capture one bounded HCI window with an ordinary-device
-negative control, and decide whether the evidence belongs with BlueZ, the
+Preserve the active ChatGPT desktop app. Identify and close only the stale
+authentication/passkey surface that requested discovery, compare equal time
+windows, then capture one bounded HCI window with an ordinary-device negative
+control. The client-owner result belongs with ChatGPT/WebAuthn behavior; the
+zero-address report still needs separate attribution to BlueZ, the
 kernel/controller vendor, or a non-compliant advertiser.
 
 ## Authority
 
 Internal research and sanitized evidence retention are authorized. No upstream
 issue, comment, patch, or other external interaction has been authorized or
-created. Do not restart BlueZ, toggle Bluetooth, kill browsers, change firmware,
-or replace the kernel merely to reproduce or silence the messages.
+created. One controlled adapter-only power cycle was performed after confirming
+there were no connected devices; it restored power immediately and exposed the
+scan owner. Do not restart BlueZ, kill browsers, change firmware, or replace the
+kernel merely to reproduce or silence the messages.
