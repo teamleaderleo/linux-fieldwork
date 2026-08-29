@@ -1,134 +1,147 @@
-# OverlayFS nested hot-state mounts fall back to `xino=off`
+# Unprivileged bubblewrap OverlayFS falls back to `xino=off`
 
 ## In simple words
 
-`big-red` logged 38 warnings while Glaeda and Scrapbook experiments mounted
-task-private OverlayFS views over resident build/cache trees:
+The repeated `xino=off` messages on `big-red` are explained behavior, not
+evidence of broken ext4, NVMe, nested mounts, or a Linux regression.
 
-```text
-overlayfs: fs on '<sandbox path>' does not support file handles, falling back to xino=off.
-```
-
-The workloads completed, and this is not evidence of an ext4 or NVMe failure.
-The open question is whether the nested overlay topology merely loses optional
-persistent/uniform inode-number behavior, or whether it can invalidate a
-Glaeda cache-identity, filesystem-observation, or performance claim.
+Glaeda asks unprivileged bubblewrap to create a short-lived OverlayFS view. The
+kernel only enables OverlayFS's persistent inode-number composition when the
+mounting task can decode underlying file handles. Its
+`ovl_can_decode_fh()` helper deliberately returns false unless the task has
+`CAP_DAC_READ_SEARCH` in the initial user namespace. An unprivileged bubblewrap
+mount does not have that authority, so `xino=auto` becomes `xino=off` and emits
+one warning. The mount still works and is torn down correctly.
 
 Tracking: [Linux Fieldwork issue #688](https://github.com/teamleaderleo/linux-fieldwork/issues/688)
 
-## Current state
+## Disposition
 
-- State: `SCOPING`
-- Exact working head: `bde57e9e8a93a0ac582bb62b9de47eacbfe636e8`
-- Latest authoritative artifact: 38 current-boot kernel messages between
-  14:42:26 and 15:26:26 Asia/Shanghai on 2026-08-29
-- First incomplete step: reduce one warning to a minimal nested-overlay mount
-  topology and record both layers' mount options and file-handle capability
-- Cleanup state: no OverlayFS mounts remained active at the observation point
-- Next safe action: compare one direct ext4-backed overlay and one
-  overlay-backed lower/upper candidate with `stat`, `readdir`, rename/copy-up,
-  hard-link, inotify/fanotify where supported, teardown, and clean rerun
-- External-contact state: internal owned-repository research only; no upstream
-  issue, comment, or patch is authorized
+- State: `NEGATIVE_RESULT_EXPLAINED`
+- Host: Ubuntu 26.04.1, Linux `7.0.0-30-generic`, x86-64
+- Glaeda head exercised: `c81ac80` (`main`, private-copy merge state)
+- Exact Glaeda control: `HotRunTests.test_task_sees_stable_path_and_target_writes_stay_private`
+- Current-boot count after bounded probes: 75 messages
+- Cleanup: the test and both reduced probes exited; no OverlayFS mount remained;
+  `/tmp/glaeda-xino-probe.M0ZNfn` was removed after restoring owner traversal
+  permission on bubblewrap's empty work subdirectories
+- External contact: none; no kernel or bubblewrap issue, comment, or patch is
+  authorized or warranted by this evidence
 
-## Intent and precedent
+## Why the first hypothesis lost
 
-The Linux OverlayFS documentation says `xino` composes a filesystem ID with an
-underlying inode number. With `xino=on` or `xino=auto`, persistent and uniform
-inode behavior requires underlying filesystems that support file handles. With
-`xino=off`, `st_ino`, `st_dev`, and `d_ino` can have weaker persistence and
-uniformity properties. Many applications do not care, but Glaeda explicitly
-models source/cache identity and cleanup, so the lost property needs a bounded
-compatibility check rather than an assumption.
+The first record suspected a nested-overlay backing layer because kernel paths
+appeared below `/oldroot`. That prefix is bubblewrap's temporary name for the
+host tree while it constructs the new mount namespace; it does not prove that
+the lower filesystem is itself OverlayFS.
 
-Primary reference:
-<https://www.kernel.org/doc/html/latest/filesystems/overlayfs.html#inode-properties>
+Two controls distinguish the mechanism:
 
-## Question
+1. Glaeda's own disposable `/tmp` fixture added exactly one warning: 72 -> 73.
+2. A reduced bubblewrap overlay with a plain ext4-backed lower directory added
+   exactly one warning: 73 -> 74. Repeating it with bubblewrap's
+   `--cap-add CAP_DAC_READ_SEARCH` still added one: 74 -> 75. The latter flag
+   cannot grant the initial-user-namespace capability required by the kernel
+   check to an unprivileged caller.
 
-For Glaeda's ultra-trusted stable-path/task-private hot-state topology, what
-exact layer lacks exportable file handles, and does the resulting `xino=off`
-fallback change any inode identity, directory enumeration, hard-link,
-copy-up/rename, watcher, cleanup, or measured-latency property that the current
-contract relies on?
+The direct ext4 control rules out “only a nested OverlayFS lower triggers the
+fallback.” It also makes a direct-versus-nested mount matrix unnecessary for
+the question this investigation originally asked.
 
-## Environment
+## Source mechanism
 
-- Distribution: Ubuntu 26.04.1 LTS
-- Kernel/architecture: Linux `7.0.0-30-generic`, x86-64
-- Root filesystem: ext4, `rw,relatime`
-- Overlay module `xino_auto`: `Y`
-- Privileges: observation was read-only; the original mounts were created by
-  unprivileged trusted local experiment helpers
-- Context: task-private sandbox views over resident Rust `target` and Next.js
-  `.next` trees; paths are sanitized here because their exact usernames and
-  temporary names add no technical evidence
+Current Linux source implements the decision in
+[`ovl_can_decode_fh()`](https://github.com/torvalds/linux/blob/master/fs/overlayfs/util.c):
+it returns zero when `capable(CAP_DAC_READ_SEARCH)` is false or when the
+filesystem cannot decode handles. `capable()` is the initial-user-namespace
+capability check. OverlayFS mount setup then turns `xino=auto` into `xino=off`
+and emits the observed message when an upper layer exists and that helper
+returns zero.
 
-## Baseline behavior
+The [kernel OverlayFS documentation](https://docs.kernel.org/filesystems/overlayfs.html#inode-properties)
+describes the consequence: without `xino`, `st_ino`, `st_dev`, and directory
+entry inode values have weaker uniformity and persistence properties. This is
+not data loss and does not mean the underlying filesystem cannot encode a file
+handle for ordinary callers.
 
-The current boot contained 38 matching kernel messages. They covered resident
-Rust target trees, task-private OverlayFS upper trees, temporary resident
-targets, and one Next.js `.next` tree. A representative line was:
+On this host, a read-only `name_to_handle_at()` probe succeeded for both the
+ext4 Glaeda `target` directory and `/tmp`. That is consistent rather than
+contradictory: the syscall's encoding ability is weaker than OverlayFS's need
+to decode handles under its capability policy.
 
-```text
-overlayfs: fs on '<resident target>' does not support file handles, falling back to xino=off.
-```
-
-At the later observation point, `findmnt -t overlay` showed no surviving
-mounts. The root filesystem remained healthy, and NVMe SMART reported no media
-or error-log entries.
-
-## Competing explanations
-
-1. Expected nested-overlay limitation: an OverlayFS layer used as a backing
-   layer does not provide the file handles required by `xino=auto`; only inode
-   presentation weakens, while Glaeda's content/path/generation contracts stay
-   correct.
-2. Topology mistake: a path intended to remain direct ext4-backed is actually
-   overlay-backed inside the sandbox, needlessly losing `xino` properties and
-   perhaps adding copy-up cost.
-3. Contract defect: a current Glaeda check implicitly treats inode identity or
-   a watcher observation as stable across a topology where the kernel does not
-   promise it.
-4. Kernel regression: the exact nested topology previously supplied usable
-   file handles but does not on this kernel. No version comparison currently
-   supports this explanation.
+Bubblewrap 0.11.1 exposes `--overlay-src`, `--overlay`, `--tmp-overlay`, and
+`--ro-overlay`, but no option for choosing `xino=off` explicitly. Its generated
+unprivileged mount uses `userxattr`, and the kernel's global `xino_auto` module
+parameter on this host is `Y`.
 
 ## Reproduction
 
-The current observation is recoverable with bounded read-only commands:
+The product-level control is disposable and uses Glaeda's existing test:
 
 ```sh
-journalctl -k -b --no-pager \
-  | grep 'overlayfs: .*falling back to xino=off'
-cat /sys/module/overlay/parameters/xino_auto
+before=$(journalctl -k -b --no-pager | grep -c 'xino=off')
+/usr/bin/python3 scripts/test-hot-run.py \
+  HotRunTests.test_task_sees_stable_path_and_target_writes_stay_private
+after=$(journalctl -k -b --no-pager | grep -c 'xino=off')
+printf '%s -> %s\n' "$before" "$after"
 findmnt -t overlay -o TARGET,SOURCE,FSTYPE,OPTIONS
-findmnt -no FSTYPE,OPTIONS /
 ```
 
-Do not recreate the warning by mounting over another route's live build tree.
-The next probe must use disposable directories, name every lower/upper/work
-layer, and remove only mounts and paths it created.
+Observed: the test passed, the count advanced `72 -> 73`, and no OverlayFS
+mount survived.
+
+The reduced control used a `mktemp -d` root with empty lower, upper, work, and
+destination directories, then invoked:
+
+```sh
+bwrap --die-with-parent --dev-bind / / \
+  --overlay-src "$probe/lower" \
+  --overlay "$probe/upper" "$probe/work" "$probe/dest" \
+  /usr/bin/true
+```
+
+The same command was repeated with `--cap-add CAP_DAC_READ_SEARCH`. Each run
+added one warning. Both mounted successfully and exited; cleanup removed only
+the named disposable root.
+
+## Contract impact for Glaeda
+
+The exercised Glaeda path does not use overlay inode numbers as durable cache,
+lease, ownership, source, or cleanup identity. Its hot-state authority remains
+bound to explicit resident/task paths, runtime identity, private state roots,
+locks, content/toolchain contracts, and exact process completion. The focused
+test proved task-private writes, stable visible paths, measurement output, and
+teardown while the fallback occurred.
+
+Accordingly, this investigation establishes no Glaeda correctness failure. The
+remaining concern is operational noise and the documented weaker inode view if
+a future cache indexer or watcher begins treating inode numbers as persistent
+across mounts.
+
+## Next decision
+
+Do not change the host-wide `xino_auto` module parameter and do not grant
+additional capabilities to suppress a harmless warning. Those would broaden
+machine behavior or authority for no demonstrated benefit.
+
+If Glaeda keeps OverlayFS mode as an option, a bounded successor may:
+
+- add an explicit contract test that no durable Glaeda identity is derived
+  from `st_ino`/`st_dev` across an overlay lifecycle;
+- measure whether `xino=off` changes any relevant hot-run latency on the actual
+  workload (the present work did not benchmark it); or
+- investigate an owned bubblewrap enhancement that can request `xino=off`
+  explicitly, solely to avoid predictable kernel-log noise.
+
+Reopen the kernel-defect question only if a privileged control with the
+required initial-namespace capability still produces the same fallback on a
+filesystem whose export operations can decode handles, or if a documented
+Glaeda invariant actually fails.
 
 ## Evidence boundary
 
-This record establishes repeated fallback messages on one Ubuntu/kernel/host
-and identifies the kernel contract that weakens when `xino` is disabled. It
-does not yet establish a correctness failure, performance regression, kernel
-regression, or upstream defect. No inode comparison, minimal topology, older
-kernel control, or Glaeda semantic test has run.
-
-## Next step
-
-Build the smallest disposable direct-ext4 versus nested-overlay comparison.
-Record mountinfo, file-handle support, inode/device values before and after
-copy-up/rename, hard-link behavior, watcher behavior where available, elapsed
-setup/teardown, surviving mounts, and a clean rerun. Stop if the only difference
-is the documented inode-presentation property and Glaeda consumes none of it;
-otherwise move the exact losing contract into the owning Glaeda test or a
-kernel-source investigation.
-
-## Authority
-
-Internal research in `teamleaderleo/linux-fieldwork` is authorized. No external
-upstream interaction has occurred or is authorized.
+This is one host, one kernel build, bubblewrap 0.11.1, one passing Glaeda
+contract test, and two reduced unprivileged mounts. It explains the observed
+warning and rules out the original nested-only hypothesis. It does not compare
+performance, older kernels, privileged mounts, watcher behavior, NFS export,
+or every OverlayFS operation. No upstream defect is claimed.
