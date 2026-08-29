@@ -20,17 +20,19 @@ from a controller/firmware parsing edge.
 
 - State: `EXECUTING`
 - Owning issue: [#685](https://github.com/teamleaderleo/linux-fieldwork/issues/685)
-- Exact working head: Linux Fieldwork base `812062ca3648638fd426da24ee6705ce693a05db`
+- Evidence parent for this update: Linux Fieldwork
+  `652b45424d119a8181615da4ca38a1b271a5d75f`
 - Latest authoritative gate or artifact: current-boot journal summary, an
-  earlier bounded raw `btmon` trace, and a controlled system-bus owner trace on
-  `big-red`
-- First incomplete step: map the confirmed ChatGPT main-process discovery
-  ownership to the exact stale authentication/passkey surface without
-  restarting the active desktop app
+  earlier bounded raw `btmon` trace, a controlled system-bus owner trace, and a
+  current ChatGPT renderer/window lifecycle inventory on `big-red`
+- First incomplete step: prove whether renderer client 45 is the stale
+  authentication/passkey surface by closing only that visible surface in an
+  owner-present window; timestamp correlation alone is not identity proof
 - Cleanup state: the adapter is powered on; the owner reasserted LE discovery;
   the bounded D-Bus monitor exited and no diagnostic process remains
-- Next safe action: close only the identified stale authentication/passkey
-  surface and compare equal-window discovery/error counts
+- Next safe action: when Leo can identify the relevant in-app Google
+  authentication/passkey surface visually, close only that surface and compare
+  equal five-minute discovery/error windows; do not close ChatGPT itself
 - External-contact state: no new upstream contact authorized or made
 
 ## Intent and precedent
@@ -97,6 +99,16 @@ to start it or the producer of the malformed advertisement. A prior 20-second
 system-bus trace saw no new adapter method call while the already-active scan
 continued.
 
+A renderer lifecycle inventory narrows, but does not close, that gap. ChatGPT
+renderer client 45, PID 40524, started at 22:58:49; the first zero-address
+message followed at 22:58:59. Clients 41 and 43 started at 22:54:20 and
+22:57:54. Client 45 remains alive while discovery and the error stream continue.
+The desktop currently exposes one ChatGPT top-level window and no separate auth
+popup. A read-only browser-tab inventory could reach Edge but not ChatGPT's
+in-app browser, so no tab title, URL, page contents, screenshot, or authentication
+material was collected. The ten-second boundary makes client 45 the strongest
+surface candidate, not a demonstrated owner.
+
 ## Hypotheses and discriminators
 
 1. **Nearby advertiser:** the same zero-address report should correlate with a
@@ -140,6 +152,14 @@ payloads before retaining or sharing any trace.
   that sender to the long-lived ChatGPT desktop main process, PID 4237. The
   Edge client connected hours after the original recurrence and was not the
   owner. The adapter was restored powered-on and no app or service was killed.
+- Demonstrated on 2026-08-29 at 16:53 Asia/Shanghai: ChatGPT renderer client 45
+  started ten seconds before the first zero-address message and remained alive;
+  the adapter was still discovering, sender `:1.87` still mapped to ChatGPT PID
+  4237, and the journal contained 7,512 matching lines this boot, 566 in the
+  previous hour, and 78 in the latest five-minute sample. The immediately
+  preceding and latest equal five-minute windows contained 50 and 70 lines.
+  One ChatGPT top-level window and no separate auth popup were exposed. No app,
+  tab, process, adapter, service, or setting was changed.
 - Not demonstrated: which ChatGPT renderer/surface requested discovery, which
   radio/controller event produced the malformed address, or whether current
   upstream source still mishandles any recoverable identity.
@@ -147,19 +167,24 @@ payloads before retaining or sharing any trace.
 ## Evidence boundary
 
 The retained observation is from one controller, kernel, BlueZ package, boot,
-and radio environment. The D-Bus trace proves the active discovery client, not
-the origin of the malformed radio report or the exact in-app surface that
-requested the scan. No second controller, firmware comparison, or
+and radio environment. The D-Bus trace proves the active discovery client. The
+renderer timestamp makes client 45 a candidate but does not prove which
+renderer requested discovery, the origin of the malformed radio report, or the
+exact in-app surface. No second controller, firmware comparison, or
 current-source BlueZ build has run.
 
 ## Next step
 
-Preserve the active ChatGPT desktop app. Identify and close only the stale
-authentication/passkey surface that requested discovery, compare equal time
-windows, then capture one bounded HCI window with an ordinary-device negative
-control. The client-owner result belongs with ChatGPT/WebAuthn behavior; the
-zero-address report still needs separate attribution to BlueZ, the
-kernel/controller vendor, or a non-compliant advertiser.
+Preserve the active ChatGPT desktop app. In an owner-present window, identify
+the in-app authentication/passkey surface associated with renderer client 45,
+close only that surface, and compare equal time windows. If discovery or the
+error stream stops, reopen the same surface as the negative/reproduction
+control before capturing one bounded HCI window with an ordinary non-zero
+advertisement. If closing that surface has no effect, client 45 loses and the
+next discriminator must map another renderer or client. The client-owner result
+belongs with ChatGPT/WebAuthn behavior; the zero-address report still needs
+separate attribution to BlueZ, the kernel/controller vendor, or a non-compliant
+advertiser.
 
 ## Authority
 
