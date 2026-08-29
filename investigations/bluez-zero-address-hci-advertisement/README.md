@@ -18,7 +18,7 @@ from a controller/firmware parsing edge.
 
 ## Current state
 
-- State: `MONITORING`
+- State: `MONITORING`; the owning issue is closed until a measured recurrence
 - Owning issue: [#685](https://github.com/teamleaderleo/linux-fieldwork/issues/685)
 - Evidence parent for the discovery-owner result: Linux Fieldwork
   `652b45424d119a8181615da4ca38a1b271a5d75f`; this revision records the later
@@ -120,6 +120,16 @@ windows each contained zero matching lines. The current-boot total had reached
 it does not prove that renderer 45 caused the stop because no exit event was
 captured at the transition.
 
+The later 23:25 snapshot adds a renderer-class negative control. ChatGPT main
+PID 4237 remained active, and renderer client 66, PID 1522010, had remained
+active since 19:03:26 -- before the final error -- while the adapter reported
+`Discovering=false`. The Bluetooth service journal had no entry after 20:00,
+and the latest-hour zero-address count remained zero. Therefore neither the
+main desktop process nor the mere existence of a ChatGPT renderer is sufficient
+to sustain discovery or the error stream. This strengthens a surface-specific
+request/lifecycle hypothesis without proving that renderer 45 owned it. No app,
+process, adapter, service, or setting was changed.
+
 ## Hypotheses and discriminators
 
 1. **Nearby advertiser:** the same zero-address report should correlate with a
@@ -176,6 +186,12 @@ payloads before retaining or sharing any trace.
   2-, 5-, and 15-minute windows were clean while the ChatGPT main process
   remained active. Renderer PID 40524 was no longer present. The boot total was
   8,506 lines. No process, app, adapter, service, or setting was changed.
+- Demonstrated on 2026-08-29 at 23:25 Asia/Shanghai: discovery and the
+  latest-hour error stream remained inactive while ChatGPT main PID 4237 and
+  renderer client 66/PID 1522010 were both active. Client 66 had started before
+  the final error and persisted after the dormant boundary. ChatGPT main-process
+  presence and generic renderer presence are therefore useful negative controls,
+  not sufficient trigger conditions.
 - Not demonstrated: which ChatGPT renderer/surface requested discovery, which
   radio/controller event produced the malformed address, or whether current
   upstream source still mishandles any recoverable identity.
@@ -184,9 +200,10 @@ payloads before retaining or sharing any trace.
 
 The retained observation is from one controller, kernel, BlueZ package, boot,
 and radio environment. The D-Bus trace proves the active discovery client. The
-renderer timestamp and later absence make client 45 a candidate but do not
-prove which renderer requested discovery, what ended the session, the origin
-of the malformed radio report, or the exact in-app surface. No second
+client-45 timestamp and later absence make it a candidate; the quiet client-66
+interval proves only that generic renderer presence is insufficient. Neither
+result proves which surface requested discovery, what ended the session, the
+origin of the malformed radio report, or the exact in-app surface. No second
 controller, firmware comparison, transition-time renderer trace, or
 current-source BlueZ build has run.
 
