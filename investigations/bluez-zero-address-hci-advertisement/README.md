@@ -18,25 +18,26 @@ from a controller/firmware parsing edge.
 
 ## Current state
 
-- State: `MITIGATED`; Bluetooth is powered off at the adapter after a measured
-  recurrence and explicit user authorization
+- State: `MITIGATED`; Bluetooth is rfkill-blocked and its service is stopped
+  and boot-disabled after a measured recurrence and explicit user authorization
 - Owning issue: [#685](https://github.com/teamleaderleo/linux-fieldwork/issues/685)
 - Evidence parent for the discovery-owner result: Linux Fieldwork
   `652b45424d119a8181615da4ca38a1b271a5d75f`; this revision records the later
   spontaneous stop boundary
 - Latest authoritative gate or artifact: current-boot journal summary, an
-  earlier bounded raw `btmon` trace, a controlled system-bus owner trace, and
-  the 2026-08-31 03:18:28 adapter/rfkill verification on `big-red`
+  earlier bounded raw `btmon` trace, a controlled system-bus owner trace, the
+  2026-08-31 03:18:28 adapter/rfkill verification, and the 04:57 service-state
+  verification on `big-red`
 - First incomplete step: confirm the restored blocked state after the next
   ordinary reboot; do not reboot merely to test it
-- Cleanup state: the adapter reports `Powered=false`, `Discovering=false`, and
-  zero connected devices; Bluetooth rfkill is blocked, Wi-Fi rfkill is
-  unblocked, `bluetooth.service` remains active, the bounded monitors exited,
+- Cleanup state: Bluetooth rfkill is blocked, Wi-Fi rfkill is unblocked,
+  `bluetooth.service` is disabled and inactive, the bounded monitors exited,
   and no diagnostic process remains
 - Next safe action: leave the adapter off. If Bluetooth is needed, run
-  `sudo rfkill unblock bluetooth` followed by `bluetoothctl power on`; if the
-  scan/error stream then recurs, capture the bounded owner and HCI evidence
-  before changing another component
+  `sudo systemctl enable --now bluetooth.service`, `sudo rfkill unblock
+  bluetooth`, and `bluetoothctl power on`; if the scan/error stream then
+  recurs, capture the bounded owner and HCI evidence before changing another
+  component
 - External-contact state: no new upstream contact authorized or made
 
 ## Intent and precedent
@@ -85,6 +86,14 @@ issue 1157 is already present and owns a different transition: this host's
 earlier raw HCI capture contained the zero address before BlueZ received it.
 There is no evidence-backed upstream patch to fold into this machine for the
 observed mechanism.
+
+At 04:54, the user explicitly authorized fully disabling unused Bluetooth.
+`systemctl disable --now bluetooth.service` stopped the active service and
+removed its boot and D-Bus activation links. The 04:57 gate reported the
+service disabled and inactive, Bluetooth still soft-blocked, and no failed
+system units. The verification command initially left one `bluetoothctl show`
+client waiting because BlueZ was no longer available; that route-owned client
+and its parent shell were terminated, and a process recheck was clean.
 
 ## Question
 
@@ -232,6 +241,11 @@ payloads before retaining or sharing any trace.
   not discovering, the BlueZ service stayed active, Wi-Fi stayed unblocked,
   and the error stream emitted zero matching messages after the rfkill change
   through the 585-second quiet gate.
+- Demonstrated on 2026-08-31 at 04:57 Asia/Shanghai: after a second explicit
+  authorization to disable Bluetooth fully, `bluetooth.service` was stopped
+  and boot-disabled while Bluetooth remained soft-blocked. No failed system
+  units appeared. One route-owned `bluetoothctl show` verifier that waited
+  after BlueZ stopped was terminated and did not survive the cleanup check.
 - Not demonstrated: which ChatGPT renderer/surface requested discovery, which
   radio/controller event produced the malformed address, or whether current
   upstream source still mishandles any recoverable identity.
@@ -251,10 +265,12 @@ current-source BlueZ build has run.
 
 Confirm that the journal remains quiet in the next routine health snapshot.
 Leave Bluetooth off while it has no user. If it becomes useful, restore it with
-`sudo rfkill unblock bluetooth` and then `bluetoothctl power on`. A recurrence
-after rollback should trigger the bounded D-Bus-owner and HCI plan before any
-package, service, kernel, firmware, or application change. After the next
-ordinary reboot, confirm Bluetooth stayed blocked; do not reboot for this test.
+`sudo systemctl enable --now bluetooth.service`, `sudo rfkill unblock
+bluetooth`, and then `bluetoothctl power on`. A recurrence after rollback
+should trigger the bounded D-Bus-owner and HCI plan before any package, kernel,
+firmware, or application change. After the next ordinary reboot, confirm the
+service stayed disabled and Bluetooth stayed blocked; do not reboot for this
+test.
 
 ## Authority
 
@@ -265,6 +281,8 @@ confirming there were no connected devices; it restored power immediately and
 exposed the scan owner. On 2026-08-31 the user explicitly authorized disabling
 unused Bluetooth, so the adapter was powered off with zero connected devices.
 Bluetooth-only rfkill was then blocked so systemd will restore the state at
-boot. Rollback is `sudo rfkill unblock bluetooth` followed by
-`bluetoothctl power on`. Do not restart BlueZ, kill browsers, change firmware,
-or replace the kernel merely to reproduce or silence the messages.
+boot. The later user authorization also covered stopping and boot-disabling
+`bluetooth.service`. Rollback is `sudo systemctl enable --now
+bluetooth.service`, `sudo rfkill unblock bluetooth`, and `bluetoothctl power
+on`. Do not restart BlueZ, kill browsers, change firmware, or replace the
+kernel merely to reproduce or silence the messages.
