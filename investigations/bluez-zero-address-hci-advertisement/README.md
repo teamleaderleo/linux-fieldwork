@@ -11,47 +11,80 @@ This is not yet a demonstrated BlueZ defect. A controlled recurrence now
 identifies the long-lived ChatGPT desktop process as the BlueZ discovery
 client, but the raw HCI report already contained the zero address, so the
 earlier kernel regression discussed in
-[BlueZ issue 1157](https://github.com/bluez/bluez/issues/1157) does not explain
+[BlueZ issue 1157](https://redirect.github.com/bluez/bluez/issues/1157) does not explain
 this observation. The next useful results are to map that main-process request
 to the exact in-app surface and distinguish a non-compliant nearby advertiser
 from a controller/firmware parsing edge.
 
 ## Current state
 
-- State: `MONITORING`; the owning issue is closed until a measured recurrence
+- State: `MITIGATED`; Bluetooth is powered off at the adapter after a measured
+  recurrence and explicit user authorization
 - Owning issue: [#685](https://github.com/teamleaderleo/linux-fieldwork/issues/685)
 - Evidence parent for the discovery-owner result: Linux Fieldwork
   `652b45424d119a8181615da4ca38a1b271a5d75f`; this revision records the later
   spontaneous stop boundary
 - Latest authoritative gate or artifact: current-boot journal summary, an
-  earlier bounded raw `btmon` trace, a controlled system-bus owner trace, and a
-  later adapter/journal/process snapshot on `big-red`
-- First incomplete step: on a future measured recurrence, capture the exact
-  transition that ends discovery and correlate it with renderer lifecycle;
-  timestamp correlation alone is not identity proof
-- Cleanup state: the adapter is powered on and reports `Discovering=false`;
-  ChatGPT remains active, the bounded monitors exited, and no diagnostic
-  process remains
-- Next safe action: wait for a measured recurrence. Do not reopen an auth
-  surface, restart BlueZ, toggle the adapter, or close ChatGPT merely to
-  reproduce a dormant symptom
+  earlier bounded raw `btmon` trace, a controlled system-bus owner trace, and
+  the 2026-08-31 03:18:28 adapter/rfkill verification on `big-red`
+- First incomplete step: confirm the restored blocked state after the next
+  ordinary reboot; do not reboot merely to test it
+- Cleanup state: the adapter reports `Powered=false`, `Discovering=false`, and
+  zero connected devices; Bluetooth rfkill is blocked, Wi-Fi rfkill is
+  unblocked, `bluetooth.service` remains active, the bounded monitors exited,
+  and no diagnostic process remains
+- Next safe action: leave the adapter off. If Bluetooth is needed, run
+  `sudo rfkill unblock bluetooth` followed by `bluetoothctl power on`; if the
+  scan/error stream then recurs, capture the bounded owner and HCI evidence
+  before changing another component
 - External-contact state: no new upstream contact authorized or made
 
 ## Intent and precedent
 
 BlueZ's [Adapter API](https://bluez.readthedocs.io/en/latest/adapter-api/)
 documents that discovery sessions are shared between clients. BlueZ issue
-[1157](https://github.com/bluez/bluez/issues/1157) contains the same userspace
+[1157](https://redirect.github.com/bluez/bluez/issues/1157) contains the same userspace
 error text, but its published trace begins with a non-zero HCI advertiser and
 later becomes zero in the kernel management path. Linux commit
-[`eb73b5a91572`](https://github.com/torvalds/linux/commit/eb73b5a9157221f405b4fe32751da84ee46b7a25)
+[`eb73b5a91572`](https://redirect.github.com/torvalds/linux/commit/eb73b5a9157221f405b4fe32751da84ee46b7a25)
 fixed that pending-advertisement path and is present in the running Ubuntu
 kernel source.
 
 Here, the all-zero address was already present in the controller's raw HCI LE
 Extended Advertising Report. BlueZ issue
-[715](https://github.com/bluez/bluez/issues/715) also records that BlueZ cannot
+[715](https://redirect.github.com/bluez/bluez/issues/715) also records that BlueZ cannot
 reconstruct an address when the HCI report itself supplies all zeroes.
+
+## 2026-08-31 recurrence and adapter-off disposition
+
+The scan recurred without a connected Bluetooth device. A two-hour journal
+window contained 282 matching zero-address messages, beginning at 02:17:47 and
+ending at 03:08:43 Asia/Shanghai. The adapter reported `Powered=true`,
+`Discovering=true`, `Pairable=false`, and zero connected devices.
+
+The user authorized disabling unused Bluetooth. `bluetoothctl power off` was
+applied after the zero-device preflight. The 03:10:38 verification reported
+`Powered=false`, `Discovering=false`, `Pairable=false`, zero connected devices,
+an active `bluetooth.service`, unchanged unblocked rfkill state, and no failed
+system or user units. At 03:11:48 the final matching message was 185 seconds
+old and the same adapter state held.
+
+Because the installed BlueZ configuration keeps its default `AutoEnable=true`,
+adapter power-off alone could be lost after service startup. At 03:14:15,
+Bluetooth-only rfkill was therefore blocked. The immediate gate showed
+Bluetooth blocked, Wi-Fi unblocked, adapter power and discovery false, the
+default route present, and the Tailscale backend running. `systemd-rfkill`
+stores each rfkill class on change and restores it at boot. One rfkill state
+file was updated, its socket was active, and no kernel command-line override
+disabled restoration. At 03:18:28 there had been zero matching messages since
+the rfkill change; the final message was 585 seconds old, Tailscale was still
+running, and no system or user unit was failed.
+
+This is a radio-state mitigation, not a source fix. The known Linux fix for
+issue 1157 is already present and owns a different transition: this host's
+earlier raw HCI capture contained the zero address before BlueZ received it.
+There is no evidence-backed upstream patch to fold into this machine for the
+observed mechanism.
 
 ## Question
 
@@ -74,8 +107,8 @@ or controller/firmware path without disrupting normal Bluetooth clients?
 - Distribution and release: Ubuntu 26.04.1 LTS
 - Kernel and architecture: Linux `7.0.0-30-generic`, x86-64
 - Host context: physical REDMI Book Pro 16 2025, named `big-red`
-- Privileges: journal and system-bus reads plus one bounded adapter-only power
-  cycle; no package, service, firmware, or persistent Bluetooth-policy change
+- Privileges: journal and system-bus reads, one bounded adapter-only power
+  cycle, and the later user-authorized adapter power-off mitigation
 - Relevant tool version: BlueZ `5.85-4ubuntu0.1`
 
 ## Baseline behavior
@@ -192,6 +225,13 @@ payloads before retaining or sharing any trace.
   the final error and persisted after the dormant boundary. ChatGPT main-process
   presence and generic renderer presence are therefore useful negative controls,
   not sufficient trigger conditions.
+- Demonstrated on 2026-08-31: the scan and error stream recurred, with 282
+  matching messages in two hours and zero connected devices. After explicit
+  user authorization, adapter power was turned off and Bluetooth-only rfkill
+  was blocked for boot persistence. The adapter then remained not powered and
+  not discovering, the BlueZ service stayed active, Wi-Fi stayed unblocked,
+  and the error stream emitted zero matching messages after the rfkill change
+  through the 585-second quiet gate.
 - Not demonstrated: which ChatGPT renderer/surface requested discovery, which
   radio/controller event produced the malformed address, or whether current
   upstream source still mishandles any recoverable identity.
@@ -209,21 +249,22 @@ current-source BlueZ build has run.
 
 ## Next step
 
-Preserve the active ChatGPT desktop app and the now-clean adapter state. On a
-future measured recurrence, capture a bounded D-Bus owner trace and renderer
-inventory before changing anything. If the same exact in-app
-authentication/passkey surface is visibly identifiable, close only that
-surface and compare equal windows; reopen it only as an owner-present
-reproduction control. Capture the discovery stop transition as well as the
-start. The client-owner result belongs with ChatGPT/WebAuthn behavior; the
-zero-address report still needs separate attribution to BlueZ, the
-kernel/controller vendor, or a non-compliant advertiser.
+Confirm that the journal remains quiet in the next routine health snapshot.
+Leave Bluetooth off while it has no user. If it becomes useful, restore it with
+`sudo rfkill unblock bluetooth` and then `bluetoothctl power on`. A recurrence
+after rollback should trigger the bounded D-Bus-owner and HCI plan before any
+package, service, kernel, firmware, or application change. After the next
+ordinary reboot, confirm Bluetooth stayed blocked; do not reboot for this test.
 
 ## Authority
 
 Internal research and sanitized evidence retention are authorized. No upstream
 issue, comment, patch, or other external interaction has been authorized or
-created. One controlled adapter-only power cycle was performed after confirming
-there were no connected devices; it restored power immediately and exposed the
-scan owner. Do not restart BlueZ, kill browsers, change firmware, or replace the
-kernel merely to reproduce or silence the messages.
+created. One earlier controlled adapter-only power cycle was performed after
+confirming there were no connected devices; it restored power immediately and
+exposed the scan owner. On 2026-08-31 the user explicitly authorized disabling
+unused Bluetooth, so the adapter was powered off with zero connected devices.
+Bluetooth-only rfkill was then blocked so systemd will restore the state at
+boot. Rollback is `sudo rfkill unblock bluetooth` followed by
+`bluetoothctl power on`. Do not restart BlueZ, kill browsers, change firmware,
+or replace the kernel merely to reproduce or silence the messages.
