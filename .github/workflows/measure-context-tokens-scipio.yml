@@ -1,0 +1,62 @@
+name: Scipio final context tokens
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Measure final repaired surfaces
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -m pip install --quiet tiktoken==0.14.0
+          python - <<'PY' > /tmp/token-report.md
+          import os
+          import pathlib
+          import subprocess
+          import tiktoken
+
+          files = ["README.md", "AGENTS.md", "ADAPTIVE_COORDINATION.md", "SOURCE_BRANCH_HYGIENE.md", "SECURITY_RECONVENE.md"]
+          encoding = tiktoken.get_encoding("o200k_base")
+          base_ref = os.environ["BASE_REF"]
+          before = {}
+          after = {}
+          for path in files:
+              base_text = subprocess.check_output(
+                  ["git", "show", f"origin/{base_ref}:{path}"], text=True
+              )
+              head_text = pathlib.Path(path).read_text()
+              before[path] = len(encoding.encode(base_text))
+              after[path] = len(encoding.encode(head_text))
+
+          before_total = sum(before.values())
+          after_total = sum(after.values())
+          reduction = before_total - after_total
+          percent = reduction / before_total * 100
+
+          print("## Scipio final context token measurement")
+          print()
+          print(f"Tokenizer: `tiktoken=={tiktoken.__version__}`, encoding `o200k_base` (OpenAI/GPT-5-family encoding assumption).")
+          print()
+          print("| File | Before | After | Reduction |")
+          print("| --- | ---: | ---: | ---: |")
+          for path in files:
+              delta = before[path] - after[path]
+              print(f"| `{path}` | {before[path]} | {after[path]} | {delta} |")
+          print(f"| **Total** | **{before_total}** | **{after_total}** | **{reduction} ({percent:.1f}%)** |")
+          PY
+          gh pr comment "$PR_URL" --body-file /tmp/token-report.md
