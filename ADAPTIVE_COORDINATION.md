@@ -95,6 +95,8 @@ Next safe action:
 External-contact state:
 ```
 
+Existing routers that refer to an `INTERRUPTION CHECKPOINT` mean this `WORK CHECKPOINT`; `WORK CHECKPOINT` is the canonical name.
+
 Mark unknown, queued, skipped, or unreviewed facts explicitly. Preserve the first distinguishing observation before deepening a surprising result. Keep secrets, private credentials, unsafe operational detail, and speculative attribution out of public checkpoints.
 
 An interruption is a coordination event, not evidence of a product defect or permission decision. On resumption, reload the owning issue or pull request, exact head, tracked record, raw artifacts, and current receipts. Classify the first incomplete or failing step as product, fixture/harness, tool/connector, environment, hosted execution, or interaction/safety before changing product code. For benign safety-sensitive work, prefer synthetic fixtures, disposable state, fake destructive commands, and no external contact.
