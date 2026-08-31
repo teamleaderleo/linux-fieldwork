@@ -1,51 +1,29 @@
 # Agent Instructions
 
-Read [`README.md`](README.md), [`START_HERE.md`](START_HERE.md), [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md), [`FIELD_GUIDE.md`](FIELD_GUIDE.md), and [`SOURCE_BRANCH_HYGIENE.md`](SOURCE_BRANCH_HYGIENE.md) before doing repository or owned-fork source work.
+Treat the owning issue or pull request and the current repository state as the durable assignment. Read [`README.md`](README.md), then route to the owner needed for the task:
 
-## Owned-fork research authority
+- work type and evidence records: [`START_HERE.md`](START_HERE.md);
+- collaboration, checkpoints, recovery, review, and third-party GitHub reference hygiene: [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md);
+- investigation heuristics: [`FIELD_GUIDE.md`](FIELD_GUIDE.md) and [`BUG_LENSES.md`](BUG_LENSES.md);
+- human-designated upstream candidates: [`SOURCE_BRANCH_HYGIENE.md`](SOURCE_BRANCH_HYGIENE.md) and [`CONTRIBUTOR_IDENTITY.md`](CONTRIBUTOR_IDENTITY.md);
+- disclosure-sensitive findings: [`SECURITY_RECONVENE.md`](SECURITY_RECONVENE.md).
 
-The human owner has explicitly authorized broad autonomous research work in repositories and forks owned by `teamleaderleo`.
+## Owned-repository research authority
 
-Unless a later instruction narrows or revokes this authority, agents may create, edit, delete, commit, and iterate on code, tests, instrumentation, workflows, experiment branches, fixtures, documentation, CI jobs, and other research material in owned repositories and owned forks when doing so advances the current investigation.
+The human owner explicitly authorizes broad autonomous research in repositories and forks owned by `teamleaderleo`. Unless a later human instruction narrows or revokes this authority, agents may create, edit, delete, commit, and iterate on code, tests, instrumentation, branches, fixtures, documentation, CI jobs, and GitHub Actions workflows when that advances the current investigation.
 
-Internal research branches are allowed to be messy. Agents may use temporary commits, diagnostic instrumentation, experimental workflows, generated test material, carrier branches, throwaway fixtures, and other execution machinery when useful. Do not spend time preserving upstream-ready history during ordinary internal churn.
+Internal research may be messy. Temporary commits, diagnostic instrumentation, generated material, disposable workflows, carrier branches, failed experiments, and throwaway fixtures are valid execution machinery. Prefer the simplest route that produces evidence; a disposable Actions job is a valid harness for a useful architecture, dependency set, clean environment, or reproducible runtime. Separate harness failures from product failures and preserve useful receipts.
 
-### Execution and GitHub Actions authority
+Ordinary internal file edits, commits, branches, test runs, workflow changes, and Actions experiments covered by this authority require no per-step human confirmation. When one normal route is blocked, use another controlled repository or Actions route.
 
-For internal research, ordinary repository writes are expected work rather than a special boundary. Agents may use normal Git operations or the GitHub contents API to write files and commits in owned repositories and owned forks. They may also create, edit, run, repair, and remove GitHub Actions workflows for experiments, including build matrices, diagnostic jobs, temporary instrumentation, caches, artifacts, workflow-dispatch inputs, and branch-triggered runs.
+## Third-party and upstream boundary
 
-Prefer the simplest mechanism that gets evidence. A disposable Actions workflow is a valid experimental harness when it gives access to a useful architecture, clean environment, dependency set, or reproducible runtime. It is fine for an internal workflow or branch to fail repeatedly while narrowing an issue; preserve useful receipts and distinguish harness failures from product failures.
+Owned-repository authority does not publish upstream. Do not open, edit, comment on, review, react to, or otherwise contact a third-party upstream unless the human has authorized that interaction. Avoid accidental GitHub backlinks and follow the canonical redirect rule in [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md#external-github-backlinks).
 
-Agents do not need separate human confirmation for each ordinary internal file edit, commit, branch, test run, workflow change, or Actions experiment covered by this authority. When one experimental route is blocked by tooling, use another normal repository or Actions route rather than treating the owned repository as read-only.
+When the human says `upstream greenlight`, treat that natural-language phrase as explicit authorization for the current upstream repository and interaction that is reasonably clear from the conversation; capitalization and an exact template are unnecessary. Ask only when the repository or action is genuinely ambiguous or materially broader than the surrounding context. A greenlight covers that interaction alone; merge, release, deployment, credentials, spending, private-data access, and unrelated actions remain separate. A later human instruction may narrow or revoke it.
 
-This authority does **not** publish anything upstream. The human owns the boundary where research is converted into an upstream submission. An owned-fork experiment must not be represented as an upstream-authored or upstream-ready contribution merely because it exists.
+## Upstream candidates
 
-Backlink and external-interaction hygiene still applies. Do not create third-party GitHub backlinks or timeline events accidentally. When controlled interaction text must mention a third-party GitHub issue, pull request, or commit, use the repository's redirect-link convention. Do not comment, review, react, open issues or pull requests, or otherwise contact a third-party upstream unless the human has authorized that upstream interaction.
+A human may designate a specific owned-fork branch or commit series as an **upstream candidate**. From that designation onward, [`SOURCE_BRANCH_HYGIENE.md`](SOURCE_BRANCH_HYGIENE.md) is mandatory for candidate cleanliness, history, base comparison, commit-message policy, and live upstream-PR heads. [`CONTRIBUTOR_IDENTITY.md`](CONTRIBUTOR_IDENTITY.md) owns contributor identity and sign-off provenance.
 
-A later human instruction can designate a specific branch or commit series as an **upstream candidate**. Only then do the candidate-history, sign-off, and source-branch rules in [`SOURCE_BRANCH_HYGIENE.md`](SOURCE_BRANCH_HYGIENE.md) become mandatory for that candidate.
-
-## Upstream greenlight
-
-Upstream contact remains deliberate by default. When the human says `upstream greenlight`, treat that natural-language phrase as explicit authorization for the current upstream repository and interaction reasonably clear from the conversation. Capitalization and an exact template are not required. If the repository or action is genuinely ambiguous or materially broader than the surrounding context supports, ask before acting.
-
-A greenlight is bounded to that upstream interaction. It does not imply merge, release, deployment, credentials, spending, private-data access, or unrelated authority. A later human instruction can narrow or revoke it.
-
-## Upstream-candidate guardrails
-
-These rules apply only after the human has designated work as an upstream candidate:
-
-- Keep candidate branches limited to the intended product change and its real tests or documentation.
-- For simple source edits, edit the branch directly with ordinary Git operations. Do not invent GitHub Actions materializers, trigger files, self-modifying workflows, carrier commits, or other machinery merely to write the change.
-- Temporary execution machinery must not survive in candidate history.
-- Never put external issue numbers, pull-request numbers, shorthand references, or URLs in commit subjects or bodies. This includes `#123`, `Fixes #123`, `OWNER/REPO#123`, and direct or redirect issue/PR URLs.
-- Put issue-closing syntax and external references in the pull-request body only, after that upstream interaction is explicitly authorized.
-- Preserve required project trailers such as `Signed-off-by` when applicable.
-- When DCO or another sign-off is required, use the contributor's configured or explicitly chosen Git identity. Prefer `git commit -s` and normal amend/reset-author behavior.
-- Never infer or synthesize a sign-off name or email from GitHub account metadata. Do not manufacture a `users.noreply.github.com` address from a login or numeric account ID.
-- A noreply address is acceptable only when it is already the contributor's configured or explicitly chosen Git email.
-- If the configured Git identity is unavailable, do not guess; leave the candidate for the human to sign locally and provide the exact command needed.
-- For a small atomic fix, prefer one clean commit. Squash or rebuild away temporary setup, cleanup, rename, repair, and failed-automation commits before human review.
-- Before presenting a candidate, compare against the intended upstream base and verify that only the intended files remain.
-- A commit reference that creates a GitHub backlink or timeline event counts as external interaction. Do not create such references without explicit authorization.
-
-If a normal local Git operation can produce the desired candidate branch, prefer it over repository automation. This preference does not restrict internal research branches.
+Internal research branches remain free to use temporary execution machinery; the designated candidate must satisfy its stricter owner before human review or upstream publication. Candidate preparation itself grants no upstream-contact authority.

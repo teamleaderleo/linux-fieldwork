@@ -1,51 +1,38 @@
 # Source Branch Hygiene
 
-These rules apply **only when the human has designated a branch or commit series in an owned fork as a candidate for possible upstream review**.
+These rules begin **only when the human designates a branch or commit series in an owned fork as a candidate for possible upstream review**. Ordinary internal research remains free to use diagnostic instrumentation, temporary workflows, failed experiments, generated material, throwaway fixtures, intermediate commits, and other useful churn. The human controls the transition from research to upstream-candidate preparation.
 
-They do not constrain ordinary internal research. Until that designation occurs, owned-fork research branches may contain diagnostic instrumentation, temporary workflows, failed experiments, throwaway fixtures, generated material, intermediate commits, or other research churn that helps answer the investigation.
+## Candidate cleanliness
 
-Once a branch is designated as an upstream candidate, clean it up according to the rules below. The human controls the boundary between internal research and upstream-candidate preparation.
+Once designated, keep the candidate boring:
 
-## Keep source candidates boring
+- Base it on the intended upstream revision and limit the surviving diff to the product change plus its real tests or documentation.
+- Make ordinary source edits directly with normal Git operations. Do not introduce materializers, trigger files, carrier commits, self-modifying workflows, or similar machinery merely to write the candidate.
+- Keep all temporary execution machinery on research or scratch branches and out of the candidate's surviving history.
+- For a small atomic change, prefer one clean commit. Squash or rebuild away setup, cleanup, failed-automation, bookkeeping, intermediate rename, and repair commits before review.
+- Compare the finished candidate against the intended upstream base and inspect every changed path before presenting it.
 
-A source candidate branch should contain only the product change and the tests or documentation that belong with that change.
+## Open upstream pull-request heads
 
-For a trivial source edit, make the edit directly on the candidate branch with ordinary Git operations. Do not introduce a GitHub Actions materializer, trigger file, carrier commit, transformer, self-modifying workflow, or other execution machinery merely to write the source change.
+Once a candidate branch is the head of an open upstream pull request, every push changes the upstream-visible revision and may trigger CI, notifications, or reviewer work. Do known intermediate work locally or on a separate scratch branch from the current PR head. Inspect, test, squash, amend, or rebuild there, then advance the live head with one coherent reviewable revision.
 
-Temporary execution machinery may exist on internal research branches, but it must never become part of the candidate branch's surviving history.
+Review-driven follow-up pushes are expected. When tooling can edit only remote branches, use a scratch branch by default and compare the finished candidate with the previous PR head before advancing it.
 
-Before presenting a candidate branch for review, compare it against the intended upstream base and require that the diff contains only the intended product files.
+## Commit messages and external references
 
-## Treat an open upstream PR head as a publication branch
+Candidate commit subjects and bodies contain no external issue or pull-request numbers, shorthand references, or direct or redirect URLs. This includes `#5388`, `Fixes #5388`, and `OWNER/REPO#5388`. Put issue-closing syntax and external references in the pull-request body only after that upstream interaction is explicitly authorized.
 
-Once an owned-fork candidate branch is the head of an open upstream pull request, every push to that branch updates the upstream-visible PR head and may trigger CI, checks, notifications, or reviewer activity.
+Describe the code change itself and preserve required project trailers. Check the target repository's contribution and commit-message rules before publishing an amended, squashed, or rebuilt commit. `git commit -m` does not reflow prose; when a line limit is known, verify it mechanically or use the repository's own lint. A lint failure calls for a deliberate local amend and re-signing when required, not CI that silently rewrites commit identity.
 
-Do not use a live PR head for known intermediate work, connector experiments, repair commits, or edits that are expected to need cleanup. Do that work locally or on a separate scratch branch created from the current PR head. Inspect, test, squash, amend, or rebuild the result there, then move or push one coherent reviewable revision onto the live PR branch.
+For a known 72-column policy, one mechanical check is:
 
-Normal review-driven follow-up pushes are expected. The goal is not to avoid updating an open PR; it is to avoid publishing revisions that are already known to be temporary.
+```text
+git log -1 --format=%B | awk 'length($0) > 72 { print NR ":" length($0) ":" $0 }'
+```
 
-When the available tooling can only edit remote GitHub branches, create a scratch branch by default. Before advancing the live PR head, compare the finished candidate against the previous PR head and verify that the diff contains only the intended review response.
+## Contributor identity and sign-off
 
-## Never put issue or pull-request references in commit messages
-
-Do not include external issue numbers, pull-request numbers, shorthand references, or URLs in candidate commit subjects or bodies.
-
-This includes forms such as:
-
-- `#5388`
-- `Fixes #5388`
-- `opencontainers/runc#5388`
-- direct or redirect GitHub issue and pull-request URLs
-
-Put issue-closing syntax and external references in the pull-request body instead, after upstream interaction has been explicitly authorized.
-
-A source commit message should describe the code change itself. Keep required project trailers such as `Signed-off-by` when the target project requires them.
-
-## Use the contributor's configured identity for sign-offs
-
-When the target project requires DCO or another `Signed-off-by` trailer, first verify the project's contribution instructions and then use the contributor's configured Git identity.
-
-Prefer ordinary Git commands such as:
+[`CONTRIBUTOR_IDENTITY.md`](CONTRIBUTOR_IDENTITY.md) owns identity provenance. For work intended for upstream submission, obtain the contributor name and email explicitly from the human and configure exactly that identity; verify any existing Git configuration against it. When the target requires DCO or another `Signed-off-by` trailer, verify the project requirement and prefer normal Git behavior such as:
 
 ```text
 git config user.name
@@ -53,63 +40,22 @@ git config user.email
 git commit -s
 ```
 
-For an amended commit where the author identity also needs to match the configured identity, use normal Git author-reset/sign-off behavior rather than constructing the trailer by hand.
+Never infer, manufacture, or substitute a sign-off identity from repository history, account metadata, a GitHub login, or a numeric account ID. A `users.noreply.github.com` address is valid only when the human explicitly chose it. If the required identity is unavailable, leave the candidate for the human to sign locally and provide the exact amend or `git commit -s` command needed.
 
-Never manufacture, infer, or substitute a sign-off identity from GitHub account metadata. In particular, do not synthesize a `users.noreply.github.com` address from a username or numeric account ID, and do not replace a configured real name with a GitHub login.
+Before exposing a compare link or recommending submission, verify the final commit's resolved author, committer, and every `Signed-off-by` trailer. When amending authorship, use normal Git author-reset/sign-off behavior instead of constructing trailers by hand.
 
-If the configured Git identity is unavailable to the current execution environment, do not guess. Leave the candidate unsigned for the human to sign locally, or provide the exact `git commit -s` / amend command needed to finish it.
+## External interaction stays separate
 
-A privacy-preserving noreply address is acceptable only when it is already the contributor's configured or explicitly chosen Git identity. The tooling must not choose it on the contributor's behalf.
+Candidate preparation grants no upstream-contact authority. Opening, editing, commenting on, reviewing, reacting to, or otherwise interacting with an upstream issue or pull request requires the deliberate authorization defined in [`AGENTS.md`](AGENTS.md). Third-party reference hygiene is owned by [`ADAPTIVE_COORDINATION.md`](ADAPTIVE_COORDINATION.md#external-github-backlinks).
 
-## One logical change, one clean history
+## Handoff check
 
-For a small upstream candidate, prefer one clean commit when the change is naturally atomic.
+Before handing a candidate to a human for upstream submission, verify:
 
-Do not leave behind:
-
-- temporary materialization commits;
-- trigger commits;
-- carrier setup or cleanup commits;
-- issue-number bookkeeping commits;
-- failed automation attempts;
-- intermediate rename or repair commits that can be cleanly folded into the candidate.
-
-If temporary commits were created during research, rebuild or squash the candidate before presenting it. The final branch should read as if the intended product change had been made directly from the correct upstream base.
-
-## Preserve repository commit-message policy
-
-Before publishing an amended, squashed, or rebuilt candidate commit, preserve the target repository's commit-message rules as carefully as its source rules. Check contribution guidance and any local `gitlint`, `commitlint`, or equivalent configuration when available.
-
-Editorless commands need special care. `git commit -m` does not reflow prose to a repository's preferred width; a paragraph supplied as one shell argument remains one physical line unless explicit newlines are embedded. If the repository enforces a 72-column body, either provide those line breaks directly or use a safe formatter before committing.
-
-When a concrete line limit is known, verify it mechanically instead of counting by eye. For a 72-column policy, for example:
-
-```text
-git log -1 --format=%B | awk 'length($0) > 72 { print NR ":" length($0) ":" $0 }'
-```
-
-An empty result means no commit-message line exceeds 72 characters. Prefer the repository's own lint command when one exists because it may enforce additional subject, trailer, or formatting rules.
-
-CI should normally validate submitted commit messages, not silently rewrite them. Rewrapping a commit message creates a different commit object and SHA; for signed commits it also requires a new signature. Treat a commit-message lint failure as a request to amend locally, re-sign if required, and publish the corrected revision deliberately.
-
-## External interaction remains separate
-
-Creating, editing, testing, or heavily iterating on an owned-fork research branch is not permission to contact upstream.
-
-Do not open, edit, comment on, review, react to, or otherwise interact with an upstream issue or pull request unless that external action has been explicitly authorized. Preparing source, tests, comparison data, draft wording, and CI evidence in owned repositories is allowed under the owned-fork research authority; publication is a separate decision.
-
-## Final source-candidate check
-
-Before handing a candidate to a human for upstream submission, verify all of the following:
-
-1. The branch is based on the intended current upstream revision.
-2. The diff contains only intended product/test/documentation files.
-3. No temporary workflow, trigger, receipt, carrier, or Fieldwork-only file remains.
-4. The commit history is minimal and reviewable.
-5. Commit messages contain no issue or pull-request numbers, shorthand references, or URLs.
-6. Required project trailers such as DCO sign-off are present and use the contributor's configured or explicitly chosen Git identity.
-7. No sign-off name or email was inferred or synthesized from provider account metadata.
-8. Issue-closing syntax, if desired, appears only in the pull-request body.
-9. No upstream interaction has occurred beyond what the human explicitly authorized.
-10. If the branch is already the head of an open upstream PR, exploratory work happened elsewhere and the pushed revision is coherent and reviewable.
-11. The final commit message satisfies the target repository's lint and wrapping policy, including any editorless `-m` content.
+1. intended upstream base and only intended product/test/documentation paths in the diff;
+2. no temporary workflow, trigger, receipt, carrier, or Fieldwork-only file in surviving history;
+3. minimal reviewable commits whose messages satisfy target policy and contain no issue/PR references or URLs;
+4. required trailers use the contributor's valid configured or explicitly chosen identity, with no identity inferred from provider metadata;
+5. any issue-closing syntax appears only in the pull-request body after contact authorization;
+6. upstream interaction stayed within explicit authority;
+7. an open upstream PR head received only coherent reviewable revisions, with exploratory work done elsewhere.
