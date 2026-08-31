@@ -6,6 +6,8 @@ Linux Fieldwork is not a vulnerability-hunting programme. Most security-adjacent
 
 `RECONVENE` is the all-red signal for the uncommon case where a result starts to look like a serious vulnerability or disclosure event. Use it early enough to avoid putting enabling detail or raw evidence into a public issue, pull request, log, or chat.
 
+This file is the canonical owner for the `RECONVENE` threshold and handling rules. Compact summaries in startup routers point here when judgment is required.
+
 ## Continue normally
 
 Keep working when the result remains local, synthetic, owned, disposable, and straightforward to describe publicly. Typical examples include:
@@ -22,6 +24,7 @@ Security vocabulary alone is not a reason to stop. Do not use a numeric severity
 
 Switch to `RECONVENE` when the evidence begins to support one or more of these:
 
+- real secrets, private data, private repository content, private infrastructure details, or identifying live-target details appear or would need to enter the public record;
 - unauthenticated or pre-auth compromise with little user interaction;
 - wormable or self-propagating behavior;
 - broad default reach across widely deployed Linux, package, service, container, kernel, or supply-chain infrastructure;
