@@ -74,6 +74,16 @@ targets:
       - rootless-execution
       - filesystems-images
 
+  uutils-coreutils:
+    title: uutils coreutils
+    state: active
+    canonical_repository: https://github.com/uutils/coreutils.git
+    map_path: targets/uutils-coreutils/map.md
+    programmes:
+      - filesystems-images
+      - services-resources
+      - security-networking
+
   reproducible-builds:
     title: Reproducible Builds toolchain and guidance
     state: inbox
