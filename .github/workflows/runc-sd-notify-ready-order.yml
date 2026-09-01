@@ -1,0 +1,113 @@
+name: runc sd_notify READY ordering
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/runc-sd-notify-ready-order.yml'
+      - 'investigations/runc-sd-notify-ready-order/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-current:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: false
+
+      - name: Fetch exact runc source
+        run: |
+          git clone https://github.com/opencontainers/runc.git /tmp/runc
+          git -C /tmp/runc checkout 7495faeac77318158e6d5faece1b0b0d53e6ced4
+          test "$(git -C /tmp/runc rev-parse HEAD)" = 7495faeac77318158e6d5faece1b0b0d53e6ced4
+          git -C /tmp/runc worktree add /tmp/runc-baseline HEAD
+          git -C /tmp/runc worktree add /tmp/runc-candidate HEAD
+
+      - name: Apply distinguishing test to both trees
+        run: |
+          test_patch="$GITHUB_WORKSPACE/investigations/runc-sd-notify-ready-order/0001-test-ready-field-order.patch"
+          for tree in /tmp/runc-baseline /tmp/runc-candidate; do
+            git -C "$tree" apply --check "$test_patch"
+            git -C "$tree" apply "$test_patch"
+            git -C "$tree" diff --check
+          done
+
+      - name: Apply one-line candidate
+        run: |
+          fix_patch="$GITHUB_WORKSPACE/investigations/runc-sd-notify-ready-order/0002-fix-ready-field-order.patch"
+          git -C /tmp/runc-candidate apply --check "$fix_patch"
+          git -C /tmp/runc-candidate apply "$fix_patch"
+          git -C /tmp/runc-candidate diff --check
+          git -C /tmp/runc-candidate diff -- notify_socket.go notify_socket_ready_order_test.go \
+            | tee investigations/runc-sd-notify-ready-order/candidate-applied.diff
+
+      - name: Check test formatting
+        run: |
+          gofmt -d /tmp/runc-candidate/notify_socket_ready_order_test.go \
+            | tee investigations/runc-sd-notify-ready-order/gofmt.diff
+          test ! -s investigations/runc-sd-notify-ready-order/gofmt.diff
+
+      - name: Record environment
+        run: |
+          {
+            uname -a
+            cat /etc/os-release
+            go version
+            git -C /tmp/runc rev-parse HEAD
+          } | tee investigations/runc-sd-notify-ready-order/runtime-environment.txt
+
+      - name: Prove baseline controls pass
+        working-directory: /tmp/runc-baseline
+        run: |
+          set -o pipefail
+          go test . -run '^TestNotifySocketReadyOrder/(ready-first|no-ready)$' -count=1 -v \
+            | tee "$GITHUB_WORKSPACE/investigations/runc-sd-notify-ready-order/baseline-controls.txt"
+
+      - name: Prove baseline READY-second failure
+        working-directory: /tmp/runc-baseline
+        run: |
+          set +e
+          go test . -run '^TestNotifySocketReadyOrder$' -count=1 -v \
+            > "$GITHUB_WORKSPACE/investigations/runc-sd-notify-ready-order/baseline-focused.txt" 2>&1
+          rc=$?
+          set -e
+          cat "$GITHUB_WORKSPACE/investigations/runc-sd-notify-ready-order/baseline-focused.txt"
+          echo "baseline_focused_rc=$rc" | tee -a "$GITHUB_WORKSPACE/investigations/runc-sd-notify-ready-order/baseline-focused.txt"
+          test "$rc" -ne 0
+          grep -F 'TestNotifySocketReadyOrder/ready-second' "$GITHUB_WORKSPACE/investigations/runc-sd-notify-ready-order/baseline-focused.txt"
+
+      - name: Prove candidate focused behavior
+        working-directory: /tmp/runc-candidate
+        run: |
+          set -o pipefail
+          go test . -run '^TestNotifySocketReadyOrder$' -count=1 -v \
+            | tee "$GITHUB_WORKSPACE/investigations/runc-sd-notify-ready-order/candidate-focused.txt"
+
+      - name: Run candidate root package tests
+        working-directory: /tmp/runc-candidate
+        run: |
+          set -o pipefail
+          go test . -count=1 \
+            | tee "$GITHUB_WORKSPACE/investigations/runc-sd-notify-ready-order/candidate-package.txt"
+
+      - name: Retain evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runc-sd-notify-ready-order
+          path: |
+            investigations/runc-sd-notify-ready-order/runtime-environment.txt
+            investigations/runc-sd-notify-ready-order/baseline-controls.txt
+            investigations/runc-sd-notify-ready-order/baseline-focused.txt
+            investigations/runc-sd-notify-ready-order/candidate-focused.txt
+            investigations/runc-sd-notify-ready-order/candidate-package.txt
+            investigations/runc-sd-notify-ready-order/candidate-applied.diff
+            investigations/runc-sd-notify-ready-order/gofmt.diff
+          if-no-files-found: warn
