@@ -51,13 +51,16 @@ if [[ "$observed_commit" != "$glibc_commit" ]]; then
 fi
 
 printf 'candidate_transform\n' >"$stage"
-python3 investigations/glibc-stale-hwcap-cache-fallback/apply_candidate_v3.py "$src" \
+python3 investigations/glibc-stale-hwcap-cache-fallback/apply_candidate_v4.py "$src" \
   >"$output_dir/transform.txt"
 git -C "$src" diff --check
 git -C "$src" diff >"$output_dir/candidate.diff"
 
-grep -Fqx $'classification\tcandidate_v3_transform_applied' "$output_dir/transform.txt"
+grep -Fqx $'classification\tcandidate_v4_transform_applied' "$output_dir/transform.txt"
 grep -Fqx $'exact_cache_key_filter\tfalse' "$output_dir/transform.txt"
+grep -Fqx $'selected_path_ownership\tbalanced' "$output_dir/transform.txt"
+grep -Fqx $'product_code\tunchanged_from_v3' "$output_dir/transform.txt"
+grep -Fqx $'native_fallback_chain\tnamed_to_named,named_to_baseline,all_cached_stale' "$output_dir/transform.txt"
 if grep -Fq 'strcmp (name, string_table + key_entry->key)' "$src/elf/dl-cache.c"; then
   printf 'candidate crossed into exact-byte cache-key identity policy\n' >&2
   exit 1
@@ -125,11 +128,14 @@ run_test elf/tst-ldconfig-cache
 run_test elf/tst-dl-cache-long-path
 
 {
-  printf 'classification\tcandidate_native_tests_passed\n'
+  printf 'classification\tcandidate_native_fallback_chain_passed\n'
   printf 'glibc_commit\t%s\n' "$observed_commit"
   printf 'execution_uid\t%s\n' "$(id -u)"
   printf 'identity_policy\tunchanged_comparator_group\n'
   printf 'identity_runtime_oracle\tfieldwork_502\n'
+  printf 'fallback\tnamed_to_named\tpass\n'
+  printf 'fallback\tnamed_to_baseline\tpass\n'
+  printf 'fallback\tall_cached_stale\tpass\n'
   printf 'test\telf/tst-glibc-hwcaps-prepend-cache\tpass\n'
   printf 'test\telf/tst-ldconfig-cache\tpass\n'
   printf 'test\telf/tst-dl-cache-long-path\tpass\n'
