@@ -1,0 +1,293 @@
+name: Cloud Hypervisor real 16K sparse validation
+
+on:
+  pull_request:
+    paths:
+      - "investigations/cloud-hypervisor-sparse-page-granularity/candidate.patch"
+      - "investigations/cloud-hypervisor-sparse-page-granularity/16k-init.c"
+      - ".github/workflows/cloud-hypervisor-16k-sparse-validation.yml"
+
+permissions:
+  contents: read
+
+env:
+  CLH_SHA: 1af93ac7035cda77cd87b0c18b1134ebb0928052
+  LINUX_SHA: d58772d8520c7ef247c4b95c9bd76d3a25da9ff5
+  CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+
+jobs:
+  build-rust-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+
+      - name: Check out exact Cloud Hypervisor source
+        uses: actions/checkout@v4
+        with:
+          repository: cloud-hypervisor/cloud-hypervisor
+          ref: ${{ env.CLH_SHA }}
+          path: cloud-hypervisor
+
+      - name: Install AArch64 cross compiler
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          rustup target add aarch64-unknown-linux-gnu
+
+      - name: Verify source identity and cross-build exact test binaries
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(git -C cloud-hypervisor rev-parse HEAD)" = "$CLH_SHA"
+          patch="$PWD/fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/candidate.patch"
+          sha256sum "$patch"
+
+          cd cloud-hypervisor
+          build_test_binary() {
+            local json_out="$1"
+            cargo test --locked -p vmm --lib \
+              --target aarch64-unknown-linux-gnu \
+              --no-default-features --features kvm \
+              --no-run --message-format=json > "$json_out"
+            python3 - "$json_out" <<'PY'
+          import json, os, sys
+          found = []
+          for line in open(sys.argv[1], encoding="utf-8"):
+              try:
+                  obj = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if obj.get("reason") != "compiler-artifact":
+                  continue
+              target = obj.get("target", {})
+              profile = obj.get("profile", {})
+              exe = obj.get("executable")
+              if target.get("name") == "vmm" and profile.get("test") and exe:
+                  found.append(exe)
+          if len(found) != 1:
+              raise SystemExit(f"expected one vmm test executable, got {found!r}")
+          print(os.path.abspath(found[0]))
+          PY
+          }
+
+          baseline_exe="$(build_test_binary baseline.json | tail -n1)"
+          cp "$baseline_exe" ../baseline-vmm-tests
+
+          git apply --check "$patch"
+          git apply "$patch"
+          git diff --check
+          test "$(git diff --name-only)" = "vmm/src/sparse.rs"
+
+          candidate_exe="$(build_test_binary candidate.json | tail -n1)"
+          cp "$candidate_exe" ../candidate-vmm-tests
+          cd ..
+
+          file baseline-vmm-tests candidate-vmm-tests
+          aarch64-linux-gnu-readelf -h baseline-vmm-tests | grep -F 'Machine:'
+          aarch64-linux-gnu-readelf -h candidate-vmm-tests | grep -F 'Machine:'
+          aarch64-linux-gnu-readelf -l baseline-vmm-tests | grep -F 'Requesting program interpreter'
+          aarch64-linux-gnu-readelf -d baseline-vmm-tests | grep -F '(NEEDED)'
+
+      - name: Upload exact AArch64 test binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-hypervisor-sparse-aarch64-tests
+          path: |
+            baseline-vmm-tests
+            candidate-vmm-tests
+          if-no-files-found: error
+          retention-days: 30
+
+  build-16k-kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact Linux source
+        uses: actions/checkout@v4
+        with:
+          repository: torvalds/linux
+          ref: ${{ env.LINUX_SHA }}
+          path: linux
+
+      - name: Install kernel build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex gcc-aarch64-linux-gnu libelf-dev libssl-dev make
+
+      - name: Build exact AArch64 16 KiB-page Linux kernel
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(git -C linux rev-parse HEAD)" = "$LINUX_SHA"
+          cd linux
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          scripts/config \
+            --disable MODULES \
+            --disable ARM64_4K_PAGES \
+            --enable ARM64_16K_PAGES \
+            --enable BLK_DEV_INITRD \
+            --enable DEVTMPFS \
+            --enable DEVTMPFS_MOUNT \
+            --enable TMPFS \
+            --enable MEMFD_CREATE \
+            --enable VIRTIO \
+            --enable VIRTIO_MMIO \
+            --enable VIRTIO_BLK \
+            --enable EXT4_FS \
+            --enable SERIAL_AMBA_PL011 \
+            --enable SERIAL_AMBA_PL011_CONSOLE
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -Fx 'CONFIG_ARM64_16K_PAGES=y' .config
+          grep -Fx 'CONFIG_VIRTIO_MMIO=y' .config
+          grep -Fx 'CONFIG_VIRTIO_BLK=y' .config
+          grep -Fx 'CONFIG_EXT4_FS=y' .config
+          make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image
+          mkdir -p ../kernel-artifact
+          cp arch/arm64/boot/Image ../kernel-artifact/Image
+          cp .config ../kernel-artifact/config-16k
+
+      - name: Upload exact 16 KiB kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-16k-kernel
+          path: kernel-artifact
+          if-no-files-found: error
+          retention-days: 30
+
+  run-real-16k:
+    needs:
+      - build-rust-tests
+      - build-16k-kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out Fieldwork carrier
+        uses: actions/checkout@v4
+        with:
+          path: fieldwork
+
+      - name: Download exact AArch64 test binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: cloud-hypervisor-sparse-aarch64-tests
+          path: rust-tests
+
+      - name: Download exact 16 KiB kernel
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-arm64-16k-kernel
+          path: kernel-artifact
+
+      - name: Install guest-packaging and emulation dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cpio e2fsprogs gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-system-arm
+
+      - name: Inspect downloaded artifacts
+        shell: bash
+        run: |
+          set -euxo pipefail
+          find rust-tests kernel-artifact -maxdepth 3 -type f -printf '%p %s bytes\n'
+          test -s rust-tests/baseline-vmm-tests
+          test -s rust-tests/candidate-vmm-tests
+          test -s kernel-artifact/Image
+          test -s kernel-artifact/config-16k
+          grep -Fx 'CONFIG_ARM64_16K_PAGES=y' kernel-artifact/config-16k
+          chmod +x rust-tests/baseline-vmm-tests rust-tests/candidate-vmm-tests
+          file rust-tests/baseline-vmm-tests rust-tests/candidate-vmm-tests kernel-artifact/Image
+          aarch64-linux-gnu-readelf -l rust-tests/baseline-vmm-tests | grep -F 'Requesting program interpreter'
+          aarch64-linux-gnu-readelf -d rust-tests/baseline-vmm-tests | grep -F '(NEEDED)'
+
+      - name: Build diagnostic initramfs and 4 KiB-block scratch filesystem
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rootfs="$PWD/rootfs-16k"
+          rm -rf "$rootfs"
+          mkdir -p "$rootfs"/dev "$rootfs"/proc "$rootfs"/tmp "$rootfs"/lib/aarch64-linux-gnu
+          chmod 1777 "$rootfs/tmp"
+
+          test -f /usr/aarch64-linux-gnu/lib/libc.a
+          aarch64-linux-gnu-gcc -O2 -static \
+            fieldwork/investigations/cloud-hypervisor-sparse-page-granularity/16k-init.c \
+            -o "$rootfs/init"
+          file "$rootfs/init"
+          aarch64-linux-gnu-readelf -l "$rootfs/init" | grep -F 'Requesting program interpreter' && exit 1 || true
+
+          cp rust-tests/baseline-vmm-tests "$rootfs/baseline-vmm-tests"
+          cp rust-tests/candidate-vmm-tests "$rootfs/candidate-vmm-tests"
+          chmod 0755 "$rootfs/init" "$rootfs/baseline-vmm-tests" "$rootfs/candidate-vmm-tests"
+
+          test -e /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1
+          cp -aL /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 "$rootfs/lib/ld-linux-aarch64.so.1"
+          for lib in /usr/aarch64-linux-gnu/lib/*.so*; do
+            [ -e "$lib" ] || continue
+            cp -aL "$lib" "$rootfs/lib/aarch64-linux-gnu/$(basename "$lib")"
+          done
+          find "$rootfs/lib" -maxdepth 2 -type f -printf '%p %s bytes\n' | sort
+
+          (
+            cd "$rootfs"
+            find . -print0 | sort -z | cpio --null -o --format=newc --owner=0:0
+          ) | gzip -9 > initramfs-16k.cpio.gz
+          test -s initramfs-16k.cpio.gz
+          gzip -t initramfs-16k.cpio.gz
+
+          truncate -s 128M scratch-ext4.img
+          mkfs.ext4 -q -F -b 4096 scratch-ext4.img
+          dumpe2fs -h scratch-ext4.img 2>/dev/null | grep -F 'Block size:' | grep -F '4096'
+
+      - name: Boot 16 KiB kernel and execute exact baseline plus candidate tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          timeout 240s qemu-system-aarch64 \
+            -machine virt,accel=tcg \
+            -cpu max \
+            -smp 2 \
+            -m 1024 \
+            -nographic \
+            -no-reboot \
+            -nic none \
+            -kernel kernel-artifact/Image \
+            -initrd initramfs-16k.cpio.gz \
+            -append 'console=ttyAMA0 rdinit=/init panic=-1' \
+            -drive if=none,file=scratch-ext4.img,format=raw,id=scratch \
+            -device virtio-blk-device,drive=scratch \
+            2>&1 | tee serial-16k.log
+          qemu_rc=${PIPESTATUS[0]}
+          set -e
+          echo "QEMU_RC=$qemu_rc"
+
+          grep -Fx 'PAGE_SIZE=16384' serial-16k.log
+          grep -E '^BASELINE_RC=[1-9][0-9]*$' serial-16k.log
+          grep -Fx 'CANDIDATE_RC=0' serial-16k.log
+          grep -Fx 'REAL_16K_PASS' serial-16k.log
+          grep -F 'sparse::unit_tests::written_pages_show_as_data_extents' serial-16k.log
+          grep -F 'sparse::unit_tests::single_extent_at_zero_offset' serial-16k.log
+          grep -F 'test result: ok. 9 passed; 0 failed' serial-16k.log
+
+      - name: Upload real 16K receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-hypervisor-sparse-real-16k
+          path: |
+            serial-16k.log
+            kernel-artifact/config-16k
+          if-no-files-found: warn
+          retention-days: 30
