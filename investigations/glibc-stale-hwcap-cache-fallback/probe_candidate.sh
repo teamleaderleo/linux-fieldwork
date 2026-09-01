@@ -22,7 +22,7 @@ if [[ $(uname -m) != x86_64 ]]; then
 fi
 
 readonly glibc_repository=https://github.com/gnutools/glibc.git
-readonly glibc_commit=ae646973c5957b7eed06cb80d49d13b42178072d
+readonly glibc_commit=8fb6751ec7fb8e51e2971a65a5e82a2932d58046
 
 work_root=$(mktemp -d "${RUNNER_TEMP:-/tmp}/glibc-stale-hwcap-candidate.XXXXXX")
 cleanup() {
