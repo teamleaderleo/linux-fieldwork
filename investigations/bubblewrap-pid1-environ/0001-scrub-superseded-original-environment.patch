@@ -1,0 +1,121 @@
+diff --git a/bubblewrap.c b/bubblewrap.c
+index 3b9719c..0000000 100644
+--- a/bubblewrap.c
++++ b/bubblewrap.c
+@@ -95,6 +95,14 @@
+ static size_t next_size_arg = 0;
+ static int next_overlay_src_count = 0;
+ static bool opt_not_a_security_boundary = false;
++
++typedef struct {
++  char *data;
++  size_t len;
++} OriginalEnvEntry;
++
++static OriginalEnvEntry *original_env;
++static size_t original_env_len;
+ 
+ #define CAP_TO_MASK_0(x) (1L << ((x) & 31))
+ #define CAP_TO_MASK_1(x) CAP_TO_MASK_0(x - 32)
+@@ -128,6 +136,68 @@ static NsInfo ns_infos[] = {
+   {NULL,     NULL,                0}
+ };
+ 
++extern char **environ;
++
++static void
++remember_original_environment (void)
++{
++  size_t i;
++
++  if (environ == NULL)
++    return;
++
++  for (i = 0; environ[i] != NULL; i++)
++    ;
++
++  if (i == 0)
++    return;
++
++  original_env_len = i;
++  original_env = xcalloc (original_env_len, sizeof *original_env);
++
++  for (i = 0; i < original_env_len; i++)
++    {
++      original_env[i].data = environ[i];
++      original_env[i].len = strlen (environ[i]);
++    }
++}
++
++static void
++wipe_original_environment_entry (OriginalEnvEntry *entry)
++{
++  volatile char *p = (volatile char *) entry->data;
++  size_t i;
++
++  for (i = 0; i < entry->len; i++)
++    p[i] = '\0';
++}
++
++static void
++wipe_original_environment (void)
++{
++  size_t i;
++
++  for (i = 0; i < original_env_len; i++)
++    wipe_original_environment_entry (&original_env[i]);
++}
++
++static void
++wipe_original_environment_variable (const char *name)
++{
++  size_t i;
++  size_t name_len = strlen (name);
++
++  for (i = 0; i < original_env_len; i++)
++    {
++      OriginalEnvEntry *entry = &original_env[i];
++
++      if (entry->len > name_len &&
++          entry->data[name_len] == '=' &&
++          memcmp (entry->data, name, name_len) == 0)
++        wipe_original_environment_entry (entry);
++    }
++}
++
+ typedef enum {
+   SETUP_BIND_MOUNT,
+   SETUP_RO_BIND_MOUNT,
+@@ -2213,6 +2283,7 @@ parse_args_recurse (int          *argcp,
+       else if (strcmp (arg, "--clearenv") == 0)
+         {
+           xclearenv ();
++          wipe_original_environment ();
+         }
+       else if (strcmp (arg, "--setenv") == 0)
+         {
+@@ -2220,6 +2291,7 @@ parse_args_recurse (int          *argcp,
+             die ("--setenv takes two arguments");
+ 
+           xsetenv (argv[1], argv[2], 1);
++          wipe_original_environment_variable (argv[1]);
+ 
+           argv += 2;
+           argc -= 2;
+@@ -2230,6 +2302,7 @@ parse_args_recurse (int          *argcp,
+             die ("--unsetenv takes an argument");
+ 
+           xunsetenv (argv[1]);
++          wipe_original_environment_variable (argv[1]);
+ 
+           argv += 1;
+           argc -= 1;
+@@ -2610,6 +2683,8 @@ main (int    argc,
+   if (isatty (1))
+     host_tty_dev = ttyname (1);
+ 
++  remember_original_environment ();
++
+   argv++;
+   argc--;
+ 
