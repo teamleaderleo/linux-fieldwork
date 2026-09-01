@@ -109,8 +109,14 @@ jobs:
         working-directory: coreutils
         run: |
           set -euo pipefail
-          cargo fmt --all
-          cargo fmt --all -- --check
+          # Keep formatting scoped to the candidate. Workspace-wide `cargo fmt --all`
+          # reformats an inherited uucore file at this pinned source and violates the
+          # five-file review fence even though the candidate itself is already clean.
+          cargo fmt --package uu_install
+          rustfmt tests/by-util/test_install.rs
+          cargo fmt --package uu_install -- --check
+          rustfmt --check tests/by-util/test_install.rs
+          test "$(git diff --name-only | sort)" = $'src/uu/install/Cargo.toml\nsrc/uu/install/locales/en-US.ftl\nsrc/uu/install/locales/fr-FR.ftl\nsrc/uu/install/src/install.rs\ntests/by-util/test_install.rs'
           git diff --check
           {
             echo "source_head=$(git rev-parse HEAD)"
