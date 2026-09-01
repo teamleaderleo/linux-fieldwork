@@ -1,62 +1,60 @@
 # LF-35 Result — Package Candidate Harvesting Round 001
 
 Date: 2026-07-30  
+Disposition refresh: 2026-08-05  
 Lane: [`LF-35`](../brief.md)
 
 ## In simple words
 
-The first harvest found one current-CI package test-restoration candidate, one recurring Homebrew intake source, and one firmware regression with a clear VM gate. It also found two Nixpkgs issues already covered by active fixes, which are retained as package-engineering examples and removed from duplicate implementation.
+The first harvest found one package test-restoration candidate, one recurring Homebrew intake source, and one firmware regression with a clear VM gate. It also found two Nixpkgs issues already covered by active fixes, which are retained as package-engineering examples and removed from duplicate implementation.
+
+The gomarkdoc candidate completed investigation and owner review. The user submitted [gomarkdoc: restore checks on Go 1.26](https://redirect.github.com/NixOS/nixpkgs/pull/549377). Issue #136 now owns current-head CI and maintainer-review monitoring.
 
 ## Candidate 1 — `gomarkdoc` disabled tests
 
-Issue: `NixOS/nixpkgs#516481`  
+Issue: [Nixpkgs gomarkdoc regression](https://redirect.github.com/NixOS/nixpkgs/issues/516481)  
+Submitted pull request: [gomarkdoc: restore checks on Go 1.26](https://redirect.github.com/NixOS/nixpkgs/pull/549377)  
 Package file: `pkgs/by-name/go/gomarkdoc/package.nix`  
-State: **selected for first probe**
+State: **submitted**
 
-### Known boundary
+### Original boundary
 
-- known-good nixpkgs: `4590696c8693fea477850fe379a01544293ca4e2`;
+- known-good Nixpkgs: `4590696c8693fea477850fe379a01544293ca4e2`;
 - known-bad sampled revision: `acd02b8`;
 - package version: `1.1.0` throughout the reported window;
-- current package expression: `doCheck = false`;
-- current explanatory comment: nixpkgs exports `GOFLAGS=-mod=vendor`, while gomarkdoc tests call its command entrypoint and parse those flags with a parser that accepts only `-tags`;
-- issue output also reports `../.gomarkdoc-empty.yml` missing.
+- package expression: `doCheck = false`;
+- explanatory comment blamed `GOFLAGS=-mod=vendor` reaching gomarkdoc's application parser;
+- issue output also reported `../.gomarkdoc-empty.yml` missing.
 
-### First command matrix
+### Executed matrix result
 
-Use a local override that sets `doCheck = true`, then run:
+The matrix varied the inherited flags, supported-tag filtering, missing fixture, package selection, working directory, Go generation, and pinned Nixpkgs revisions.
 
-```text
-A. current package environment unchanged
-B. GOFLAGS cleared during checkPhase
-C. GOFLAGS filtered to gomarkdoc-supported flags
-D. tests run from repository root
-E. tests run through current subPackages path
-F. known-good nixpkgs revision with the same observations
-```
+It established:
 
-Record:
+- removing `-mod=vendor` wasn't sufficient;
+- creating `.gomarkdoc-empty.yml` wasn't sufficient;
+- the missing config path printed a diagnostic but didn't return the failing error;
+- Go 1.26 changed one generated Markdown line;
+- updating that expected line restored the package-selected `cmd/gomarkdoc` tests;
+- broader root, formatter, and `lang` package discovery exposed additional old standard-library prose goldens and wasn't selected for this repair.
 
-- exact check command;
-- `pwd` during the failing tests;
-- effective `GOFLAGS`;
-- fixture existence and resolved relative path;
-- which test packages fail;
-- whether the produced binary differs across variants.
+### Submitted design
 
-### Owning-boundary outcomes
+The submitted source:
 
-| Outcome | Likely owner |
-|---|---|
-| clearing inherited `GOFLAGS` alone restores tests | package expression or a narrowly scoped Go test hook |
-| working-directory change alone restores tests | package `checkFlags`/subpackage selection or upstream relative-path assumption |
-| both are required | package expression plus upstream test robustness |
-| failure appears across unrelated Go packages | shared `buildGoModule` regression |
-| test invokes unsupported command behavior intentionally | upstream test or package-level disable with a stronger explanation |
+- keeps the current Go 1.26 builder;
+- retains `subPackages = [ "cmd/gomarkdoc" ]`;
+- updates one expected Markdown line with `substituteInPlace --replace-fail`;
+- removes `doCheck = false`;
+- doesn't create the missing fixture or rewrite `GOFLAGS`;
+- doesn't change the package version, source, vendor hash, linker flags, selected command, or installed executable.
 
-### Promotion signal
+Submitted branch: `teamleaderleo/nixpkgs:contrib/gomarkdoc-go126-checks`  
+Submitted base: `356468b500e85491b610431c87a284ca1f41b7bc`  
+Submitted head: `060a1f8b8af68af858be896715c5dfc540522235`
 
-Promote a patch when it restores a meaningful test suite without broadly hiding valid Go build flags. Add a passthru or package test if the regression concerned generated output rather than internal test mechanics.
+Prior Linux and Darwin execution applies to the identical final package-file blob. Exact-current-head execution remains pending. The earlier Go 1.25/fixture/flag-filter candidate is superseded.
 
 ## Candidate 2 — Homebrew blocked updates
 
@@ -84,7 +82,7 @@ Preferred first leaves:
 Issue: `NixOS/nixpkgs#485220`  
 State: **capability queue**
 
-The issue includes a QEMU invocation and pinned good and bad nixpkgs revisions. Before a source bisect, turn console output into a deterministic assertion:
+The issue includes a QEMU invocation and pinned good and bad Nixpkgs revisions. Before a source bisect, turn console output into a deterministic assertion:
 
 ```text
 good: reaches PXE/network boot attempt
@@ -127,8 +125,9 @@ Fedora FTBFS issues with a current mock/Koschei result
 
 ## Result
 
-- selected: `gomarkdoc` test restoration;
+- submitted: `gomarkdoc` command-test restoration;
 - recurring: Homebrew blocked-update trackers;
 - capability-gated: AAVMF;
 - duplicate stops: pandoc Lua and Darwin libffi;
-- next output: executable `gomarkdoc` environment matrix and retained logs.
+- next gomarkdoc action: monitor current-head CI and maintainer review in #136;
+- no additional automated upstream interaction.
