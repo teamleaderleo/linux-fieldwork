@@ -1,0 +1,49 @@
+diff --git a/elf/dl-cache.c b/elf/dl-cache.c
+index c6820a9f41..1111111111 100644
+--- a/elf/dl-cache.c
++++ b/elf/dl-cache.c
+@@ -354,18 +354,33 @@ _dl_cache_libcmp (const char *p1, const char *p2)
+         {
+           if (*p2 >= '0' && *p2 <= '9')
+             {
+-	      /* Must compare this numerically.  */
+-	      int val1;
+-	      int val2;
++	      /* Compare the decimal runs numerically without converting them
++		 to a fixed-width integer.  Leading zeroes do not change the
++		 numeric value, preserving the existing comparison semantics.  */
++	      const char *run1 = p1;
++	      const char *run2 = p2;
++	      while (*p1 >= '0' && *p1 <= '9')
++		++p1;
++	      while (*p2 >= '0' && *p2 <= '9')
++		++p2;
+ 
+-	      val1 = *p1++ - '0';
+-	      val2 = *p2++ - '0';
+-	      while (*p1 >= '0' && *p1 <= '9')
+-	        val1 = val1 * 10 + *p1++ - '0';
+-	      while (*p2 >= '0' && *p2 <= '9')
+-	        val2 = val2 * 10 + *p2++ - '0';
+-	      if (val1 != val2)
+-		return val1 - val2;
++	      while (run1 + 1 < p1 && *run1 == '0')
++		++run1;
++	      while (run2 + 1 < p2 && *run2 == '0')
++		++run2;
++
++	      size_t length1 = p1 - run1;
++	      size_t length2 = p2 - run2;
++	      if (length1 != length2)
++		return length1 < length2 ? -1 : 1;
++
++	      while (run1 < p1)
++		{
++		  if (*run1 != *run2)
++		    return *run1 - *run2;
++		  ++run1;
++		  ++run2;
++		}
+ 	    }
+ 	  else
+             return 1;
