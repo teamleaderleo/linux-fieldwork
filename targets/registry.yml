@@ -92,3 +92,12 @@ targets:
     state: inbox
     programmes:
       - security-networking
+
+  tini:
+    title: Tini
+    state: active
+    canonical_repository: https://github.com/krallin/tini.git
+    map_path: targets/tini/map.md
+    programmes:
+      - services-resources
+      - rootless-execution
